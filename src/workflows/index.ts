@@ -4,9 +4,11 @@ export { workflowEventBus } from "./event-bus";
 export { recoverIncompleteRuns } from "./recovery";
 export {
   cancelWorkflowRun,
+  initWaitBusSubscriptions,
   resumeWaitState,
   retryFailedRun,
   setupWorkflowResumeListener,
+  subscribeWaitToBus,
 } from "./resume";
 export { startRetryPoller, stopRetryPoller } from "./retry-poller";
 export { interpolate } from "./template";
@@ -20,7 +22,7 @@ import { workflowEventBus } from "./event-bus";
 import type { ExecutorRegistry } from "./executors/registry";
 import { createExecutorRegistry } from "./executors/registry";
 import { recoverIncompleteRuns } from "./recovery";
-import { setupWorkflowResumeListener } from "./resume";
+import { initWaitBusSubscriptions, setupWorkflowResumeListener } from "./resume";
 import { startRetryPoller } from "./retry-poller";
 import { interpolate } from "./template";
 import { startWaitPoller } from "./wait-poller";
@@ -68,4 +70,8 @@ export function initWorkflows(): void {
 
   // 5. Start wait poller for time-mode waits + event-mode timeouts
   startWaitPoller(_registry);
+
+  // 6. Initialize wait-bus subscriptions for event-mode waits (Phase 3).
+  // Re-attaches one bus listener per distinct pending eventName from the DB.
+  initWaitBusSubscriptions(_registry);
 }

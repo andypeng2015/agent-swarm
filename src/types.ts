@@ -1035,6 +1035,7 @@ export const WaitStateRowSchema = z.object({
   resolvedAt: z.string().nullable(),
   createdAt: z.string(),
   updatedAt: z.string(),
+  eventScope: z.enum(["run", "global"]),
 });
 export type WaitStateRow = z.infer<typeof WaitStateRowSchema>;
 

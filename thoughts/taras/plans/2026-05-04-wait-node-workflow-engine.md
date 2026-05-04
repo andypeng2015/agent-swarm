@@ -8,7 +8,7 @@ tags: [plan, workflow, wait, scheduler, events]
 status: in-progress
 autonomy: critical
 last_updated: 2026-05-04
-last_updated_by: Claude (phase-2 agent)
+last_updated_by: Claude (phase-3 agent)
 ---
 
 # Wait Node for Workflow Engine Implementation Plan
@@ -363,9 +363,9 @@ No filter ⇒ matches anything. Zod schema for the filter field: `z.union([z.rec
 ### Success Criteria:
 
 #### Automated Verification:
-- [ ] Type check: `bun run tsc:check`
-- [ ] Lint: `bun run lint`
-- [ ] Unit test: `bun test src/tests/workflow-wait-filter.test.ts` — must cover ALL of:
+- [x] Type check: `bun run tsc:check`
+- [x] Lint: `bun run lint`
+- [x] Unit test: `bun test src/tests/workflow-wait-filter.test.ts` — must cover ALL of:
   - **(a) Object form** — exact equality, dot-path nested keys (`pr.number`), array equality (deep), missing keys → no-match, type-mismatch (string vs number) → no-match, no-filter → match-everything, multiple keys must all match.
   - **(b) String form — happy path** — arrow-fn evaluates correctly, returns boolean directly, returns truthy non-boolean (coerced via `!!`), throws → no-match, undefined return → no-match.
   - **(c) String form — sandbox penetration** (each is its own test case, must all return no-match without throwing into caller):
@@ -378,10 +378,10 @@ No filter ⇒ matches anything. Zod schema for the filter field: `z.union([z.rec
     - Side-effect attempts: `(p) => { p.injected = true; return true }` — assert the original payload is structurally unchanged after the call (defensive copy or freeze).
   - **(d) Zod-boundary rejections** — filter string >2KB rejected at parse, filter string that isn't a valid arrow-fn expression rejected at executor init (not at first event).
   - **(e) `scope` enforcement** — run-scope rejects mismatched `_runId`/`workflowRunId`, global-scope ignores it; both forms tested with the same scope matrix.
-- [ ] Integration test: `bun test src/tests/workflow-wait-event.test.ts` — workflow with event-wait, fire signal via direct function call, assert run completes via `event` port
-- [ ] Timeout test: same file, with `timeout.seconds: 1`, fire poller manually (or wait), assert routing to `timeout` port
-- [ ] HTTP test: `bun test src/tests/workflow-wait-http.test.ts` — start server (or use existing test harness), POST to both endpoints, assert paused run completes
-- [ ] OpenAPI freshness: `bun run docs:openapi` then `git diff --exit-code openapi.json` — must be clean after regen
+- [x] Integration test: `bun test src/tests/workflow-wait-event.test.ts` — workflow with event-wait, fire signal via direct function call, assert run completes via `event` port
+- [x] Timeout test: same file, with `timeout.seconds: 1`, fire poller manually (or wait), assert routing to `timeout` port
+- [x] HTTP test: `bun test src/tests/workflow-wait-http.test.ts` — start server (or use existing test harness), POST to both endpoints, assert paused run completes
+- [x] OpenAPI freshness: `bun run docs:openapi` then `git diff --exit-code openapi.json` — must be clean after regen
 
 #### Automated QA:
 - [ ] Sub-agent walkthrough: create a workflow with an event-wait node + 30s timeout. Curl `POST /api/workflow-runs/<run-id>/events` with matching payload, observe completion via `event` port. Repeat with non-matching filter; observe timeout via `timeout` port.

@@ -228,7 +228,7 @@ describe("WaitExecutor — time mode end-to-end", () => {
     expect(result.status).toBe("failed");
   });
 
-  test("event-mode execute is not yet implemented in this phase (Phase 3)", async () => {
+  test("event-mode execute now wired (Phase 3) — returns async marker, persists wait_state", async () => {
     const registry = createExecutorRegistry(deps);
     const waitExecutor = registry.get("wait");
     const meta = {
@@ -244,9 +244,12 @@ describe("WaitExecutor — time mode end-to-end", () => {
       context: {},
       meta,
     });
-    // Configs validate, but execute throws — BaseExecutor catches and
-    // surfaces as a failed result.
-    expect(result.status).toBe("failed");
-    expect(result.error).toContain("event mode not yet implemented");
+    expect(result.status).toBe("success");
+    expect((result as unknown as { async?: boolean }).async).toBe(true);
+
+    const persisted = getWaitStateByStepId(meta.stepId);
+    expect(persisted?.mode).toBe("event");
+    expect(persisted?.eventName).toBe("demo.signal");
+    expect(persisted?.eventScope).toBe("run");
   });
 });

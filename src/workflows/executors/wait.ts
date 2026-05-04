@@ -1,5 +1,7 @@
 import { z } from "zod";
 import type { ExecutorMeta } from "../../types";
+import { subscribeWaitToBus } from "../resume";
+import { compileStringFilter } from "../wait-filter";
 import type { ExecutorResult } from "./base";
 import { BaseExecutor } from "./base";
 
@@ -11,9 +13,9 @@ import { BaseExecutor } from "./base";
  * - `mode: "time"`: pause for `durationMs` (1ms..1y; effective resolution ~5s
  *   from the wait-poller cadence).
  * - `mode: "event"`: pause until a `workflowEventBus` event named `eventName`
- *   arrives whose payload satisfies `filter`. Event-mode `execute` is wired in
- *   Phase 3 — the schema is already in its final shape so the executor's
- *   discriminated union doesn't change once `event` is implemented.
+ *   arrives whose payload satisfies `filter`. The string-form filter is
+ *   capped at 2KB at the Zod boundary as defense-in-depth against pathologically
+ *   large filter sources.
  */
 const WaitConfigSchema = z.discriminatedUnion("mode", [
   z.object({
@@ -28,7 +30,7 @@ const WaitConfigSchema = z.discriminatedUnion("mode", [
   z.object({
     mode: z.literal("event"),
     eventName: z.string().min(1),
-    filter: z.union([z.record(z.string(), z.unknown()), z.string()]).optional(),
+    filter: z.union([z.record(z.string(), z.unknown()), z.string().max(2048)]).optional(),
     scope: z.enum(["run", "global"]).default("run"),
     timeout: z
       .object({
@@ -110,8 +112,40 @@ export class WaitExecutor extends BaseExecutor<typeof WaitConfigSchema, typeof W
       } as unknown as ExecutorResult<WaitOutput>;
     }
 
-    // Event mode is wired up in Phase 3.
-    throw new Error("wait executor: event mode not yet implemented (Phase 3) — use mode='time'");
+    // Event mode: validate the filter at executor-init time (so a bad workflow
+    // surfaces here, not at first event), insert the wait_state row, and
+    // subscribe to the bus so signals route to this wait.
+    if (typeof config.filter === "string") {
+      // Throws on parse error — caught by BaseExecutor.run wrapper and surfaced
+      // as a `failed` ExecutorResult.
+      compileStringFilter(config.filter);
+    }
+
+    const waitId = crypto.randomUUID();
+    const expiresAt = config.timeout
+      ? new Date(Date.now() + config.timeout.seconds * 1000).toISOString()
+      : null;
+
+    db.createWaitState({
+      id: waitId,
+      workflowRunId: meta.runId,
+      workflowRunStepId: meta.stepId,
+      mode: "event",
+      eventName: config.eventName,
+      eventFilter: config.filter ?? null,
+      expiresAt,
+      scope: config.scope,
+    });
+
+    // Register the bus listener for this event name (idempotent).
+    subscribeWaitToBus(waitId, config.eventName);
+
+    return {
+      status: "success",
+      async: true,
+      waitFor: "wait.fired",
+      correlationId: waitId,
+    } as unknown as ExecutorResult<WaitOutput>;
   }
 }
 

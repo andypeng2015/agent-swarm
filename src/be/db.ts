@@ -6799,6 +6799,7 @@ interface WaitStateRowDb {
   resolvedAt: string | null;
   createdAt: string;
   updatedAt: string;
+  eventScope: string;
 }
 
 function rowToWaitState(row: WaitStateRowDb): WaitStateRow {
@@ -6829,6 +6830,7 @@ function rowToWaitState(row: WaitStateRowDb): WaitStateRow {
     resolvedAt: normalizeDate(row.resolvedAt),
     createdAt: normalizeDateRequired(row.createdAt),
     updatedAt: normalizeDateRequired(row.updatedAt),
+    eventScope: (row.eventScope as "run" | "global") ?? "run",
   };
 }
 
@@ -6841,6 +6843,7 @@ export interface CreateWaitStateInput {
   eventName?: string | null;
   eventFilter?: Record<string, unknown> | string | null;
   expiresAt?: string | null;
+  scope?: "run" | "global";
 }
 
 export function createWaitState(input: CreateWaitStateInput): WaitStateRow {
@@ -6859,11 +6862,12 @@ export function createWaitState(input: CreateWaitStateInput): WaitStateRow {
         string | null,
         string,
         string,
+        string,
       ]
     >(
       `INSERT INTO wait_states
-         (id, workflowRunId, workflowRunStepId, mode, wakeUpAt, eventName, eventFilter, expiresAt, createdAt, updatedAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         (id, workflowRunId, workflowRunStepId, mode, wakeUpAt, eventName, eventFilter, expiresAt, eventScope, createdAt, updatedAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        RETURNING *`,
     )
     .get(
@@ -6877,6 +6881,7 @@ export function createWaitState(input: CreateWaitStateInput): WaitStateRow {
         ? JSON.stringify(input.eventFilter)
         : null,
       input.expiresAt ?? null,
+      input.scope ?? "run",
       now,
       now,
     );
@@ -6921,6 +6926,20 @@ export function getDueWaitStates(): WaitStateRow[] {
     )
     .all();
   return rows.map(rowToWaitState);
+}
+
+/**
+ * Distinct `eventName` values across pending event-mode waits. Used at boot
+ * by the wait-bus subscription system to register one listener per event name.
+ */
+export function getPendingEventWaitNames(): string[] {
+  const rows = getDb()
+    .prepare<{ eventName: string }, []>(
+      `SELECT DISTINCT eventName FROM wait_states
+       WHERE status = 'pending' AND eventName IS NOT NULL`,
+    )
+    .all();
+  return rows.map((r) => r.eventName);
 }
 
 /**
