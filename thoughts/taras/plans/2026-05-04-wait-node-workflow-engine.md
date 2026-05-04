@@ -8,7 +8,7 @@ tags: [plan, workflow, wait, scheduler, events]
 status: in-progress
 autonomy: critical
 last_updated: 2026-05-04
-last_updated_by: Claude (phase-1 agent)
+last_updated_by: Claude (phase-2 agent)
 ---
 
 # Wait Node for Workflow Engine Implementation Plan
@@ -278,11 +278,11 @@ Wire `startWaitPoller(registry)` from `src/workflows/index.ts:43-61` (`initWorkf
 ### Success Criteria:
 
 #### Automated Verification:
-- [ ] Type check: `bun run tsc:check`
-- [ ] Lint: `bun run lint`
-- [ ] All workflow tests pass: `bun test src/tests/workflow-*.test.ts`
-- [ ] New unit test: `bun test src/tests/workflow-wait-time.test.ts` — exercises a full workflow with a time-wait node, asserts step transitions `pending → waiting → completed`, asserts run finishes after `wakeUpAt + poll-tick`
-- [ ] Recovery test: `bun test src/tests/workflow-wait-recovery.test.ts` — simulate a "server died while waiting" scenario by inserting a `wait_states` row with `wakeUpAt` in the past, call `recoverIncompleteRuns`, assert run completes
+- [x] Type check: `bun run tsc:check`
+- [x] Lint: `bun run lint`
+- [x] All workflow tests pass: `bun test src/tests/workflow-*.test.ts`
+- [x] New unit test: `bun test src/tests/workflow-wait-time.test.ts` — exercises a full workflow with a time-wait node, asserts step transitions `pending → waiting → completed`, asserts run finishes after `wakeUpAt + poll-tick`
+- [x] Recovery test: `bun test src/tests/workflow-wait-recovery.test.ts` — simulate a "server died while waiting" scenario by inserting a `wait_states` row with `wakeUpAt` in the past, call `recoverIncompleteRuns`, assert run completes
 
 #### Automated QA:
 - [ ] Sub-agent walkthrough: start `bun run dev:http`, create a workflow definition with a 10s `wait` node via `create-workflow` MCP tool (or direct HTTP), trigger it, observe via `get-workflow-run` that step is `waiting` for ~10s, then `completed`. Capture timestamps.

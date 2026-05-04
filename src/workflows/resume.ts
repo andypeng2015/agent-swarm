@@ -6,6 +6,7 @@ import {
   getWorkflowRun,
   getWorkflowRunStep,
   getWorkflowRunStepsByRunId,
+  resolveWaitState,
   updateWorkflowRun,
   updateWorkflowRunStep,
 } from "../be/db";
@@ -14,6 +15,7 @@ import { getSuccessors } from "./definition";
 import { findReadyNodes, walkGraph } from "./engine";
 import type { WorkflowEventBus } from "./event-bus";
 import type { ExecutorRegistry } from "./executors/registry";
+import { computeNextPort } from "./executors/wait";
 
 interface TaskEvent {
   taskId: string;
@@ -335,6 +337,72 @@ async function resumeFromApprovalResolution(
   // convergence checks via its internal activeEdges reconstruction.
   const successors = getSuccessors(workflow.definition, step.nodeId, nextPort);
 
+  if (successors.length > 0) {
+    await walkGraph(workflow.definition, run.id, ctx, successors, registry, workflow.id);
+  } else {
+    finalizeOrWait(run.id);
+  }
+}
+
+/**
+ * Resume a paused `wait` node. Single entry-point shared by the wait poller
+ * (Phase 2 — time mode + event-mode timeout) and, in Phase 3, the bus listener
+ * for event-mode signal arrival.
+ *
+ * Flow:
+ *   1. Atomically resolve the `wait_states` row (`pending → fired|timeout`).
+ *      Race-safe: `resolveWaitState` returns `{updated: false}` when a
+ *      concurrent caller already won — we bail without further side-effects.
+ *   2. Reload the run + step. Bail if the step is no longer in `waiting`
+ *      (cancelled, failed, or somehow already advanced).
+ *   3. Compute the output port (time → `default`, event+fired → `event`,
+ *      event+timeout → `timeout`).
+ *   4. Checkpoint the step as completed with the wait output, set the run
+ *      back to `running`, and walk the successors of the chosen port.
+ *
+ * NOTE: there are intentionally NO `wait.fired` / `wait.timeout` bus events.
+ * Resumption is an internal function call — the poller invokes this directly,
+ * and the Phase 3 bus listener will too.
+ */
+export async function resumeWaitState(
+  waitId: string,
+  status: "fired" | "timeout",
+  payload: unknown,
+  registry: ExecutorRegistry,
+): Promise<void> {
+  // 1. Atomic state transition. Only the first caller proceeds.
+  const result = resolveWaitState(waitId, { status, firedPayload: payload });
+  if (!result.updated || !result.row) return;
+
+  const waitRow = result.row;
+
+  // 2. Load the surrounding run + step. If anything has moved on (cancelled,
+  // failed, retried, etc.), stay quiet.
+  const run = getWorkflowRun(waitRow.workflowRunId);
+  if (!run || (run.status !== "waiting" && run.status !== "running")) return;
+
+  const step = getWorkflowRunStep(waitRow.workflowRunStepId);
+  if (!step || step.status !== "waiting") return;
+
+  const workflow = getWorkflow(run.workflowId);
+  if (!workflow) return;
+
+  // 3. Pick the output port.
+  const nextPort = computeNextPort(waitRow.mode, status);
+
+  // 4. Build step output, checkpoint, transition run, walk successors.
+  const ctx = (run.context ?? {}) as Record<string, unknown>;
+  const stepOutput = {
+    waitId: waitRow.id,
+    mode: waitRow.mode,
+    firedAt: waitRow.resolvedAt,
+    payload: payload === undefined ? undefined : payload,
+  };
+
+  checkpointStep(run.id, step.id, step.nodeId, { output: stepOutput, nextPort }, ctx);
+  updateWorkflowRun(run.id, { status: "running" });
+
+  const successors = getSuccessors(workflow.definition, step.nodeId, nextPort);
   if (successors.length > 0) {
     await walkGraph(workflow.definition, run.id, ctx, successors, registry, workflow.id);
   } else {
