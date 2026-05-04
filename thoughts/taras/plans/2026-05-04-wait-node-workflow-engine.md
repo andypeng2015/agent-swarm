@@ -5,8 +5,10 @@ branch: main
 repository: agent-swarm
 topic: "Wait Node for Workflow Engine"
 tags: [plan, workflow, wait, scheduler, events]
-status: draft
+status: in-progress
 autonomy: critical
+last_updated: 2026-05-04
+last_updated_by: Claude (phase-1 agent)
 ---
 
 # Wait Node for Workflow Engine Implementation Plan
@@ -205,15 +207,15 @@ CREATE INDEX IF NOT EXISTS idx_wait_states_event ON wait_states(eventName) WHERE
 ### Success Criteria:
 
 #### Automated Verification:
-- [ ] Type check: `bun run tsc:check`
-- [ ] Lint: `bun run lint`
-- [ ] DB-boundary check: `bash scripts/check-db-boundary.sh`
-- [ ] New migration applies cleanly to a fresh DB: `rm agent-swarm-db.sqlite && bun run start:http` (server boots without error; `wait_states` table exists)
-- [ ] New migration applies to an existing DB: `bun run start:http` against a pre-existing DB shows no migration errors
-- [ ] Unit test: `bun test src/tests/workflow-wait-state-queries.test.ts` (new file) — covers create / get-by-step / get-due / resolve race-safety / get-stuck
+- [x] Type check: `bun run tsc:check`
+- [x] Lint: `bun run lint`
+- [x] DB-boundary check: `bash scripts/check-db-boundary.sh`
+- [x] New migration applies cleanly to a fresh DB: `rm agent-swarm-db.sqlite && bun run start:http` (server boots without error; `wait_states` table exists)
+- [x] New migration applies to an existing DB: `bun run start:http` against a pre-existing DB shows no migration errors
+- [x] Unit test: `bun test src/tests/workflow-wait-state-queries.test.ts` (new file) — covers create / get-by-step / get-due / resolve race-safety / get-stuck
 
 #### Automated QA:
-- [ ] Sub-agent: open a SQLite shell on a freshly-bootstrapped DB and verify the schema matches the migration (tables + indexes)
+- [x] Sub-agent: open a SQLite shell on a freshly-bootstrapped DB and verify the schema matches the migration (tables + indexes)
 
 #### Manual Verification:
 - [ ] Confirm the chosen migration number doesn't collide with anything in flight on `main`
