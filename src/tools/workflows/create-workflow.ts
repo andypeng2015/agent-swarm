@@ -27,7 +27,9 @@ export const registerCreateWorkflowTool = (server: McpServer) => {
         "- Agent-task config: { template, outputSchema?, agentId?, tags?, priority?, dir?, vcsRepo?, model? }.\n" +
         "- TRIGGER SCHEMA: Optional 'triggerSchema' is a JSON-Schema object that validates incoming trigger payloads. " +
         "Supported keywords: type, required, properties, enum, const, items (recursive into arrays). " +
-        "Other JSON-Schema keywords (oneOf/anyOf/$ref/pattern/format/additionalProperties) are silently ignored.",
+        "Other JSON-Schema keywords (oneOf/anyOf/$ref/pattern/format/additionalProperties) are silently ignored.\n" +
+        "- WAIT NODE: type 'wait' pauses a workflow for a duration or until a named workflowEventBus event arrives. " +
+        "See runbooks/workflows.md#wait-nodes for config shapes, ordering caveats, and built-in event names.",
       inputSchema: z.object({
         name: z.string().describe("Unique name for the workflow"),
         description: z.string().optional().describe("Description of what this workflow does"),
