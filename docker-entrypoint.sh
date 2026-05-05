@@ -77,18 +77,19 @@ elif [ "$HARNESS_PROVIDER" = "devin" ]; then
 elif [ "$HARNESS_PROVIDER" = "codex" ]; then
     WORKER_CODEX_HOME="/home/worker/.codex"
 
-    # Auth path 1: OPENAI_API_KEY → bootstrap via codex login --with-api-key
-    if [ -n "${OPENAI_API_KEY:-}" ] && [ ! -f "$WORKER_CODEX_HOME/auth.json" ]; then
-        mkdir -p "$WORKER_CODEX_HOME"
-        chown -R worker:worker "$WORKER_CODEX_HOME" 2>/dev/null || true
-        if gosu worker bash -c 'printenv OPENAI_API_KEY | codex login --with-api-key' >/dev/null 2>&1; then
-            echo "Codex: registered OPENAI_API_KEY via 'codex login --with-api-key'"
-        else
-            echo "Warning: 'codex login --with-api-key' failed; worker may fail at first turn" >&2
+    # If a stale api-key-mode auth.json is on disk, drop it so the OAuth path
+    # below can write fresh chatgpt-mode credentials. (codex_oauth wins over
+    # OPENAI_API_KEY — the prior boot may have written an api-key auth.json
+    # before this precedence flip.) Keep an existing chatgpt-mode auth.json
+    # in place; the runtime adapter handles refresh-on-stale.
+    if [ -f "$WORKER_CODEX_HOME/auth.json" ]; then
+        EXISTING_AUTH_MODE=$(jq -r '.auth_mode // empty' "$WORKER_CODEX_HOME/auth.json" 2>/dev/null || echo "")
+        if [ "$EXISTING_AUTH_MODE" != "chatgpt" ]; then
+            rm -f "$WORKER_CODEX_HOME/auth.json"
         fi
     fi
 
-    # Auth path 2: Restore codex_oauth from config store
+    # Auth path 1: Restore codex_oauth from swarm config store (preferred).
     if [ ! -f "$WORKER_CODEX_HOME/auth.json" ] && [ -n "$API_KEY" ] && [ -n "$MCP_BASE_URL" ]; then
         CODEX_OAUTH=$(curl -sf -H "Authorization: Bearer ${API_KEY}" \
             "${MCP_BASE_URL}/api/config/resolved?includeSecrets=true&key=codex_oauth" \
@@ -125,6 +126,18 @@ elif [ "$HARNESS_PROVIDER" = "codex" ]; then
                 echo "[entrypoint] Restored codex OAuth credentials from API config store"
                 fi
             fi
+        fi
+    fi
+
+    # Auth path 2: Fallback — bootstrap an api-key auth.json from OPENAI_API_KEY
+    # when no codex_oauth is configured (or the restore above failed).
+    if [ -n "${OPENAI_API_KEY:-}" ] && [ ! -f "$WORKER_CODEX_HOME/auth.json" ]; then
+        mkdir -p "$WORKER_CODEX_HOME"
+        chown -R worker:worker "$WORKER_CODEX_HOME" 2>/dev/null || true
+        if gosu worker bash -c 'printenv OPENAI_API_KEY | codex login --with-api-key' >/dev/null 2>&1; then
+            echo "Codex: registered OPENAI_API_KEY via 'codex login --with-api-key'"
+        else
+            echo "Warning: 'codex login --with-api-key' failed; worker may fail at first turn" >&2
         fi
     fi
 

@@ -66,13 +66,7 @@ import {
 } from "@openai/codex-sdk";
 import { scrubSecrets } from "../utils/secret-scrubber";
 import { type CodexAgentsMdHandle, writeCodexAgentsMd } from "./codex-agents-md";
-import {
-  CODEX_DEFAULT_MODEL,
-  type CodexModel,
-  computeCodexCostUsd,
-  getCodexContextWindow,
-  resolveCodexModel,
-} from "./codex-models";
+import { computeCodexCostUsd, getCodexContextWindow, resolveCodexModel } from "./codex-models";
 import { credentialsToAuthJson } from "./codex-oauth/auth-json.js";
 import { getValidCodexOAuth } from "./codex-oauth/storage.js";
 import { resolveCodexPrompt } from "./codex-skill-resolver";
@@ -112,6 +106,68 @@ interface InstalledMcpServersResponse {
 }
 
 /**
+ * Resolve which Codex auth mode is active for the spawned subprocess and,
+ * if needed, restore ChatGPT OAuth credentials from the swarm config store
+ * to `~/.codex/auth.json`.
+ *
+ * Precedence (matches `docker-entrypoint.sh`): `codex_oauth` from the swarm
+ * config store > `OPENAI_API_KEY` env var. If both exist, OAuth wins — and
+ * if a stale api-key-mode `auth.json` is present, it gets overwritten with
+ * the OAuth payload.
+ *
+ * Returns the `auth_mode` value the spawned Codex CLI will see, or `null`
+ * if no `auth.json` exists (Codex will then fall back to `OPENAI_API_KEY`).
+ */
+async function resolveCodexAuthMode(
+  config: ProviderSessionConfig,
+  emit: (event: ProviderEvent) => void,
+): Promise<string | null> {
+  const fs = await import("node:fs/promises");
+  const authJsonPath = join(os.homedir(), ".codex", "auth.json");
+
+  const readAuthMode = async (): Promise<string | null> => {
+    try {
+      const raw = await fs.readFile(authJsonPath, "utf-8");
+      const parsed = JSON.parse(raw) as { auth_mode?: unknown };
+      return typeof parsed.auth_mode === "string" ? parsed.auth_mode : null;
+    } catch {
+      return null;
+    }
+  };
+
+  let currentMode = await readAuthMode();
+
+  // If config store creds are available and auth.json is missing or in
+  // api-key mode, try to restore/upgrade to OAuth. Don't touch a file that's
+  // already in chatgpt mode — `getValidCodexOAuth` refreshes and writes back
+  // to the config store on its own when called next time.
+  if (config.apiUrl && config.apiKey && currentMode !== "chatgpt") {
+    const oauthCreds = await getValidCodexOAuth(config.apiUrl, config.apiKey);
+    if (oauthCreds) {
+      try {
+        const authJson = credentialsToAuthJson(oauthCreds);
+        await fs.mkdir(join(os.homedir(), ".codex"), { recursive: true, mode: 0o700 });
+        await fs.writeFile(authJsonPath, JSON.stringify(authJson, null, 2), { mode: 0o600 });
+        const verb = currentMode === null ? "Restored" : "Upgraded api-key auth.json to";
+        emit({
+          type: "raw_stderr",
+          content: `[codex] ${verb} OAuth credentials from config store\n`,
+        });
+        currentMode = "chatgpt";
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        emit({
+          type: "raw_stderr",
+          content: `[codex] Failed to write auth.json: ${message}\n`,
+        });
+      }
+    }
+  }
+
+  return currentMode;
+}
+
+/**
  * Build the per-session Codex config object, which becomes the
  * `config` option to `new Codex({ config })`. This layers on top of the
  * baseline `~/.codex/config.toml` written at Docker image build time (Phase 6).
@@ -131,7 +187,7 @@ interface InstalledMcpServersResponse {
  */
 export async function buildCodexConfig(
   config: ProviderSessionConfig,
-  model: CodexModel,
+  model: string,
   emit: (event: ProviderEvent) => void,
 ): Promise<CodexConfig> {
   const mcpServers: Record<string, Record<string, unknown>> = {};
@@ -247,7 +303,7 @@ class CodexSession implements ProviderSession {
   private readonly thread: Thread;
   private readonly config: ProviderSessionConfig;
   private readonly agentsMdHandle: CodexAgentsMdHandle;
-  private readonly resolvedModel: CodexModel;
+  private readonly resolvedModel: string;
   private readonly contextWindow: number;
   private readonly skillsDir: string;
   private readonly listeners: Array<(event: ProviderEvent) => void> = [];
@@ -273,7 +329,7 @@ class CodexSession implements ProviderSession {
     thread: Thread,
     config: ProviderSessionConfig,
     agentsMdHandle: CodexAgentsMdHandle,
-    resolvedModel: CodexModel,
+    resolvedModel: string,
     initialEvents: ProviderEvent[] = [],
     skillsDir?: string,
   ) {
@@ -763,8 +819,9 @@ export class CodexAdapter implements ProviderAdapter {
     const agentsMdHandle = await writeCodexAgentsMd(config.cwd, config.systemPrompt);
 
     try {
-      // Resolve the model once and thread it through. Unknown values fall
-      // back to `CODEX_DEFAULT_MODEL` (see `codex-models.ts`).
+      // Resolve the model once and thread it through. Claude shortnames map
+      // to Codex equivalents; everything else passes through verbatim — the
+      // SDK is the source of truth for what's valid.
       const resolvedModel = resolveCodexModel(config.model);
 
       // Buffer warnings emitted during config-building so they're not lost
@@ -776,74 +833,31 @@ export class CodexAdapter implements ProviderAdapter {
         preSessionEvents.push(event);
       };
 
-      // Warn (as a buffered event) if the caller passed a model that didn't
-      // round-trip through `resolveCodexModel`. This catches typos early.
-      if (
-        config.model &&
-        config.model.toLowerCase() !== resolvedModel &&
-        !["opus", "sonnet", "haiku"].includes(config.model.toLowerCase())
-      ) {
-        bufferedEmit({
-          type: "raw_stderr",
-          content: `[codex] Unknown model "${config.model}" — falling back to ${CODEX_DEFAULT_MODEL}. See src/providers/codex-models.ts for the supported list.\n`,
-        });
-      }
-
       const mergedConfig = await buildCodexConfig(config, resolvedModel, bufferedEmit);
 
+      // Auth resolution. `codex_oauth` (in the swarm config store) wins over
+      // `OPENAI_API_KEY` so users can keep an OpenAI key set for embeddings
+      // without it shadowing their ChatGPT login. The entrypoint already runs
+      // this same precedence at boot — this block handles local dev (where
+      // the entrypoint didn't run) and any case where auth.json is stale.
+      const authMode = await resolveCodexAuthMode(config, bufferedEmit);
+
       // `CodexOptions.env` does NOT inherit from `process.env`. Construct a
-      // minimal env explicitly so the spawned Codex CLI can still find its
-      // binary (PATH), write to HOME, and authenticate (OPENAI_API_KEY).
-      // Merge anything the runner passed in `config.env` on top.
+      // minimal env explicitly so the spawned Codex CLI can find its binary
+      // (PATH) and HOME (for ~/.codex/auth.json). `OPENAI_API_KEY` is only
+      // forwarded when auth.json is NOT in chatgpt mode — otherwise it would
+      // override the OAuth login at the Codex CLI layer.
       const env: Record<string, string> = {
         PATH: process.env.PATH ?? "",
         HOME: process.env.HOME ?? "",
-        ...(process.env.OPENAI_API_KEY ? { OPENAI_API_KEY: process.env.OPENAI_API_KEY } : {}),
+        ...(authMode !== "chatgpt" && process.env.OPENAI_API_KEY
+          ? { OPENAI_API_KEY: process.env.OPENAI_API_KEY }
+          : {}),
         ...(process.env.NODE_EXTRA_CA_CERTS
           ? { NODE_EXTRA_CA_CERTS: process.env.NODE_EXTRA_CA_CERTS }
           : {}),
         ...(config.env ?? {}),
       };
-
-      // OAuth credential resolution: if no OPENAI_API_KEY is set, try to
-      // restore or refresh ChatGPT OAuth credentials from the config store.
-      // The entrypoint also restores at boot, but this handles cases where
-      // the entrypoint didn't run (local dev) or tokens expired mid-session.
-      if (!process.env.OPENAI_API_KEY && config.apiUrl && config.apiKey) {
-        const authJsonPath = join(os.homedir(), ".codex", "auth.json");
-        let hasAuth = false;
-        try {
-          const fs = await import("node:fs/promises");
-          await fs.access(authJsonPath);
-          hasAuth = true;
-        } catch {
-          // auth.json doesn't exist
-        }
-
-        if (!hasAuth) {
-          const oauthCreds = await getValidCodexOAuth(config.apiUrl, config.apiKey);
-          if (oauthCreds) {
-            try {
-              const fs = await import("node:fs/promises");
-              const authJson = credentialsToAuthJson(oauthCreds);
-              await fs.mkdir(join(os.homedir(), ".codex"), { recursive: true, mode: 0o700 });
-              await fs.writeFile(authJsonPath, JSON.stringify(authJson, null, 2), {
-                mode: 0o600,
-              });
-              bufferedEmit({
-                type: "raw_stderr",
-                content: "[codex] Restored OAuth credentials from config store\n",
-              });
-            } catch (err) {
-              const message = err instanceof Error ? err.message : String(err);
-              bufferedEmit({
-                type: "raw_stderr",
-                content: `[codex] Failed to write auth.json: ${message}\n`,
-              });
-            }
-          }
-        }
-      }
 
       // The SDK's default `findCodexPath()` does `require.resolve("@openai/codex")`
       // from the SDK's own module. When agent-swarm runs as a Bun single-file
