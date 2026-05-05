@@ -6,6 +6,33 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.74.1] - 2026-05-05
+
+### Changed
+- Regenerated `openapi.json` and `docs-site/content/docs/api-reference/**` to embed the bumped `package.json` version (no functional API changes)
+
+## [1.74.0] - 2026-05-05
+
+### Added
+- **Per-task `outputSchema` support documented across harness providers** (#6faabc9d). `docs-site/content/docs/(documentation)/guides/harness-providers.mdx` and `runbooks/harness-providers.md` now carry a supported-providers table for `outputSchema` enforcement: `claude`, `claude-managed`, `codex`, `opencode`, `pi` enforce the schema via the `store-progress` MCP tool; `devin` only enforces when `HAS_MCP=true`, and the runner now carries an explicit NOTE in `ensureTaskFinished` (`src/commands/runner.ts:551`) that default-mode Devin's `providerOutput` is **not** validated against `task.outputSchema` and is stored as-is. Callers should not assume `JSON.parse(task.output)` will succeed when the task ran on default-mode Devin
+- **Marketplace plugin pin** — Claude marketplace plugin install in `Dockerfile.worker` now pins `desplega-ai/ai-toolbox@cc-desplega-2.0.0` (was floating)
+
+### Changed
+- **Bumped pinned harness CLIs in `Dockerfile.worker`**:
+  - `CLAUDE_CODE_VERSION` 2.1.112 → 2.1.126
+  - `PI_CODING_AGENT_VERSION` 0.67.2 → 0.73.0
+  - `CODEX_VERSION` 0.118.0 → 0.125.0
+- **Bumped global npm tooling in `Dockerfile.worker`**:
+  - `@desplega.ai/qa-use` 2.14.0 → 2.15.3
+  - `@desplega.ai/agent-fs` 0.4.0 → 0.5.1
+- **Bumped pinned dependencies in `package.json`**:
+  - `@anthropic-ai/sdk` `latest` → `^0.93.0`
+  - `@mariozechner/pi-agent-core` / `pi-ai` / `pi-coding-agent` ^0.67.2 → ^0.73.0
+  - `@openai/codex-sdk` ^0.118.0 → ^0.125.0
+- **`pi-mono` adapter now passes `cwd` and `agentDir` to `DefaultResourceLoader`** (`src/providers/pi-mono-adapter.ts`) — uses the new `getAgentDir()` export from `@mariozechner/pi-coding-agent` so the resource loader resolves task-local paths correctly. Adapter switched from `@sinclair/typebox` to the bare `typebox` re-export to track the upstream pi-mono package's bundled types
+
+## [1.73.5] - 2026-05-04
+
 ### Added
 - **opencode harness provider foundations** — `HARNESS_PROVIDER=opencode` is now wired into `createProviderAdapter` (#399, #400, #403, #412). Rolling out across DES-295 → DES-304:
   - **DES-295** (#399): `ProviderNameSchema` adds `"opencode"`; new `CostData.provider` discriminator (`"claude" | "codex" | "pi" | "opencode"`) so the API can route Codex's pricing-table recompute vs. trust the harness-reported `totalCostUsd`. Migration `048_agent_provider.sql` adds an `agents.provider` column for per-agent provider pinning. `openapi.json` regenerated
