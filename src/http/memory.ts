@@ -1,12 +1,12 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { z } from "zod";
 import { chunkContent } from "../be/chunking";
-import { getDb } from "../be/db";
 import { getEmbeddingProvider, getMemoryStore } from "../be/memory";
 import { CANDIDATE_SET_MULTIPLIER } from "../be/memory/constants";
 import { applyRating, ExplicitSelfDuplicateError } from "../be/memory/raters/store";
 import type { RatingEvent } from "../be/memory/raters/types";
 import { rerank } from "../be/memory/reranker";
+import { getRetrievalsForAgent, hasRetrievalForTask } from "../be/memory/retrieval-store";
 import { AgentMemoryScopeSchema, AgentMemorySourceSchema } from "../types";
 import { route } from "./route-def";
 import { json, jsonError, parseQueryParams } from "./utils";
@@ -455,21 +455,16 @@ export async function handleMemory(
     if (!parsed) return true;
 
     const { events } = parsed.body;
-    const db = getDb();
 
     // R6 spam guard: explicit-self requires a matching memory_retrieval row.
     // Reject the whole batch on first offender so the worker sees a clear 400.
-    const checkRetrieval = db.prepare<{ id: string }, [string, string]>(
-      "SELECT id FROM memory_retrieval WHERE taskId = ? AND memoryId = ? LIMIT 1",
-    );
     for (const evt of events) {
       if (evt.source !== "explicit-self") continue;
       if (!evt.taskId) {
         jsonError(res, `explicit-self rating for memoryId=${evt.memoryId} requires taskId`, 400);
         return true;
       }
-      const row = checkRetrieval.get(evt.taskId, evt.memoryId);
-      if (!row) {
+      if (!hasRetrievalForTask(evt.taskId, evt.memoryId)) {
         jsonError(
           res,
           `explicit-self rating rejected: memoryId=${evt.memoryId} not present in memory_retrieval for task=${evt.taskId}`,
@@ -528,46 +523,7 @@ export async function handleMemory(
     if (!parsed) return true;
 
     const { taskId, sessionId } = parsed.query;
-
-    const conditions: string[] = ["mr.agentId = ?"];
-    const params: (string | number)[] = [myAgentId];
-    if (taskId) {
-      conditions.push("mr.taskId = ?");
-      params.push(taskId);
-    }
-    if (sessionId) {
-      conditions.push("mr.sessionId = ?");
-      params.push(sessionId);
-    }
-
-    const sql = `
-      SELECT am.id        AS id,
-             am.name      AS name,
-             substr(am.content, 1, 500) AS content,
-             am.scope     AS scope,
-             mr.similarity AS similarity,
-             mr.retrievedAt AS retrievedAt
-        FROM memory_retrieval mr
-        INNER JOIN agent_memory am ON am.id = mr.memoryId
-       WHERE ${conditions.join(" AND ")}
-       ORDER BY mr.retrievedAt DESC
-       LIMIT 50
-    `;
-
-    const rows = getDb()
-      .prepare<
-        {
-          id: string;
-          name: string;
-          content: string;
-          scope: string;
-          similarity: number | null;
-          retrievedAt: string;
-        },
-        (string | number)[]
-      >(sql)
-      .all(...params);
-
+    const rows = getRetrievalsForAgent(myAgentId, { taskId, sessionId });
     json(res, { results: rows });
     return true;
   }
