@@ -41,16 +41,17 @@ A coder running `bun run start:http` against a fresh DB with `MEMORY_RATERS=impl
 2. On task completion, the `ImplicitCitationRater` scans `session_logs` for that `taskId`, emits `RatingEvent[]`, and the corresponding `agent_memory.alpha`/`beta` columns move accordingly. A `memory_rating` audit row is written per event.
 3. At session shutdown, the worker's summary call (`hook.ts`) ALSO returns a Zod-validated `ratings: [{ id, score, reasoning, referencesSource? }]` array. The worker GETs `/api/memory/retrievals?taskId=` to know which memories to rate, then POSTs the resulting `RatingEvent[]` to `/api/memory/rate`.
 4. An agent in mid-task can call the new `memory_rate(id, useful, note?, referencesSource?)` MCP tool. Server validates the `id` is in `memory_retrieval` for that task, enforces "at most one explicit-self rating per (taskId, memoryId)" via partial unique index, and returns 409 on duplicate.
-5. The reranker now multiplies `similarity × recency_decay × access_boost × usefulness(α, β)` where `usefulness = clamp(2 × α/(α+β), 1.0, 2.0)`. At default `Beta(1,1)`, `usefulness = 1.0` exactly — strict no-op vs. today.
+5. The reranker now multiplies `similarity × recency_decay × access_boost × usefulness(α, β)` where `usefulness = clamp(2 × α/(α+β), MEMORY_DEMOTION_FLOOR, 2.0)`. With `MEMORY_DEMOTION_FLOOR` defaulted to `1.0` and prior `Beta(1,1)`, `usefulness = 1.0` exactly — strict no-op vs. today.
 6. With `MEMORY_RATERS` unset/empty, `usefulness` returns `1.0` for every row (NoopRater alone), and reranker output matches a pre-change snapshot byte-for-byte.
-7. When `memory_rate` (or the LlmRater) attaches `referencesSource: "github:desplega-ai/agent-swarm#377"`, an `agent_memory_edge` row exists with `from_id=memoryId, to_id="github:desplega-ai/agent-swarm#377", type='references-source'`, and its own `(alpha, beta)` move identically. `GET /api/memory/edges?memoryId=…` returns the edge.
+7. When `memory_rate` (or the LlmRater) attaches `referencesSource: "github:desplega-ai/agent-swarm#377"` (or any other free-form `<source>:<identifier>` string — see Q2 below), an `agent_memory_edge` row exists with `from_id=memoryId, to_id=<that string>, type='references-source'`, and its own `(alpha, beta)` move identically. `GET /api/memory/edges?memoryId=…` returns the edge.
 
 Verified by the cross-cutting integration test in step-7 plus per-step automated checks.
 
 ## What We're NOT Doing
 
 - **No edge-aware reranking.** Edges are write-and-read only in v1.5; the reranker ignores them. (v2.)
-- **No edge GC.** Edges live forever in v1.5 — there's no `ON DELETE CASCADE` from external entity IDs (they're opaque strings). (v2.)
+- **No edge GC.** Edges live forever in v1.5 — there's no `ON DELETE CASCADE` from external entity IDs (they're opaque free-form strings). (v2.)
+- **No closed enum / typed parser / `CHECK` constraint for `to_id` prefixes.** Q2 LOCKED: `to_id` is a free-form string with a documentation-only convention (`<source>:<identifier>`). Adding the 51st integration must require zero swarm-side code change. **Do NOT model on `src/tasks/context-key.ts`** — that file uses a closed enum because tasks are core scheduling primitives; `references-source.to_id` is the opposite (an open extension point). See step-6 §1 (Q2/Q3 resolved sections) for the full contract.
 - **No multi-type edges.** `agent_memory_edge.type` is constrained by SQL `CHECK type='references-source'` so any future PR adding `'supersedes'`, `'contradicts'`, or `'references-{linear,github,notion}'` requires a forward migration that lifts the constraint. Hooks reserved (table column already exists). (v2.)
 - **No supersedes / contradicts edges.** (v2.)
 - **No Thompson sampling.** Posterior mean only, deterministically clamped. The research doc's Thompson sampling option (§3.B) is deferred until telemetry shows mean-only is starving new memories.
@@ -60,7 +61,7 @@ Verified by the cross-cutting integration test in step-7 plus per-step automated
 - **No content-substring or n-gram detector** for the implicit rater. ID-grep only — content matching ships as a separate `MemoryRater` if recall data warrants it.
 - **No new SDK dependencies.** LlmRater shells to `claude -p` like `hook.ts:1097` does today. Anthropic-SDK / OpenRouter / OpenAI client impls drop in behind env later without touching rater logic.
 - **No down migration.** Forward-only per [`CLAUDE.md`'s migration rule](../../../../CLAUDE.md).
-- **No reranker behaviour change for existing memories.** `usefulness` is floored at 1.0 (no demotion) — proven memories climb up to 2.0 only.
+- **No reranker behaviour change for existing memories.** `usefulness` is floored at `MEMORY_DEMOTION_FLOOR` (default `1.0` = no demotion) — proven memories climb up to 2.0 only. Lower the floor per deployment when telemetry shows reliable negative signal; default ships unchanged.
 
 ## Implementation Approach
 
@@ -69,9 +70,9 @@ Verified by the cross-cutting integration test in step-7 plus per-step automated
 - **Server-side `applyRating(events)` helper is the single chokepoint** for `(alpha, beta)` updates and `memory_rating` audit writes. Lives in `src/be/memory/raters/store.ts`. Both server-internal calls (`ImplicitCitationRater` from `store-progress.ts`) and the HTTP endpoint (`POST /api/memory/rate`) call this helper. One transaction per call.
 - **`MemoryRater` interface mirrors `EmbeddingProvider` / `MemoryStore`** — pluggable, env-var registered (`MEMORY_RATERS=...`), default = `NoopRater`. Each rater returns `RatingEvent[]`; the framework sets `source` (= rater name) so raters cannot spoof each other.
 - **Worker raters POST events; server raters call `applyRating` directly.** DB-boundary invariant means workers cannot touch SQLite — confirmed by `scripts/check-db-boundary.sh`.
-- **Reranker change is one new helper + one multiplier**: add `usefulness(α, β) = clamp(2 × α/(α+β), 1.0, 2.0)` to `src/be/memory/reranker.ts`, multiply into `computeScore`. At default prior, returns `1.0` — strict no-op vs. today. Floor at `1.0` until telemetry shows reliable negative signal (per brainstorm "Resolved during file-review §1").
+- **Reranker change is one new helper + one multiplier**: add `usefulness(α, β) = clamp(2 × α/(α+β), MEMORY_DEMOTION_FLOOR, 2.0)` to `src/be/memory/reranker.ts`, multiply into `computeScore`. At default prior + default floor, returns `1.0` — strict no-op vs. today. The floor is env-configurable (`MEMORY_DEMOTION_FLOOR`, default `1.0`); lower it once telemetry shows reliable negative signal (per brainstorm "Resolved during file-review §1").
 - **`references-source` edge piggybacks `applyRating`.** When a `RatingEvent` has `referencesSource`, `applyRating` UPSERTs into `agent_memory_edge` with the same Beta-update math used on the memory itself. Single optional field, single code path.
-- **Backward compatibility is structural, not flag-gated.** `MEMORY_RATERS` unset → `NoopRater` only → posteriors stay at `Beta(1,1)` → `usefulness = 1.0` → reranker output identical. Older servers without `/api/memory/rate` → workers POST → 404 → caught + swallowed (existing pattern from runner.ts memory-search call).
+- **Backward compatibility is structural, not flag-gated.** `MEMORY_RATERS` unset → `NoopRater` only → posteriors stay at `Beta(1,1)` → `usefulness = 1.0` (with `MEMORY_DEMOTION_FLOOR=1.0` default) → reranker output identical. Older servers without `/api/memory/rate` → workers POST → 404 → caught + swallowed (existing pattern from runner.ts memory-search call).
 
 ### Sequencing decision (why this DAG shape)
 
@@ -167,7 +168,7 @@ Run after all steps complete (final wave gate — owned by step-7):
 - [ ] Full test suite: `bun test`.
 - [ ] DB-boundary check: `bash scripts/check-db-boundary.sh`.
 - [ ] Fresh-DB cold start applies migrations 049 + 050 cleanly: `rm agent-swarm-db.sqlite && bun run start:http` and verify via sqlite shell that `agent_memory.alpha/beta`, `memory_retrieval`, `memory_rating`, `agent_memory_edge` all exist with the documented columns/indexes.
-- [ ] **Backward-compat snapshot**: with `MEMORY_RATERS=` unset, the `memory-reranker.test.ts` snapshot output matches the pre-change baseline byte-for-byte (no behavioural drift when raters are off).
+- [ ] **Backward-compat snapshot**: with `MEMORY_RATERS=` unset and `MEMORY_DEMOTION_FLOOR` unset (default `1.0`), the `memory-reranker.test.ts` snapshot output matches the pre-change baseline byte-for-byte (no behavioural drift when raters are off).
 - [ ] **Cross-cutting e2e** (step-7-owned): with `MEMORY_RATERS=implicit-citation,llm,explicit-self`, run a synthetic task that retrieves two memories, cites one in `session_logs`, calls `memory_rate(id, useful=true, referencesSource="github:desplega-ai/agent-swarm#999")` on the other, completes, and verify:
   - both `agent_memory.alpha/beta` rows moved as expected;
   - `memory_rating` rows exist for both signals (`implicit-citation` + `explicit-self`);
@@ -178,7 +179,7 @@ Run after all steps complete (final wave gate — owned by step-7):
 - [ ] OpenAPI freshness: `bun run docs:openapi` is a no-op on the final commit.
 - [ ] BUSINESS_USE regeneration: `bun run docs:business-use` produces a clean diff (or no diff after step-7's commit).
 - [ ] `runbooks/memory-system.md`, `MCP.md` updated and link-checkable.
-- [ ] No `MEMORY_RATERS`-related env touched in `.env.example` without a corresponding line in CLAUDE.md.
+- [ ] No `MEMORY_RATERS`-related env touched in `.env.example` without a corresponding line in CLAUDE.md. Same applies to `MEMORY_DEMOTION_FLOOR` (Q1 resolution): document in `.env.example` with the default `1.0` and its semantics.
 
 ## Appendix
 

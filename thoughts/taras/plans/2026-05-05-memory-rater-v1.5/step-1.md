@@ -137,16 +137,26 @@ export type RatingContext = {
 /**
  * Beta-Binomial usefulness factor for reranking.
  * At Beta(1,1) (default prior) returns 1.0 exactly — strict no-op vs.
- * pre-rater behaviour. Proven memories climb up to 2.0. Floored at 1.0
- * (no demotion) until telemetry shows reliable negative signal.
+ * pre-rater behaviour. Proven memories climb up to 2.0. Floored at the
+ * value of MEMORY_DEMOTION_FLOOR (default 1.0 = no demotion) — the
+ * default preserves brainstorm intent (memories are demoted but not
+ * deleted at floor 1.0) and is configurable per deployment.
  */
+const DEMOTION_FLOOR = (() => {
+  const raw = process.env.MEMORY_DEMOTION_FLOOR;
+  const n = raw == null || raw === "" ? 1.0 : Number(raw);
+  return Number.isFinite(n) ? n : 1.0;
+})();
+
 export function usefulness(alpha: number, beta: number): number {
   const mean = alpha / (alpha + beta);
-  return Math.max(1.0, Math.min(2.0, 2 * mean));
+  return Math.max(DEMOTION_FLOOR, Math.min(2.0, 2 * mean));
 }
 ```
 
 Update `computeScore` to multiply `usefulness(candidate.alpha, candidate.beta)`. Read `alpha` and `beta` from the candidate (extend `MemoryCandidate` in `src/be/memory/types.ts` to carry them, default `1.0` each).
+
+> **Q1 resolved (env-configurable demotion floor)**: `MEMORY_DEMOTION_FLOOR` env var (default `1.0`). Default preserves brainstorm intent — memories are demoted toward the floor but never deleted on the reranker path. Lower the floor (e.g. `0.5`) per deployment when telemetry shows reliable negative signal. Document in `runbooks/memory-system.md` (step-7) and `.env.example`.
 
 #### 6. Plumb `alpha`/`beta` through `MemoryStore.search()`
 
@@ -171,10 +181,11 @@ Update `computeScore` to multiply `usefulness(candidate.alpha, candidate.beta)`.
 
 - Add a snapshot/golden test: build N synthetic memories with default `alpha=1, beta=1`, run `rerank` against a known query, assert the produced order + scores match a pre-change baseline (capture the baseline from `main` before the reranker change, hard-code as expected values).
 - Add unit tests for `usefulness(α, β)`:
-  - `usefulness(1, 1) === 1.0` exactly.
+  - `usefulness(1, 1) === 1.0` exactly (default floor).
   - `usefulness(10, 1) === clamp(2 * 10/11, 1, 2)` ≈ `1.818`.
-  - `usefulness(1, 10) === 1.0` (floored — never demoted).
+  - `usefulness(1, 10) === 1.0` (floored at default `MEMORY_DEMOTION_FLOOR=1.0` — never demoted).
   - `usefulness(50, 1) === 2.0` (ceiling clamp).
+  - With `MEMORY_DEMOTION_FLOOR=0.5` set (env-overridden in the test), `usefulness(1, 10) === 0.5` (floor lowers, demotion is now possible).
 
 #### 8. Unit tests for `applyRating`
 

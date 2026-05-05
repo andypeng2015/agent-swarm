@@ -26,10 +26,11 @@ This step depends on step-4 (LlmRater) and step-6 (edges) — between them they 
 
 - After the existing "Architecture" section, add a "Memory raters (v1.5)" section covering:
   - The three raters: `ImplicitCitationRater` (server, ID-grep over session_logs), `LlmRater` (worker, piggybacks `hook.ts` summary call), `ExplicitSelfRatingRater` (worker, MCP tool `memory_rate`).
-  - The `MEMORY_RATERS` env variable + the `MEMORY_RATER_WEIGHTS` override.
-  - The reranker `usefulness(α, β)` formula.
+  - The `MEMORY_RATERS` env variable + the `MEMORY_RATER_WEIGHTS` override + the `MEMORY_DEMOTION_FLOOR` env variable (default `1.0` = no demotion; lower per deployment when telemetry shows reliable negative signal — Q1 resolution).
+  - The reranker `usefulness(α, β)` formula = `clamp(2 × α/(α+β), MEMORY_DEMOTION_FLOOR, 2.0)`.
   - The two new endpoints: `POST /api/memory/rate`, `GET /api/memory/retrievals`.
   - The `references-source` edge feature: table schema, optional `referencesSource` field on `memory_rate`, `GET /api/memory/edges`.
+  - **Q2/Q3 free-form `to_id` contract**: `to_id` is a free-form string with the convention `<source>:<identifier>` (e.g. `github:owner/repo#N`, `linear:KEY-N`, `customer:<slug>`, `slack:<channel>:<ts>`, `agentmail:<thread-id>`). No closed enum, no parser, no `CHECK` constraint on prefixes — adding a new integration requires zero swarm-side code change. Validation = non-empty + ≤512 chars + control-char strip + no NUL. Storage = plain `TEXT`, indexed by plain B-tree. Reference but contrast with `src/tasks/context-key.ts` (which uses a closed enum because tasks are core scheduling primitives — `references-source.to_id` is deliberately the opposite).
   - Out-of-scope (v2) callouts: edge-aware reranking, edge GC, multi-type edges, supersedes/contradicts.
 - Add the four new test files to the existing "Tests" block.
 

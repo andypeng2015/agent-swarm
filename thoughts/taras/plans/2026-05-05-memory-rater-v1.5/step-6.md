@@ -16,6 +16,8 @@ Ship the SINGLE most useful edge type — `references-source` — with the small
 
 This is the "knowledge-not-data" wedge: memories anchored to external sources of truth instead of trying to BE the source of truth. The full synaptic graph (supersedes / contradicts / multi-type) is reserved for v2.
 
+> **Q2 / Q3 LOCKED — `to_id` is free-form**: see §1 below for the full contract. TL;DR — plain `TEXT` column, plain B-tree index, convention-only `<source>:<identifier>` shape, write-site validation only (non-empty + ≤512 chars + control-char strip + no NUL). No closed enum, no parser, no migration when a new integration shows up. Reference but contrast `src/tasks/context-key.ts` — it enforces a closed grammar because tasks are core scheduling primitives; `references-source.to_id` is the opposite, an open extension point.
+
 ## Changes Required:
 
 #### 1. New migration: `050_memory_edges.sql`
@@ -27,7 +29,7 @@ This is the "knowledge-not-data" wedge: memories anchored to external sources of
 ```sql
 CREATE TABLE IF NOT EXISTS agent_memory_edge (
   from_id   TEXT NOT NULL,                                                -- memory id
-  to_id     TEXT NOT NULL,                                                -- external entity id, e.g. "github:desplega-ai/agent-swarm#377"
+  to_id     TEXT NOT NULL,                                                -- free-form external entity id (see Q2 contract below)
   type      TEXT NOT NULL CHECK (type = 'references-source'),             -- v1.5: ONE type only; lifting this is a v2 migration
   alpha     REAL NOT NULL DEFAULT 1.0,
   beta      REAL NOT NULL DEFAULT 1.0,
@@ -43,7 +45,25 @@ CREATE INDEX IF NOT EXISTS idx_memedge_type ON agent_memory_edge(type);
 - Composite primary key `(from_id, to_id, type)` doubles as the upsert key.
 - `CHECK (type = 'references-source')` is the v1.5 guardrail — any future PR adding a new edge type MUST drop and recreate this constraint via a forward migration. The constraint is intentionally restrictive to make scope creep visible in code review.
 - FK `from_id REFERENCES agent_memory(id) ON DELETE CASCADE` cleans up edges when a memory is deleted. `to_id` is an opaque external string with no FK (intentional — the swarm doesn't own GitHub PR IDs / Linear issue IDs / etc.).
-- `idx_memedge_to` reserved for v2's "find all memories referencing this PR" query (not used in v1.5 but indexes don't hurt).
+- `idx_memedge_to` reserved for v2's "find all memories referencing this PR" query (not used in v1.5 but indexes don't hurt). Plain B-tree index over plain `TEXT` — see Q3 resolution below; no grammar-aware index required.
+
+##### Q2 resolved (free-form `to_id`, convention-only shape) — LOCKED
+
+The `to_id` field is a **free-form string**. There is no closed enum, no typed parser, and no `CHECK` constraint that lists valid prefixes. The schema above stores it as plain `TEXT`.
+
+- **Convention-only shape contract** (documented, not enforced): `<source>:<identifier>`.
+  - Examples: `github:desplega-ai/agent-swarm#350`, `linear:DES-187`, `customer:crabi`, `slack:C012:1777922746.705649`, `agentmail:thread-abc123`.
+- **Validation done at write-site** (in `applyRating` and the HTTP/MCP Zod schemas — see §2 / §4 / §5 / §6 below): non-empty, max length **512 chars**, basic sanitization (strip control chars, no NUL bytes). That's it. No prefix grammar, no per-source parser.
+- **Rationale**: open ecosystem — imagine 100 future integrations. Adding the 51st integration must be **zero swarm-side code change**. No builder, no parser, no migration. Pick a prefix and go.
+- **Contrast with `src/tasks/context-key.ts`** (referenced for context, NOT mirrored): `contextKey` enforces a strict closed-enum grammar because tasks are core scheduling primitives where shape consistency drives correctness. `references-source.to_id` is the opposite — an open extension point where shape consistency is a documentation/UX concern, not a correctness one. Do not import or model this on `context-key.ts`.
+
+##### Q3 resolved (plain TEXT storage + plain B-tree index) — LOCKED
+
+Storage and indexing for `to_id` stay maximally simple:
+
+- **Storage**: plain `TEXT NOT NULL` (already in the migration above). No JSON column, no normalized side-table, no grammar-derived computed columns.
+- **Index**: plain B-tree on `to_id` (`idx_memedge_to` above). Prefix-leading lookups (`WHERE to_id LIKE 'github:%'`) hit the existing index efficiently. **No grammar-aware index** (no FTS table, no functional index over a parsed prefix). Free-form string in, free-form string out.
+- If v2 ever needs faster cross-source filtering, the path is to derive a `source_prefix` column in a forward migration — not to retrofit grammar onto v1.5's column.
 
 #### 2. Extend `RatingEvent` schema with `referencesSource?`
 
@@ -59,10 +79,10 @@ CREATE INDEX IF NOT EXISTS idx_memedge_type ON agent_memory_edge(type);
     weight: number;
     source: string;
     reasoning?: string;
-    referencesSource?: string;  // NEW: opaque external id, v1.5 wedge
+    referencesSource?: string;  // NEW: free-form opaque external id, v1.5 wedge
   };
   ```
-- Validation rule: `referencesSource`, when present, must be a non-empty string ≤ 256 chars. Format guidance ("github:owner/repo#N", "linear:KEY-N", "notion:<page-id>", "customer:<slug>") is documentation-only — server does NOT validate the prefix in v1.5 (any non-empty string accepted).
+- Validation rule (Q2 LOCKED — free-form contract): `referencesSource`, when present, must be a non-empty string, **max 512 chars**, with control characters stripped and no NUL bytes (`\x00`). Format guidance — convention `<source>:<identifier>` (e.g. `github:desplega-ai/agent-swarm#350`, `linear:DES-187`, `customer:crabi`, `slack:C012:1777922746.705649`, `agentmail:thread-abc123`) — is **documentation-only**. Server does NOT validate the prefix and does NOT enforce a closed enum or any parser. The convention is open: adding the 51st integration must be zero swarm-side code change.
 
 #### 3. Extend `applyRating` to upsert edges
 
@@ -89,8 +109,8 @@ CREATE INDEX IF NOT EXISTS idx_memedge_type ON agent_memory_edge(type);
 
 **Changes**:
 
-- Add `referencesSource: z.string().min(1).max(256).optional()` to the per-event schema.
-- No other validation. Prefix-format documentation is in the OpenAPI description string only.
+- Add `referencesSource: z.string().min(1).max(512).optional()` to the per-event schema, plus a `.transform()` step that strips control chars and rejects NUL bytes (Q2 free-form contract — see §2).
+- No other validation. Prefix-format documentation is in the OpenAPI description string only — the server does NOT validate prefixes or enforce a closed enum.
 
 #### 5. Extend `memory_rate` MCP tool input
 
@@ -98,10 +118,15 @@ CREATE INDEX IF NOT EXISTS idx_memedge_type ON agent_memory_edge(type);
 
 **Changes**:
 
-- Add `referencesSource: z.string().min(1).max(256).optional()` to `inputSchema`.
+- Add `referencesSource: z.string().min(1).max(512).optional()` to `inputSchema`, with the same `.transform()` (strip control chars, reject NUL) as the HTTP schema (Q2 free-form contract).
 - Description string for the field:
   ```
-  Optional external source ID this memory references. Format: "github:owner/repo#N" | "linear:KEY-N" | "notion:<page-id>" | "customer:<slug>". When present, an edge from this memory to the external source is created/updated.
+  Optional external source ID this memory references. Free-form string,
+  convention "<source>:<identifier>" (e.g. "github:owner/repo#N",
+  "linear:KEY-N", "customer:<slug>", "slack:<channel>:<ts>",
+  "agentmail:<thread-id>"). Pick any prefix that fits — no closed enum.
+  When present, an edge from this memory to the external source is
+  created/updated.
   ```
 - Pass `referencesSource` through into the POSTed `RatingEvent`.
 
@@ -117,15 +142,20 @@ CREATE INDEX IF NOT EXISTS idx_memedge_type ON agent_memory_edge(type);
     id: z.string(),
     score: z.number().min(0).max(1),
     reasoning: z.string().min(1).max(500),
-    referencesSource: z.string().min(1).max(256).optional(),  // NEW
+    referencesSource: z.string().min(1).max(512).optional(),  // NEW (Q2 free-form, max 512)
   })).default([]),
   ```
-- `buildRatingsFromLlm(ratings, retrievals)` propagates `referencesSource` through to the constructed `RatingEvent`.
+- `buildRatingsFromLlm(ratings, retrievals)` propagates `referencesSource` through to the constructed `RatingEvent` (after the same control-char strip + NUL rejection — Q2 free-form contract).
 - Update the LLM prompt template (used in `src/hooks/hook.ts` summary call) to mention the optional field. Brief addition along the lines of:
   ```
-  Optionally for each rating, if the memory clearly references a specific GitHub PR / Linear issue / Notion page / customer, include a `referencesSource` string with format "github:owner/repo#N" | "linear:KEY-N" | "notion:<page-id>" | "customer:<slug>". Omit the field if no clear external source.
+  Optionally for each rating, if the memory clearly references a specific
+  external source (a GitHub PR/issue, a Linear issue, a customer, a Slack
+  thread, an AgentMail thread, etc.), include a `referencesSource` string
+  using the convention "<source>:<identifier>" (e.g. "github:owner/repo#N",
+  "linear:KEY-N", "customer:<slug>"). Any prefix is fine — pick what
+  matches the source. Omit the field if no clear external source.
   ```
-- This is the only LLM-prompt change in v1.5.
+- This is the only LLM-prompt change in v1.5. Per Q2 the prompt does NOT enumerate a closed list — the "etc." is intentional, the convention is open.
 
 #### 7. New endpoint `GET /api/memory/edges?memoryId=`
 
@@ -167,6 +197,8 @@ CREATE INDEX IF NOT EXISTS idx_memedge_type ON agent_memory_edge(type);
 - `applyRating` with one event carrying `referencesSource="github:foo/bar#1"` → both `agent_memory.alpha` AND `agent_memory_edge.alpha` move by the same delta. New edge row exists.
 - Same event POSTed twice → second call updates the existing edge row in place; final `(alpha, beta)` sum the two deltas. No duplicate edge row.
 - Different `referencesSource` for the same memory → two edge rows.
+- **Q2 free-form contract** — POST `referencesSource="linear:DES-187"`, then `referencesSource="customer:crabi"`, then `referencesSource="anything:goes-12345"` → all three accepted, three edge rows. No prefix gating.
+- **Q2 sanitization** — POST `referencesSource="github:foo bar#1"` (embedded NUL) → 400 / Zod rejects. POST a 513-char string → 400 (over 512 cap). POST a string with embedded `\x07` → either rejected OR control char stripped (per the implementer's choice; assert observable behaviour matches the docstring).
 - `agent_memory_edge.type` constraint trips when an explicit `INSERT` with `type='supersedes'` is attempted (assert via raw sqlite call — proves the v2 guardrail works).
 - `GET /api/memory/edges?memoryId=` returns the rows correctly, including the computed `usefulness` field.
 - `GET /api/memory/edges` without `memoryId` → 400.
@@ -215,6 +247,6 @@ Capture in code comments only — no implementation:
 #### Manual Verification:
 *(Only what truly needs a human — visual judgment, real-device perf, things the agent genuinely cannot reach.)*
 
-- [ ] Eyeball one mocked LlmRater response that includes a `referencesSource` to confirm the LLM prompt addition produces sensible PR/issue references (not hallucinated IDs).
+- [ ] Eyeball one mocked LlmRater response that includes a `referencesSource` to confirm the LLM prompt addition produces sensible references (e.g. real PR/issue IDs from the task context, not invented numbers). Per Q2 the contract is free-form, so any prefix the model picks is structurally valid; the eyeball is a UX/quality check on the model's output, not a schema check.
 
 **Implementation Note**: This is the v1.5 wedge step. After completion, pause for manual confirmation. step-7 (docs + capstone e2e) is the only remaining downstream step.
