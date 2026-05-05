@@ -8651,6 +8651,14 @@
                       "continue"
                     ],
                     "description": "Update the definition-level onNodeFailure behavior"
+                  },
+                  "triggerSchema": {
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "additionalProperties": {},
+                    "description": "Optional JSON-Schema describing the expected trigger payload shape. Pass an object to set/replace; pass null to clear; omit to leave unchanged. Validator subset: type, required, properties, enum, const, items. Other JSON-Schema keywords are silently ignored."
                   }
                 }
               }

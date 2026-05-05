@@ -16,9 +16,9 @@ import {
   CooldownConfigSchema,
   InputValueSchema,
   TriggerConfigSchema,
-  WorkflowDefinitionPatchSchema,
   WorkflowDefinitionSchema,
   WorkflowNodePatchSchema,
+  WorkflowPatchSchema,
   WorkflowRunStatusSchema,
 } from "../types";
 import { getExecutorRegistry, startWorkflowExecution } from "../workflows";
@@ -112,7 +112,7 @@ const patchWorkflowRoute = route({
   summary: "Patch a workflow definition (create/update/delete nodes)",
   tags: ["Workflows"],
   params: z.object({ id: z.string() }),
-  body: WorkflowDefinitionPatchSchema,
+  body: WorkflowPatchSchema,
   responses: {
     200: { description: "Workflow patched (version snapshot created)" },
     400: { description: "Invalid patch or resulting definition" },
@@ -510,7 +510,13 @@ export async function handleWorkflows(
       // Snapshot failure should not block the update
     }
 
-    const workflow = updateWorkflow(id, { definition: patchResult.definition });
+    const updateArgs: Parameters<typeof updateWorkflow>[1] = {
+      definition: patchResult.definition,
+    };
+    if (parsed.body.triggerSchema !== undefined) {
+      updateArgs.triggerSchema = parsed.body.triggerSchema;
+    }
+    const workflow = updateWorkflow(id, updateArgs);
     if (!workflow) {
       res.writeHead(404);
       res.end();

@@ -1,12 +1,24 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import crypto from "node:crypto";
 import { unlink } from "node:fs/promises";
+import {
+  createServer as createHttpServer,
+  type IncomingMessage,
+  type Server,
+  type ServerResponse,
+} from "node:http";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { closeDb, deleteWorkflow, getWorkflow, initDb } from "../be/db";
+import { getPathSegments, parseQueryParams } from "../http/utils";
+import { handleWorkflows } from "../http/workflows";
 import { registerCreateWorkflowTool } from "../tools/workflows/create-workflow";
+import { registerPatchWorkflowTool } from "../tools/workflows/patch-workflow";
 import { registerUpdateWorkflowTool } from "../tools/workflows/update-workflow";
-import type { WorkflowDefinition } from "../types";
+import type { Workflow, WorkflowDefinition } from "../types";
+import { initWorkflows, stopRetryPoller } from "../workflows";
 
 const TEST_DB_PATH = "./test-workflow-mcp-trigger-schema.sqlite";
+const TEST_PORT = 13031;
 
 // ─── Test Harness ────────────────────────────────────────────
 //
@@ -34,33 +46,52 @@ function buildServerWithTools() {
   });
   registerCreateWorkflowTool(server);
   registerUpdateWorkflowTool(server);
+  registerPatchWorkflowTool(server);
 
   const registeredTools = (server as unknown as Record<string, unknown>)._registeredTools as Record<
     string,
     { handler: RegisteredHandler }
   >;
 
+  const callTool =
+    (name: string) =>
+    async (args: Record<string, unknown>, agentId = "agent-test") => {
+      const tool = registeredTools[name];
+      expect(tool).toBeDefined();
+      const extra = {
+        sessionId: "session-test",
+        requestInfo: { headers: { "x-agent-id": agentId } },
+      };
+      return (await tool.handler(args, extra)) as ToolResult;
+    };
+
   return {
-    callCreate: async (args: Record<string, unknown>, agentId = "agent-test") => {
-      const tool = registeredTools["create-workflow"];
-      expect(tool).toBeDefined();
-      const extra = {
-        sessionId: "session-test",
-        requestInfo: { headers: { "x-agent-id": agentId } },
-      };
-      return (await tool.handler(args, extra)) as ToolResult;
-    },
-    callUpdate: async (args: Record<string, unknown>, agentId = "agent-test") => {
-      const tool = registeredTools["update-workflow"];
-      expect(tool).toBeDefined();
-      const extra = {
-        sessionId: "session-test",
-        requestInfo: { headers: { "x-agent-id": agentId } },
-      };
-      return (await tool.handler(args, extra)) as ToolResult;
-    },
+    callCreate: callTool("create-workflow"),
+    callUpdate: callTool("update-workflow"),
+    callPatch: callTool("patch-workflow"),
   };
 }
+
+// ─── HTTP Test Server ────────────────────────────────────────
+
+function createTestServer(): Server {
+  return createHttpServer(async (req: IncomingMessage, res: ServerResponse) => {
+    res.setHeader("Content-Type", "application/json");
+    const pathSegments = getPathSegments(req.url || "");
+    const queryParams = parseQueryParams(req.url || "");
+    const myAgentId = req.headers["x-agent-id"] as string | undefined;
+    const handled = await handleWorkflows(req, res, pathSegments, queryParams, myAgentId);
+    if (!handled) {
+      res.writeHead(404);
+      res.end(JSON.stringify({ error: "Not found" }));
+    }
+  });
+}
+
+const httpHeaders = {
+  "Content-Type": "application/json",
+  "X-Agent-ID": crypto.randomUUID(),
+};
 
 const minimalDefinition: WorkflowDefinition = {
   nodes: [
@@ -79,8 +110,9 @@ const uniqueName = (prefix: string) =>
 
 // ─── Tests ───────────────────────────────────────────────────
 
-describe("MCP create-workflow / update-workflow accept triggerSchema", () => {
+describe("MCP create-workflow / update-workflow / patch-workflow accept triggerSchema", () => {
   let tools: ReturnType<typeof buildServerWithTools>;
+  let server: Server;
 
   beforeAll(async () => {
     try {
@@ -89,10 +121,17 @@ describe("MCP create-workflow / update-workflow accept triggerSchema", () => {
       // File doesn't exist
     }
     initDb(TEST_DB_PATH);
+    initWorkflows();
     tools = buildServerWithTools();
+    server = createTestServer();
+    await new Promise<void>((resolve) => {
+      server.listen(TEST_PORT, () => resolve());
+    });
   });
 
   afterAll(async () => {
+    stopRetryPoller();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
     for (const id of createdWorkflowIds) {
       try {
         deleteWorkflow(id);
@@ -228,5 +267,132 @@ describe("MCP create-workflow / update-workflow accept triggerSchema", () => {
     const loaded = getWorkflow(workflowId);
     expect(loaded).not.toBeNull();
     expect(loaded!.triggerSchema).toBeUndefined();
+  });
+
+  // ─── patch-workflow with triggerSchema only (no DAG ops) ────
+
+  test("patch-workflow with triggerSchema only → schema persisted, definition unchanged", async () => {
+    const created = await tools.callCreate({
+      name: uniqueName("mcp-trigger-schema-patch-only"),
+      definition: minimalDefinition,
+    });
+    const workflowId = created.structuredContent?.workflow?.id as string;
+    expect(workflowId).toBeTruthy();
+    createdWorkflowIds.push(workflowId);
+    const originalDefinition = getWorkflow(workflowId)?.definition;
+    expect(originalDefinition).toBeDefined();
+
+    const newSchema: Record<string, unknown> = {
+      type: "object",
+      required: ["pr"],
+      properties: { pr: { type: "object" } },
+    };
+
+    const patched = await tools.callPatch({ id: workflowId, triggerSchema: newSchema });
+    expect(patched.structuredContent?.success).toBe(true);
+    expect(patched.structuredContent?.workflow?.triggerSchema).toEqual(newSchema);
+
+    // Definition unchanged by a metadata-only patch
+    const loaded = getWorkflow(workflowId);
+    expect(loaded?.definition).toEqual(originalDefinition!);
+    expect(loaded?.triggerSchema).toEqual(newSchema);
+  });
+
+  // ─── patch-workflow with both DAG ops AND triggerSchema ─────
+
+  test("patch-workflow with DAG create AND triggerSchema → both applied", async () => {
+    const created = await tools.callCreate({
+      name: uniqueName("mcp-trigger-schema-patch-both"),
+      definition: minimalDefinition,
+    });
+    const workflowId = created.structuredContent?.workflow?.id as string;
+    expect(workflowId).toBeTruthy();
+    createdWorkflowIds.push(workflowId);
+
+    const newSchema: Record<string, unknown> = {
+      type: "object",
+      required: ["foo"],
+      properties: { foo: { type: "string" } },
+    };
+
+    // Single PATCH applies both a DAG op (create new node, chain it after step1)
+    // and a metadata change (triggerSchema)
+    const patched = await tools.callPatch({
+      id: workflowId,
+      create: [{ id: "extra", type: "agent-task", config: { template: "extra-step" } }],
+      update: [{ nodeId: "step1", node: { next: "extra" } }],
+      triggerSchema: newSchema,
+    });
+    expect(patched.structuredContent?.success).toBe(true);
+
+    const loaded = getWorkflow(workflowId);
+    expect(loaded?.triggerSchema).toEqual(newSchema);
+    expect(loaded?.definition.nodes).toHaveLength(2);
+    const nodeIds = loaded?.definition.nodes.map((n) => n.id).sort();
+    expect(nodeIds).toEqual(["extra", "step1"]);
+  });
+
+  // ─── patch-workflow with triggerSchema: null clears ─────────
+
+  test("patch-workflow with triggerSchema: null → cleared", async () => {
+    const initialSchema: Record<string, unknown> = {
+      type: "object",
+      required: ["a"],
+      properties: { a: { type: "string" } },
+    };
+
+    const created = await tools.callCreate({
+      name: uniqueName("mcp-trigger-schema-patch-clear"),
+      definition: minimalDefinition,
+      triggerSchema: initialSchema,
+    });
+    const workflowId = created.structuredContent?.workflow?.id as string;
+    expect(workflowId).toBeTruthy();
+    createdWorkflowIds.push(workflowId);
+    expect(getWorkflow(workflowId)?.triggerSchema).toEqual(initialSchema);
+
+    const cleared = await tools.callPatch({ id: workflowId, triggerSchema: null });
+    expect(cleared.structuredContent?.success).toBe(true);
+    expect(cleared.structuredContent?.workflow?.triggerSchema).toBeUndefined();
+
+    const loaded = getWorkflow(workflowId);
+    expect(loaded?.triggerSchema).toBeUndefined();
+  });
+
+  // ─── HTTP PATCH /api/workflows/{id} with triggerSchema ──────
+
+  test("HTTP PATCH /api/workflows/{id} with { triggerSchema } → 200, persisted", async () => {
+    // Seed via HTTP POST so this test exercises the HTTP layer end-to-end
+    const createRes = await fetch(`http://localhost:${TEST_PORT}/api/workflows`, {
+      method: "POST",
+      headers: httpHeaders,
+      body: JSON.stringify({
+        name: uniqueName("http-patch-trigger-schema"),
+        definition: minimalDefinition,
+      }),
+    });
+    expect(createRes.status).toBe(201);
+    const createBody = (await createRes.json()) as Workflow;
+    createdWorkflowIds.push(createBody.id);
+
+    const newSchema: Record<string, unknown> = {
+      type: "object",
+      required: ["pr"],
+      properties: { pr: { type: "object" } },
+    };
+
+    const patchRes = await fetch(`http://localhost:${TEST_PORT}/api/workflows/${createBody.id}`, {
+      method: "PATCH",
+      headers: httpHeaders,
+      body: JSON.stringify({ triggerSchema: newSchema }),
+    });
+
+    expect(patchRes.status).toBe(200);
+    const patchBody = (await patchRes.json()) as Workflow;
+    expect(patchBody.triggerSchema).toEqual(newSchema);
+
+    // Verify persistence at the DB layer
+    const loaded = getWorkflow(createBody.id);
+    expect(loaded?.triggerSchema).toEqual(newSchema);
   });
 });
