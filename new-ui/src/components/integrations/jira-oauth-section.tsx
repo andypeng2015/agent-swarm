@@ -1,5 +1,4 @@
 import { AlertCircle, Check, Copy, ExternalLink, RefreshCw, Trash2 } from "lucide-react";
-import { useState } from "react";
 import {
   buildJiraAuthorizeUrl,
   useDisconnectJira,
@@ -19,6 +18,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import { useCopyToClipboard } from "@/hooks/use-copy-to-clipboard";
 
 // ---------------------------------------------------------------------------
 // Jira OAuth connection card — renders above the generic field form.
@@ -33,25 +33,13 @@ function formatTokenExpiry(expiry: string | null): string | null {
   return d.toLocaleString();
 }
 
-type CopyKey = "webhook" | "redirect" | "site" | "authorize" | null;
+type CopyKey = "webhook" | "redirect" | "site" | "authorize";
 
 export function JiraOAuthSection() {
   const { data, isLoading, isError, error, refetch, isFetching } = useJiraTrackerStatus();
   const disconnect = useDisconnectJira();
-  const [copied, setCopied] = useState<CopyKey>(null);
-
-  async function handleCopy(key: Exclude<CopyKey, null>, value: string) {
-    if (!value) return;
-    try {
-      if (typeof navigator !== "undefined" && navigator.clipboard) {
-        await navigator.clipboard.writeText(value);
-        setCopied(key);
-        setTimeout(() => setCopied((prev) => (prev === key ? null : prev)), 1500);
-      }
-    } catch {
-      // Clipboard unavailable — silent.
-    }
-  }
+  const { copiedKey, copy } = useCopyToClipboard<CopyKey>();
+  const handleCopy = (key: CopyKey, value: string) => copy(value, key);
 
   if (isLoading) {
     return (
@@ -128,7 +116,7 @@ export function JiraOAuthSection() {
                     onClick={() => handleCopy("site", data.siteUrl ?? "")}
                     aria-label="Copy site URL"
                   >
-                    {copied === "site" ? (
+                    {copiedKey === "site" ? (
                       <Check className="h-3 w-3 text-status-success" />
                     ) : (
                       <Copy className="h-3 w-3" />
@@ -173,12 +161,12 @@ export function JiraOAuthSection() {
             onClick={() => handleCopy("authorize", buildJiraAuthorizeUrl())}
             className="shrink-0"
           >
-            {copied === "authorize" ? (
+            {copiedKey === "authorize" ? (
               <Check className="h-3.5 w-3.5 text-status-success" />
             ) : (
               <Copy className="h-3.5 w-3.5" />
             )}
-            {copied === "authorize" ? "Copied" : "Copy"}
+            {copiedKey === "authorize" ? "Copied" : "Copy"}
           </Button>
           <Button
             type="button"
@@ -214,12 +202,12 @@ export function JiraOAuthSection() {
               onClick={() => handleCopy("redirect", data.redirectUri)}
               className="shrink-0"
             >
-              {copied === "redirect" ? (
+              {copiedKey === "redirect" ? (
                 <Check className="h-3.5 w-3.5 text-status-success" />
               ) : (
                 <Copy className="h-3.5 w-3.5" />
               )}
-              {copied === "redirect" ? "Copied" : "Copy"}
+              {copiedKey === "redirect" ? "Copied" : "Copy"}
             </Button>
           </div>
           <p className="text-xs text-muted-foreground">
@@ -245,12 +233,12 @@ export function JiraOAuthSection() {
               onClick={() => handleCopy("webhook", data.webhookUrl)}
               className="shrink-0"
             >
-              {copied === "webhook" ? (
+              {copiedKey === "webhook" ? (
                 <Check className="h-3.5 w-3.5 text-status-success" />
               ) : (
                 <Copy className="h-3.5 w-3.5" />
               )}
-              {copied === "webhook" ? "Copied" : "Copy"}
+              {copiedKey === "webhook" ? "Copied" : "Copy"}
             </Button>
           </div>
           {data.connected && !data.hasManageWebhookScope ? (

@@ -6,6 +6,7 @@ import { OAuthSection } from "@/components/shared/oauth-section";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { useCopyToClipboard } from "@/hooks/use-copy-to-clipboard";
 import type { IntegrationDef } from "@/lib/integrations-catalog";
 import { deriveIntegrationStatus, type EnvPresence } from "@/lib/integrations-status";
 
@@ -39,7 +40,7 @@ export function ClaudeManagedSection({ def, configs, envPresence }: ClaudeManage
   const status = deriveIntegrationStatus(def, configs, envPresence);
   const testConnection = useTestClaudeManagedConnection();
 
-  const [copied, setCopied] = useState(false);
+  const { copied, copy } = useCopyToClipboard();
   const [lastResult, setLastResult] = useState<{
     ok: boolean;
     agentName?: string | null;
@@ -47,17 +48,7 @@ export function ClaudeManagedSection({ def, configs, envPresence }: ClaudeManage
     error?: string;
   } | null>(null);
 
-  async function handleCopy() {
-    try {
-      if (typeof navigator !== "undefined" && navigator.clipboard) {
-        await navigator.clipboard.writeText(SETUP_SNIPPET);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 1500);
-      }
-    } catch {
-      // Clipboard unavailable — silent.
-    }
-  }
+  const handleCopy = () => copy(SETUP_SNIPPET);
 
   async function handleTest() {
     try {

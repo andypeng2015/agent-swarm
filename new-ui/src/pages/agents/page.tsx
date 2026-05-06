@@ -8,6 +8,7 @@ import { DataGrid } from "@/components/shared/data-grid";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { PageHeader } from "@/components/ui/page-header";
 import {
   Select,
   SelectContent,
@@ -108,7 +109,7 @@ export default function AgentsPage() {
 
   return (
     <div className="flex flex-col flex-1 min-h-0 gap-4">
-      <h1 className="text-xl font-semibold">Agents</h1>
+      <PageHeader title="Agents" />
 
       <div className="flex items-center gap-3">
         <div className="relative flex-1 max-w-sm">

@@ -29,6 +29,7 @@ import { UsageSummary } from "@/components/shared/usage-summary";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { InfoRow } from "@/components/ui/info-row";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -342,46 +343,24 @@ export default function AgentDetailPage() {
         <TabsContent value="profile" className="space-y-4 mt-4 overflow-y-auto">
           <Card>
             <CardContent className="p-4 space-y-3">
-              {agent.role && (
-                <div>
-                  <span className="text-xs text-muted-foreground uppercase tracking-wide">
-                    Role
-                  </span>
-                  <p className="text-sm">{agent.role}</p>
-                </div>
-              )}
-              {agent.description && (
-                <div>
-                  <span className="text-xs text-muted-foreground uppercase tracking-wide">
-                    Description
-                  </span>
-                  <p className="text-sm">{agent.description}</p>
-                </div>
-              )}
+              {agent.role && <InfoRow label="Role">{agent.role}</InfoRow>}
+              {agent.description && <InfoRow label="Description">{agent.description}</InfoRow>}
               {(agent.capacity || agent.maxTasks != null) && (
-                <div>
-                  <span className="text-xs text-muted-foreground uppercase tracking-wide">
-                    Capacity
-                  </span>
-                  <p className="text-sm">
-                    {agent.capacity ? (
-                      <span className={agent.capacity.available === 0 ? "text-status-error" : ""}>
-                        {agent.capacity.current} / {agent.capacity.max} tasks{" "}
-                        <span className="text-muted-foreground">
-                          ({agent.capacity.available} available)
-                        </span>
+                <InfoRow label="Capacity">
+                  {agent.capacity ? (
+                    <span className={agent.capacity.available === 0 ? "text-status-error" : ""}>
+                      {agent.capacity.current} / {agent.capacity.max} tasks{" "}
+                      <span className="text-muted-foreground">
+                        ({agent.capacity.available} available)
                       </span>
-                    ) : (
-                      <span>Max {agent.maxTasks} tasks</span>
-                    )}
-                  </p>
-                </div>
+                    </span>
+                  ) : (
+                    <span>Max {agent.maxTasks} tasks</span>
+                  )}
+                </InfoRow>
               )}
               {agent.capabilities && agent.capabilities.length > 0 && (
-                <div>
-                  <span className="text-xs text-muted-foreground uppercase tracking-wide">
-                    Capabilities
-                  </span>
+                <InfoRow label="Capabilities">
                   <div className="flex flex-wrap gap-1 mt-1">
                     {agent.capabilities.map((cap) => (
                       <Badge key={cap} variant="outline" size="tag">
@@ -389,7 +368,7 @@ export default function AgentDetailPage() {
                       </Badge>
                     ))}
                   </div>
-                </div>
+                </InfoRow>
               )}
               <div className="text-xs text-muted-foreground">
                 Joined {formatSmartTime(agent.createdAt)} &middot; Updated{" "}

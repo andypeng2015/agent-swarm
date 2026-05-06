@@ -36,8 +36,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { InfoRow } from "@/components/ui/info-row";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PageHeader } from "@/components/ui/page-header";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { formatSmartTime } from "@/lib/utils";
@@ -257,60 +259,64 @@ export default function RepoDetailPage() {
         <ArrowLeft className="h-4 w-4" /> Back to Repos
       </button>
 
-      <div className="flex items-center justify-between shrink-0">
-        <div className="flex items-center gap-3">
-          <h1 className="text-xl font-semibold">{repo.name}</h1>
-          {provider && (
-            <Badge variant="outline" size="tag">
-              {provider}
+      <PageHeader
+        className="shrink-0"
+        title={
+          <div className="flex items-center gap-3 min-w-0">
+            <h1 className="text-xl font-semibold">{repo.name}</h1>
+            {provider && (
+              <Badge variant="outline" size="tag">
+                {provider}
+              </Badge>
+            )}
+            <Badge
+              variant="outline"
+              size="tag"
+              className={
+                repo.autoClone
+                  ? "bg-status-success/15 text-status-success border-status-success/30"
+                  : ""
+              }
+            >
+              {repo.autoClone ? "Auto-clone ON" : "Auto-clone OFF"}
             </Badge>
-          )}
-          <Badge
-            variant="outline"
-            size="tag"
-            className={
-              repo.autoClone
-                ? "bg-status-success/15 text-status-success border-status-success/30"
-                : ""
-            }
-          >
-            {repo.autoClone ? "Auto-clone ON" : "Auto-clone OFF"}
-          </Badge>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button size="sm" variant="outline" className="gap-1" onClick={() => setEditOpen(true)}>
-            <Pencil className="h-3.5 w-3.5" /> Edit
-          </Button>
-          <AlertDialog>
-            <AlertDialogTrigger asChild>
-              <Button size="sm" variant="destructive-outline" className="gap-1">
-                <Trash2 className="h-3.5 w-3.5" /> Delete
-              </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Delete Repository</AlertDialogTitle>
-                <AlertDialogDescription>
-                  Are you sure you want to delete <strong>{repo.name}</strong>? This action cannot
-                  be undone.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction variant="destructive" onClick={handleDelete}>
-                  Delete
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
-        </div>
-      </div>
+          </div>
+        }
+        action={
+          <>
+            <Button size="sm" variant="outline" className="gap-1" onClick={() => setEditOpen(true)}>
+              <Pencil className="h-3.5 w-3.5" /> Edit
+            </Button>
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button size="sm" variant="destructive-outline" className="gap-1">
+                  <Trash2 className="h-3.5 w-3.5" /> Delete
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Delete Repository</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    Are you sure you want to delete <strong>{repo.name}</strong>? This action cannot
+                    be undone.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction variant="destructive" onClick={handleDelete}>
+                    Delete
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          </>
+        }
+      />
 
       <Card>
         <CardContent className="pt-6">
           <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-1">
-              <p className="text-xs text-muted-foreground uppercase tracking-wide">URL</p>
+            <InfoRow label="URL">
               <a
                 href={repo.url}
                 target="_blank"
@@ -320,23 +326,16 @@ export default function RepoDetailPage() {
                 {repo.url}
                 <ExternalLink className="h-3 w-3 shrink-0 opacity-60" />
               </a>
-            </div>
-            <div className="space-y-1">
-              <p className="text-xs text-muted-foreground uppercase tracking-wide">Clone Path</p>
+            </InfoRow>
+            <InfoRow label="Clone Path">
               <p className="text-sm font-mono">{repo.clonePath}</p>
-            </div>
-            <div className="space-y-1">
-              <p className="text-xs text-muted-foreground uppercase tracking-wide">
-                Default Branch
-              </p>
+            </InfoRow>
+            <InfoRow label="Default Branch">
               <p className="text-sm inline-flex items-center gap-1">
                 <GitBranch className="h-3 w-3" /> {repo.defaultBranch}
               </p>
-            </div>
-            <div className="space-y-1">
-              <p className="text-xs text-muted-foreground uppercase tracking-wide">Created</p>
-              <p className="text-sm">{formatSmartTime(repo.createdAt)}</p>
-            </div>
+            </InfoRow>
+            <InfoRow label="Created">{formatSmartTime(repo.createdAt)}</InfoRow>
           </div>
         </CardContent>
       </Card>

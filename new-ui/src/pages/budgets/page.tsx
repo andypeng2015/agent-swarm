@@ -46,6 +46,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PageHeader } from "@/components/ui/page-header";
 import {
   Select,
   SelectContent,
@@ -730,10 +731,7 @@ export default function BudgetsPage() {
 
   return (
     <div className="flex-1 min-h-0 overflow-y-auto space-y-6">
-      <div className="flex items-center gap-2">
-        <Wallet className="h-5 w-5 text-muted-foreground" />
-        <h1 className="text-xl font-semibold">Budgets &amp; spend</h1>
-      </div>
+      <PageHeader icon={Wallet} title="Budgets & spend" />
 
       {/* Global budget */}
       <Card>

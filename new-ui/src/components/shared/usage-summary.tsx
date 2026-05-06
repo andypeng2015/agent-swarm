@@ -10,6 +10,7 @@ import {
   YAxis,
 } from "recharts";
 import type { SessionCost, UsageSummaryDailyRow, UsageSummaryTotals } from "@/api/types";
+import { rechartsTooltipStyle } from "@/lib/recharts-tooltip-style";
 import { formatCompactNumber, formatCurrency, formatDuration } from "@/lib/utils";
 
 function StatCard({
@@ -33,14 +34,6 @@ function StatCard({
     </div>
   );
 }
-
-const tooltipStyle = {
-  background: "var(--color-card)",
-  border: "1px solid var(--color-border)",
-  borderRadius: 8,
-  fontSize: 12,
-  color: "var(--color-foreground)",
-};
 
 // New interface: accepts pre-aggregated data from server
 interface UsageSummaryAggregatedProps {
@@ -161,7 +154,7 @@ export function UsageSummary(props: UsageSummaryProps) {
               width={50}
             />
             <Tooltip
-              contentStyle={tooltipStyle}
+              contentStyle={rechartsTooltipStyle}
               formatter={(value) => [`$${Number(value).toFixed(3)}`, "Cost"]}
             />
             <Line

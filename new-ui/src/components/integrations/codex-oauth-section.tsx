@@ -14,6 +14,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import { useCopyToClipboard } from "@/hooks/use-copy-to-clipboard";
 import { getConfig } from "@/lib/config";
 
 // ---------------------------------------------------------------------------
@@ -43,23 +44,13 @@ export function CodexOAuthSection() {
   const { data: configs, isLoading } = useConfigs({ scope: "global" });
   const deleteBatch = useDeleteConfigsBatch();
 
-  const [copied, setCopied] = useState(false);
+  const { copied, copy } = useCopyToClipboard();
   const [confirmClearOpen, setConfirmClearOpen] = useState(false);
 
   const codexRow = configs?.find((c) => c.key === CODEX_OAUTH_KEY && c.scope === "global");
   const isConfigured = !!codexRow;
 
-  async function handleCopy() {
-    try {
-      if (typeof navigator !== "undefined" && navigator.clipboard) {
-        await navigator.clipboard.writeText(snippet);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 1500);
-      }
-    } catch {
-      // Clipboard unavailable — silent.
-    }
-  }
+  const handleCopy = () => copy(snippet);
 
   function handleClear() {
     if (!configs) return;

@@ -186,6 +186,10 @@ Use `<Streamdown>{text}</Streamdown>` from `streamdown` for **all** markdown ren
 
 **Compose from primitives. Do not hand-roll a `<div>` layout if a primitive already exists. Add a new primitive when you'd otherwise repeat the pattern.**
 
+### Compose-only rule
+
+Pages and composed components are built from primitives. Raw `<div>` layouts that re-implement a primitive's responsibility are forbidden. If you find yourself writing a `<div className="flex items-center gap-...">` to recreate a header/section/row pattern, use or create the relevant primitive. Recurring inline logic (status formatters, time/token formatters, percent-threshold class pickers) belongs in `src/lib/<name>.ts` or `src/hooks/<name>.ts` once it appears in 2+ call sites.
+
 ### shadcn primitives (`src/components/ui/`)
 
 | Primitive | Usage | Example |

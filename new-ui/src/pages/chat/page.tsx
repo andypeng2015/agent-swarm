@@ -48,6 +48,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PageHeader } from "@/components/ui/page-header";
 import {
   Select,
   SelectContent,
@@ -547,7 +548,7 @@ export default function ChatPage() {
   if (channelsLoading) {
     return (
       <div className="flex flex-col flex-1 min-h-0 gap-4">
-        <h1 className="text-xl font-semibold">Chat</h1>
+        <PageHeader title="Chat" />
         <Skeleton className="flex-1 min-h-0 w-full rounded-lg" />
       </div>
     );

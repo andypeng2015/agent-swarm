@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { PageHeader } from "@/components/ui/page-header";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
@@ -183,16 +184,20 @@ export default function ApprovalRequestDetailPage() {
 
   return (
     <div className="flex-1 min-h-0 overflow-y-auto space-y-4">
-      <div className="flex items-center gap-3">
-        <Link
-          to="/approval-requests"
-          className="text-muted-foreground hover:text-foreground transition-colors"
-        >
-          <ArrowLeft className="h-4 w-4" />
-        </Link>
-        <h1 className="text-xl font-semibold">{request.title}</h1>
-        <StatusBadge status={request.status} />
-      </div>
+      <PageHeader
+        title={
+          <div className="flex items-center gap-3 min-w-0">
+            <Link
+              to="/approval-requests"
+              className="text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </Link>
+            <h1 className="text-xl font-semibold">{request.title}</h1>
+            <StatusBadge status={request.status} />
+          </div>
+        }
+      />
 
       <div className="flex items-center gap-4 text-xs text-muted-foreground">
         <span>Created {formatSmartTime(request.createdAt)}</span>

@@ -3,6 +3,7 @@ import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxi
 import { useAgents } from "@/api/hooks/use-agents";
 import { useUsageSummary } from "@/api/hooks/use-costs";
 import { UsageSummary } from "@/components/shared/usage-summary";
+import { PageHeader } from "@/components/ui/page-header";
 import {
   Select,
   SelectContent,
@@ -11,6 +12,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { rechartsTooltipStyle } from "@/lib/recharts-tooltip-style";
 import { formatCompactNumber, formatCurrency } from "@/lib/utils";
 
 type DateRange = "7d" | "30d" | "90d" | "all";
@@ -24,14 +26,6 @@ function getStartDateISO(range: DateRange): string | undefined {
   d.setDate(d.getDate() - days);
   return d.toISOString().slice(0, 10);
 }
-
-const tooltipStyle = {
-  background: "var(--color-card)",
-  border: "1px solid var(--color-border)",
-  borderRadius: 8,
-  fontSize: 12,
-  color: "var(--color-foreground)",
-};
 
 export default function UsagePage() {
   const [dateRange, setDateRange] = useState<DateRange>("30d");
@@ -70,7 +64,7 @@ export default function UsagePage() {
   if (isLoading) {
     return (
       <div className="space-y-4">
-        <h1 className="text-xl font-semibold">Usage</h1>
+        <PageHeader title="Usage" />
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
           {Array.from({ length: 5 }).map((_, i) => (
             <Skeleton key={i} className="h-20" />
@@ -84,36 +78,38 @@ export default function UsagePage() {
   return (
     <div className="flex-1 min-h-0 overflow-y-auto space-y-5">
       {/* Header + Filters */}
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <h1 className="text-xl font-semibold">Usage</h1>
-        <div className="flex items-center gap-2">
-          <Select value={dateRange} onValueChange={(v) => setDateRange(v as DateRange)}>
-            <SelectTrigger className="w-[130px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="7d">Last 7 days</SelectItem>
-              <SelectItem value="30d">Last 30 days</SelectItem>
-              <SelectItem value="90d">Last 90 days</SelectItem>
-              <SelectItem value="all">All time</SelectItem>
-            </SelectContent>
-          </Select>
-          <Select value={agentFilter} onValueChange={setAgentFilter}>
-            <SelectTrigger className="w-[180px]">
-              <SelectValue placeholder="Agent" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Agents</SelectItem>
-              {agents?.map((a) => (
-                <SelectItem key={a.id} value={a.id}>
-                  {a.name}
-                  {a.isLead ? " (Lead)" : ""}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
+      <PageHeader
+        title="Usage"
+        action={
+          <>
+            <Select value={dateRange} onValueChange={(v) => setDateRange(v as DateRange)}>
+              <SelectTrigger className="w-[130px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="7d">Last 7 days</SelectItem>
+                <SelectItem value="30d">Last 30 days</SelectItem>
+                <SelectItem value="90d">Last 90 days</SelectItem>
+                <SelectItem value="all">All time</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={agentFilter} onValueChange={setAgentFilter}>
+              <SelectTrigger className="w-[180px]">
+                <SelectValue placeholder="Agent" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Agents</SelectItem>
+                {agents?.map((a) => (
+                  <SelectItem key={a.id} value={a.id}>
+                    {a.name}
+                    {a.isLead ? " (Lead)" : ""}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </>
+        }
+      />
 
       {/* Shared stats + daily chart — using pre-aggregated data */}
       {summary && (
@@ -150,7 +146,7 @@ export default function UsagePage() {
                   width={100}
                 />
                 <Tooltip
-                  contentStyle={tooltipStyle}
+                  contentStyle={rechartsTooltipStyle}
                   formatter={(value) => [`$${Number(value).toFixed(3)}`, "Cost"]}
                 />
                 <Bar

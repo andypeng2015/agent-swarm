@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PageHeader } from "@/components/ui/page-header";
 import { Switch } from "@/components/ui/switch";
 
 interface RepoFormData {
@@ -305,12 +306,14 @@ export default function ReposPage() {
   if (!isLoading && (!repos || repos.length === 0)) {
     return (
       <div className="flex flex-col flex-1 min-h-0 gap-4">
-        <div className="flex items-center justify-between">
-          <h1 className="text-xl font-semibold">Repos</h1>
-          <Button onClick={handleAdd} size="sm" className="gap-1 bg-primary hover:bg-primary/90">
-            <Plus className="h-3.5 w-3.5" /> Add Repo
-          </Button>
-        </div>
+        <PageHeader
+          title="Repos"
+          action={
+            <Button onClick={handleAdd} size="sm" className="gap-1 bg-primary hover:bg-primary/90">
+              <Plus className="h-3.5 w-3.5" /> Add Repo
+            </Button>
+          }
+        />
         <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
           <FolderGit2 className="h-8 w-8 mb-2" />
           <p className="text-sm">No repositories registered</p>
@@ -329,12 +332,14 @@ export default function ReposPage() {
 
   return (
     <div className="flex flex-col flex-1 min-h-0 gap-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold">Repos</h1>
-        <Button onClick={handleAdd} size="sm" className="gap-1 bg-primary hover:bg-primary/90">
-          <Plus className="h-3.5 w-3.5" /> Add Repo
-        </Button>
-      </div>
+      <PageHeader
+        title="Repos"
+        action={
+          <Button onClick={handleAdd} size="sm" className="gap-1 bg-primary hover:bg-primary/90">
+            <Plus className="h-3.5 w-3.5" /> Add Repo
+          </Button>
+        }
+      />
 
       <DataGrid
         rowData={repos ?? []}

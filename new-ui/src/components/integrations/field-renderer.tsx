@@ -1,5 +1,4 @@
 import { Check, Copy } from "lucide-react";
-import { useState } from "react";
 import type { SwarmConfig } from "@/api/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,6 +13,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { useCopyToClipboard } from "@/hooks/use-copy-to-clipboard";
 import type { IntegrationField } from "@/lib/integrations-catalog";
 import { cn } from "@/lib/utils";
 
@@ -59,20 +59,9 @@ export function FieldRenderer({
   onUnmarkForReplace,
   onClearExisting,
 }: FieldRendererProps) {
-  const [copied, setCopied] = useState(false);
+  const { copied, copy } = useCopyToClipboard();
   const inputId = `field-${field.key}`;
-
-  async function handleCopyKey() {
-    try {
-      if (typeof navigator !== "undefined" && navigator.clipboard) {
-        await navigator.clipboard.writeText(field.key);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 1500);
-      }
-    } catch {
-      // Clipboard API unavailable (e.g. insecure context) — degrade silently.
-    }
-  }
+  const handleCopyKey = () => copy(field.key);
 
   // Secrets (tokens, API keys, webhook secrets): show masked read-only + Replace
   // until the user opts in. Non-secret values (emails, channel names, flags)

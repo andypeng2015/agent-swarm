@@ -67,6 +67,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { JsonTree } from "@/components/workflows/json-tree";
 import { WorkflowGraph } from "@/components/workflows/workflow-graph";
+import { useCopyToClipboard } from "@/hooks/use-copy-to-clipboard";
 import { useTheme } from "@/hooks/use-theme";
 import { getConfig } from "@/lib/config";
 import { monacoDarkTheme, monacoLightTheme } from "@/lib/monaco-themes";
@@ -1779,20 +1780,11 @@ function formatCooldown(c: CooldownConfig): string {
 }
 
 function CopyIconButton({ value }: { value: string }) {
-  const [copied, setCopied] = useState(false);
-  const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(value);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch {
-      // ignore — clipboard not available
-    }
-  };
+  const { copied, copy } = useCopyToClipboard();
   return (
     <button
       type="button"
-      onClick={handleCopy}
+      onClick={() => copy(value)}
       aria-label={copied ? "Copied" : "Copy code"}
       title={copied ? "Copied" : "Copy code"}
       className="rounded p-1 transition-colors focus:outline-none focus:ring-1 text-muted-foreground hover:text-foreground hover:bg-muted focus:ring-ring"
@@ -1811,16 +1803,7 @@ function CopyableField({
   value: string;
   mono?: boolean;
 }) {
-  const [copied, setCopied] = useState(false);
-  const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(value);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch {
-      // ignore — clipboard not available
-    }
-  };
+  const { copied, copy } = useCopyToClipboard();
   return (
     <div className="space-y-1.5">
       <Label className="text-xs text-muted-foreground uppercase tracking-wide">{label}</Label>
@@ -1835,7 +1818,7 @@ function CopyableField({
           type="button"
           variant="outline"
           size="icon"
-          onClick={handleCopy}
+          onClick={() => copy(value)}
           aria-label={`Copy ${label}`}
           className="shrink-0"
         >
@@ -1848,16 +1831,7 @@ function CopyableField({
 
 function SecretField({ label, value }: { label: string; value: string }) {
   const [revealed, setRevealed] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(value);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch {
-      // ignore
-    }
-  };
+  const { copied, copy } = useCopyToClipboard();
   return (
     <div className="space-y-1.5">
       <Label className="text-xs text-muted-foreground uppercase tracking-wide">{label}</Label>
@@ -1883,7 +1857,7 @@ function SecretField({ label, value }: { label: string; value: string }) {
           type="button"
           variant="outline"
           size="icon"
-          onClick={handleCopy}
+          onClick={() => copy(value)}
           aria-label={`Copy ${label}`}
           className="shrink-0"
         >

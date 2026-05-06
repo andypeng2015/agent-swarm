@@ -17,6 +17,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { PageHeader } from "@/components/ui/page-header";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
@@ -70,62 +71,67 @@ export default function SkillDetailPage() {
         <ArrowLeft className="h-4 w-4" /> Back to Skills
       </button>
 
-      <div className="flex items-center justify-between shrink-0">
-        <div className="flex items-center gap-3">
-          <h1 className="text-xl font-semibold">{skill.name}</h1>
-          <Badge variant="outline" size="tag">
-            {skill.type}
-          </Badge>
-          <Badge
-            variant="outline"
-            size="tag"
-            className={`${
-              skill.scope === "global"
-                ? "border-status-success/30 text-status-success"
-                : skill.scope === "swarm"
-                  ? "border-status-active/30 text-status-active"
-                  : ""
-            }`}
-          >
-            {skill.scope}
-          </Badge>
-          <Badge
-            variant="outline"
-            size="tag"
-            className={`${
-              skill.isEnabled
-                ? "border-status-success/30 text-status-success"
-                : "border-status-error/30 text-status-error"
-            }`}
-          >
-            {skill.isEnabled ? "Enabled" : "Disabled"}
-          </Badge>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={handleToggleEnabled}>
-            {skill.isEnabled ? "Disable" : "Enable"}
-          </Button>
-          <AlertDialog>
-            <AlertDialogTrigger asChild>
-              <Button variant="destructive-outline" size="sm">
-                <Trash2 className="h-4 w-4 mr-1" /> Delete
-              </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Delete skill "{skill.name}"?</AlertDialogTitle>
-                <AlertDialogDescription>
-                  This will permanently delete this skill and uninstall it from all agents.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction onClick={handleDelete}>Delete</AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
-        </div>
-      </div>
+      <PageHeader
+        className="shrink-0"
+        title={
+          <div className="flex items-center gap-3 min-w-0">
+            <h1 className="text-xl font-semibold">{skill.name}</h1>
+            <Badge variant="outline" size="tag">
+              {skill.type}
+            </Badge>
+            <Badge
+              variant="outline"
+              size="tag"
+              className={`${
+                skill.scope === "global"
+                  ? "border-status-success/30 text-status-success"
+                  : skill.scope === "swarm"
+                    ? "border-status-active/30 text-status-active"
+                    : ""
+              }`}
+            >
+              {skill.scope}
+            </Badge>
+            <Badge
+              variant="outline"
+              size="tag"
+              className={`${
+                skill.isEnabled
+                  ? "border-status-success/30 text-status-success"
+                  : "border-status-error/30 text-status-error"
+              }`}
+            >
+              {skill.isEnabled ? "Enabled" : "Disabled"}
+            </Badge>
+          </div>
+        }
+        action={
+          <>
+            <Button variant="outline" size="sm" onClick={handleToggleEnabled}>
+              {skill.isEnabled ? "Disable" : "Enable"}
+            </Button>
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="destructive-outline" size="sm">
+                  <Trash2 className="h-4 w-4 mr-1" /> Delete
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Delete skill "{skill.name}"?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This will permanently delete this skill and uninstall it from all agents.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction onClick={handleDelete}>Delete</AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          </>
+        }
+      />
 
       <p className="text-sm text-muted-foreground shrink-0">{skill.description}</p>
 

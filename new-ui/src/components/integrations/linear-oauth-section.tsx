@@ -7,7 +7,6 @@ import {
   RefreshCw,
   Trash2,
 } from "lucide-react";
-import { useState } from "react";
 import {
   buildLinearAuthorizeUrl,
   useDisconnectLinear,
@@ -27,6 +26,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import { useCopyToClipboard } from "@/hooks/use-copy-to-clipboard";
 
 // ---------------------------------------------------------------------------
 // Linear OAuth connection card — renders above the generic field form.
@@ -43,25 +43,13 @@ function formatTokenExpiry(expiry: number | null): string | null {
   return d.toLocaleString();
 }
 
-type CopyKey = "webhook" | "redirect" | null;
+type CopyKey = "webhook" | "redirect";
 
 export function LinearOAuthSection() {
   const { data, isLoading, isError, error, refetch, isFetching } = useLinearTrackerStatus();
   const disconnect = useDisconnectLinear();
-  const [copied, setCopied] = useState<CopyKey>(null);
-
-  async function handleCopy(key: Exclude<CopyKey, null>, value: string) {
-    if (!value) return;
-    try {
-      if (typeof navigator !== "undefined" && navigator.clipboard) {
-        await navigator.clipboard.writeText(value);
-        setCopied(key);
-        setTimeout(() => setCopied((prev) => (prev === key ? null : prev)), 1500);
-      }
-    } catch {
-      // Clipboard unavailable — silent.
-    }
-  }
+  const { copiedKey, copy } = useCopyToClipboard<CopyKey>();
+  const handleCopy = (key: CopyKey, value: string) => copy(value, key);
 
   function handleAuthorize() {
     window.open(buildLinearAuthorizeUrl(), "_blank", "noopener,noreferrer");
@@ -174,12 +162,12 @@ export function LinearOAuthSection() {
               onClick={() => handleCopy("redirect", data.redirectUri)}
               className="shrink-0"
             >
-              {copied === "redirect" ? (
+              {copiedKey === "redirect" ? (
                 <Check className="h-3.5 w-3.5 text-status-success" />
               ) : (
                 <Copy className="h-3.5 w-3.5" />
               )}
-              {copied === "redirect" ? "Copied" : "Copy"}
+              {copiedKey === "redirect" ? "Copied" : "Copy"}
             </Button>
           </div>
           <p className="text-xs text-muted-foreground">
@@ -205,12 +193,12 @@ export function LinearOAuthSection() {
               onClick={() => handleCopy("webhook", data.webhookUrl)}
               className="shrink-0"
             >
-              {copied === "webhook" ? (
+              {copiedKey === "webhook" ? (
                 <Check className="h-3.5 w-3.5 text-status-success" />
               ) : (
                 <Copy className="h-3.5 w-3.5" />
               )}
-              {copied === "webhook" ? "Copied" : "Copy"}
+              {copiedKey === "webhook" ? "Copied" : "Copy"}
             </Button>
           </div>
           <p className="text-xs text-muted-foreground">

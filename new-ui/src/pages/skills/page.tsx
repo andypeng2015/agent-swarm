@@ -9,6 +9,7 @@ import { DataGrid } from "@/components/shared/data-grid";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PageHeader } from "@/components/ui/page-header";
 import {
   Select,
   SelectContent,
@@ -129,18 +130,21 @@ export default function SkillsPage() {
 
   return (
     <div className="flex flex-col flex-1 min-h-0 gap-4">
-      <div className="flex items-center justify-between shrink-0">
-        <h1 className="text-xl font-semibold">Skills</h1>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => syncRemote.mutate({})}
-          disabled={syncRemote.isPending}
-        >
-          <RefreshCw className={`h-4 w-4 mr-2 ${syncRemote.isPending ? "animate-spin" : ""}`} />
-          Sync Remote
-        </Button>
-      </div>
+      <PageHeader
+        className="shrink-0"
+        title="Skills"
+        action={
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => syncRemote.mutate({})}
+            disabled={syncRemote.isPending}
+          >
+            <RefreshCw className={`h-4 w-4 mr-2 ${syncRemote.isPending ? "animate-spin" : ""}`} />
+            Sync Remote
+          </Button>
+        }
+      />
 
       <div className="flex items-center gap-3 shrink-0">
         <Input

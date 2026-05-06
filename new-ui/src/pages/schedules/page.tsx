@@ -1,5 +1,4 @@
 import type { ColDef, ICellRendererParams, RowClickedEvent } from "ag-grid-community";
-import cronstrue from "cronstrue";
 import { Clock, Plus } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -19,6 +18,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PageHeader } from "@/components/ui/page-header";
 import {
   Select,
   SelectContent,
@@ -29,25 +29,8 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { describeCron, formatInterval } from "@/lib/schedule-format";
 import { formatSmartTime, formatUTCTime } from "@/lib/utils";
-
-function describeCron(expr: string): string {
-  try {
-    return cronstrue.toString(expr, { use24HourTimeFormat: true });
-  } catch {
-    return expr;
-  }
-}
-
-function formatInterval(ms: number): string {
-  const seconds = ms / 1000;
-  if (seconds < 60) return `${seconds}s`;
-  const minutes = seconds / 60;
-  if (minutes < 60) return `${minutes}m`;
-  const hours = minutes / 60;
-  if (hours < 24) return `${hours}h`;
-  return `${hours / 24}d`;
-}
 
 interface ScheduleFormData {
   name: string;
@@ -491,10 +474,7 @@ export default function SchedulesPage() {
   if (!isLoading && (!schedules || schedules.length === 0)) {
     return (
       <div className="flex flex-col flex-1 min-h-0 gap-4">
-        <div className="flex items-center justify-between">
-          <h1 className="text-xl font-semibold">Schedules</h1>
-          {createButton}
-        </div>
+        <PageHeader title="Schedules" action={createButton} />
         <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
           <Clock className="h-8 w-8 mb-2" />
           <p className="text-sm">No scheduled tasks</p>
@@ -510,10 +490,7 @@ export default function SchedulesPage() {
 
   return (
     <div className="flex flex-col flex-1 min-h-0 gap-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold">Schedules</h1>
-        {createButton}
-      </div>
+      <PageHeader title="Schedules" action={createButton} />
 
       <DataGrid
         rowData={schedules ?? []}

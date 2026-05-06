@@ -6,6 +6,7 @@ import { useServices } from "@/api/hooks/use-services";
 import type { ServiceStatus } from "@/api/types";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
+import { PageHeader } from "@/components/ui/page-header";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn, formatSmartTime } from "@/lib/utils";
 
@@ -38,7 +39,7 @@ export default function ServicesPage() {
   if (isLoading) {
     return (
       <div className="flex-1 min-h-0 overflow-y-auto space-y-4">
-        <h1 className="text-xl font-semibold">Services</h1>
+        <PageHeader title="Services" />
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {Array.from({ length: 3 }).map((_, i) => (
             <Skeleton key={i} className="h-36" />
@@ -50,7 +51,7 @@ export default function ServicesPage() {
 
   return (
     <div className="flex-1 min-h-0 overflow-y-auto space-y-4">
-      <h1 className="text-xl font-semibold">Services</h1>
+      <PageHeader title="Services" />
 
       {services && services.length > 0 ? (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">

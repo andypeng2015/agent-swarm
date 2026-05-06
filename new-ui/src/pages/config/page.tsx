@@ -43,6 +43,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PageHeader } from "@/components/ui/page-header";
 import {
   Select,
   SelectContent,
@@ -1084,7 +1085,7 @@ export default function ConfigPage() {
 
   return (
     <div className="flex-1 min-h-0 overflow-y-auto space-y-8">
-      <h1 className="text-xl font-semibold">Settings</h1>
+      <PageHeader title="Settings" />
 
       {/* Multi-connection management */}
       <ConnectionsSection />
