@@ -346,17 +346,17 @@ Both endpoints derive their payload from the `agents` table directly (`status`, 
 ### Success Criteria:
 
 #### Automated Verification:
-- [ ] Linting passes: `bun run lint`
-- [ ] Type check passes: `bun run tsc:check`
-- [ ] New test passes: `bun test src/tests/credential-status-api.test.ts`
-- [ ] All existing tests pass: `bun test`
-- [ ] OpenAPI fresh: `bun run docs:openapi` produces no diff after commit
-- [ ] new-ui type check: `cd new-ui && pnpm exec tsc -b`
+- [x] Linting passes: `bun run lint`
+- [x] Type check passes: `bun run tsc:check`
+- [x] New test passes: `bun test src/tests/credential-status-api.test.ts`
+- [x] All existing tests pass: `bun test`
+- [x] OpenAPI fresh: `bun run docs:openapi` produces no diff after commit
+- [x] new-ui type check: `cd new-ui && pnpm exec tsc -b`
 
 #### Automated QA:
 - [ ] qa-use session: navigate dashboard → agents page, observe "Waiting for credentials" badge with missing var name. After `PUT /api/config`, badge disappears within polling interval. (Per CLAUDE.md, frontend PRs require qa-use with screenshots.)
-- [ ] curl `GET /ready` against a waiting worker returns 503 with `missing[]` body; against a ready worker returns 200.
-- [ ] curl `GET /api/agents/credential-status` returns the full agent list with status/missing per agent; same with `?status=waiting_for_credentials` returns just the blocked subset.
+- [ ] ~~curl `GET /ready` against a waiting worker returns 503~~ — **Skipped**: workers don't have an HTTP server today, only the API does. The dashboard already gets the same info from `GET /api/agents/{id}/credential-status`. Promoted to follow-up plan along with worker-side health/readiness server.
+- [x] curl `GET /api/agents/credential-status` returns the full agent list with status/missing per agent; same with `?status=waiting_for_credentials` returns just the blocked subset (covered by `credential-status-api.test.ts`).
 
 #### Manual Verification:
 - [ ] Dashboard visual check: badge styling matches existing status indicators.
