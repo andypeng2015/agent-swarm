@@ -690,7 +690,7 @@ class CodexSession implements ProviderSession {
           // `contextPercent` is on a 0-100 scale across all providers — claude
           // emits `(used / total) * 100`, pi-mono passes through `usage.percent`
           // which is already 0-100. The dashboard at
-          // new-ui/src/pages/tasks/[id]/page.tsx renders it via `.toFixed(0)`
+          // ui/src/pages/tasks/[id]/page.tsx renders it via `.toFixed(0)`
           // expecting an integer percent, so a 0-1 fraction would render as
           // "0%" instead of e.g. "40%".
           this.emit({

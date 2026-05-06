@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 
 // DetailPageLayout — canonical detail-page body shell, derived from the brand
 // kit's `~/Downloads/swarm-design-system/preview/detail-page-template.html`.
-// Every detail page in new-ui (agents, tasks, repos, schedules, integrations,
+// Every detail page in ui (agents, tasks, repos, schedules, integrations,
 // mcp-servers, skills, approval-requests, …) shares the same body layout:
 //
 //   <main>{primary content}</main>

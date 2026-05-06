@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
 // PageHeader — canonical title + (optional) description + (optional) action
-// row that opens every route page in new-ui. The pre-Phase-9 hand-rolled form
+// row that opens every route page in ui. The pre-Phase-9 hand-rolled form
 // was `<div className="flex items-center justify-between"><h1>{title}</h1>
 // {action}</div>`, sometimes wrapped in `space-y-2` with a description below.
 //

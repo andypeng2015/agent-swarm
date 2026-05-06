@@ -1,10 +1,10 @@
 // Sanity check for `deriveIntegrationStatus` / `findConfigForKey`.
 //
-// Run ad-hoc: `bun new-ui/src/lib/integrations-status.sanity.ts`
+// Run ad-hoc: `bun ui/src/lib/integrations-status.sanity.ts`
 //
 // Covers: none / partial / full / disabled / reserved-key-skipped / no-required-fields.
 //
-// This file exists because `new-ui/` has no test runner (no vitest/jest) —
+// This file exists because `ui/` has no test runner (no vitest/jest) —
 // it's a temporary stand-in. If a test harness is added later, convert this
 // into `integrations-status.test.ts`.
 

@@ -1,8 +1,8 @@
-# Agent Swarm Dashboard (new-ui)
+# Agent Swarm Dashboard (ui)
 
 React + Vite + shadcn/ui + Tailwind + AG Grid + react-query dashboard for the Agent Swarm API.
 
-<important if="you are running the new-ui dev server, building it, or setting up new-ui locally">
+<important if="you are running the ui dev server, building it, or setting up ui locally">
 
 ## Quick start
 
@@ -19,7 +19,7 @@ Dev server proxies `/api/*` and `/health` to `http://localhost:3013`.
 
 </important>
 
-<important if="you are creating a new file in new-ui/src/ and need to decide where it lives">
+<important if="you are creating a new file in ui/src/ and need to decide where it lives">
 
 ## Project structure
 
@@ -45,7 +45,7 @@ src/
 
 </important>
 
-<important if="you are adding or modifying react-query hooks, api calls, or fetch intervals in new-ui">
+<important if="you are adding or modifying react-query hooks, api calls, or fetch intervals in ui">
 
 ## Data fetching
 
@@ -55,7 +55,7 @@ src/
 
 </important>
 
-<important if="you are adding or modifying a data table, list, or grid view in new-ui">
+<important if="you are adding or modifying a data table, list, or grid view in ui">
 
 ## Data tables (AG Grid)
 
@@ -68,7 +68,7 @@ src/
 
 </important>
 
-<important if="you are rendering a tag, status chip, pill, or small badge in new-ui">
+<important if="you are rendering a tag, status chip, pill, or small badge in ui">
 
 ## Tags / status chips
 
@@ -83,7 +83,7 @@ The `variant` controls color/background (outline, default, secondary, destructiv
 
 </important>
 
-<important if="you are rendering a destructive-outline icon or button in new-ui (delete, remove, disconnect)">
+<important if="you are rendering a destructive-outline icon or button in ui (delete, remove, disconnect)">
 
 ## Destructive-outline buttons
 
@@ -98,24 +98,24 @@ Do not re-inline the underlying classes (`border-status-error/30 text-status-err
 
 </important>
 
-<important if="you are copying a primitive from ~/Downloads/swarm-design-system or comparing new-ui's components/ui to the brand kit">
+<important if="you are copying a primitive from ~/Downloads/swarm-design-system or comparing ui's components/ui to the brand kit">
 
 ## Primitive parity with brand kit
 
-new-ui's primitives in `src/components/ui/` are the **canonical implementation**. The brand kit at `~/Downloads/swarm-design-system/new-ui/src/components/ui/` is a snapshot of an earlier version of new-ui — it is a brand reference, not a build artifact.
+ui's primitives in `src/components/ui/` are the **canonical implementation**. The brand kit at `~/Downloads/swarm-design-system/new-ui/src/components/ui/` is a snapshot of an earlier version of the ui — it is a brand reference, not a build artifact.
 
-Brand-kit divergences are tracked in [`thoughts/taras/research/2026-05-06-design-system-audit.md`](../thoughts/taras/research/2026-05-06-design-system-audit.md) (see "Phase 8 — Primitive parity") and reconciled deliberately. **Do not blindly copy from `~/Downloads/swarm-design-system`** — consult the audit first, especially for the `Button` `destructive-outline` variant where new-ui's status-token form (Phase 4) is canonical and adopting the brand kit's raw `red-*` literals would break the Phase 7 `check:tokens` lint gate.
+Brand-kit divergences are tracked in [`thoughts/taras/research/2026-05-06-design-system-audit.md`](../thoughts/taras/research/2026-05-06-design-system-audit.md) (see "Phase 8 — Primitive parity") and reconciled deliberately. **Do not blindly copy from `~/Downloads/swarm-design-system`** — consult the audit first, especially for the `Button` `destructive-outline` variant where the ui's status-token form (Phase 4) is canonical and adopting the brand kit's raw `red-*` literals would break the Phase 7 `check:tokens` lint gate.
 
 </important>
 
-<important if="you are writing Tailwind classes, picking colors, or styling components in new-ui">
+<important if="you are writing Tailwind classes, picking colors, or styling components in ui">
 
 ## Theming
 
 - **Never hardcode dark-mode colors** (no `bg-zinc-950`, `text-zinc-400`, etc.). Use CSS variable classes: `bg-background`, `bg-muted`, `text-foreground`, `text-muted-foreground`, `border-border`, `bg-accent`.
 - **Amber** is brand `--primary` — use it for interactive / active states only.
 - **Status colors come from named semantic tokens** — `bg-status-success`, `text-status-error`, `bg-status-active`, etc. — defined in `src/styles/globals.css` (light + dark). Action-type colors (workflow nodes) come from `bg-action-*` tokens. **Do not** use raw Tailwind palette literals (`bg-emerald-500`, `text-amber-400`, `border-red-500/30`, etc.) in app code. Translucent fills use the standard Tailwind opacity syntax: `bg-status-success/10`, `border-action-script/50`.
-- **Color literal lint gate.** `pnpm run check:tokens` (also runs in CI via `merge-gate.yml`'s `new-ui-lint` job) fails the build on any raw Tailwind color palette literal, `dark:` palette variant, arbitrary color literal (e.g. `bg-[#0d1117]`), or hardcoded hex in `src/`. To use a new color, add a token to `src/styles/globals.css`. Monaco editor themes are exempt and live in `src/lib/monaco-themes.ts`.
+- **Color literal lint gate.** `pnpm run check:tokens` (also runs in CI via `merge-gate.yml`'s `ui-lint` job) fails the build on any raw Tailwind color palette literal, `dark:` palette variant, arbitrary color literal (e.g. `bg-[#0d1117]`), or hardcoded hex in `src/`. To use a new color, add a token to `src/styles/globals.css`. Monaco editor themes are exempt and live in `src/lib/monaco-themes.ts`.
 - CSS variables defined in `src/styles/globals.css`; AG Grid themed via `src/styles/ag-grid.css`.
 - Use `cn()` from `@/lib/utils` for conditional class merging.
 
@@ -163,7 +163,7 @@ Each status token has a paired `-foreground` for legible text on the colored fil
 
 </important>
 
-<important if="you are rendering any markdown content in new-ui (LLM output, task descriptions, comments, task prompts, etc.)">
+<important if="you are rendering any markdown content in ui (LLM output, task descriptions, comments, task prompts, etc.)">
 
 ## Markdown rendering
 
@@ -171,7 +171,7 @@ Use `<Streamdown>{text}</Streamdown>` from `streamdown` for **all** markdown ren
 
 </important>
 
-<important if="you are debugging API calls from new-ui, changing the dev proxy, or configuring production apiUrl/apiKey">
+<important if="you are debugging API calls from ui, changing the dev proxy, or configuring production apiUrl/apiKey">
 
 ## API connection
 
@@ -180,7 +180,7 @@ Use `<Streamdown>{text}</Streamdown>` from `streamdown` for **all** markdown ren
 
 </important>
 
-<important if="you are building a page, modifying a page's layout, or composing UI in new-ui">
+<important if="you are building a page, modifying a page's layout, or composing UI in ui">
 
 ## Primitives catalog
 
@@ -260,10 +260,10 @@ A handful of detail pages are exempt because their identity is an editor or spli
 
 </important>
 
-<important if="you are preparing a PR that touches new-ui/, or running automated UI tests against new-ui">
+<important if="you are preparing a PR that touches ui/, or running automated UI tests against ui">
 
 ## qa-use & PR screenshot requirement
 
-Use `qa-use` for browser automation: `/qa-use:test-run`, `/qa-use:verify`, `/qa-use:explore`. Any PR touching `new-ui/` MUST include a `qa-use` session with screenshots of the changes running locally — enforced by the merge gate. Port-conflict handling: [../LOCAL_TESTING.md § Dashboard UI](../LOCAL_TESTING.md#dashboard-ui).
+Use `qa-use` for browser automation: `/qa-use:test-run`, `/qa-use:verify`, `/qa-use:explore`. Any PR touching `ui/` MUST include a `qa-use` session with screenshots of the changes running locally — enforced by the merge gate. Port-conflict handling: [../LOCAL_TESTING.md § Dashboard UI](../LOCAL_TESTING.md#dashboard-ui).
 
 </important>
