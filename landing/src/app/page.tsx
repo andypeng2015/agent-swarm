@@ -15,16 +15,16 @@ export const metadata: Metadata = {
   keywords: [
     "agent swarm",
     "agent swarm cloud",
+    "coordination intelligence",
     "multi-agent AI",
     "AI agent orchestration",
     "Claude Code agents",
+    "Devin orchestration",
     "autonomous AI agents",
     "MCP orchestration platform",
     "multi-agent framework",
     "AI coding assistant orchestration",
     "agent swarm open source",
-    "AI coding automation",
-    "multi-agent system",
   ],
   alternates: {
     canonical: "/",
