@@ -78,7 +78,7 @@ export function ClaudeManagedSection({ def, configs, envPresence }: ClaudeManage
         Partial
       </Badge>
     ) : (
-      <Badge variant="outline" size="tag" className="border-zinc-500/30 text-zinc-400">
+      <Badge variant="outline" size="tag" className="border-status-neutral/30 text-status-neutral">
         Not configured
       </Badge>
     );

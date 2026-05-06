@@ -113,7 +113,10 @@ export default function IntegrationsPage() {
             </li>
             <li>
               <span className="inline-flex items-center gap-1">
-                <StatusChip label="Disabled" colorClass="border-slate-500/30 text-slate-400" />
+                <StatusChip
+                  label="Disabled"
+                  colorClass="border-status-neutral/30 text-status-neutral"
+                />
                 <span>
                   — <code className="font-mono text-[11px]">&lt;PREFIX&gt;_DISABLE</code> is truthy
                   in the DB.

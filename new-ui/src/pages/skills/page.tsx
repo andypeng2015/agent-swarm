@@ -30,7 +30,7 @@ function ScopeBadge({ scope }: { scope: string }) {
   const colors: Record<string, string> = {
     global: "border-emerald-500/30 text-emerald-400",
     swarm: "border-amber-500/30 text-amber-400",
-    agent: "border-zinc-500/30 text-zinc-400",
+    agent: "border-status-neutral/30 text-status-neutral",
   };
   return (
     <Badge variant="outline" size="tag" className={`${colors[scope] || ""}`}>

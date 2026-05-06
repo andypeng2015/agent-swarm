@@ -86,7 +86,7 @@ function logStatusColor(status: string | null | undefined): string {
     case "idle":
       return "text-emerald-400";
     case "offline":
-      return "text-zinc-400";
+      return "text-status-neutral";
     case "pending":
     case "offered":
     case "unassigned":

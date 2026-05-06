@@ -540,7 +540,7 @@ export default function AgentDetailPage() {
                         className={`${
                           skill.isActive
                             ? "border-emerald-500/30 text-emerald-400"
-                            : "border-zinc-500/30 text-zinc-400"
+                            : "border-status-neutral/30 text-status-neutral"
                         }`}
                       >
                         {skill.isActive ? "Active" : "Inactive"}
@@ -596,7 +596,7 @@ export default function AgentDetailPage() {
                         className={`${
                           server.isActive
                             ? "border-emerald-500/30 text-emerald-400"
-                            : "border-zinc-500/30 text-zinc-400"
+                            : "border-status-neutral/30 text-status-neutral"
                         }`}
                       >
                         {server.isActive ? "Active" : "Inactive"}

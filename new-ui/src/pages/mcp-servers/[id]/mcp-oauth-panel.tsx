@@ -41,7 +41,7 @@ import { formatRelativeTime } from "@/lib/utils";
 
 function AuthMethodBadge({ method }: { method: McpServer["authMethod"] }) {
   const colors: Record<string, string> = {
-    static: "border-zinc-500/30 text-zinc-400",
+    static: "border-status-neutral/30 text-status-neutral",
     oauth: "border-purple-500/30 text-purple-400",
     auto: "border-sky-500/30 text-sky-400",
   };
@@ -56,7 +56,7 @@ function OAuthStatusBadge({ status }: { status: McpOAuthStatus }) {
   const colors: Record<McpOAuthStatus, string> = {
     connected: "border-emerald-500/30 text-emerald-400",
     expired: "border-amber-500/30 text-amber-400",
-    revoked: "border-zinc-500/30 text-zinc-400",
+    revoked: "border-status-neutral/30 text-status-neutral",
     error: "border-red-500/30 text-red-400",
   };
   return (

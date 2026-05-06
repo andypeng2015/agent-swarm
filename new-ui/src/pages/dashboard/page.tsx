@@ -44,7 +44,7 @@ function AgentRow({ agent, currentTaskText }: { agent: AgentWithTasks; currentTa
             className={cn(
               "h-2.5 w-2.5 rounded-full",
               agent.status === "idle" && "bg-emerald-500",
-              agent.status === "offline" && "bg-zinc-500",
+              agent.status === "offline" && "bg-status-neutral",
             )}
           />
         )}
@@ -111,7 +111,7 @@ function ActiveTaskRow({
 
 const eventIcons: Record<string, { icon: LucideIcon; color: string }> = {
   agent_joined: { icon: UserPlus, color: "text-emerald-400 bg-emerald-400/10" },
-  agent_left: { icon: UserMinus, color: "text-zinc-400 bg-zinc-400/10" },
+  agent_left: { icon: UserMinus, color: "text-status-neutral bg-status-neutral/10" },
   agent_status_change: { icon: Radio, color: "text-yellow-400 bg-yellow-400/10" },
   task_created: { icon: ClipboardPlus, color: "text-blue-400 bg-blue-400/10" },
   task_status_change: { icon: ArrowRightLeft, color: "text-primary bg-primary/10" },
@@ -120,7 +120,7 @@ const eventIcons: Record<string, { icon: LucideIcon; color: string }> = {
   task_accepted: { icon: CircleCheck, color: "text-emerald-400 bg-emerald-400/10" },
   task_rejected: { icon: CircleX, color: "text-red-400 bg-red-400/10" },
   task_claimed: { icon: CircleCheck, color: "text-emerald-400 bg-emerald-400/10" },
-  task_released: { icon: Ban, color: "text-zinc-400 bg-zinc-400/10" },
+  task_released: { icon: Ban, color: "text-status-neutral bg-status-neutral/10" },
   channel_message: { icon: MessageSquare, color: "text-blue-300 bg-blue-300/10" },
   service_registered: { icon: Server, color: "text-purple-400 bg-purple-400/10" },
 };
@@ -138,7 +138,7 @@ function statusColor(status: string | null | undefined): string {
     case "idle":
       return "text-emerald-400";
     case "offline":
-      return "text-zinc-400";
+      return "text-status-neutral";
     default:
       return "text-primary";
   }
@@ -147,7 +147,7 @@ function statusColor(status: string | null | undefined): string {
 function ActivityItem({ log, agentMap }: { log: AgentLog; agentMap: Map<string, string> }) {
   const config = eventIcons[log.eventType] ?? {
     icon: Activity,
-    color: "text-zinc-400 bg-zinc-400/10",
+    color: "text-status-neutral bg-status-neutral/10",
   };
   const Icon = config.icon;
 

@@ -57,7 +57,7 @@ export function SwarmSwitcher() {
                         ? isHealthy
                           ? "bg-emerald-500"
                           : "bg-red-500"
-                        : "bg-zinc-400 dark:bg-zinc-600",
+                        : "bg-status-neutral",
                     )}
                   />
                   <span className="truncate">{conn.name}</span>

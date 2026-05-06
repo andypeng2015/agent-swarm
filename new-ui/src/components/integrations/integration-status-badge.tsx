@@ -30,7 +30,7 @@ const STATUS_META: Record<
   },
   disabled: {
     label: "Disabled",
-    className: "border-slate-500/30 text-slate-400",
+    className: "border-status-neutral/30 text-status-neutral",
     ariaLabel: "Status: Disabled",
     tooltip:
       "The integration's <PREFIX>_DISABLE flag is set to a truthy value. Clear or flip it to re-enable.",

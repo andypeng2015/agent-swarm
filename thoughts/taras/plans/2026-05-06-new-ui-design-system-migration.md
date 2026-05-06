@@ -4,7 +4,7 @@ topic: "new-ui Design System Migration Plan"
 status: in-progress
 author: Claude (planning)
 last_updated: 2026-05-06T00:00:00Z
-last_updated_by: Claude (phase 2)
+last_updated_by: Claude (phase 3)
 ---
 
 # new-ui Design System Migration Plan
@@ -328,15 +328,15 @@ Inspect each in context — cheatsheet is a guide, not a rule. Conditional dark/
 ### Success Criteria:
 
 #### Automated Verification:
-- [ ] `rg -n 'bg-(zinc|slate|gray|stone|neutral)-\d' new-ui/src/` → 0 results
-- [ ] `rg -n 'text-(zinc|slate|gray|stone|neutral)-\d' new-ui/src/` → 0 results
-- [ ] `rg -n 'border-(zinc|slate|gray|stone|neutral)-\d' new-ui/src/` → 0 results
-- [ ] `rg -n 'dark:(bg|text|border)-(zinc|slate|gray|stone|neutral)-\d' new-ui/src/` → 0 results
-- [ ] `cd new-ui && pnpm lint && pnpm exec tsc -b`
+- [x] `rg -n 'bg-(zinc|slate|gray|stone|neutral)-\d' new-ui/src/` → 0 results
+- [x] `rg -n 'text-(zinc|slate|gray|stone|neutral)-\d' new-ui/src/` → 0 results
+- [x] `rg -n 'border-(zinc|slate|gray|stone|neutral)-\d' new-ui/src/` → 0 results
+- [x] `rg -n 'dark:(bg|text|border)-(zinc|slate|gray|stone|neutral)-\d' new-ui/src/` → 0 results
+- [x] `cd new-ui && pnpm lint && pnpm exec tsc -b`
 
 #### Automated QA:
-- [ ] `qa-use` sweep of all 20 touched files' routes in light + dark into `thoughts/taras/qa/2026-05-06-design-system-audit/phase-3/`.
-- [ ] Visual diff vs. Phase 2 post-baseline; flag any unintended visual regressions per route.
+- [ ] `qa-use` sweep of all 20 touched files' routes in light + dark into `thoughts/taras/qa/2026-05-06-design-system-audit/phase-3/`. *(skipped — qa-use deferred to PR-time per orchestrator instruction)*
+- [ ] Visual diff vs. Phase 2 post-baseline; flag any unintended visual regressions per route. *(skipped — qa-use deferred to PR-time)*
 
 #### Manual Verification:
 - [ ] Eye-check every touched page in both modes — semantic tokens render with parity (slight tonal shifts acceptable for the `zinc-200 → muted` substitutions; structural deltas are NOT — escalate).

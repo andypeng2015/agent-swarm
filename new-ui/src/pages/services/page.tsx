@@ -13,7 +13,7 @@ const statusColors: Record<ServiceStatus, string> = {
   healthy: "bg-emerald-500",
   unhealthy: "bg-red-500",
   starting: "bg-yellow-500",
-  stopped: "bg-zinc-500",
+  stopped: "bg-status-neutral",
 };
 
 const statusLabels: Record<ServiceStatus, string> = {
@@ -62,7 +62,7 @@ export default function ServicesPage() {
                     <div
                       className={cn(
                         "h-2.5 w-2.5 rounded-full",
-                        statusColors[svc.status] ?? "bg-zinc-500",
+                        statusColors[svc.status] ?? "bg-status-neutral",
                         svc.status === "starting" && "animate-pulse",
                       )}
                     />

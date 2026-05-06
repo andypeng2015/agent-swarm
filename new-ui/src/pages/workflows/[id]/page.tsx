@@ -697,27 +697,15 @@ function ScriptConfig({ config }: { config: Record<string, unknown> }) {
               theme === "dark" ? "bg-[#0d1117]" : "bg-white",
             )}
           >
-            <div
-              className={cn(
-                "flex items-center justify-between px-3 py-1.5 border-b",
-                theme === "dark"
-                  ? "border-white/10 bg-black/20 text-white/60"
-                  : "border-zinc-200 bg-zinc-50 text-zinc-600",
-              )}
-            >
+            <div className="flex items-center justify-between px-3 py-1.5 border-b border-border bg-muted text-muted-foreground">
               <span className="text-[10px] font-mono uppercase tracking-wide">
                 {runtime ?? language}
               </span>
               <div className="flex items-center gap-3">
-                <span
-                  className={cn(
-                    "text-[10px] font-mono",
-                    theme === "dark" ? "text-white/40" : "text-zinc-400",
-                  )}
-                >
+                <span className="text-[10px] font-mono text-muted-foreground/70">
                   {lineCount} {lineCount === 1 ? "line" : "lines"}
                 </span>
-                <CopyIconButton value={code} darkMode={theme === "dark"} />
+                <CopyIconButton value={code} />
               </div>
             </div>
             <Editor
@@ -1240,13 +1228,7 @@ function JsonMonacoEditor({
 }) {
   const { theme } = useTheme();
   return (
-    <div
-      className={cn(
-        "rounded-md overflow-hidden border",
-        theme === "dark" ? "border-white/10" : "border-zinc-200",
-      )}
-      data-testid={testId}
-    >
+    <div className="rounded-md overflow-hidden border border-border" data-testid={testId}>
       <Editor
         language="json"
         theme={theme === "dark" ? "github-dark" : "github-light"}
@@ -1852,7 +1834,7 @@ function formatCooldown(c: CooldownConfig): string {
   return parts.length > 0 ? parts.join(" ") : "none";
 }
 
-function CopyIconButton({ value, darkMode }: { value: string; darkMode: boolean }) {
+function CopyIconButton({ value }: { value: string }) {
   const [copied, setCopied] = useState(false);
   const handleCopy = async () => {
     try {
@@ -1869,12 +1851,7 @@ function CopyIconButton({ value, darkMode }: { value: string; darkMode: boolean 
       onClick={handleCopy}
       aria-label={copied ? "Copied" : "Copy code"}
       title={copied ? "Copied" : "Copy code"}
-      className={cn(
-        "rounded p-1 transition-colors focus:outline-none focus:ring-1",
-        darkMode
-          ? "text-white/50 hover:text-white hover:bg-white/10 focus:ring-white/30"
-          : "text-zinc-500 hover:text-zinc-900 hover:bg-zinc-200 focus:ring-zinc-400",
-      )}
+      className="rounded p-1 transition-colors focus:outline-none focus:ring-1 text-muted-foreground hover:text-foreground hover:bg-muted focus:ring-ring"
     >
       {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
     </button>

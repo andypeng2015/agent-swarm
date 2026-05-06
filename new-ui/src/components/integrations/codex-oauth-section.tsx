@@ -130,7 +130,7 @@ export function CodexOAuthSection() {
             </div>
           ) : (
             <div className="flex items-start gap-3">
-              <div className="mt-1.5 h-2 w-2 rounded-full bg-zinc-500 shrink-0" aria-hidden />
+              <div className="mt-1.5 h-2 w-2 rounded-full bg-status-neutral shrink-0" aria-hidden />
               <div className="space-y-1">
                 <div className="text-sm font-medium">Not configured</div>
                 <div className="text-xs text-muted-foreground">

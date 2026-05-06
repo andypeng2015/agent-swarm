@@ -166,8 +166,8 @@ export default function WorkflowRunDetailPage() {
                   status === "running" && "bg-amber-500",
                   status === "waiting" && "bg-yellow-500",
                   status === "failed" && "bg-red-500",
-                  status === "pending" && "bg-zinc-500",
-                  status === "skipped" && "bg-zinc-400/40",
+                  status === "pending" && "bg-status-neutral",
+                  status === "skipped" && "bg-status-neutral/40",
                 )}
               />
               {count} {status}

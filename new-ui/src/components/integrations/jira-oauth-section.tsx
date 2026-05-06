@@ -124,7 +124,7 @@ export function JiraOAuthSection() {
               className={
                 data.connected
                   ? "mt-1.5 h-2 w-2 rounded-full bg-emerald-500 shrink-0"
-                  : "mt-1.5 h-2 w-2 rounded-full bg-zinc-500 shrink-0"
+                  : "mt-1.5 h-2 w-2 rounded-full bg-status-neutral shrink-0"
               }
               aria-hidden="true"
             />

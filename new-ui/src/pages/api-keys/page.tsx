@@ -40,8 +40,8 @@ const statusConfig: Record<ApiKeyStatusType, { label: string; dot: string; text:
 function KeyStatusBadge({ status }: { status: ApiKeyStatusType }) {
   const config = statusConfig[status] ?? {
     label: status,
-    dot: "bg-zinc-400",
-    text: "text-zinc-500",
+    dot: "bg-status-neutral",
+    text: "text-status-neutral",
   };
   return (
     <Badge
