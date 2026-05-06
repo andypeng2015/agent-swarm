@@ -2,6 +2,8 @@ const PILLARS = [
   {
     id: "compounds",
     title: "Yesterday’s work makes tomorrow easier",
+    // TODO(DES-318): once memory-recall % telemetry is instrumented, replace
+    // "Most agents start every task from zero" with the concrete percentage.
     body:
       "Most agents start every task from zero. Ours read what they shipped last week before they begin.",
     accent: "oklch(0.879 0.169 91.605)",
