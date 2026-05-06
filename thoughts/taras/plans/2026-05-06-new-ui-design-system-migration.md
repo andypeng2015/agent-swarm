@@ -4,7 +4,7 @@ topic: "new-ui Design System Migration Plan"
 status: in-progress
 author: Claude (planning)
 last_updated: 2026-05-06T00:00:00Z
-last_updated_by: Claude (phase 8)
+last_updated_by: Claude (phase 9)
 ---
 
 # new-ui Design System Migration Plan
@@ -671,13 +671,13 @@ Each new primitive:
 ### Success Criteria:
 
 #### Automated Verification:
-- [ ] `cd new-ui && pnpm run check:tokens && pnpm lint && pnpm exec tsc -b`
-- [ ] Pattern report committed at `thoughts/taras/research/2026-05-06-pattern-audit.md`
-- [ ] Every promoted primitive has a corresponding file under `src/components/{ui,shared}/`
+- [x] `cd new-ui && pnpm run check:tokens && pnpm lint && pnpm exec tsc -b`
+- [x] Pattern report committed at `thoughts/taras/research/2026-05-06-pattern-audit.md`
+- [x] Every promoted primitive has a corresponding file under `src/components/{ui,shared}/`
 
 #### Automated QA:
-- [ ] `qa-use` capture of one route per new primitive demonstrating its render in light + dark, into `thoughts/taras/qa/2026-05-06-design-system-audit/phase-9/`.
-- [ ] No visual regression from Phase 8 baseline (this phase introduces primitives but does not yet replace usages — that's Phase 10).
+- [ ] `qa-use` capture of one route per new primitive demonstrating its render in light + dark, into `thoughts/taras/qa/2026-05-06-design-system-audit/phase-9/`. [skipped — qa-use deferred to PR-time]
+- [ ] No visual regression from Phase 8 baseline (this phase introduces primitives but does not yet replace usages — that's Phase 10). [skipped — qa-use deferred to PR-time]
 
 #### Manual Verification:
 - [ ] Pattern report reviewed: clusters meaningful, occurrence counts honest, primitive proposals reasonable.

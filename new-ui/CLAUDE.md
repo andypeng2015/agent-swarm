@@ -180,6 +180,72 @@ Use `<Streamdown>{text}</Streamdown>` from `streamdown` for **all** markdown ren
 
 </important>
 
+<important if="you are building a page, modifying a page's layout, or composing UI in new-ui">
+
+## Primitives catalog
+
+**Compose from primitives. Do not hand-roll a `<div>` layout if a primitive already exists. Add a new primitive when you'd otherwise repeat the pattern.**
+
+### shadcn primitives (`src/components/ui/`)
+
+| Primitive | Usage | Example |
+|---|---|---|
+| `Alert`, `AlertTitle`, `AlertDescription` | default + destructive informational alert | `<Alert variant="destructive"><AlertCircle /><AlertDescription>Failed</AlertDescription></Alert>` |
+| `AlertCallout` | status-toned inline alert (success/active/error/warning/info/pending/paused/neutral) | `<AlertCallout tone="error" icon={AlertCircle}>Last error: ...</AlertCallout>` |
+| `AlertDialog` | confirmation dialog for destructive actions | `<AlertDialog><AlertDialogTrigger>...<AlertDialogContent>...` |
+| `Avatar`, `AvatarImage`, `AvatarFallback` | user/agent avatar with fallback | `<Avatar><AvatarImage src={url} /><AvatarFallback>TY</AvatarFallback></Avatar>` |
+| `Badge` | tags, chips, status pills (use `size="tag"` for small uppercase) | `<Badge variant="outline" size="tag">PENDING</Badge>` |
+| `Button` | actions (variants: default, outline, ghost, destructive, destructive-outline, secondary, link) | `<Button size="sm" variant="outline">Save</Button>` |
+| `Card`, `CardHeader`, `CardTitle`, `CardAction`, `CardContent`, `CardFooter` | bordered section container | `<Card><CardHeader><CardTitle>...</CardTitle></CardHeader><CardContent>...</CardContent></Card>` |
+| `Command`, `CommandInput`, `CommandList`, `CommandItem` | command palette / fuzzy-search list | `<Command><CommandInput /><CommandList>...</CommandList></Command>` |
+| `Dialog`, `DialogTrigger`, `DialogContent`, `DialogHeader`, `DialogTitle`, `DialogFooter` | modal dialog | `<Dialog open={open}><DialogContent>...</DialogContent></Dialog>` |
+| `DropdownMenu`, `DropdownMenuTrigger`, `DropdownMenuContent`, `DropdownMenuItem` | dropdown actions menu | `<DropdownMenu><DropdownMenuTrigger>...</DropdownMenuTrigger><DropdownMenuContent>...` |
+| `InfoRow`, `DefinitionList` | uppercase-label + value pair, used in detail pages | `<DefinitionList><InfoRow label="Role">Engineer</InfoRow></DefinitionList>` |
+| `Input` | text input | `<Input id="name" value={v} onChange={...} />` |
+| `Label` | form-control label (use inside `SettingsRow`) | `<Label htmlFor="name">Name</Label>` |
+| `PageHeader` | route-page top heading (title + optional description + optional action) | `<PageHeader title="Tasks" action={<Button>New</Button>} />` |
+| `Progress` | linear progress bar | `<Progress value={75} />` |
+| `ScrollArea`, `ScrollBar` | scrollable container with custom scrollbar | `<ScrollArea className="h-72">...</ScrollArea>` |
+| `Select`, `SelectTrigger`, `SelectValue`, `SelectContent`, `SelectItem` | dropdown select | `<Select value={v} onValueChange={...}><SelectTrigger>...</SelectTrigger>...` |
+| `Separator` | horizontal/vertical divider | `<Separator />` |
+| `SettingsRow` | labeled form-field wrapper (label + control + optional helper) | `<SettingsRow label="URL" htmlFor="url" helper="..."><Input id="url" /></SettingsRow>` |
+| `Sheet`, `SheetTrigger`, `SheetContent` | slide-in side drawer | `<Sheet><SheetContent side="right">...</SheetContent></Sheet>` |
+| `Sidebar`, `SidebarHeader`, `SidebarContent`, `SidebarMenu` | shadcn sidebar shell (used by `app-sidebar.tsx`) | `<Sidebar><SidebarContent>...</SidebarContent></Sidebar>` |
+| `Skeleton` | loading-state placeholder | `<Skeleton className="h-4 w-32" />` |
+| `Sonner` (`Toaster`) | toast notifications | mounted at root, call `toast.success("...")` |
+| `StatPanel` | Card-sized stat tile (icon-bg + label + numeric value, status-toned) | `<StatPanel icon={Key} label="Total Keys" value={42} tone="success" />` |
+| `Switch` | toggle | `<Switch checked={v} onCheckedChange={...} />` |
+| `Table`, `TableHeader`, `TableRow`, `TableCell` | NEVER use for data lists — use `DataGrid` instead. Reserved for static layout tables (e.g. pricing). |
+| `Tabs`, `TabsList`, `TabsTrigger`, `TabsContent` | tabbed sections | `<Tabs value={tab} onValueChange={setTab}><TabsList>...</TabsList>...` |
+| `Textarea` | multi-line text input | `<Textarea value={v} onChange={...} />` |
+| `Tooltip`, `TooltipTrigger`, `TooltipContent` | hover/focus tooltip | `<Tooltip><TooltipTrigger>...</TooltipTrigger><TooltipContent>...</TooltipContent></Tooltip>` |
+
+### Agent-swarm-specific primitives (`src/components/shared/`)
+
+| Primitive | Usage | Example |
+|---|---|---|
+| `AgentLink` | linked agent name with avatar | `<AgentLink agentId={id} agentName={name} />` |
+| `CollapsibleDescription` | truncated text with show-more toggle | `<CollapsibleDescription text={long} />` |
+| `CollapsibleSection` | folding section header | `<CollapsibleSection title="Details">...</CollapsibleSection>` |
+| `CommandMenu` | global ⌘K palette | mounted at root |
+| `DataGrid` | AG Grid wrapper — REQUIRED for all data lists | `<DataGrid rowData={rows} columnDefs={cols} />` |
+| `EmptyState` | icon + title + description + optional action for empty lists | `<EmptyState icon={Inbox} title="No tasks" description="..." />` |
+| `ErrorBoundary` | top-level error fallback | wrap routes |
+| `JsonViewer` | collapsible JSON tree with copy | `<JsonViewer data={obj} />` |
+| `NameConnectionModal` | first-time connection naming | mounted on first connect |
+| `OAuthSection`, `OAuthStatusRow`, `OAuthSectionRow` | shared OAuth integration shell (codex/linear/jira/claude-managed) | `<OAuthSection title="Connection"><OAuthStatusRow connected={ok} label="..." actions={...} /></OAuthSection>` |
+| `PageSkeleton` | route-page loading placeholder | `<PageSkeleton />` |
+| `SessionId` | short clickable session/agent ID chip | `<SessionId id={id} />` |
+| `SessionLogViewer` | streaming agent-session log viewer | `<SessionLogViewer sessionId={id} />` |
+| `StatsBar` | compact horizontal stats strip (used on dashboard) | `<StatsBar agents={...} tasks={...} />` |
+| `StatusBadge` | semantic status chip (18 statuses, uses status tokens) | `<StatusBadge status="in_progress" />` |
+| `UsageSummary` | per-agent token/cost summary panel | `<UsageSummary agentId={id} />` |
+| `WorkflowNodeShell` | shared shell for action / condition / trigger nodes (react-flow) | `<WorkflowNodeShell icon={Bot} label={name} nodeType="agent-task" borderClass="..." iconBgClass="..." iconClass="..." handleClass="..." />` |
+
+If you find yourself writing `<div className="flex items-center gap-2">` or `<div className="space-y-2"><h1>...</h1>...</div>` to recreate one of the patterns above, stop and use the primitive. If the pattern doesn't fit any primitive yet but appears 2+ times, add a new primitive to `src/components/{ui,shared}/` rather than copying the JSX a third time.
+
+</important>
+
 <important if="you are preparing a PR that touches new-ui/, or running automated UI tests against new-ui">
 
 ## qa-use & PR screenshot requirement
