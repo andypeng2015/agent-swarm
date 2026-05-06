@@ -1,8 +1,8 @@
 ---
 date: 2026-05-06T00:00:00Z
 topic: "Brand-truth audit: ~/Downloads/swarm-design-system vs new-ui/"
-status: in-progress
-author: Claude (phases 1, 4, 8)
+status: completed
+author: Claude (phases 1, 4, 8, 11)
 related_plan: thoughts/taras/plans/2026-05-06-new-ui-design-system-migration.md
 ---
 
@@ -318,3 +318,63 @@ The plan explicitly anticipates zero code changes as a possibility ("**Even if z
 | Update `new-ui/CLAUDE.md` with primitive-parity subsection | done |
 | Phase 8 success criteria: `pnpm run check:tokens && pnpm lint && pnpm exec tsc -b` | run during phase verification |
 | Phase 8 success criteria: `qa-use` capture | **skipped** — qa-use deferred to PR-time per orchestrator instruction |
+
+---
+
+## Phase 11 — Closing: open backlog vs. brand kit
+
+Final pass at the end of the migration. The plan deliberately did not adopt every brand-kit construct. This section consolidates the unresolved divergences for future plans to consider, with rationale per item.
+
+| Open backlog item | Brand-kit construct | Why not adopted now | When to revisit |
+|---|---|---|---|
+| Spacing scale | `--space-{1,2,3,4,5,6,8,10,12,16,20,24,32}` (`colors_and_type.css`) | new-ui uses Tailwind's default `p-*`/`gap-*` utilities everywhere. Adopting an explicit scale would touch every page (the largest possible refactor) for marginal codification benefit. The Tailwind default scale already covers what brand kit emits at byte-equivalent values. | If a future plan unifies spacing across `landing/` + `new-ui/` + `templates-ui/` and the explicit token surface becomes load-bearing for cross-surface consistency. |
+| Type-scale tokens | `--t-display`, `--t-h1..h4`, `--t-body{,-lg,-sm}`, `--t-caption`, `--t-tag` | new-ui uses Tailwind text utilities (`text-sm`, `text-xs`, `text-[9px]`). The one concrete signal is `--t-tag: 0.5625rem` (= 9px) which already matches the inline `text-[9px]` in `Badge size="tag"` — pixel-equivalent. | If type hierarchy needs cross-surface alignment (e.g. landing-style hero text in new-ui), or if `text-[9px]` gets flagged as an arbitrary utility worth tokenising. |
+| Line-height tokens | `--lh-tight`, `--lh-snug`, `--lh-body`, `--lh-loose` | Same rationale as the type scale — Tailwind's default `leading-*` utilities cover existing usage. | Pair with type-scale adoption. |
+| Shadow scale | `--shadow-{xs,sm,md,lg,xl}` + `--shadow-amber-glow` | new-ui uses Tailwind `shadow-*` utilities; no explicit token surface needed today. The amber-glow shadow is a landing-CTA construct not used in dashboard surfaces. | If a marketing-style CTA lands in the dashboard (e.g. paid-tier upsell), import `--shadow-amber-glow` as a one-off rather than adopting the full scale. |
+| `.gradient-text` helper | `colors_and_type.css:261` | Zero matches in `new-ui/src/` — landing hero construct. No dashboard surface uses gradient text today. | If a marketing-style hero ever lands in new-ui (currently no such surface). |
+| `.grid-bg` helper | `colors_and_type.css:282` | Zero matches in `new-ui/src/` — landing hero construct. | Same as `.gradient-text` — adopt only with a hero surface. |
+| Text-color shorthands | `--fg-1`, `--fg-2`, `--fg-3`, `--fg-4` | new-ui uses `text-foreground` and `text-muted-foreground` directly (two-tier). The four-tier shorthand is denser than current needs. | If documentation/marketing surfaces in new-ui need finer-grained text hierarchy. |
+| Eyebrow tokens | `--eyebrow-color`, `--eyebrow-tracking`, `.t-eyebrow` | Landing-only construct; new-ui has no eyebrow pattern. | Same as `.gradient-text` — only with marketing surface. |
+| Extra radii | `--radius-2xl` (1rem), `--radius-full` (9999px) | `radius-full` is byte-equivalent to Tailwind's `rounded-full`. `radius-2xl` could be added cheaply — no new-ui surface needs it today. | Add ad-hoc if any future primitive surface needs `rounded-2xl` semantically (rather than as a Tailwind utility). |
+| Raw palette scales | `--amber-{50..900}`, `--zinc-{50..950}` | Brand kit exposes raw scales for landing's hero compositions. new-ui consumes via Tailwind utility classes (`bg-amber-500`) at the source level — but those literals are now lint-gated. The palette is implicitly available via Tailwind v4's `--color-*` defaults; we don't re-emit a parallel token layer. | Only if cross-surface code wants to reference scales by CSS variable rather than Tailwind class. Unlikely. |
+| Font-fallback divergence | brand kit: `"Space Grotesk", system-ui, -apple-system, "Segoe UI", sans-serif`; new-ui: `"Space Grotesk", sans-serif` | Functionally equivalent — both load Space Grotesk; the brand kit's fallback chain is more conservative for missing-font edge cases. Not visible in practice. | Trivial alignment; adopt during any future `globals.css` cleanup. |
+| `--color-chart-{1..5}`, `--color-sidebar-*` | new-ui-only tokens; not in brand kit | new-ui's superset reflects its richer surface (charts, sidebar). The brand kit is a snapshot of an earlier new-ui without these surfaces. | Reverse direction: brand kit should adopt these from new-ui if/when the brand kit is regenerated as a snapshot. Not new-ui's concern. |
+
+**Cross-cutting non-goals (deliberately not in scope of this plan):**
+
+- **Multi-surface package extraction.** No `packages/swarm-design-system/` was created. `new-ui/` remains the canonical implementation. Adopting tokens in `landing/`, `templates-ui/`, `docs-site/` is a follow-on plan.
+- **Brand-kit overwrite.** `~/Downloads/swarm-design-system/` stays as a brand-reference Skill — read-only truth-source for audits. The plan did not modify it.
+- **Storybook / dedicated `/design-system` route.** The 33 existing routes serve as the catalog surface; no separate primitive showcase was built.
+
+A separate, lighter-weight backlog file at `thoughts/taras/research/2026-05-06-design-system-backlog.md` summarises the items above as discrete TODOs that future plans can pick up.
+
+---
+
+## Phase 11 implementation summary
+
+| Artifact | Status |
+|---|---|
+| Final green-sweep verification (9 commands) | done — see below |
+| `new-ui/CLAUDE.md` reconciliation pass | done — fixed two stale literal examples (`Tags / status chips` and `Destructive-outline buttons` sections) |
+| Audit doc closing "Open backlog vs. brand kit" section | done (above) |
+| Backlog file at `thoughts/taras/research/2026-05-06-design-system-backlog.md` | done |
+| Plan frontmatter `status: completed` | done |
+| Phase 11 success criteria: full cross-route `qa-use` sweep | **skipped** — orchestrator deferred to PR-time |
+| Phase 11 success criteria: theme-toggle interaction recording | **skipped** — orchestrator deferred to PR-time |
+| Phase 11 success criteria: baseline-vs-final comparison gallery | **skipped** — no baseline captured |
+
+### Final-state verification (9 commands, all green)
+
+| # | Command | Result |
+|---|---|---|
+| 1 | `rg -n 'bg-(zinc\|slate\|gray\|stone\|neutral\|emerald\|amber\|red\|sky\|orange\|yellow\|green\|rose\|blue\|indigo\|violet\|purple\|pink\|fuchsia\|teal\|cyan\|lime)-\d' new-ui/src/` | **0** |
+| 2 | `rg -n 'text-(...)-\d' new-ui/src/` (same 22 hues) | **0** |
+| 3 | `rg -n 'border-(...)-\d' new-ui/src/` (same 22 hues) | **0** |
+| 4 | `rg -n '\b(bg\|text\|border\|fill\|stroke\|ring\|from\|via\|to\|shadow)-\[#[0-9a-fA-F]+\]' new-ui/src/` | **0** |
+| 5 | `rg -n '#[0-9a-fA-F]{6}' new-ui/src/ -t ts --glob '!monaco-themes.ts'` | **0** |
+| 6 | `rg -n 'next-themes' new-ui/` | **0** |
+| 7 | `cd new-ui && pnpm install --frozen-lockfile && pnpm lint && pnpm exec tsc -b && pnpm run check:tokens` | **green** |
+| 8 | `ls new-ui/src/components/ui/ new-ui/src/components/shared/ \| wc -l` | **46** (≥ 30 target) |
+| 9 | `find new-ui/src/lib new-ui/src/hooks -name "*.ts" -not -name "*.test.ts" \| wc -l` | **18** (soft floor 20; the plan explicitly says don't invent utilities to hit the count) |
+
+The utility count of 18 vs the soft floor of 20 is documented honestly. Phase 10 extracted utilities only on duplication (`status-tone`, `percent-progress-tone`, `format-tokens`, `format-duration-ms`, `recharts-tooltip-style`, `integrations-status` + sanity, `slugs`, `schedule-format` — net +11 from the Phase 1 baseline of ~7). Inventing two more to hit 20 would have violated the plan's "do **not** invent utilities to hit a number" rule.

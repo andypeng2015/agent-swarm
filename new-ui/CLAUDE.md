@@ -76,10 +76,10 @@ Use the `tag` size on `Badge` — the small-uppercase chip styling (`text-[9px] 
 
 ```tsx
 <Badge variant="outline" size="tag">PENDING</Badge>
-<Badge variant="outline" size="tag" className="border-sky-500/30 text-sky-400">QUEUED</Badge>
+<Badge variant="outline" size="tag" className="border-status-info/30 text-status-info-strong">QUEUED</Badge>
 ```
 
-The `variant` controls color/background (outline, default, secondary, destructive, ghost, link). `size="tag"` controls the chip sizing/casing. Combine them — do not re-inline the className.
+The `variant` controls color/background (outline, default, secondary, destructive, ghost, link). `size="tag"` controls the chip sizing/casing. Combine them — do not re-inline the className. For semantic-toned chips, use status tokens (`status-info`, `status-success`, etc.) — never raw Tailwind palette literals (the lint gate fails the build on `border-sky-500/30`).
 
 </important>
 
@@ -94,7 +94,7 @@ Use `variant="destructive-outline"` on `Button` for red-outlined destructive act
 <Button variant="destructive-outline" size="sm">Delete</Button>
 ```
 
-Do not re-inline `border-red-500/30 text-red-400 hover:bg-red-500/10`. Pair with `AlertDialog` for confirmation.
+Do not re-inline the underlying classes (`border-status-error/30 text-status-error hover:bg-status-error/10`) or — worse — raw palette literals (`border-red-500/30 text-red-400 hover:bg-red-500/10`); the lint gate fails the build on the latter. Pair with `AlertDialog` for confirmation.
 
 </important>
 
