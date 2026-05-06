@@ -2,7 +2,7 @@
 date: 2026-05-06T00:00:00Z
 topic: "Brand-truth audit: ~/Downloads/swarm-design-system vs new-ui/"
 status: completed
-author: Claude (phases 1, 4, 8, 11)
+author: Claude (phases 1, 4, 8, 11, 12)
 related_plan: thoughts/taras/plans/2026-05-06-new-ui-design-system-migration.md
 ---
 
@@ -378,3 +378,185 @@ A separate, lighter-weight backlog file at `thoughts/taras/research/2026-05-06-d
 | 9 | `find new-ui/src/lib new-ui/src/hooks -name "*.ts" -not -name "*.test.ts" \| wc -l` | **18** (soft floor 20; the plan explicitly says don't invent utilities to hit the count) |
 
 The utility count of 18 vs the soft floor of 20 is documented honestly. Phase 10 extracted utilities only on duplication (`status-tone`, `percent-progress-tone`, `format-tokens`, `format-duration-ms`, `recharts-tooltip-style`, `integrations-status` + sanity, `slugs`, `schedule-format` — net +11 from the Phase 1 baseline of ~7). Inventing two more to hit 20 would have violated the plan's "do **not** invent utilities to hit a number" rule.
+
+---
+
+## Phase 12 — Reconcile `preview/` (33 HTMLs) + `ui_kits/dashboard/` (4 JSX)
+
+The original 11-phase plan audited `colors_and_type.css` + `new-ui/src/components/ui/*.tsx` only. It did NOT investigate the brand kit's two other authoritative reference surfaces:
+
+- `~/Downloads/swarm-design-system/preview/` — 33 visual reference HTMLs (4955 LOC total)
+- `~/Downloads/swarm-design-system/ui_kits/dashboard/` — 4 JSX reference components (267 LOC total)
+
+This section closes that gap. **Audit-only — no code changes to `new-ui/src/`.** Code-change candidates surfaced are flagged at the end of this section for orchestrator follow-up.
+
+### Severity scheme
+
+| Severity | Meaning |
+|---|---|
+| **Spec-aligned** | Implementation matches preview within tolerance. No action. |
+| **Backlog (covered)** | Preview shows a pattern not in scope of the original plan; already in `2026-05-06-design-system-backlog.md`. Confirm only. |
+| **Backlog (new)** | Preview surfaces a pattern not yet in backlog. Append to backlog file. |
+| **Code-change candidate** | Clear visual divergence between preview and landed code that should probably be fixed surgically. Flag for orchestrator. |
+| **Follow-up plan** | Large divergence requiring multi-phase work. Flag for orchestrator. |
+
+### Brand-kit-only token / helper usage across the 33 previews
+
+Programmatic scan of `class="..."` and `var(--*)` references across all 33 HTMLs:
+
+| Brand-kit construct | Usage count | Backlog status |
+|---|---|---|
+| `--fg-1` (text shorthand) | 23 of 33 previews | **Backlog (covered)** — backlog item #5 |
+| `--fg-2` | 21 of 33 | same |
+| `--fg-3` | 27 of 33 | same |
+| `--fg-4` | 25 of 33 | same |
+| `--space-*` | 0 direct uses (every preview inlines px values) | **Backlog (covered)** — backlog item #1; no preview consumes the spacing tokens |
+| `--t-display`, `--t-h*`, `--t-body*`, `--t-caption`, `--t-tag` | `tokens.html`, `type-display.html` only (showcase pages) | **Backlog (covered)** — backlog item #2 |
+| `--shadow-amber-glow` | `buttons.html`, `shadows.html` only (showcase pages) | **Backlog (covered)** — backlog item #4 |
+| `--shadow-{xs,sm,md,lg,xl}` | scattered usage in showcase + `feature-cards.html`, `chat-surface.html`, `colors-amber.html`, `colors-status.html`, `colors-zinc.html`, `tokens.html`, `workflow-graph.html` | **Backlog (covered)** — backlog item #4 |
+| `--radius-{sm,md,lg,xl}` | `buttons.html`, `inputs.html`, `task-rows.html`, `tokens.html` | **Backlog (covered)** — backlog item #7 |
+| `--radius-2xl` / `--radius-full` | 0 preview uses | **Backlog (covered)** — backlog item #7 |
+| `--amber-{50..950}`, `--zinc-{50..950}` raw scales | heavy throughout (most previews) | **Backlog (covered)** — backlog item #8 |
+| `.gradient-text` | `type-display.html` only | **Backlog (covered)** — backlog item #10 |
+| `.grid-bg` | `backgrounds.html` only | **Backlog (covered)** — backlog item #11 |
+| `.t-eyebrow` | `type-display.html` only | **Backlog (covered)** — backlog item #6 |
+
+**Net-new findings vs. backlog**: zero. Every brand-kit-only token / helper that appears in `preview/` is already documented in the backlog. The previews **confirm** the backlog scope; they do not expand it.
+
+### Per-preview-file delta table (33 entries)
+
+The new-ui counterpart column references `new-ui/src/...`. "Surface" indicates whether the preview maps to a route, a primitive, a token spec, or a brand showcase.
+
+| # | Preview HTML | Surface | new-ui counterpart | Delta vs. implementation | Severity |
+|---|---|---|---|---|---|
+| 1 | `approval-request.html` | route | `pages/approval-requests/page.tsx` (+ `[id]/page.tsx` if exists) | Preview shows a high-density approval-decision surface: action, "why agent says it needs this", decision banner, originating task, policy match, audit-record card. Uses `--fg-{1..4}` text-shorthand and `--amber-{500,700}` accents. new-ui's `pages/approval-requests/` exists but is a flat list (no detailed in-page structured-detail like the preview). The preview's structure is pattern-rich (banner with countdown, schema-strip, mono accent labels). | **Follow-up plan** — approval surface redesign |
+| 2 | `backgrounds.html` | showcase | n/a | Demonstrates `.grid-bg` (60×60 dot/grid background). Zero new-ui usage; landing-only construct. | **Backlog (covered)** — item #11 |
+| 3 | `badges.html` | primitive | `components/ui/badge.tsx` | Brand kit's badge rendering uses `--zinc-50/200`, `--amber-{500,700}` for variants. new-ui's `Badge` (Phase 8 byte-identical to brand-kit's `badge.tsx`) consumes shadcn-style `--color-*` aliases. Visual output equivalent at OKLCH precision. | **Spec-aligned** |
+| 4 | `buttons.html` | primitive | `components/ui/button.tsx` | Preview shows a CTA variant with `--shadow-amber-glow` (12px 32px −8px amber-700/0.2). new-ui has no equivalent CTA-glow style; `destructive-outline` and other variants exist but no "amber-glow CTA". Could be added if a marketing-style upsell lands in dashboard. | **Backlog (covered)** — item #4 |
+| 5 | `charts.html` | composite | `pages/usage/page.tsx`, `pages/budgets/page.tsx`, charts in `pages/dashboard/page.tsx` | Preview shows recharts-style cards w/ `--card`, `--border`, `--fg-{1..4}` text hierarchy, mono labels. new-ui uses `--color-card` / `--color-border` (renamed equivalents) + `text-muted-foreground` (two-tier). 4-tier text shorthand absent — same backlog item as everywhere else. | **Backlog (covered)** — item #5 |
+| 6 | `chat-surface.html` | route | `pages/chat/page.tsx` | Preview structure: left rail (channel list), center stream, right meta. Custom classes: `chat`, `rail`, `head`, `list`, `ch`, `conv`, `stream`, `msg`. Uses `--shadow-lg` for hovering message cards. new-ui's `pages/chat/page.tsx` already implements a chat surface — manual diff vs. preview-spec deferred (the brand kit shows ONE possible chat layout; new-ui's may be deliberately different). Spot-checked: new-ui chat does not use `shadow-lg` on messages. | **Backlog (new)** — chat surface visual-spec parity |
+| 7 | `code-block.html` | primitive (missing) | n/a — no `CodeBlock` primitive in new-ui | Preview shows 6 modes: read-mode (no chrome), with-filename-header, diff-mode, editable, long-collapsed, inline. new-ui currently has Monaco editor in workflow detail and Streamdown for markdown — no dedicated `CodeBlock` primitive. The preview is a strong signal that one is missing. | **Backlog (new)** — `<CodeBlock>` primitive (read / diff / inline / editable / collapsed modes) |
+| 8 | `colors-amber.html` | token spec | `src/styles/globals.css` | Preview is a swatch reference for `--amber-{50..900}`. new-ui consumes amber implicitly via Tailwind `--color-primary` (= amber-700 light, amber-500 dark) + the workflow-action `--color-action-property-match` (amber-500 alias). OKLCH parity verified in §(b). Raw scale not exposed as named tokens — backlog item #8. | **Backlog (covered)** — item #8 |
+| 9 | `colors-status.html` | token spec | `src/styles/globals.css` § status tokens | Preview swatches for the 5 brand-kit `--status-*` tokens. new-ui's Phase 1 added 8 (`success, active, error, info, pending, warning, paused, neutral`) — superset of brand-kit's 5. OKLCH parity verified in audit §(g). | **Spec-aligned** (new-ui is a deliberate superset) |
+| 10 | `colors-zinc.html` | token spec | `src/styles/globals.css` | Swatches for `--zinc-{50..950}`. Same situation as amber — consumed implicitly, raw scale not re-emitted. | **Backlog (covered)** — item #8 |
+| 11 | `config-page.html` | route | `pages/config/page.tsx` | Preview shows a 2-column layout: left nav of section pills (Workspace / Swarm / Security / Advanced), right form panel with section headings (Agent runtime / Concurrency / Model & cost / Connections). new-ui's `pages/config/page.tsx` uses `Tabs` for section switching — different navigation pattern but functionally equivalent. The preview's pill-based left nav is more substantial. Could be a follow-up if config grows. | **Spec-aligned** (acceptable variant) |
+| 12 | `data-grid.html` | shared primitive | `components/shared/data-grid.tsx` | Preview shows AG-Grid-style table with selection-row checkbox column, header sort affordances, paginator. new-ui's `DataGrid` is the canonical AG Grid wrapper — used everywhere per CLAUDE.md hard rule. Visual parity is implicitly maintained via AG Grid's CSS-variable theming (`src/styles/ag-grid.css`). | **Spec-aligned** |
+| 13 | `detail-page-template.html` | meta-template | every detail page (`pages/*/[id]/page.tsx`) | **Highest-leverage finding.** Preview shows the canonical detail-page scaffold: breadcrumbs → header (icon-tile, pretitle/short-id, h1, description, action buttons, meta-row of key-value pills) → tabs → body grid (`1fr 280px`: main content + right rail with Quick stats / Relationships / Danger zone). new-ui's detail pages (`tasks/[id]`, `agents/[id]`, `integrations/[id]`, `mcp-servers/[id]`, `workflows/[id]`, `schedules/[id]`) all use `<PageHeader>` + flat `<Tabs>` — **no right rail, no Quick-stats card, no Danger-zone aside**. The detail-page-template's right-rail pattern is a missing primitive and a structural divergence. | **Follow-up plan** — detail-page right-rail primitive + per-page adoption |
+| 14 | `feature-cards.html` | landing-only | n/a (`landing/`) | Preview's `.d-card` / `.a-card` "lead-worker orchestration" / "persistent memory & identity" feature tiles are landing-page constructs. new-ui has no corresponding feature-tile pattern (correct — these belong in landing, which is out of scope). | **Spec-aligned** (out-of-scope per plan) |
+| 15 | `iconography.html` | reference | n/a | Brand-kit's icon vocabulary reference. new-ui uses `lucide-react` (per `components.json`) which aligns with the lucide-style icons shown in the preview. Same icon family. | **Spec-aligned** |
+| 16 | `inputs.html` | primitive | `components/ui/input.tsx`, `select.tsx`, `textarea.tsx`, `switch.tsx`, `label.tsx` | Preview shows form-field treatments with `--radius-md`, `--zinc-{50..950}` borders, `--amber-{500,700}` focus rings. new-ui's input primitives use shadcn defaults — focus ring derives from `--color-ring` (= `--color-primary` = amber-700 light / amber-500 dark). OKLCH-equivalent. | **Spec-aligned** |
+| 17 | `integration-detail.html` | route | `pages/integrations/[id]/page.tsx` | Preview shows: hero header (integration logo + name + status pill), Authentication / Connection / Sync-behavior / Permissions sub-cards, "Sync stats · 24h" bar of small numerics. new-ui's integration-detail uses `OAuthSection`, `OAuthStatusRow`, `OAuthSectionRow` (Phase 9 primitives). The preview's "sync stats · 24h" bar is **NOT** present in new-ui's integration-detail — a Stat-strip-bar primitive (similar to `StatsBar` for dashboard) for the per-integration view. | **Backlog (new)** — per-integration `<StatsBar>` (24h sync stats) |
+| 18 | `logo.html` | reference | `new-ui/public/logo.png` (used in `app-sidebar.tsx`) | Preview shows the brand mark in light/dark + a wordmark variant. new-ui uses `logo.png` directly. Brand consistency maintained. | **Spec-aligned** |
+| 19 | `primitives-tabs-modals.html` | primitive | `components/ui/tabs.tsx`, `dialog.tsx`, `alert-dialog.tsx`, `select.tsx`, `switch.tsx` | Preview demonstrates: standard tab bar, pill-tabs (selectable pills), vtabs (vertical tabs with side accent), dialogs ("Add MCP server", "Delete agent worker-03?", "New scheduled task", "Tool call · run_shell"). new-ui's `Tabs` has `default` and `line` variants; **no `pill` variant** and **no `vertical` variant**. These are 2 missing tab variants if cross-codebase use cases ever require them. Currently no consumer demands them in new-ui. | **Backlog (new)** — `Tabs` `pill` and `vertical` variants if future surfaces need them |
+| 20 | `primitives.html` | primitive | various ui primitives | Preview shows: dropdown menu, command palette (cmd-k), select, switch, alerts ("Approaching monthly budget", "Worker offline · worker-04"). new-ui has all five primitives + `AlertCallout` (Phase 9). Shadow on dropdown uses `--shadow-lg`; new-ui uses Tailwind `shadow-md` — single Tailwind step lighter, captured in backlog #4. | **Spec-aligned** + **Backlog (covered)** — shadow scale |
+| 21 | `radii.html` | token spec | `src/styles/globals.css` | Swatches for radius scale. new-ui has all four radius tokens + the brand kit has 2 extras (`--radius-2xl`, `--radius-full`) — backlog item #7. | **Backlog (covered)** — item #7 |
+| 22 | `shadows.html` | token spec | n/a (no shadow tokens in new-ui) | Swatches for `--shadow-{xs,sm,md,lg,xl}` + `--shadow-amber-glow`. new-ui has no shadow tokens — uses Tailwind `shadow-*` utilities. Backlog item #4. | **Backlog (covered)** — item #4 |
+| 23 | `spacing.html` | token spec | n/a | Visualizes `--space-{1..32}` token scale. new-ui uses Tailwind's default spacing utilities. Backlog item #1. | **Backlog (covered)** — item #1 |
+| 24 | `stats-bar.html` | shared primitive | `components/shared/stats-bar.tsx` | Preview shows a horizontal stat strip for dashboard (agents / tasks / health / cost-today / cost-mtd). new-ui's `<StatsBar>` (used on dashboard) maps 1:1 to this concept. Visual delta TBD without screenshot diff (deferred to qa-use). | **Spec-aligned** (functionally) — visual delta is a qa-use observation |
+| 25 | `status-badges.html` | shared primitive | `components/shared/status-badge.tsx` | Preview shows the canonical status-pill rendering for the 18 statuses. new-ui's `<StatusBadge>` covers the same 18 plus extras (Phase 4 deliverable). Phase 1 token migration (audit §(g)) makes OKLCH parity exact. | **Spec-aligned** |
+| 26 | `task-detail.html` | route | `pages/tasks/[id]/page.tsx` | **Second highest-leverage finding.** Preview shows a 3-column layout: left meta-rail (back link, owner, repo, branch, PR card with `.scm-pr` styling, progress bars with status variants `.warn` / `.danger` / `.ok`), center (task description, output, session log timeline with `.tl-rail` / `.tl-line` / `.tl-dot`), right (?) — but new-ui's `pages/tasks/[id]/page.tsx` uses `<Tabs>` (Overview / Logs / Config) without the SCM-PR card or the timeline-rail visual. The preview's timeline rail (with `.tl-line` connecting `.tl-dot`s vertically) is a richer log-list visual. new-ui's `LogTimeline` (line 139) renders flat rows. | **Code-change candidate** (timeline rail visual on `LogTimeline`) + **Follow-up plan** (3-column meta-rail + SCM-PR card) |
+| 27 | `task-rows.html` | shared (missing) | `pages/tasks/page.tsx` (DataGrid) | Preview shows a card-style task row (rounded, padded, with status pill, title, metadata strip). new-ui uses AG Grid (DataGrid) for the tasks list — flat-row table, not card-style. This is a stylistic preference: AG Grid is the new-ui default and a hard rule per CLAUDE.md ("Always use `DataGrid`"). The brand kit's card-row is an alternate visualization not adopted. | **Spec-aligned** (deliberate divergence — DataGrid is canonical) |
+| 28 | `terminal.html` | primitive (missing) | n/a — no `Terminal` primitive | Preview shows a small mono-font terminal-output card. new-ui's closest equivalent is `SessionLogViewer` (richer, streaming) — terminal-style output is a sub-mode of that. Could be a `Terminal` primitive if static terminal output ever becomes a recurring need. | **Backlog (new)** — `<Terminal>` primitive (static mono-font output card) |
+| 29 | `tokens-dark.html` | token spec | `src/styles/globals.css` `.dark` block | Dark-mode swatches for the same brand-kit tokens. Phase 1 audit §(b) verified OKLCH parity. | **Spec-aligned** |
+| 30 | `tokens.html` | token spec | `src/styles/globals.css` | Light-mode swatches for the brand-kit tokens (color, radius, shadow, type-scale). Already covered by Phase 1 + Phase 11 backlog. | **Spec-aligned** + multiple **Backlog (covered)** items |
+| 31 | `type-display.html` | landing-only | n/a (`landing/`) | Demonstrates `.gradient-text` + `.t-eyebrow` + `.t-display` + `.t-h3` together for landing hero. Out of scope. | **Backlog (covered)** — items #2, #6, #10 |
+| 32 | `type-scale.html` | token spec | n/a | Visualizes `--t-{display,h1..h4,body,...}` scale. Backlog item #2. | **Backlog (covered)** — item #2 |
+| 33 | `workflow-graph.html` | route | `pages/workflows/[id]/page.tsx` | Preview shows a react-flow-style workflow canvas with node states: `running`, `completed`, `failed`, `waiting`, `pending`, `skipped`, `retry`. new-ui's workflow-detail uses react-flow with Phase 4-migrated `--color-action-*` + `--color-status-*` tokens; node-state rendering covers these states via `step-card.tsx` and `*-node.tsx`. Brand-kit-only: `.runmeta` strip below canvas (run summary bar). Spot-check: new-ui has no run-summary strip below the canvas (the run controls panel exists in the page header). | **Backlog (new)** — workflow-canvas run-summary strip (low priority) |
+
+### `ui_kits/dashboard/` — per-JSX diff
+
+The 4 JSX components in `~/Downloads/swarm-design-system/ui_kits/dashboard/` are React reference implementations of the operator-dashboard surface. They use raw Tailwind palette literals (`bg-white border-zinc-200 text-zinc-900 bg-amber-500 ...`) and pre-shadcn patterns — they are **not** the same as the `new-ui/src/components/ui/*.tsx` brand-kit primitives.
+
+#### `Sidebar.jsx` (82 LOC) ↔ `new-ui/src/components/layout/app-sidebar.tsx` (147 LOC)
+
+| Aspect | Brand-kit `Sidebar.jsx` | new-ui `app-sidebar.tsx` | Severity |
+|---|---|---|---|
+| Imports | inline-defined `DIcon` SVGs; `useState` for collapsed | `lucide-react`, `react-router-dom`, shadcn `<Sidebar>` shell, `<CollapsibleSection>`, `<SwarmSwitcher>` | **Spec-aligned** (different stack, same intent) |
+| Nav grouping | 3 groups: `main` / `integrations` / `account` | 5 groups: `Core` / `AI` / `Operations` / `Configuration` / `System` | new-ui has more nav items than the reference shows — **expected** (real product surface > reference) |
+| Active state | `bg-amber-50 text-amber-800` (raw palette) | shadcn `isActive` prop on `SidebarMenuButton` (token-aware) | **Spec-aligned** (new-ui is canonical; raw palette would break lint gate) |
+| Header logo | `<img src="../../assets/logo.png" w-8 h-8 rounded-lg shadow-sm shadow-amber-500/20 />` + workspace name | `<img src="/logo.png" w-8 h-8 rounded />` + "Agent Swarm" + `<SwarmSwitcher>` | **Backlog (new)** — sidebar header `shadow-sm shadow-amber-500/20` accent on logo (small visual touch, depends on `--shadow-amber-glow` adoption — backlog item #4 covers it) |
+| Footer / user card | `<div w-8 h-8 rounded-full bg-gradient-to-br from-amber-400 to-amber-600 ...>AC</div>` + name + workspace handle | `<SidebarTrigger>` only (collapse toggle); no user card | **Backlog (new)** — sidebar footer user-info card (avatar + name + workspace) — currently new-ui shows user identity in `<SwarmSwitcher>` in the header, not the footer |
+| Section labels | `text-[10px] font-semibold uppercase tracking-wider text-zinc-400` | `<CollapsibleSection title={group.label}>` (collapsible, with chevron) | **Spec-aligned** (new-ui is richer) |
+| Item active indicator | left amber accent: `bg-amber-50 text-amber-800` | shadcn-derived (depends on theme) | **Spec-aligned** |
+| Badge on item | `<span text-[10px] font-mono px-1.5 py-0.5 bg-amber-100 text-amber-800 rounded>{n}</span>` | not implemented (nav items have no badge counts in new-ui's `app-sidebar.tsx`) | **Backlog (new)** — sidebar nav-item badge for counts (e.g., "Tasks (7 pending)") |
+| Collapse | manual `w-14`/`w-60` toggle | shadcn `collapsible="icon"` (slimmer, with overlay) | **Spec-aligned** (new-ui is richer) |
+
+#### `Header.jsx` (28 LOC) ↔ `new-ui/src/components/layout/app-header.tsx` (52 LOC)
+
+| Aspect | Brand-kit `Header.jsx` | new-ui `app-header.tsx` | Severity |
+|---|---|---|---|
+| Layout | `h-14 bg-white border-b border-zinc-200 px-5` | `h-14 border-b border-border px-4` | **Spec-aligned** (new-ui uses tokens) |
+| Breadcrumbs | manual `<nav>` with `Workspace / Tasks` | `<Breadcrumbs />` shared component (route-driven) | **Spec-aligned** (new-ui is richer) |
+| Health indicator | `<span w-1.5 h-1.5 rounded-full bg-emerald-500>` + "Connected · v1.4.2" | `bg-status-success`/`bg-status-error` dot + active connection name + version | **Spec-aligned** (token migration done in Phase 4) |
+| Theme toggle | manual `<button onClick={() => setDark(!dark)}>` with sun/moon SVGs | `<Button variant="ghost" size="icon" onClick={toggleTheme}>` w/ lucide `Sun`/`Moon` | **Spec-aligned** |
+| **"New task" CTA** | `<button class="bg-amber-600 hover:bg-amber-500 text-white text-xs font-semibold px-3 py-1.5 rounded-md shadow-sm shadow-amber-600/20">+ New task</button>` (header-anchored CTA with amber-glow shadow) | **NOT PRESENT** in `app-header.tsx` — new-ui's "Create Task" button lives in `pages/tasks/page.tsx` PageHeader action slot, not the global header | **Spec-aligned** (deliberate — global "create" CTAs are page-scoped, not header-scoped, in new-ui's IA) |
+| Sidebar trigger | absent (Sidebar handles its own collapse) | `<SidebarTrigger className="md:hidden">` — mobile-only collapse trigger | **Spec-aligned** (new-ui is richer; responsive) |
+
+#### `TaskList.jsx` (72 LOC) ↔ `new-ui/src/pages/tasks/page.tsx` (624 LOC)
+
+| Aspect | Brand-kit `TaskList.jsx` | new-ui `pages/tasks/page.tsx` | Severity |
+|---|---|---|---|
+| Top filter strip | inline filter-pill buttons: `all / in_progress / pending / done / failed` with count badges; right side: `/api/tasks · live` mono indicator | `<Select>` for status / agent / schedule + `<Switch>` for heartbeat + `<Input>` for search + clear-filters button | **Spec-aligned** (new-ui is richer; URL-param-backed filters > brand-kit's local-state pills) |
+| Live indicator | `text-xs text-zinc-500 font-mono /api/tasks · live` | (not present) — react-query auto-polling at 5s gives the same effect without the visual indicator | **Backlog (new)** — header "live" mono indicator showing data-source + polling state (low priority) |
+| Table | hand-rolled `<table>` with `<thead>` + `<tbody>` | AG Grid via `<DataGrid>` (CLAUDE.md hard rule: "Always use DataGrid") | **Spec-aligned** (deliberate — DataGrid is canonical) |
+| Status chip | `<StatusChip>` inline JSX with `STATUS` map using OKLCH colors directly via `style={{color, background}}` | `<StatusBadge status={value} />` shared primitive (token-driven) | **Spec-aligned** (Phase 4 token migration) |
+| Selected row highlight | `bg-amber-50/40` on selected row | row-click navigates to `/tasks/[id]` (no inline-selected state) | **Spec-aligned** (different IA — list page navigates to detail; brand-kit reference shows split-pane list+detail which is `task-detail.html`'s 3-column rail layout, not new-ui's IA) |
+| ID column | mono-font ID chip | `field="task"` with full description; ID surfaced via row-click navigate; AG Grid handles sort/filter | **Spec-aligned** |
+| Updated column | `text-xs text-zinc-500` static "2m ago" string | `formatSmartTime(value)` — live-formatted | **Spec-aligned** (new-ui is richer) |
+
+#### `AgentPanel.jsx` (85 LOC) ↔ no exact 1:1 counterpart in new-ui
+
+| Aspect | Brand-kit `AgentPanel.jsx` | new-ui counterpart | Severity |
+|---|---|---|---|
+| Surface | Right-side panel within the brand-kit's split-pane Tasks → Agent flow (selected-task → its agent + live SSE stream) | new-ui has no equivalent split-pane: agents live at `pages/agents/page.tsx` (list) and `pages/agents/[id]/page.tsx` (detail w/ tabs). Live agent stream lives at `pages/tasks/[id]/page.tsx` via `<SessionLogViewer>` keyed to taskId. | **Spec-aligned** (different IA — new-ui chose route-based over split-pane) |
+| Empty state | `<div min-h-[300px]>` icon + heading "Select a task" + helper text | `<EmptyState>` primitive (Phase 9) used in agent-list etc. | **Spec-aligned** |
+| Live SSE stream | hand-rolled streaming with `setInterval` and `STREAM_LINES`, color-coded by event type (`plan`/`tool`/`shell`/`ok`) | `<SessionLogViewer>` shared primitive (richer — handles real SSE, log levels, structured events) | **Spec-aligned** (new-ui is canonical) |
+| Stat row | inline `<Stat>` 3-column grid (Steps / Tokens / Elapsed) | `<UsageSummary>` shared primitive on agents-detail; per-task stats inline in `tasks/[id]/page.tsx` | **Spec-aligned** |
+| Agent identity tile | `<div w-8 h-8 rounded-full bg-gradient-to-br from-violet-400 to-purple-600 text-white text-[11px] font-bold>` initials | `<Avatar>` + `<AvatarFallback>` shadcn primitive (no gradient) | **Backlog (new)** — agent-avatar gradient-fill variant (decorative, low priority) |
+
+### Code-change candidates
+
+After the full audit, these are the deltas where the implementation has a clear visual divergence from the brand kit's authoritative reference that could be addressed as a small surgical fix on the current branch (rather than a full follow-up plan or new backlog item).
+
+| # | Delta | File | Effort | Recommended action |
+|---|---|---|---|---|
+| 1 | `LogTimeline` rows are flat (no connecting rail line / no dot-on-rail visual). Brand kit's `task-detail.html` shows a vertical `.tl-rail` with `.tl-line` connecting `.tl-dot`s — visually richer "story" of agent steps. | `new-ui/src/pages/tasks/[id]/page.tsx:139` (`LogTimeline`) | ~1 hour (CSS-only change to add a 1px left rail behind absolute-positioned dots) | Surgical fix on this branch in a follow-up commit IF user agrees the flat-row visual was a regression vs. the brand-kit pattern. Otherwise defer to follow-up plan. |
+| 2 | `tasks/[id]` page uses flat tabs without the brand kit's 3-column meta-rail layout (left: meta + SCM-PR card + progress bars; center: hero output + timeline; right: stats / relationships). | `new-ui/src/pages/tasks/[id]/page.tsx` (entire layout) | ~1 day (significant restructure, plus a new SCM-PR card primitive) | **Follow-up plan candidate.** Not surgical. Defer. |
+| 3 | All detail pages (`tasks/[id]`, `agents/[id]`, `integrations/[id]`, `mcp-servers/[id]`, `workflows/[id]`, `schedules/[id]`) lack the brand kit's right-rail (Quick stats / Relationships / Danger zone) per `detail-page-template.html`. | every `pages/*/[id]/page.tsx` | ~3-5 days (new `<DetailPageRail>` primitive + per-page adoption + qa-use sweep) | **Follow-up plan candidate.** Not surgical. Defer. |
+
+**Net code-change candidates surfaced**: 1 surgical fix (LogTimeline rail) + 2 follow-up plan candidates (3-column task-detail, detail-page right rail).
+
+### Backlog additions (new items, appended to `2026-05-06-design-system-backlog.md`)
+
+The audit surfaces these new candidates not covered by Phase 11's existing 15-item backlog:
+
+1. `<CodeBlock>` primitive with read / diff / inline / editable / collapsed modes (preview: `code-block.html`)
+2. `<Terminal>` primitive — static mono-font terminal-output card (preview: `terminal.html`)
+3. `<Tabs>` `pill` and `vertical` variants (preview: `primitives-tabs-modals.html`)
+4. Per-integration `<StatsBar>`-style "sync stats · 24h" strip on integration-detail (preview: `integration-detail.html`)
+5. Sidebar nav-item badge counts (e.g., `Tasks (7 pending)`) — `Sidebar.jsx`
+6. Sidebar footer user-info card (avatar + name + workspace) — `Sidebar.jsx`
+7. Tasks-list "live · /api/tasks" mono indicator showing data-source + polling state — `TaskList.jsx`
+8. Agent-avatar gradient-fill variant — `AgentPanel.jsx`
+9. Workflow-canvas run-summary strip below the graph — `workflow-graph.html`
+10. Approval-request page rich-detail surface (banner + countdown + decision panel + audit-record) — `approval-request.html`
+11. Chat surface visual-spec parity sweep against `chat-surface.html` — depends on whether new-ui's chat layout was deliberately chosen or just earlier
+12. Detail-page right-rail primitive (`<DetailPageRail>` with Quick stats / Relationships / Danger zone) — `detail-page-template.html`
+13. 3-column task-detail layout (left meta-rail + SCM-PR card + progress bars; center main; right stats) — `task-detail.html`
+
+### Phase 12 implementation summary
+
+| Artifact | Status |
+|---|---|
+| 33 preview HTMLs analyzed | done — per-file delta table above |
+| 4 ui_kits/dashboard JSX components diffed against new-ui counterparts | done — per-component table above |
+| Backlog file updated with 13 new candidates | done — see backlog file |
+| Code-change candidates flagged for orchestrator | done — 1 surgical (`LogTimeline` rail) + 2 follow-up-plan (3-col task-detail, detail-page rail) |
+| Phase 12 success criteria: typecheck, lint, check:tokens (sanity) | run during phase verification |
+| Phase 12 success criteria: qa-use captures | **skipped** — qa-use deferred to PR-time per orchestrator instruction |
+
+### Top 3 most surprising findings
+
+1. **Detail-page-template.html is a meta-spec.** Every detail page in the dashboard is supposed to have a right rail with Quick stats / Relationships / Danger zone. **None do.** This is the largest architectural divergence the original 11-phase plan missed. (Severity: follow-up plan.)
+2. **Task-detail.html shows a 3-column meta-rail layout** (left: SCM-PR + progress bars; center: hero + timeline rail; right: stats) — `tasks/[id]/page.tsx` uses flat Tabs. The timeline-rail visual (a 1px line connecting dots vertically) is the only piece small enough to fix surgically.
+3. **Zero net-new tokens in the backlog from the preview scan.** All brand-kit-only tokens (`--fg-{1..4}`, `--space-*`, `--shadow-amber-glow`, `--t-*`, `--lh-*`, `--radius-2xl`, etc.) are already on the Phase 11 backlog. The preview HTMLs **confirm** the existing scope; they don't add new token-level work. The new backlog items (13) are **structural / primitive-level** patterns, not token-level.

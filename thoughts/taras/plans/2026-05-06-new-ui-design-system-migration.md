@@ -4,7 +4,7 @@ topic: "new-ui Design System Migration Plan"
 status: completed
 author: Claude (planning)
 last_updated: 2026-05-06T00:00:00Z
-last_updated_by: Claude (phase 11)
+last_updated_by: Claude (phase 12)
 ---
 
 # new-ui Design System Migration Plan
@@ -786,6 +786,71 @@ End-to-end evidence-heavy QA spanning all 33 routes in both modes. Final accepta
 ### QA Spec (optional):
 
 **QA Doc**: same `thoughts/taras/qa/2026-05-06-design-system-audit.md` referenced in Phase 10. Phase 11 closes the doc with the final-state evidence and the baseline-vs-final comparison.
+
+---
+
+## Phase 12: Reconcile `preview/` + `ui_kits/dashboard/` (post-completion audit)
+
+### Overview
+
+Phases 1, 8, 9, 10 audited `~/Downloads/swarm-design-system/colors_and_type.css` + `new-ui/src/components/ui/*.tsx` only. They did **not** investigate the brand kit's two other authoritative reference surfaces:
+
+- `~/Downloads/swarm-design-system/preview/` — **33 visual reference HTMLs** showing what each surface should look like
+- `~/Downloads/swarm-design-system/ui_kits/dashboard/` — **4 JSX reference components** (`AgentPanel`, `Header`, `Sidebar`, `TaskList`) for the operator-dashboard surface
+
+This phase is a research/audit-only reconciliation. **No code changes to `new-ui/src/`.** Findings are appended to the audit doc with severity classification per delta. Code-change candidates are flagged for the orchestrator to bring back to the user; they are not fixed in this phase.
+
+### Changes Required:
+
+#### 1. Per-preview-file analysis (33 HTMLs)
+
+**File**: `thoughts/taras/research/2026-05-06-design-system-audit.md`
+
+For each preview HTML:
+- Map to the corresponding new-ui surface (page/route/primitive)
+- Note brand-kit tokens / classes / structural patterns referenced
+- Diff against the implementation
+- Classify each delta: **Spec-aligned** | **Backlog candidate (already covered)** | **Backlog candidate (new)** | **Code-change candidate** | **Follow-up plan candidate**
+
+#### 2. Per-ui_kit-file analysis (4 JSX)
+
+**File**: same audit doc
+
+For `AgentPanel.jsx`, `Header.jsx`, `Sidebar.jsx`, `TaskList.jsx`:
+- Read JSX, find the new-ui counterpart
+- Diff: imports, props, layout, className patterns, primitive composition
+- Classify deltas with the same severity scheme
+
+#### 3. Backlog updates
+
+**File**: `thoughts/taras/research/2026-05-06-design-system-backlog.md`
+
+Append items for any "Backlog candidate (new)" findings. Existing 1-line description / 1-line rationale / 1-line revisit-trigger format.
+
+#### 4. Code-change-candidates summary
+
+**File**: same audit doc, end of Phase 12 section
+
+Tabular list of any "Code-change candidate" deltas with file, effort, recommended action — for the orchestrator to bring back to the user.
+
+### Success Criteria:
+
+#### Automated Verification:
+- [x] `cd new-ui && pnpm run check:tokens && pnpm lint && pnpm exec tsc -b` — all green (sanity, since we're not touching code)
+- [x] Audit doc Phase 12 section exists and covers all 33 preview HTMLs + 4 ui_kit JSX files
+- [x] Backlog file updated with any new items (or "no new items" explicitly noted)
+
+#### Automated QA:
+- [ ] `qa-use` capture of any code-change-candidate before/after screenshots [skipped — qa-use deferred to PR-time]
+
+#### Manual Verification:
+- [ ] User reviews code-change-candidate list and decides per-item: surgical fix on this branch / new PR / new plan / wontfix.
+
+**Implementation Note**: Audit-only phase. Single commit `[phase 12] reconcile preview/ + ui_kits/ — audit-only, no code changes`. Plan frontmatter flips back to `status: completed` after the commit.
+
+### QA Spec (optional):
+
+n/a — research-only phase. No browser scenarios.
 
 ---
 

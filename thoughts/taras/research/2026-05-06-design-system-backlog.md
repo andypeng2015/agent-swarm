@@ -2,7 +2,7 @@
 date: 2026-05-06T00:00:00Z
 topic: "Design-system migration backlog (open items vs. brand kit)"
 status: open
-author: Claude (phase 11)
+author: Claude (phases 11, 12)
 related_audit: thoughts/taras/research/2026-05-06-design-system-audit.md
 related_plan: thoughts/taras/plans/2026-05-06-new-ui-design-system-migration.md
 ---
@@ -98,8 +98,87 @@ Source of detail: [`2026-05-06-design-system-audit.md` § Phase 11](./2026-05-06
 
 ---
 
+## Phase 12 additions (preview/ + ui_kits/dashboard reconciliation)
+
+Source of detail: [`2026-05-06-design-system-audit.md` § Phase 12](./2026-05-06-design-system-audit.md#phase-12--reconcile-preview-33-htmls--ui_kitsdashboard-4-jsx).
+
+### Primitives — missing
+
+#### 16. `<CodeBlock>` primitive (5 modes)
+- **What**: Add a `CodeBlock` primitive supporting read / diff / inline / editable / long-collapsed modes (matching `~/Downloads/swarm-design-system/preview/code-block.html`).
+- **Why deferred**: Currently no app-side code uses an inline code block; Monaco serves the workflow-detail editing surface and Streamdown handles markdown code fences. A dedicated primitive would surface only when a non-Monaco / non-Streamdown code-display need arises.
+- **When to revisit**: When a feature needs a static read-only or diff view of code outside Monaco — e.g. PR diff embed, schema viewer, code-result preview in chat.
+
+#### 17. `<Terminal>` primitive (static mono output card)
+- **What**: Static mono-font terminal-output card primitive (matching `~/Downloads/swarm-design-system/preview/terminal.html`).
+- **Why deferred**: `SessionLogViewer` covers the streaming case. No surface today needs static terminal output.
+- **When to revisit**: When a pre-recorded / non-streaming terminal-output rendering is needed (e.g. recorded-session replay, scheduled-task last-output preview).
+
+#### 18. `<Tabs>` `pill` and `vertical` variants
+- **What**: Two new `Tabs` variants beyond `default` and `line`: `pill` (selectable rounded pills) and `vertical` (left side accent rail) — matching `preview/primitives-tabs-modals.html`.
+- **Why deferred**: Zero call sites in new-ui need them today.
+- **When to revisit**: When a settings-style page wants a vertical-tabs left nav, or a filter-pill UI surface emerges.
+
+### Composed components — missing
+
+#### 19. Per-integration `<StatsBar>` (24h sync stats)
+- **What**: Compact horizontal stat strip above integration-detail (last 24h sync count / errors / mean-latency / success-rate) — matching `preview/integration-detail.html`'s "Sync stats · 24h" strip.
+- **Why deferred**: Integrations currently surface enough state via `OAuthStatusRow`. Sync metrics are not yet per-integration.
+- **When to revisit**: When integration sync becomes metered / SLO-tracked and the per-integration page needs a metrics summary.
+
+#### 20. Detail-page right-rail primitive (`<DetailPageRail>`)
+- **What**: Right-rail composed primitive with Quick stats / Relationships / Danger zone sections — adopted across all `pages/*/[id]/page.tsx` per `preview/detail-page-template.html`.
+- **Why deferred**: **Major architectural divergence** — every new-ui detail page currently uses flat Tabs without a right rail. Adopting requires a new primitive + per-page restructuring + `qa-use` evidence sweep.
+- **When to revisit**: As a dedicated follow-up plan ("detail-page right-rail rollout"). The brand kit is unambiguous that this is canonical detail-page IA — adopting it is a coherence win across the surface.
+
+#### 21. 3-column task-detail layout
+- **What**: Restructure `pages/tasks/[id]/page.tsx` to match `preview/task-detail.html`'s 3-column layout (left meta-rail with SCM-PR card + progress bars; center hero + timeline; right quick-stats). Includes a new SCM-PR card primitive.
+- **Why deferred**: Significant restructure of a high-density page. Pairs with #20.
+- **When to revisit**: As part of the detail-page right-rail rollout plan, or as a standalone task-detail redesign.
+
+#### 22. Approval-request rich detail surface
+- **What**: Restructure `pages/approval-requests/[id]?` to match `preview/approval-request.html`'s structure (action banner + countdown + "why agent says it needs this" + decision pills + originating-task card + policy-match + audit-record card).
+- **Why deferred**: Approvals page currently exists as a flat list/table; detail surface is minimal.
+- **When to revisit**: When approvals become a primary user surface (e.g. approval-budget tracking, scheduled human-loop reviews).
+
+#### 23. Chat surface visual-spec parity
+- **What**: Pixel/structure diff between `pages/chat/page.tsx` and `preview/chat-surface.html`. Adopt the brand-kit's chat layout (left rail + center stream + right meta) if better aligned with cross-surface IA.
+- **Why deferred**: Chat already implemented; deliberate divergence vs. accidental divergence not yet decided.
+- **When to revisit**: Next chat-surface feature ticket — pause to compare against the brand-kit reference before extending.
+
+#### 24. Workflow-canvas run-summary strip
+- **What**: Add a horizontal run-summary strip below the workflow-canvas graph (matching `preview/workflow-graph.html`'s `.runmeta`). Shows current run id, elapsed, step counts, latest event.
+- **Why deferred**: Run-summary info already surfaces in the workflow-detail page header; canvas-side strip is duplicative.
+- **When to revisit**: When the canvas becomes the primary viewport (full-screen workflow-graph mode).
+
+### Sidebar / header polish
+
+#### 25. Sidebar nav-item badge counts
+- **What**: Show small mono-font count badges on sidebar nav items (e.g. `Tasks (7)` for pending tasks) — matching `Sidebar.jsx`'s `bg-amber-100 text-amber-800` pill pattern.
+- **Why deferred**: Counts not yet wired through; sidebar simplicity is a deliberate choice.
+- **When to revisit**: When a dedicated "needs attention" surface is needed (pending approvals, failing workflows, paused budgets).
+
+#### 26. Sidebar footer user-info card
+- **What**: Avatar + name + workspace handle in the sidebar footer (currently `<SidebarTrigger>` only) — matching `Sidebar.jsx`'s gradient-fill avatar + name + handle.
+- **Why deferred**: User identity surfaces via `<SwarmSwitcher>` in the header; footer card would duplicate.
+- **When to revisit**: Multi-tenant / user-management surface lands.
+
+#### 27. Tasks-list "live · /api/tasks" mono indicator
+- **What**: Mono-font small indicator showing data source + polling state on the tasks list (matching `TaskList.jsx`'s `/api/tasks · live` display).
+- **Why deferred**: react-query auto-polling at 5s already provides freshness without the visual indicator.
+- **When to revisit**: When a debug / data-source-transparency feature is requested (e.g. "is this view live or paused?").
+
+#### 28. Agent-avatar gradient-fill variant
+- **What**: Add a gradient-fill variant to `<Avatar>` matching `AgentPanel.jsx`'s `bg-gradient-to-br from-violet-400 to-purple-600` agent-identity tile.
+- **Why deferred**: Decorative; current `<AvatarFallback>` is functional. Cross-cuts agent vs. user avatars.
+- **When to revisit**: When agent identity needs visual distinction from user identity (e.g. mixed user/agent activity feed).
+
+---
+
 ## Out of scope (closed, not backlog)
 
 - **Brand-kit overwrite.** `~/Downloads/swarm-design-system/` stays read-only.
 - **`new-ui/` style switch away from Tailwind v4 / shadcn.** Foundation stays.
 - **`next-themes` re-introduction.** Removed in Phase 6; the custom `useTheme` hook is canonical.
+- **Hand-rolled `<Sidebar>` from `Sidebar.jsx` (raw palette literals, gradient avatars).** new-ui's shadcn `<Sidebar>` shell + token-driven variants is canonical. `Sidebar.jsx` is a reference snapshot, not a build artifact — adopting its raw `bg-amber-50 text-amber-800` literals would break the Phase 7 lint gate.
+- **Hand-rolled `<TaskList>` `<table>` with inline OKLCH `style={{...}}`.** new-ui's `<DataGrid>` (AG Grid wrapper) is canonical and a CLAUDE.md hard rule.
