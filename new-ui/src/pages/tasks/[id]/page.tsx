@@ -67,6 +67,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { DetailPageRail, DetailPageSection } from "@/components/ui/detail-page-layout";
 import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -273,19 +274,13 @@ function TaskCostSection({
 
   if (isLoading) {
     return (
-      <>
-        <Separator className="my-2" />
-        <div className="space-y-1.5">
-          <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
-            Session Cost
-          </span>
-          <div className="space-y-2">
-            <Skeleton className="h-3 w-20" />
-            <Skeleton className="h-3 w-28" />
-            <Skeleton className="h-3 w-24" />
-          </div>
+      <DetailPageSection title="Session Cost">
+        <div className="space-y-2">
+          <Skeleton className="h-3 w-20" />
+          <Skeleton className="h-3 w-28" />
+          <Skeleton className="h-3 w-24" />
         </div>
-      </>
+      </DetailPageSection>
     );
   }
 
@@ -295,12 +290,8 @@ function TaskCostSection({
   const acusConsumed = isDevin ? stats.totalCost / acuCostUsd : 0;
 
   return (
-    <>
-      <Separator className="my-2" />
+    <DetailPageSection title="Session Cost">
       <div className="space-y-1">
-        <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
-          Session Cost
-        </span>
         <MetaRow icon={DollarSign} label="Cost">
           <span className="text-xs font-semibold">${stats.totalCost.toFixed(4)}</span>
         </MetaRow>
@@ -340,7 +331,7 @@ function TaskCostSection({
           <span className="text-xs font-mono">{stats.models.join(", ")}</span>
         </MetaRow>
       </div>
-    </>
+    </DetailPageSection>
   );
 }
 
@@ -688,22 +679,26 @@ export default function TaskDetailPage() {
     </div>
   );
 
-  // RIGHT RAIL — Activity timeline (top) + Session Cost (below). Mirrors
-  // brand-kit `preview/task-detail.html` right column (`.right > .section-label
-  // Activity` + `.tl-row` rows). Session Cost is stat-shaped data; this column
-  // is the canonical "stats" rail.
+  // RIGHT RAIL — Activity timeline (top) + Session Cost (below). Wraps each
+  // block in <DetailPageSection> from the canonical <DetailPageRail> primitive
+  // so headings + spacing match brand-kit `preview/detail-page-template.html`
+  // (font-mono · 10px · 700 · uppercase · tracking 0.08em). The MetaRow-shaped
+  // Session Cost / Activity timeline content is preserved as-is — task pages
+  // have icon-prefixed rows that don't fit the QuickStat 2-col k/v shape used
+  // by simpler detail pages.
   const rightRailContent = (
-    <div className="space-y-1">
+    <DetailPageRail>
       {hasEvents && (
-        <div className="space-y-2">
-          <div className="flex items-center gap-1.5">
-            <Activity className="h-3 w-3 text-muted-foreground" />
-            <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+        <DetailPageSection
+          title={
+            <>
+              <Activity className="h-3 w-3 inline-block mr-1 -mt-0.5 text-muted-foreground" />
               Activity ({task.logs!.length})
-            </span>
-          </div>
+            </>
+          }
+        >
           <LogTimeline logs={task.logs!} />
-        </div>
+        </DetailPageSection>
       )}
 
       <TaskCostSection
@@ -712,7 +707,7 @@ export default function TaskDetailPage() {
         provider={task.provider}
         providerMeta={task.providerMeta}
       />
-    </div>
+    </DetailPageRail>
   );
 
   const outcomeContent = (
@@ -928,9 +923,11 @@ export default function TaskDetailPage() {
       </div>
 
       {/* Desktop (lg+): 3-column meta-rail layout per
-          ~/Downloads/swarm-design-system/preview/task-detail.html. Grid widths
-          mirror the brand kit's `grid-template-columns: 240px 1fr 240px`. */}
-      <div className="hidden lg:grid lg:grid-cols-[240px_1fr_240px] flex-1 min-h-0 overflow-hidden">
+          ~/Downloads/swarm-design-system/preview/task-detail.html and
+          preview/detail-page-template.html. Right rail = 280px (canonical
+          brand-kit width); left rail keeps 240px (page-specific meta sidebar
+          unique to tasks — no other detail page has dense meta data). */}
+      <div className="hidden lg:grid lg:grid-cols-[240px_1fr_280px] flex-1 min-h-0 overflow-hidden">
         {/* Left rail — meta info + SCM card + Dependencies + Progress + Context budget */}
         <aside className="border-r border-border py-3 px-1 pr-3 overflow-y-auto min-h-0">
           {leftRailContent}

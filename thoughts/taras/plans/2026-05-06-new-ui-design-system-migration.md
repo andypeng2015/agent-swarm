@@ -1,10 +1,10 @@
 ---
 date: 2026-05-06T00:00:00Z
 topic: "new-ui Design System Migration Plan"
-status: completed
+status: in-progress
 author: Claude (planning)
 last_updated: 2026-05-06T00:00:00Z
-last_updated_by: Claude (phase 14)
+last_updated_by: Claude (phase 15)
 ---
 
 # new-ui Design System Migration Plan
@@ -995,6 +995,112 @@ No changes to:
 ### QA Spec (optional):
 
 n/a — single-page presentational restructure. qa-use deferred to PR-time per orchestrator policy.
+
+---
+
+## Phase 15: `<DetailPageLayout>` primitive + roll out across all detail pages
+
+### Overview
+
+Phase 12 audit (commit `328218d1`) flagged that `~/Downloads/swarm-design-system/preview/detail-page-template.html` is the canonical detail-page meta-spec — every detail page should expose a right rail with **Quick stats / Relationships / Danger zone** sections. Phase 14 hand-rolled this for `tasks/[id]`. This phase extracts the pattern into a primitive and rolls it out across the remaining ~12 detail pages.
+
+The brand-kit canonical contract:
+- Body grid: `1fr 280px` (NOT 240px — Phase 14 used 240px; the primitive bumps tasks/[id] to 280px to match the source-of-truth).
+- Right-rail section ordering: Quick stats → Relationships → Danger zone.
+- Section heading style: `font-mono font-bold text-[10px] uppercase tracking-[0.08em] text-muted-foreground`, `mb-2.5`, with extra `mt-5` between non-first sections.
+- Stat row: 2-col grid `1fr auto`, key in muted, value right-aligned, mono optional.
+- Relationship row: stat-row format, value is a `→` link.
+- Danger zone: full-width button, destructive-outline tone.
+
+### Design Decisions
+
+**Primitive surface** — composition, not a single mega-component. Lives in `new-ui/src/components/ui/detail-page-layout.tsx`:
+
+- `<DetailPageBody>` — 2-column wrapper (`lg:grid-cols-[1fr_280px]`) with `main` + optional `rail` slot. Below `lg`, stacks vertically (rail under main).
+- `<DetailPageRail>` — flex-col container for rail sections.
+- `<DetailPageSection title="...">` — section heading + content, follows the brand kit's section heading style.
+- `<QuickStats>` / `<QuickStat label value mono?>` — Quick stats section + row.
+- `<Relationships>` / `<Relationship label to>` — Relationships section + arrow-link row.
+- `<DangerZone>` — opinionated section heading "Danger zone" + content slot (full-width destructive button typically).
+
+Pages keep their existing `<PageHeader>` for the title + tags + actions row. The new primitive is purely about the body / rail. This avoids re-implementing what `<PageHeader>` already does.
+
+**Per-page applicability matrix.** Not every detail page maps cleanly onto the brand-kit's 2-col body. A pragmatic split:
+
+| Page | Has natural rail content? | Approach |
+|---|---|---|
+| `tasks/[id]` | Yes (existing Phase 14 left rail + right rail) | Refactor to use the primitive; keeps 3-col (240px left + 1fr + 280px right rail). The 280px right-rail comes from the new primitive; the 240px left-rail stays inline as a meta-sidebar (page-specific, not promoted). |
+| `repos/[id]` | Yes (info card + danger zone) | Apply primitive: main = guidelines section, rail = quick stats (URL/clone path/branch/created) + danger zone (delete). |
+| `skills/[id]` | Yes (metadata moves to rail) | Apply primitive: main = content tab; rail = quick stats (id/version/created/updated) + relationships (owner agent if any) + danger zone (delete). Drops the existing Metadata tab (folded into rail). |
+| `mcp-servers/[id]` | Yes | Apply primitive INSIDE Configuration tab: main = transport config + secret refs cards; rail = quick stats (transport/scope/version/created) + danger zone (delete). |
+| `schedules/[id]` | Yes | Apply primitive INSIDE Schedule tab: main = schedule info card + task template card; rail = quick stats (next run / last run / created) + relationships (target agent) + danger zone (delete). |
+| `approval-requests/[id]` | Yes | Apply primitive: main = questions; rail = quick stats (status/created/timeout) + relationships (workflow run / source task). No danger zone (no destructive action). |
+| `integrations/[id]` | Partial — settings page, no danger zone (already a "Reset" action) | Apply primitive: main = field forms; rail = quick stats (status/configured fields/env presence count) + relationships (docs link). Reset stays in the action bar (not the rail) to preserve existing flow. |
+| `agents/[id]` | Tabs-driven, complex | Apply primitive INSIDE the Profile tab: main = Profile body (markdown fields); rail = quick stats (status/role/joined/last updated) + danger zone (no delete action exists today — omit). Other tabs untouched. |
+| `templates/[id]` | Monaco editor dominates | NO primitive use — Monaco editor is the page's identity, fills the body. Rail content (version / scope / state / changedBy) is already in the header badges. Skip. |
+| `templates/[id]/history/[version]` | Read-only Monaco | NO primitive use — same reason. Skip. |
+| `workflow-runs/[id]` | Graph + steps split-view | NO primitive use — split panel is the page's identity (graph left, steps right). The "rail" would compete with the steps panel. Skip. |
+| `workflows/[id]` | Massive (1869L), tab-driven editor | NO primitive use in this phase. The Definition tab is a Monaco editor; the Runs/Triggers/Settings tabs are full-width content. Phase out of scope — would need a dedicated phase. |
+
+**Pages applying primitive: 8.** Pages skipped (Monaco-dominated or split-view): 4. The skipped pages aren't a primitive failure — they're genuinely different page types where forcing a rail would degrade UX.
+
+**Tasks/[id] is special**: existing 3-col layout (`240px 1fr 240px`) bumps right rail to **280px** to match the canonical. Left rail stays at 240px (page-specific meta-sidebar; not promoted to a primitive — the brand kit's template doesn't define a left rail).
+
+### Changes Required:
+
+#### 1. Create `<DetailPageLayout>` primitive
+
+**File**: `new-ui/src/components/ui/detail-page-layout.tsx` (new)
+
+Exports: `DetailPageBody`, `DetailPageRail`, `DetailPageSection`, `QuickStats`, `QuickStat`, `Relationships`, `Relationship`, `DangerZone`.
+
+Token compliance: only `text-muted-foreground`, `text-foreground`, `bg-muted`, `border-border`, `text-status-error`, `border-status-error`, etc. Phase 7 lint gate enforces.
+
+#### 2. Update `tasks/[id]` to use primitive
+
+Refactor right rail to use `<DetailPageRail>` + sub-components. Bump right-rail width 240px → 280px to match the brand kit's canonical width.
+
+#### 3. Apply primitive to 7 other pages
+
+- `repos/[id]`, `skills/[id]`, `mcp-servers/[id]`, `schedules/[id]`, `approval-requests/[id]`, `integrations/[id]`, `agents/[id]`.
+
+#### 4. Skip 4 Monaco-dominated / split-view pages
+
+`templates/[id]`, `templates/[id]/history/[version]`, `workflow-runs/[id]`, `workflows/[id]` — document the skip in the audit doc.
+
+#### 5. Update `new-ui/CLAUDE.md` primitives catalog
+
+Append `DetailPageBody`, `DetailPageRail`, `DetailPageSection`, `QuickStats`, `QuickStat`, `Relationships`, `Relationship`, `DangerZone` rows. Add a guidance line: "Detail pages with quick-stats / relationships / danger-zone content SHOULD use `<DetailPageBody>` + `<DetailPageRail>`. Pages dominated by editors or split-view content (workflow runs, template Monaco editors) are exempt."
+
+#### 6. Update audit doc
+
+Append a Phase 15 section to `thoughts/taras/research/2026-05-06-design-system-audit.md` capturing the per-page mapping table + skip rationale.
+
+### Success Criteria:
+
+#### Automated Verification:
+- [x] `cd new-ui && pnpm run check:tokens` — no new color literals introduced
+- [x] `cd new-ui && pnpm lint` — Biome passes
+- [x] `cd new-ui && pnpm exec tsc -b` — typecheck passes
+- [x] `cd new-ui && pnpm exec vite build` — build passes
+
+#### Automated QA:
+- [ ] `qa-use` capture of each touched detail page (light + dark, lg breakpoint) [skipped — qa-use deferred to PR-time]
+
+#### Manual Verification:
+- [ ] User confirms `<DetailPageRail>` renders Quick stats / Relationships / Danger zone with correct heading styling on each touched page
+- [ ] User confirms `tasks/[id]` right rail width bumped to 280px (was 240px) without breaking the layout
+- [ ] User confirms the 4 skipped pages (templates, workflow-runs, workflows) remain functional
+- [ ] User confirms tabs-driven pages (agents/skills/mcp-servers/schedules) still work — primitive applied inside the relevant tab body, other tabs untouched
+
+**Implementation Note**: Split into 3 sub-commits for review tractability.
+- `[phase 15a]` — create the primitive; refactor `tasks/[id]` to use it (validates the API on the most complex page).
+- `[phase 15b]` — apply to half the pages (repos / skills / mcp-servers / schedules).
+- `[phase 15c]` — apply to remaining (approval-requests / integrations / agents); finalize CLAUDE.md + audit doc; close out Phase 15.
+
+### QA Spec (optional):
+
+n/a — primitive extraction + cross-page rollout. qa-use deferred to PR-time per orchestrator policy.
 
 ---
 
