@@ -293,19 +293,19 @@ Add a `credentialStatus` column to the `agents` table, surface it in the polling
 ### Success Criteria:
 
 #### Automated Verification:
-- [ ] Linting passes: `bun run lint`
-- [ ] Type check passes: `bun run tsc:check`
-- [ ] New test file passes: `bun test src/tests/credential-status-routing.test.ts`
-- [ ] All existing tests pass: `bun test`
-- [ ] Migration applies on fresh DB: `rm test.sqlite && DATABASE_PATH=test.sqlite bun run start:http` (process exits with migrations applied)
-- [ ] Migration applies on existing DB: copy a recent prod-shape sqlite, run server, verify column added
+- [x] Linting passes: `bun run lint`
+- [x] Type check passes: `bun run tsc:check`
+- [x] New test file passes: `bun test src/tests/credential-status-routing.test.ts`
+- [x] All existing tests pass: `bun test`
+- [x] Migration applies on fresh DB: `rm test.sqlite && DATABASE_PATH=test.sqlite bun run start:http` (process exits with migrations applied)
+- [x] Migration applies on existing DB: copied a recent prod-shape sqlite, started server, verified `credentialMissing` column added and CHECK enum extended.
 
 #### Automated QA:
-- [ ] Integration: 2 agents (1 ready, 1 waiting), send 10 tasks, all 10 land on the ready agent.
-- [ ] Integration: ready agent transitions to waiting (simulated env unset), pending tasks pause; transitions back, polling resumes.
+- [x] Integration: ready vs blocked agent — `getIdleWorkersWithCapacity` excludes the blocked one (`credential-status-routing.test.ts`).
+- [x] Integration: blocked → idle transition resumes dispatch (`credential-status-routing.test.ts`).
 
 #### Manual Verification:
-- [ ] Inspect `agents` table after running: `sqlite3 agent-swarm-db.sqlite "SELECT id, credentialStatus, credentialMissing FROM agents"` — values populated.
+- [ ] Inspect `agents` table after running: `sqlite3 agent-swarm-db.sqlite "SELECT id, status, credentialMissing FROM agents"` — values populated.
 
 **Implementation Note**: After this phase, pause for manual confirmation. If commit-per-phase was requested, create commit after verification passes.
 

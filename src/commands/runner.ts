@@ -2554,8 +2554,22 @@ export async function runAgent(config: RunnerConfig, opts: RunnerOptions) {
           const { env } = await fetchResolvedEnv(apiUrl, apiKey, agentId);
           return env;
         },
-        // onTick: Phase 3 will swap in a status-report callback that updates
-        // the agent row's `credentialStatus`. For now we just rely on logs.
+        onTick: (status) => {
+          // Best-effort status report — the dispatcher uses it to route
+          // around blocked agents. Failures are non-fatal (the wait loop
+          // already swallows onTick exceptions).
+          fetch(`${apiUrl}/api/agents/${encodeURIComponent(agentId)}/credential-status`, {
+            method: "PUT",
+            headers: {
+              Authorization: `Bearer ${apiKey}`,
+              "X-Agent-ID": agentId,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ ready: status.ready, missing: status.missing }),
+          }).catch(() => {
+            // Swallowed — Phase 2 wait loop logs every tick anyway.
+          });
+        },
       });
     } catch (err) {
       if (err instanceof BootMaxWaitExceededError) {
