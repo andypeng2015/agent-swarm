@@ -222,7 +222,7 @@ export default function BlogIndex() {
     "@context": "https://schema.org",
     "@type": "CollectionPage",
     name: "Blog — Agent Swarm",
-    description: "Updates, technical deep dives, and stories from the Agent Swarm team.",
+    description: "Technical deep dives on multi-agent AI architecture — autonomous coding agents, task orchestration, persistent identity, prompt cache optimization, state machines, and production-grade multi-agent systems.",
     url: "https://agent-swarm.dev/blog",
     isPartOf: {
       "@type": "WebSite",

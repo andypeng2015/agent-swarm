@@ -79,7 +79,7 @@ export default function PricingPage() {
               {
                 "@type": "Offer",
                 name: "Self-hosted",
-                description: "Open-source, self-hosted under MIT license.",
+                description: "Fully open-source under the MIT license. Self-host Agent Swarm on your own infrastructure — Linux or macOS, Docker or bare metal — with full agent orchestration, memory, and integration support.",
                 price: "0.00",
                 priceCurrency: "EUR",
                 availability: "https://schema.org/InStock",
@@ -88,7 +88,7 @@ export default function PricingPage() {
               {
                 "@type": "Offer",
                 name: "Cloud — Platform",
-                description: "Base infrastructure: dashboard, orchestration, integrations, memory",
+                description: "Base infrastructure covering the dashboard UI, lead agent orchestration, API server, task scheduling, persistent vector memory, Slack and GitHub integrations, and the full MCP tool ecosystem.",
                 price: "9.00",
                 priceCurrency: "EUR",
                 priceValidUntil: "2027-12-31",
@@ -98,7 +98,7 @@ export default function PricingPage() {
               {
                 "@type": "Offer",
                 name: "Cloud — Worker Compute",
-                description: "Docker-isolated agent worker with managed infrastructure, per worker",
+                description: "Docker-isolated agent worker running Claude Code or any LLM provider with your own API keys — managed infrastructure with automatic scaling, persistent memory, and full swarm coordination.",
                 price: "29.00",
                 priceCurrency: "EUR",
                 priceValidUntil: "2027-12-31",

@@ -6,10 +6,11 @@ import { ArrowLeft, ArrowRight, Zap } from "lucide-react";
 export const metadata: Metadata = {
   title: "Examples — Real Agent Swarm Sessions — Agent Swarm",
   description:
-    "See what AI agent swarms can do. Real session transcripts showing autonomous task execution, crypto payments, and more.",
+    "Real agent swarm session transcripts — watch AI agents autonomously pay for services with crypto, coordinate across GitHub tasks, debug production issues, and build full projects without human intervention. See autonomous multi-agent AI in action.",
   openGraph: {
     title: "Examples — Real Agent Swarm Sessions",
-    description: "Real session transcripts showing autonomous AI agent coordination in action.",
+    description:
+      "Real agent swarm session transcripts — watch AI agents autonomously pay for services with crypto, coordinate across GitHub tasks, debug production issues, and build projects without human intervention.",
     url: "https://agent-swarm.dev/examples",
     siteName: "Agent Swarm",
     type: "website",
@@ -25,7 +26,8 @@ export const metadata: Metadata = {
   twitter: {
     card: "summary_large_image",
     title: "Examples — Real Agent Swarm Sessions",
-    description: "Real session transcripts showing autonomous AI agent coordination in action.",
+    description:
+      "Real agent swarm session transcripts — watch AI agents autonomously pay for services with crypto, coordinate across GitHub tasks, and build projects without human intervention.",
     images: [
       "https://agent-swarm.dev/api/og?title=Examples+%E2%80%94+Real+Agent+Swarm+Sessions&subtitle=Real+session+transcripts+showing+autonomous+AI+agent+coordination+in+action",
     ],
