@@ -225,14 +225,14 @@ Make the worker boot wait for credentials *in TS* with exponential backoff, and 
 ### Success Criteria:
 
 #### Automated Verification:
-- [ ] Linting passes: `bun run lint`
-- [ ] Type check passes: `bun run tsc:check`
-- [ ] New test file passes: `bun test src/tests/credential-wait.test.ts`
-- [ ] All existing tests pass: `bun test`
-- [ ] DB boundary still clean: `bash scripts/check-db-boundary.sh`
+- [x] Linting passes: `bun run lint`
+- [x] Type check passes: `bun run tsc:check`
+- [x] New test file passes: `bun test src/tests/credential-wait.test.ts`
+- [x] All existing tests pass: `bun test`
+- [x] DB boundary still clean: `bash scripts/check-db-boundary.sh`
 
 #### Automated QA:
-- [ ] Build the worker image: `bun run docker:build:worker` — succeeds.
+- [x] Build the worker image: `bun run docker:build:worker` — succeeds.
 - [ ] Spin up local compose with `CLAUDE_CODE_OAUTH_TOKEN` empty. Worker container exits with code 0 on `docker compose down` (not crash-restarted). Container logs show `[boot] waiting for CLAUDE_CODE_OAUTH_TOKEN/ANTHROPIC_API_KEY (retry N in Ms)` lines, not "exiting".
 - [ ] Set `CLAUDE_CODE_OAUTH_TOKEN` via `PUT /api/config` (scope=agent, the worker's agentId). Within 30s, worker logs `[boot] credentials ready`. (Scripted via curl in the test.)
 

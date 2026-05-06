@@ -29,6 +29,7 @@ import { prettyPrintLine, prettyPrintStderr } from "../utils/pretty-print.ts";
 import { scrubSecrets } from "../utils/secret-scrubber.ts";
 import { detectVcsProvider } from "../vcs/index.ts";
 import { interpolate } from "../workflows/template.ts";
+import { awaitCredentials, BootMaxWaitExceededError, EX_CONFIG } from "./credential-wait.ts";
 // Side-effect import: registers runner trigger/resumption templates
 import "./templates.ts";
 
@@ -2539,6 +2540,29 @@ export async function runAgent(config: RunnerConfig, opts: RunnerOptions) {
     } catch (error) {
       console.error(`[${role}] Failed to register: ${error}`);
       process.exit(1);
+    }
+
+    // Block until harness credentials are present in env. This loop replaces
+    // the old bash-level fail-fast in `docker-entrypoint.sh` — the worker is
+    // already registered (visible to the dashboard) and self-heals once
+    // creds appear in `swarm_config`. See plans/2026-05-06-worker-credential-safe-loop.md.
+    const harnessProvider = process.env.HARNESS_PROVIDER || "claude";
+    try {
+      await awaitCredentials({
+        provider: harnessProvider,
+        refreshEnv: async () => {
+          const { env } = await fetchResolvedEnv(apiUrl, apiKey, agentId);
+          return env;
+        },
+        // onTick: Phase 3 will swap in a status-report callback that updates
+        // the agent row's `credentialStatus`. For now we just rely on logs.
+      });
+    } catch (err) {
+      if (err instanceof BootMaxWaitExceededError) {
+        console.error(`[${role}] ${err.message}`);
+        process.exit(EX_CONFIG);
+      }
+      throw err;
     }
 
     // Clean up any stale active sessions from previous runs (crash recovery)
