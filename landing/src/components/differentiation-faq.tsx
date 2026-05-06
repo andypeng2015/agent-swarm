@@ -17,9 +17,9 @@ const FAQS: Faq[] = [
       "Their bet is that you'll build your AI team on their stack — pre-built employees, their orchestration, their lock-in. Ours is the opposite: bring the agents and models you already trust, run them on infrastructure you control, keep your memory and identity files in your DB and filesystem as portable artifacts. The category bet is structurally different — AI work is coordinated across heterogeneous, owned components, not built top-down by a single vendor. You can fork the entire stack and keep going.",
   },
   {
-    question: "Are you Glean for agents?",
+    question: "Are you Glean, Onyx, or another enterprise-knowledge tool for agents?",
     answer:
-      "Inverse, actually. Glean retrieves what your org said by indexing every app into one graph. agent-swarm coordinates what your org does — your data stays in its source of truth (Linear, GitHub, Notion); the swarm stores derived knowledge (decisions, gotchas, capability gaps, what worked last sprint). Two opposite jobs.",
+      "Inverse, actually. Glean, Onyx, and the rest of that shelf retrieve what your org said by indexing every app into one graph. agent-swarm coordinates what your org does — your data stays in its source of truth (Linear, GitHub, Notion); the swarm stores derived knowledge (decisions, gotchas, capability gaps, what worked last sprint). Two opposite jobs; happy to live next to a search layer.",
   },
   {
     question: "Why not just write this with LangGraph or AutoGen?",
@@ -30,7 +30,7 @@ const FAQS: Faq[] = [
     question:
       "How much can I customize what the swarm does — and stop it doing what I don't want?",
     answer:
-      "As much as you need. Workers operate on branches, not on main, and don't auto-merge — you (or the lead) review every PR before anything lands. Hooks let you wire CI gates, lint, tests, or any custom check before a PR is even openable. You can scope what each worker can touch, what tools it can call, and which repos or branches it can write to. Workers run in their own containers; the lead can pause, kill, or roll back any of them from the dashboard. The defaults are conservative; the surface area is yours to shape.",
+      "As much as you need. You control the tools each worker can call, the integrations it can reach, and the boundaries it operates within — your infra, your policies. Hooks let you wire approvals, gates, or any custom check before an action takes effect. Whether the swarm is shipping code, drafting a campaign, running a UX research synthesis, or triaging support, the same governance surface applies: scoped permissions, reviewable outputs, and stop-buttons in the dashboard. The defaults are conservative; the surface area is yours to shape.",
   },
   {
     question: "Can I run this air-gapped?",
