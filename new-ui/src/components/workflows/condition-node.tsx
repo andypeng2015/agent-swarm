@@ -14,40 +14,42 @@ type NodeStyle = {
 
 const nodeStyleMap: Record<string, NodeStyle> = {
   "property-match": {
-    border: "border-amber-500/50",
-    bg: "bg-amber-500/10",
-    text: "text-amber-500",
-    handle: "!bg-amber-500",
+    border: "border-action-property-match/50",
+    bg: "bg-action-property-match/10",
+    text: "text-action-property-match",
+    handle: "!bg-action-property-match",
     icon: Filter,
   },
   "code-match": {
-    border: "border-yellow-500/50",
-    bg: "bg-yellow-500/10",
-    text: "text-yellow-400",
-    handle: "!bg-yellow-500",
+    border: "border-action-code-match/50",
+    bg: "bg-action-code-match/10",
+    text: "text-action-code-match",
+    handle: "!bg-action-code-match",
     icon: Code2,
   },
+  // `validate` reuses `human-in-the-loop` per audit doc decision §g #6 —
+  // both render orange and disambiguating them in tokens added no value.
   validate: {
-    border: "border-orange-500/50",
-    bg: "bg-orange-500/10",
-    text: "text-orange-400",
-    handle: "!bg-orange-500",
+    border: "border-action-human-in-the-loop/50",
+    bg: "bg-action-human-in-the-loop/10",
+    text: "text-action-human-in-the-loop",
+    handle: "!bg-action-human-in-the-loop",
     icon: ShieldCheck,
   },
   "raw-llm": {
-    border: "border-sky-500/50",
-    bg: "bg-sky-500/10",
-    text: "text-sky-400",
-    handle: "!bg-sky-500",
+    border: "border-action-raw-llm/50",
+    bg: "bg-action-raw-llm/10",
+    text: "text-action-raw-llm",
+    handle: "!bg-action-raw-llm",
     icon: Sparkles,
   },
 };
 
 const defaultStyle: NodeStyle = {
-  border: "border-amber-500/50",
-  bg: "bg-amber-500/10",
-  text: "text-amber-500",
-  handle: "!bg-amber-500",
+  border: "border-action-property-match/50",
+  bg: "bg-action-property-match/10",
+  text: "text-action-property-match",
+  handle: "!bg-action-property-match",
   icon: Filter,
 };
 
@@ -63,7 +65,7 @@ export function ConditionNode({ data }: NodeProps) {
       className={cn(
         "bg-card border-2 rounded-lg shadow-sm px-3 py-2 min-w-[240px] max-w-[280px]",
         borderColor,
-        d.selected && "ring-2 ring-amber-500 ring-offset-1 ring-offset-background",
+        d.selected && "ring-2 ring-status-active ring-offset-1 ring-offset-background",
       )}
     >
       <Handle type="target" position={Position.Top} id="input" className={style.handle} />

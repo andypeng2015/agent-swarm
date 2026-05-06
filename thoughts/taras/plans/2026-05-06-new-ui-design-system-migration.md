@@ -4,7 +4,7 @@ topic: "new-ui Design System Migration Plan"
 status: in-progress
 author: Claude (planning)
 last_updated: 2026-05-06T00:00:00Z
-last_updated_by: Claude (phase 3)
+last_updated_by: Claude (phase 4)
 ---
 
 # new-ui Design System Migration Plan
@@ -389,13 +389,13 @@ Migrate ~130 status/accent-color literals across the **components** surface (exc
 ### Success Criteria:
 
 #### Automated Verification:
-- [ ] `rg -n '(bg|text|border)-(emerald|amber|red|sky|orange|yellow|green|rose|blue|indigo|violet|purple|pink|fuchsia|teal|cyan|lime)-\d' new-ui/src/components/` → 0 results
-- [ ] `rg -n 'dark:(bg|text|border)-(emerald|amber|red|sky|orange|yellow|green|rose|blue|indigo|violet|purple|pink|fuchsia|teal|cyan|lime)-\d' new-ui/src/components/` → 0 results
-- [ ] `cd new-ui && pnpm lint && pnpm exec tsc -b`
+- [x] `rg -n '(bg|text|border)-(emerald|amber|red|sky|orange|yellow|green|rose|blue|indigo|violet|purple|pink|fuchsia|teal|cyan|lime)-\d' new-ui/src/components/` → 0 results
+- [x] `rg -n 'dark:(bg|text|border)-(emerald|amber|red|sky|orange|yellow|green|rose|blue|indigo|violet|purple|pink|fuchsia|teal|cyan|lime)-\d' new-ui/src/components/` → 0 results
+- [x] `cd new-ui && pnpm lint && pnpm exec tsc -b`
 
 #### Automated QA:
-- [ ] `qa-use` sweep of routes touching every modified component (workflows graph, session-log viewer, stats bar, error boundary triggered, integrations, header health) in light + dark into `thoughts/taras/qa/2026-05-06-design-system-audit/phase-4/`.
-- [ ] Visual diff vs. Phase 3 post-baseline. Workflow node colors and session-log status chips should match pre-migration exactly.
+- [ ] `qa-use` sweep of routes touching every modified component (workflows graph, session-log viewer, stats bar, error boundary triggered, integrations, header health) in light + dark into `thoughts/taras/qa/2026-05-06-design-system-audit/phase-4/`. *(skipped — qa-use deferred to PR-time per orchestrator instruction)*
+- [ ] Visual diff vs. Phase 3 post-baseline. Workflow node colors and session-log status chips should match pre-migration exactly. *(skipped — qa-use deferred to PR-time)*
 
 #### Manual Verification:
 - [ ] Open `/workflows/<id>` with a representative workflow — every action-type and condition-type renders the correct hue.

@@ -228,3 +228,27 @@ Sourced from `components/workflows/action-node.tsx:16-74` (8 entries: 7 keyed ac
 | `thoughts/taras/research/2026-05-06-design-system-audit.md` — this file | done |
 | Phase 1 success criteria: typecheck, lint, dev-build | run during phase verification |
 | Phase 1 success criteria: pre/post `qa-use` baseline | **skipped** — qa-use deferred to PR-time per orchestrator instruction |
+
+---
+
+## Decisions made in Phase 4 (components-layer migration)
+
+7. **No `-strong` action tokens added.** Auditing `action-node.tsx`, `condition-node.tsx`, and `trigger-node.tsx` end-to-end confirmed action text colors are uniformly written as `text-{hue}-400` with NO `dark:` fork (i.e. constant in both modes). Migrating to canonical `text-action-X` (which resolves to `-500` in light, `-400` in dark) introduces a one-Tailwind-stop shift in light mode only. Acceptable per Phase 1 prep — workflow nodes render on the graph canvas with `bg-card` backgrounds and the brighter `-400` reads similarly across modes. The CLAUDE.md token reference also already commits to "Action tokens do not [have -strong variants]". Skipping the prep commit.
+
+8. **`condition-node.tsx` `validate` reuses `--color-action-human-in-the-loop`.** Per audit doc Phase 1 §(g) note, both render identical orange. Adding a separate `--color-action-validate` token for one extra node type added no value — `validate` is the condition-side equivalent of `human-in-the-loop`, and they share the same orange semantically (waiting on a human). Documented inline in `condition-node.tsx`.
+
+9. **Trigger-node uses `--color-status-success`.** Phase 1 did not add a `--color-action-trigger` token. The existing `--color-status-success` (emerald-500 light, emerald-400 dark) matches the trigger's emerald hue exactly. Triggers semantically denote "successful entry into a workflow" — alignment with `success` is reasonable; avoids a one-off action token.
+
+10. **Workflow node selection ring `ring-amber-500` → `ring-status-active`.** Selection is an interactive/active state. `--color-status-active` resolves to amber-500 in light (byte-identical to existing) and amber-400 in dark (slightly brighter — within tolerance). Considered `ring-primary` but rejected: in light mode `--color-primary` is amber-700 (much darker); selection rings are visually distinctive at amber-500.
+
+11. **`step-card.tsx` template token highlight `text-amber-500` → `text-status-active`.** Constant amber-500 in original; canonical `status-active` matches in light, shifts to amber-400 in dark. Template tokens are semantically "interactive" highlights — alignment with `active` is correct.
+
+12. **Provider status colors in `session-log-viewer.tsx` map to status tokens.** The `running/working` (blue → status-paused), `waiting_*/needs_input` (amber → status-active), `completed/done` (emerald → status-success), and `error` (red → status-error) mapping follows the same vocabulary as `status-badge.tsx`. The `/15` opacity (vs the standard `/10`) is preserved as-is since the new tokens accept the same Tailwind opacity syntax.
+
+13. **`hover:text-red-300` overrides on `destructive-outline` Button removed.** Two integration files (`codex-oauth-section.tsx`, `field-renderer.tsx`) inlined `hover:text-red-300` on top of the `destructive-outline` variant. Per existing CLAUDE.md anti-pattern rule ("Do not re-inline `border-red-500/30 text-red-400 hover:bg-red-500/10`"), the variant already provides destructive coloring and hover background — the additional `hover:text-red-300` was a redundant override. Removed; the variant's built-in hover (now `hover:bg-status-error/10`) is the canonical destructive interactive state. Slight pixel delta on hover acceptable.
+
+14. **`session-log-viewer.tsx` user-message `border-l-blue-400/30` → `border-l-status-paused/30`.** Blue accents in this codebase consistently map to `status-paused` (which derives from blue-500/blue-400). The user-message left-bar is informational — `status-info` was the runner-up, but blue-400 (paused dark) matches the existing color exactly while status-info (sky-400 dark) shifts hue noticeably.
+
+15. **JSON token type colors in `json-tree.tsx`** map to `-strong` variants because the original used the `text-X-600 dark:text-X-400` pattern (Phase 2 amendment). Strings → `text-status-success-strong`, numbers → `text-status-active-strong`, booleans → `text-status-info-strong`. Pixel-identical migration.
+
+16. **`swarm-switcher.tsx` migrated despite being absent from Phase 4 plan list.** Two `bg-emerald-500` / `bg-red-500` literals (and one collapsed `bg-zinc-400`/`bg-zinc-600` neutral indicator) needed migration to keep `rg` returning 0 in `new-ui/src/components/`. Phase 3 already touched the file for layout colors; Phase 4 finishes it.

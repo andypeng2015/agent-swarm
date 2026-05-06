@@ -96,7 +96,7 @@ export function CodexOAuthSection() {
             className="shrink-0"
           >
             {copied ? (
-              <Check className="h-3.5 w-3.5 text-emerald-500" />
+              <Check className="h-3.5 w-3.5 text-status-success" />
             ) : (
               <Copy className="h-3.5 w-3.5" />
             )}
@@ -119,7 +119,7 @@ export function CodexOAuthSection() {
             <div className="text-sm text-muted-foreground">Loading status…</div>
           ) : isConfigured ? (
             <div className="flex items-start gap-3">
-              <div className="mt-1.5 h-2 w-2 rounded-full bg-emerald-500 shrink-0" aria-hidden />
+              <div className="mt-1.5 h-2 w-2 rounded-full bg-status-success shrink-0" aria-hidden />
               <div className="space-y-1">
                 <div className="text-sm font-medium">OAuth is configured</div>
                 <div className="text-xs text-muted-foreground">
@@ -145,7 +145,7 @@ export function CodexOAuthSection() {
               type="button"
               size="sm"
               variant="destructive-outline"
-              className="shrink-0 hover:text-red-300"
+              className="shrink-0"
               onClick={() => setConfirmClearOpen(true)}
               disabled={deleteBatch.isPending}
             >

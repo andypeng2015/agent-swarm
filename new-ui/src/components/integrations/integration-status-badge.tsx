@@ -16,14 +16,14 @@ const STATUS_META: Record<
 > = {
   configured: {
     label: "Configured",
-    className: "border-emerald-500/30 text-emerald-400",
+    className: "border-status-success/30 text-status-success",
     ariaLabel: "Status: Configured",
     tooltip:
       "Every required value is present (either in the DB or set via the deployment env). The integration should be live after a reload.",
   },
   partial: {
     label: "Partial",
-    className: "border-amber-500/30 text-amber-400",
+    className: "border-status-active/30 text-status-active",
     ariaLabel: "Status: Partially configured",
     tooltip:
       "At least one required field is set, but not all. The integration won't fully initialise until the remaining values are provided.",

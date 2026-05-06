@@ -101,18 +101,18 @@ export function FieldRenderer({
     ? inEnv
       ? {
           label: "db+env",
-          className: "bg-emerald-500/10 text-emerald-400 border-emerald-500/30",
+          className: "bg-status-success/10 text-status-success border-status-success/30",
           title: "Set in DB and loaded into process.env. Live on the server.",
         }
       : {
           label: "db (pending reload)",
-          className: "bg-amber-500/10 text-amber-400 border-amber-500/30",
+          className: "bg-status-active/10 text-status-active border-status-active/30",
           title: "Saved to DB but not yet in process.env — reload or restart the API to apply.",
         }
     : inEnv
       ? {
           label: "env (deploy)",
-          className: "bg-sky-500/10 text-sky-400 border-sky-500/30",
+          className: "bg-status-info/10 text-status-info border-status-info/30",
           title:
             "Set via deployment env (.env / docker). No DB row — save here to persist across DB reloads.",
         }
@@ -123,7 +123,7 @@ export function FieldRenderer({
       <div className="flex items-center gap-2">
         <Label htmlFor={inputId} className="flex items-center gap-1">
           <span>{field.label}</span>
-          {field.required && <span className="text-red-400 text-xs">*</span>}
+          {field.required && <span className="text-status-error text-xs">*</span>}
         </Label>
         <code
           className="text-[10px] font-mono text-muted-foreground select-text"
@@ -140,7 +140,11 @@ export function FieldRenderer({
           aria-label={`Copy key ${field.key}`}
           title={`Copy ${field.key}`}
         >
-          {copied ? <Check className="h-3 w-3 text-emerald-400" /> : <Copy className="h-3 w-3" />}
+          {copied ? (
+            <Check className="h-3 w-3 text-status-success" />
+          ) : (
+            <Copy className="h-3 w-3" />
+          )}
         </Button>
         {sourceChip && (
           <Tooltip>
@@ -169,13 +173,7 @@ export function FieldRenderer({
             Replace
           </Button>
           {existingConfig && onClearExisting && (
-            <Button
-              type="button"
-              size="sm"
-              variant="destructive-outline"
-              onClick={onClearExisting}
-              className="hover:text-red-300"
-            >
+            <Button type="button" size="sm" variant="destructive-outline" onClick={onClearExisting}>
               Clear
             </Button>
           )}
@@ -197,7 +195,7 @@ export function FieldRenderer({
               <button
                 type="button"
                 onClick={onClearExisting}
-                className="text-xs text-red-400/80 underline hover:text-red-300"
+                className="text-xs text-status-error/80 underline hover:text-status-error"
               >
                 Clear value
               </button>
@@ -214,7 +212,7 @@ export function FieldRenderer({
         </div>
       )}
 
-      {warningText && <p className="text-xs text-amber-500/90">{warningText}</p>}
+      {warningText && <p className="text-xs text-status-active/90">{warningText}</p>}
 
       {field.helpText && (
         <p id={`${inputId}-help`} className="text-xs text-muted-foreground">

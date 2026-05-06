@@ -68,7 +68,7 @@ export const StepCard = forwardRef<HTMLDivElement, StepCardProps>(
         onClick={onClick}
         className={cn(
           "rounded-md border bg-background transition-colors cursor-pointer",
-          isSelected && "border-l-2 border-l-amber-500",
+          isSelected && "border-l-2 border-l-status-active",
         )}
       >
         {/* Header row - always visible */}
@@ -80,7 +80,11 @@ export const StepCard = forwardRef<HTMLDivElement, StepCardProps>(
           </Badge>
 
           {step.nextPort && step.nextPort !== "default" && (
-            <Badge variant="outline" size="tag" className="shrink-0 border-sky-500/30 text-sky-400">
+            <Badge
+              variant="outline"
+              size="tag"
+              className="shrink-0 border-status-info/30 text-status-info"
+            >
               port: {step.nextPort}
             </Badge>
           )}
@@ -138,7 +142,7 @@ export const StepCard = forwardRef<HTMLDivElement, StepCardProps>(
             {/* Retry info */}
             {step.retryCount != null && step.retryCount > 0 && (
               <div className="flex items-center gap-2 text-xs">
-                <Badge variant="outline" size="tag" className="text-amber-600 dark:text-amber-400">
+                <Badge variant="outline" size="tag" className="text-status-active-strong">
                   Retry {step.retryCount}
                   {step.maxRetries != null ? `/${step.maxRetries}` : ""}
                 </Badge>
@@ -152,7 +156,7 @@ export const StepCard = forwardRef<HTMLDivElement, StepCardProps>(
 
             {/* Diagnostics warnings */}
             {unresolvedTokens && unresolvedTokens.length > 0 && (
-              <div className="flex items-start gap-2 text-xs text-amber-600 dark:text-amber-400">
+              <div className="flex items-start gap-2 text-xs text-status-active-strong">
                 <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
                 <span>Unresolved tokens: {unresolvedTokens.map((t) => `{{${t}}}`).join(", ")}</span>
               </div>
@@ -265,10 +269,10 @@ function HitlOutput({ step, node }: { step: WorkflowRunStep; node?: WorkflowNode
   if (output == null) {
     if (step.status === "waiting") {
       return (
-        <div className="flex items-center gap-2 text-xs text-amber-600 dark:text-amber-400 py-1">
+        <div className="flex items-center gap-2 text-xs text-status-active-strong py-1">
           <span className="relative flex h-2 w-2">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
-            <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500" />
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-status-active opacity-75" />
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-status-active" />
           </span>
           <span>Awaiting approval</span>
         </div>
@@ -292,10 +296,10 @@ function HitlOutput({ step, node }: { step: WorkflowRunStep; node?: WorkflowNode
 
   const statusBadgeClass =
     output.status === "approved"
-      ? "border-emerald-500/30 text-emerald-400"
+      ? "border-status-success/30 text-status-success"
       : output.status === "rejected"
-        ? "border-red-500/30 text-red-400"
-        : "border-amber-500/30 text-amber-400";
+        ? "border-status-error/30 text-status-error"
+        : "border-status-active/30 text-status-active";
   const statusLabel =
     output.status === "approved"
       ? "Approved"
@@ -351,7 +355,7 @@ function HitlOutput({ step, node }: { step: WorkflowRunStep; node?: WorkflowNode
                   {answer !== undefined && (
                     <div className="text-xs font-medium pl-0.5">
                       {typeof answer === "boolean" ? (
-                        <span className={answer ? "text-emerald-400" : "text-red-400"}>
+                        <span className={answer ? "text-status-success" : "text-status-error"}>
                           {answer ? "Yes" : "No"}
                         </span>
                       ) : typeof answer === "string" ? (
@@ -553,7 +557,7 @@ function HighlightedTemplate({ text }: { text: string }) {
     <p className="text-xs leading-relaxed rounded-md bg-muted px-3 py-2 font-mono whitespace-pre-wrap">
       {parts.map((part, i) =>
         /^{{[^}]*}}$/.test(part) ? (
-          <span key={i} className="text-amber-500">
+          <span key={i} className="text-status-active">
             {part}
           </span>
         ) : (

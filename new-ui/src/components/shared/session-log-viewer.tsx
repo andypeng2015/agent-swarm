@@ -601,14 +601,22 @@ function ToolResultBubble({ content }: { content: string }) {
 // --- Provider meta rendering ---
 
 const PROVIDER_STATUS_STYLES: Record<string, { label: string; bg: string; text: string }> = {
-  running: { label: "Running", bg: "bg-blue-500/15", text: "text-blue-400" },
-  working: { label: "Working", bg: "bg-blue-500/15", text: "text-blue-400" },
-  waiting_for_user: { label: "Awaiting Input", bg: "bg-amber-500/15", text: "text-amber-400" },
-  waiting_for_approval: { label: "Needs Approval", bg: "bg-amber-500/15", text: "text-amber-400" },
-  completed: { label: "Completed", bg: "bg-emerald-500/15", text: "text-emerald-400" },
-  done: { label: "Done", bg: "bg-emerald-500/15", text: "text-emerald-400" },
-  needs_input: { label: "Needs Input", bg: "bg-amber-500/15", text: "text-amber-400" },
-  error: { label: "Error", bg: "bg-red-500/15", text: "text-red-400" },
+  running: { label: "Running", bg: "bg-status-paused/15", text: "text-status-paused" },
+  working: { label: "Working", bg: "bg-status-paused/15", text: "text-status-paused" },
+  waiting_for_user: {
+    label: "Awaiting Input",
+    bg: "bg-status-active/15",
+    text: "text-status-active",
+  },
+  waiting_for_approval: {
+    label: "Needs Approval",
+    bg: "bg-status-active/15",
+    text: "text-status-active",
+  },
+  completed: { label: "Completed", bg: "bg-status-success/15", text: "text-status-success" },
+  done: { label: "Done", bg: "bg-status-success/15", text: "text-status-success" },
+  needs_input: { label: "Needs Input", bg: "bg-status-active/15", text: "text-status-active" },
+  error: { label: "Error", bg: "bg-status-error/15", text: "text-status-error" },
 };
 
 function ProviderStatusPill({ value }: { value: string }) {
@@ -686,7 +694,7 @@ function MessageBubble({ message }: { message: ParsedMessage }) {
         isAssistant
           ? "border-l-2 border-l-primary/30"
           : message.role === "user"
-            ? "border-l-2 border-l-blue-400/30"
+            ? "border-l-2 border-l-status-paused/30"
             : isSystem
               ? "bg-muted/10"
               : "border-l-2 border-l-muted-foreground/20",
@@ -767,9 +775,9 @@ function CompactionDivider({ snapshot }: { snapshot: ContextSnapshot }) {
   const percent = snapshot.contextPercent;
 
   return (
-    <div className="flex items-center gap-3 px-4 py-2 bg-amber-500/5 border-y border-amber-500/20">
-      <Scissors className="h-3 w-3 text-amber-500 shrink-0" />
-      <span className="text-[10px] font-semibold text-amber-500 font-mono uppercase tracking-wider whitespace-nowrap">
+    <div className="flex items-center gap-3 px-4 py-2 bg-status-active/5 border-y border-status-active/20">
+      <Scissors className="h-3 w-3 text-status-active shrink-0" />
+      <span className="text-[10px] font-semibold text-status-active font-mono uppercase tracking-wider whitespace-nowrap">
         {isAuto ? "Auto" : "Manual"} Compaction
       </span>
       {preTokens != null && postTokens != null && (
@@ -780,7 +788,7 @@ function CompactionDivider({ snapshot }: { snapshot: ContextSnapshot }) {
       {percent != null && (
         <span className="text-[10px] text-muted-foreground font-mono">({percent.toFixed(0)}%)</span>
       )}
-      <div className="h-px flex-1 bg-amber-500/20" />
+      <div className="h-px flex-1 bg-status-active/20" />
     </div>
   );
 }

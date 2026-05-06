@@ -70,11 +70,11 @@ export function ClaudeManagedSection({ def, configs, envPresence }: ClaudeManage
 
   const statusBadge =
     status === "configured" ? (
-      <Badge variant="outline" size="tag" className="border-emerald-500/30 text-emerald-400">
+      <Badge variant="outline" size="tag" className="border-status-success/30 text-status-success">
         Connected
       </Badge>
     ) : status === "partial" ? (
-      <Badge variant="outline" size="tag" className="border-amber-500/30 text-amber-400">
+      <Badge variant="outline" size="tag" className="border-status-active/30 text-status-active">
         Partial
       </Badge>
     ) : (
@@ -113,7 +113,7 @@ export function ClaudeManagedSection({ def, configs, envPresence }: ClaudeManage
             className="shrink-0"
           >
             {copied ? (
-              <Check className="h-3.5 w-3.5 text-emerald-500" />
+              <Check className="h-3.5 w-3.5 text-status-success" />
             ) : (
               <Copy className="h-3.5 w-3.5" />
             )}
@@ -150,9 +150,14 @@ export function ClaudeManagedSection({ def, configs, envPresence }: ClaudeManage
             <div className="text-xs">
               {lastResult.ok ? (
                 <div className="flex items-start gap-2">
-                  <div className="mt-1 h-2 w-2 rounded-full bg-emerald-500 shrink-0" aria-hidden />
+                  <div
+                    className="mt-1 h-2 w-2 rounded-full bg-status-success shrink-0"
+                    aria-hidden
+                  />
                   <div className="space-y-0.5">
-                    <div className="font-medium text-emerald-400">Connected to managed agent</div>
+                    <div className="font-medium text-status-success">
+                      Connected to managed agent
+                    </div>
                     <div className="text-muted-foreground">
                       Name: <code className="font-mono">{lastResult.agentName ?? "(unnamed)"}</code>
                       {lastResult.model && (
@@ -165,9 +170,9 @@ export function ClaudeManagedSection({ def, configs, envPresence }: ClaudeManage
                 </div>
               ) : (
                 <div className="flex items-start gap-2">
-                  <div className="mt-1 h-2 w-2 rounded-full bg-red-500 shrink-0" aria-hidden />
+                  <div className="mt-1 h-2 w-2 rounded-full bg-status-error shrink-0" aria-hidden />
                   <div className="space-y-0.5">
-                    <div className="font-medium text-red-400">Connection failed</div>
+                    <div className="font-medium text-status-error">Connection failed</div>
                     <div className="text-muted-foreground break-words">
                       {lastResult.error ?? "Unknown error"}
                     </div>

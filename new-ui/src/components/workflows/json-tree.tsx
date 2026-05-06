@@ -49,15 +49,13 @@ function JsonValue({ value, depth, defaultExpandDepth }: JsonValueProps) {
   const type = typeof value;
 
   if (type === "string") {
-    return (
-      <span className="text-emerald-600 dark:text-emerald-400">&quot;{String(value)}&quot;</span>
-    );
+    return <span className="text-status-success-strong">&quot;{String(value)}&quot;</span>;
   }
   if (type === "number") {
-    return <span className="text-amber-600 dark:text-amber-400">{String(value)}</span>;
+    return <span className="text-status-active-strong">{String(value)}</span>;
   }
   if (type === "boolean") {
-    return <span className="text-sky-600 dark:text-sky-400">{String(value)}</span>;
+    return <span className="text-status-info-strong">{String(value)}</span>;
   }
 
   if (Array.isArray(value)) {

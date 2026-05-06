@@ -17,26 +17,31 @@ const iconMap: Record<string, React.ElementType> = {
 export function TriggerNode({ data }: NodeProps) {
   const d = data as unknown as FlowNodeData;
   const Icon = iconMap[d.nodeType] ?? ListTodo;
-  const borderColor = d.stepStatus ? statusBorderColor[d.stepStatus] : "border-emerald-500/50";
+  const borderColor = d.stepStatus ? statusBorderColor[d.stepStatus] : "border-status-success/50";
 
   return (
     <div
       className={cn(
         "bg-card border-2 rounded-lg shadow-sm px-3 py-2 min-w-[240px] max-w-[280px]",
         borderColor,
-        d.selected && "ring-2 ring-amber-500 ring-offset-1 ring-offset-background",
+        d.selected && "ring-2 ring-status-active ring-offset-1 ring-offset-background",
       )}
     >
       <div className="flex items-center gap-2">
-        <div className="p-1 rounded bg-emerald-500/10">
-          <Icon className="h-4 w-4 text-emerald-500" />
+        <div className="p-1 rounded bg-status-success/10">
+          <Icon className="h-4 w-4 text-status-success" />
         </div>
         <div className="flex-1 min-w-0">
           <div className="text-xs font-medium truncate">{d.label}</div>
           <div className="text-[10px] text-muted-foreground uppercase">{d.nodeType}</div>
         </div>
       </div>
-      <Handle type="source" position={Position.Bottom} id="default" className="!bg-emerald-500" />
+      <Handle
+        type="source"
+        position={Position.Bottom}
+        id="default"
+        className="!bg-status-success"
+      />
     </div>
   );
 }

@@ -137,7 +137,7 @@ export function LinearOAuthSection() {
             <div
               className={
                 data.connected
-                  ? "mt-1.5 h-2 w-2 rounded-full bg-emerald-500 shrink-0"
+                  ? "mt-1.5 h-2 w-2 rounded-full bg-status-success shrink-0"
                   : "mt-1.5 h-2 w-2 rounded-full bg-status-neutral shrink-0"
               }
               aria-hidden="true"
@@ -197,7 +197,7 @@ export function LinearOAuthSection() {
                 className="shrink-0"
               >
                 {copied === "redirect" ? (
-                  <Check className="h-3.5 w-3.5 text-emerald-500" />
+                  <Check className="h-3.5 w-3.5 text-status-success" />
                 ) : (
                   <Copy className="h-3.5 w-3.5" />
                 )}
@@ -228,7 +228,7 @@ export function LinearOAuthSection() {
                 className="shrink-0"
               >
                 {copied === "webhook" ? (
-                  <Check className="h-3.5 w-3.5 text-emerald-500" />
+                  <Check className="h-3.5 w-3.5 text-status-success" />
                 ) : (
                   <Copy className="h-3.5 w-3.5" />
                 )}
