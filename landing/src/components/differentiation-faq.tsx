@@ -90,8 +90,8 @@ export function DifferentiationFAQ() {
         // biome-ignore lint/security/noDangerouslySetInnerHtml: required to emit FAQPage JSON-LD
         dangerouslySetInnerHTML={{ __html: JSON.stringify(FAQ_JSON_LD) }}
       />
-      <div className="max-w-[760px] mx-auto px-6 sm:px-7">
-        <div className="mb-10 text-center">
+      <div className="max-w-[1180px] mx-auto px-6 sm:px-7">
+        <div className="mb-14 max-w-2xl">
           <div className="font-mono text-[11px] tracking-[0.14em] uppercase text-amber-700 mb-4">
             / how this is different
           </div>
@@ -105,7 +105,7 @@ export function DifferentiationFAQ() {
           </h2>
         </div>
 
-        <div className="rounded-2xl border border-zinc-100 px-6">
+        <div className="max-w-[840px] rounded-2xl border border-zinc-100 px-6">
           {FAQS.map((f) => (
             <FAQItem key={f.question} faq={f} />
           ))}
