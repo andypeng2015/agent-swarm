@@ -1043,12 +1043,17 @@ export default function TaskDetailPage() {
             railCollapsed ? "overflow-hidden" : "overflow-y-auto pb-3 px-3",
           )}
         >
+          {/* Phase 19 — chevron must paint above the sticky Activity heading
+              (z-30 from Phase 18). Bumped to z-40 so the toggle stays visible
+              while the heading still covers timeline rows scrolling past it.
+              The h4's `pr-10` reserves visual room for the chevron so they
+              don't overlap horizontally even with the higher z-index. */}
           <button
             type="button"
             onClick={() => setRailCollapsed((v) => !v)}
             aria-label={railCollapsed ? "Expand activity rail" : "Collapse activity rail"}
             className={cn(
-              "absolute z-20 top-2 h-6 w-6 inline-flex items-center justify-center rounded-md border border-border bg-background text-muted-foreground hover:bg-accent hover:text-foreground transition-colors",
+              "absolute z-40 top-2 h-6 w-6 inline-flex items-center justify-center rounded-md border border-border bg-background text-muted-foreground hover:bg-accent hover:text-foreground transition-colors",
               railCollapsed ? "left-1/2 -translate-x-1/2" : "right-2",
             )}
           >

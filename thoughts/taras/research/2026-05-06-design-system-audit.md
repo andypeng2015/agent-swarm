@@ -889,3 +889,56 @@ This is documented here so future contributors hitting the same shape (long-list
 - `pnpm exec tsc -b` — green
 - `pnpm exec vite build` — green
 - `pnpm dev` (portless `https://ui.swarm.localhost`) — boots; `/tasks/<id>` serves 200; HMR picked up the change (verified via curl of `/src/pages/tasks/[id]/page.tsx` returning the new `z-30` source). Visual confirmation of the scroll behavior deferred to user qa-use at PR-time per the brief.
+
+## Phase 19 — Activity-rail collapse chevron regression (2026-05-06)
+
+Phase 18's `z-30` bump on the sticky `<h4>` "ACTIVITY (N)" heading inadvertently hid the rail's collapse chevron. The user reported the chevron was no longer visible after Phase 18 shipped.
+
+### Root cause
+
+The chevron toggle button is rendered as a sibling of the rail content inside the `<aside>`:
+
+```tsx
+<aside className="border-l border-border min-h-0 relative overflow-y-auto pb-3 px-3">
+  <button className="absolute z-20 top-2 h-6 w-6 ... right-2"> {/* chevron */}
+  </button>
+  {!railCollapsed && rightRailContent /* contains sticky h4 with z-30 */}
+</aside>
+```
+
+Phase 18 reasoning ("z-30 keeps the heading above both the timeline rows AND the chevron toggle, so the heading visually covers everything that scrolls past it") missed that the heading's `bg-background` block isn't just covering scrolled-past *content* — it also covers anything in its bounding box at the same z-stack-or-lower, including the chevron sitting at `top-2 right-2 h-6 w-6` (y=8 to y=32 from the aside's top edge). The heading spans roughly `top-0` to `top-9` (its own `pt-3 pb-3` + content height ~14px ≈ 38px tall) at the full rail width via `-mx-3`, so the chevron's bounding box is fully inside the heading's painted region. With `z-30 > z-20`, the heading wins and the chevron is invisible — and unclickable.
+
+The Phase 17 chevron worked because the heading was `z-10` < chevron's `z-20`. Phase 18 inverted that ordering as a "defense-in-depth" move; it was load-bearing for the chevron's visibility.
+
+### Fix
+
+Bump the chevron toggle's z-index from `z-20` to `z-40` so it paints above the sticky heading's `z-30`:
+
+```tsx
+- "absolute z-20 top-2 h-6 w-6 ..."
++ "absolute z-40 top-2 h-6 w-6 ..."
+```
+
+The h4's `pr-10` (40px right padding) already reserves horizontal room for the chevron — so even with the chevron now painting above the heading, the heading's *text* ("ACTIVITY (N)" + the activity icon) doesn't overlap the chevron. Visual layout unchanged; only the z-stack is corrected.
+
+The Phase 18 fix (sticky heading covers timeline rows that scroll past it, no transparent gap, bare `<div>` wrapper preserving the scroll-container/sticky containing-block contract) is preserved verbatim — no other changes to the rail structure, the heading classes, or the aside container.
+
+### Generalizable lesson
+
+When two `position: absolute`/`position: sticky` elements share a stacking context and one contains the other's bounding box (a sticky header containing a `top-2 right-2` button, for example), bumping the wrapper's z-index to "hide content behind it" can incidentally hide the inner button too. If the wrapper has a solid background (here `bg-background`), the inner button MUST sit at a strictly higher z-index than the wrapper to remain visible.
+
+Specific to this page: when revisiting the rail's z-stack in the future, the canonical ordering is now:
+
+| Element | z-index | Why |
+|---|---|---|
+| Timeline rows (LogTimeline body) | (none) | base flow |
+| Sticky h4 heading | `z-30` | covers rows scrolling past |
+| Chevron toggle button | `z-40` | must remain visible above the heading |
+
+### Verification
+
+- `pnpm run check:tokens` — green
+- `pnpm lint` — green
+- `pnpm exec tsc -b` — green
+- `pnpm exec vite build` — green
+- `pnpm dev` (portless `https://ui.swarm.localhost`) — boots; `/tasks/<id>` serves 200; HMR picked up the change (verified via curl of `/src/pages/tasks/[id]/page.tsx` containing the new `z-40` source). Visual confirmation of the chevron's visibility (light + dark, expanded + collapsed states) deferred to user qa-use at PR-time per the brief.

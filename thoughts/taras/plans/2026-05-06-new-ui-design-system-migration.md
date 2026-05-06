@@ -4,7 +4,7 @@ topic: "new-ui Design System Migration Plan"
 status: completed
 author: Claude (planning)
 last_updated: 2026-05-06T00:00:00Z
-last_updated_by: Claude (phase 18)
+last_updated_by: Claude (phase 19)
 ---
 
 # new-ui Design System Migration Plan
@@ -1341,6 +1341,51 @@ Append a Phase 18 section to `thoughts/taras/research/2026-05-06-design-system-a
 ### QA Spec (optional):
 
 n/a — single-bug fix. qa-use deferred to PR-time per Taras's brief.
+
+---
+
+## Phase 19: restore Activity-rail collapse chevron (Phase 18 regression fix)
+
+### Overview
+
+Phase 18 fixed the sticky-Activity-heading coverage bug by restructuring the rail's content and bumping the heading from `z-10` to `z-30` so the heading paints above timeline rows AND the chevron toggle. That last bit was a defense-in-depth choice — but it had an unintended consequence: the chevron toggle button (`absolute z-20 top-2 right-2`) is occluded by the heading's `bg-background` block, which spans `top: 0` to ~`top-9` (its `pt-3 pb-3` + content) at the full rail width. With z-30 > z-20, the heading paints over the chevron entirely, so the user can't see (or click) it.
+
+The chevron JSX, the `useState`/`useEffect` localStorage hook, and the grid-template responsiveness (`[280px_1fr_36px]` ↔ `[280px_1fr_280px]`) are all still wired up. Only the chevron's visibility is broken — z-stacking.
+
+### Changes Required:
+
+#### 1. Bump chevron z-index above sticky heading (`new-ui/src/pages/tasks/[id]/page.tsx`)
+
+The chevron toggle button changes from `absolute z-20` to `absolute z-40`, so it paints above the sticky `<h4>`'s `z-30`. The heading already reserves horizontal space for the chevron via `pr-10`, so there's no text-overlap risk — the higher z-index just keeps the chevron visible AND clickable on top of the heading's `bg-background` strip.
+
+The Phase 18 sticky-heading fix is preserved exactly: heading still `sticky top-0 z-30 bg-background -mx-3 px-3 pt-3 pb-3 pr-10 ... border-b`, aside still `overflow-y-auto pb-3 px-3 relative`, no `<DetailPageRail>` wrapper. Only the chevron's z-index changes.
+
+#### 2. Audit doc
+
+Append a Phase 19 section to `thoughts/taras/research/2026-05-06-design-system-audit.md` documenting the regression and the fix, so future contributors don't re-bump the heading z-index without considering the chevron.
+
+### Success Criteria:
+
+#### Automated Verification:
+- [x] `cd new-ui && pnpm run check:tokens` — no new color literals introduced
+- [x] `cd new-ui && pnpm lint` — Biome passes
+- [x] `cd new-ui && pnpm exec tsc -b` — typecheck passes
+- [x] `cd new-ui && pnpm exec vite build` — build passes
+- [x] `cd new-ui && pnpm dev` boots clean; `tasks/<id>` route serves `200` (verified via curl against the running portless dev server at `https://ui.swarm.localhost`); HMR-served `page.tsx` source contains the new `z-40` token
+
+#### Automated QA:
+- [x] `qa-use` capture of `tasks/[id]` showing the chevron visible at top-right of the expanded rail and centered when collapsed [skipped — qa-use deferred to PR-time]
+
+#### Manual Verification:
+- [ ] User opens `tasks/<id>` with a long Activity feed and confirms the chevron toggle is visible at the top-right of the expanded rail
+- [ ] User clicks the chevron and confirms the rail collapses to a 36px gutter, with the chevron now centered (pointing left to indicate "expand")
+- [ ] User clicks the chevron again and confirms the rail re-expands; reload-persistence still works (`agent-swarm-task-rail-collapsed` localStorage key)
+- [ ] User scrolls the rail and confirms the Phase 18 sticky-heading fix still holds — no rows visible above the pinned heading at any scroll position, no transparent gap below the heading
+- [ ] User confirms light + dark mode both render correctly (chevron border + heading bg both match the rail surface)
+
+### QA Spec (optional):
+
+n/a — single-bug regression fix. qa-use deferred to PR-time per Taras's brief.
 
 ---
 
