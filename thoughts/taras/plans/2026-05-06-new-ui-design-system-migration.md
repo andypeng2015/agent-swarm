@@ -4,7 +4,7 @@ topic: "new-ui Design System Migration Plan"
 status: in-progress
 author: Claude (planning)
 last_updated: 2026-05-06T00:00:00Z
-last_updated_by: Claude (phase 6)
+last_updated_by: Claude (phase 7)
 ---
 
 # new-ui Design System Migration Plan
@@ -571,13 +571,13 @@ Ship the enforcement gate. After Phases 1–6, the codebase is at **zero color-l
 ### Success Criteria:
 
 #### Automated Verification:
-- [ ] `cd new-ui && pnpm run check:tokens` → exits 0
-- [ ] Insert a deliberate violation (`<div className="bg-zinc-500" />` in any page), re-run → exits non-zero with the offending `file:line` printed; revert
-- [ ] `cd new-ui && pnpm lint && pnpm exec tsc -b` still green
-- [ ] CI integration validated: push a test branch, watch `merge-gate.yml` run the new step
+- [x] `cd new-ui && pnpm run check:tokens` → exits 0
+- [x] Insert a deliberate violation (`<div className="bg-zinc-500" />` in any page), re-run → exits non-zero with the offending `file:line` printed; revert
+- [x] `cd new-ui && pnpm lint && pnpm exec tsc -b` still green
+- [ ] CI integration validated: push a test branch, watch `merge-gate.yml` run the new step *(deferred to PR-time)*
 
 #### Automated QA:
-- [ ] None — no UI changes.
+- [x] None — no UI changes.
 
 #### Manual Verification:
 - [ ] CLAUDE.md reads correctly; the gate's failure output is grep-friendly enough to debug from CI logs.

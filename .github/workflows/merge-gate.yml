@@ -209,6 +209,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Check design tokens (no raw color literals)
+        run: pnpm run check:tokens
+
       - name: Run Biome linter
         run: pnpm lint
 

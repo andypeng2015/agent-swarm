@@ -104,7 +104,8 @@ Do not re-inline `border-red-500/30 text-red-400 hover:bg-red-500/10`. Pair with
 
 - **Never hardcode dark-mode colors** (no `bg-zinc-950`, `text-zinc-400`, etc.). Use CSS variable classes: `bg-background`, `bg-muted`, `text-foreground`, `text-muted-foreground`, `border-border`, `bg-accent`.
 - **Amber** is brand `--primary` — use it for interactive / active states only.
-- **Status colors come from named semantic tokens** — `bg-status-success`, `text-status-error`, `bg-status-active`, etc. — defined in `src/styles/globals.css` (light + dark). Action-type colors (workflow nodes) come from `bg-action-*` tokens. **Do not** use raw Tailwind palette literals (`bg-emerald-500`, `text-amber-400`, `border-red-500/30`, etc.) in app code. Translucent fills use the standard Tailwind opacity syntax: `bg-status-success/10`, `border-action-script/50`. The lint gate (Phase 7 of the design-system migration) enforces this rule.
+- **Status colors come from named semantic tokens** — `bg-status-success`, `text-status-error`, `bg-status-active`, etc. — defined in `src/styles/globals.css` (light + dark). Action-type colors (workflow nodes) come from `bg-action-*` tokens. **Do not** use raw Tailwind palette literals (`bg-emerald-500`, `text-amber-400`, `border-red-500/30`, etc.) in app code. Translucent fills use the standard Tailwind opacity syntax: `bg-status-success/10`, `border-action-script/50`.
+- **Color literal lint gate.** `pnpm run check:tokens` (also runs in CI via `merge-gate.yml`'s `new-ui-lint` job) fails the build on any raw Tailwind color palette literal, `dark:` palette variant, arbitrary color literal (e.g. `bg-[#0d1117]`), or hardcoded hex in `src/`. To use a new color, add a token to `src/styles/globals.css`. Monaco editor themes are exempt and live in `src/lib/monaco-themes.ts`.
 - CSS variables defined in `src/styles/globals.css`; AG Grid themed via `src/styles/ag-grid.css`.
 - Use `cn()` from `@/lib/utils` for conditional class merging.
 

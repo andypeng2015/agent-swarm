@@ -9,6 +9,7 @@
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "format": "biome format --write .",
+    "check:tokens": "bash scripts/check-design-tokens.sh",
     "preview": "vite preview"
   },
   "dependencies": {
