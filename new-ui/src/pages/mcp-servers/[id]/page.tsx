@@ -18,16 +18,30 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  DetailPageBody,
+  DetailPageRail,
+  QuickStat,
+  QuickStats,
+  Relationship,
+  Relationships,
+} from "@/components/ui/detail-page-layout";
+import { InfoRow } from "@/components/ui/info-row";
+import { PageHeader } from "@/components/ui/page-header";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { formatRelativeTime } from "@/lib/utils";
 import { McpOAuthPanel } from "./mcp-oauth-panel";
 
+/**
+ * See `mcp-servers/page.tsx` for token-mapping rationale (transport/scope
+ * have no semantic status meaning — mapped by closest hue).
+ */
 function TransportBadge({ transport }: { transport: string }) {
   const colors: Record<string, string> = {
-    stdio: "border-blue-500/30 text-blue-400",
-    http: "border-purple-500/30 text-purple-400",
-    sse: "border-cyan-500/30 text-cyan-400",
+    stdio: "border-action-default/30 text-action-default",
+    http: "border-action-delegate-to-agent/30 text-action-delegate-to-agent",
+    sse: "border-action-script/30 text-action-script",
   };
   return (
     <Badge variant="outline" size="tag" className={`${colors[transport] || ""}`}>
@@ -38,9 +52,9 @@ function TransportBadge({ transport }: { transport: string }) {
 
 function ScopeBadge({ scope }: { scope: string }) {
   const colors: Record<string, string> = {
-    global: "border-emerald-500/30 text-emerald-400",
-    swarm: "border-amber-500/30 text-amber-400",
-    agent: "border-zinc-500/30 text-zinc-400",
+    global: "border-status-success/30 text-status-success",
+    swarm: "border-status-active/30 text-status-active",
+    agent: "border-status-neutral/30 text-status-neutral",
   };
   return (
     <Badge variant="outline" size="tag" className={`${colors[scope] || ""}`}>
@@ -113,193 +127,186 @@ export default function McpServerDetailPage() {
         <ArrowLeft className="h-4 w-4" /> Back to MCP Servers
       </button>
 
-      <div className="flex items-center justify-between shrink-0">
-        <div className="flex items-center gap-3">
-          <h1 className="text-xl font-semibold">{server.name}</h1>
-          <TransportBadge transport={server.transport} />
-          <ScopeBadge scope={server.scope} />
-          {server.authMethod === "oauth" && (
-            <Badge variant="outline" size="tag" className="border-purple-500/30 text-purple-400">
-              OAuth
+      <PageHeader
+        className="shrink-0"
+        title={
+          <div className="flex items-center gap-3">
+            <h1 className="text-xl font-semibold">{server.name}</h1>
+            <TransportBadge transport={server.transport} />
+            <ScopeBadge scope={server.scope} />
+            {server.authMethod === "oauth" && (
+              <Badge
+                variant="outline"
+                size="tag"
+                className="border-action-delegate-to-agent/30 text-action-delegate-to-agent"
+              >
+                OAuth
+              </Badge>
+            )}
+            <Badge
+              variant="outline"
+              size="tag"
+              className={`${
+                server.isEnabled
+                  ? "border-status-success/30 text-status-success"
+                  : "border-status-error/30 text-status-error"
+              }`}
+            >
+              {server.isEnabled ? "Enabled" : "Disabled"}
             </Badge>
-          )}
-          <Badge
-            variant="outline"
-            size="tag"
-            className={`${
-              server.isEnabled
-                ? "border-emerald-500/30 text-emerald-400"
-                : "border-red-500/30 text-red-400"
-            }`}
-          >
-            {server.isEnabled ? "Enabled" : "Disabled"}
-          </Badge>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={handleToggleEnabled}>
-            {server.isEnabled ? "Disable" : "Enable"}
-          </Button>
-          <AlertDialog>
-            <AlertDialogTrigger asChild>
-              <Button variant="destructive-outline" size="sm">
-                <Trash2 className="h-4 w-4 mr-1" /> Delete
-              </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Delete MCP server "{server.name}"?</AlertDialogTitle>
-                <AlertDialogDescription>
-                  This will permanently delete this MCP server and uninstall it from all agents.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction onClick={handleDelete}>Delete</AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
-        </div>
-      </div>
+          </div>
+        }
+        action={
+          <>
+            <Button variant="outline" size="sm" onClick={handleToggleEnabled}>
+              {server.isEnabled ? "Disable" : "Enable"}
+            </Button>
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="destructive-outline" size="sm">
+                  <Trash2 className="h-4 w-4 mr-1" /> Delete
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Delete MCP server "{server.name}"?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This will permanently delete this MCP server and uninstall it from all agents.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction onClick={handleDelete}>Delete</AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          </>
+        }
+      />
 
       {server.description && (
         <p className="text-sm text-muted-foreground shrink-0">{server.description}</p>
       )}
 
-      <Tabs value={tab} onValueChange={setTab} className="flex flex-col flex-1 min-h-0">
-        <TabsList className="shrink-0">
-          <TabsTrigger value="config">Configuration</TabsTrigger>
-          <TabsTrigger value="auth">Authentication</TabsTrigger>
-          <TabsTrigger value="metadata">Metadata</TabsTrigger>
-        </TabsList>
+      <DetailPageBody
+        className="flex-1 min-h-0"
+        main={
+          <Tabs value={tab} onValueChange={setTab} className="flex flex-col flex-1 min-h-0">
+            <TabsList className="shrink-0">
+              <TabsTrigger value="config">Configuration</TabsTrigger>
+              <TabsTrigger value="auth">Authentication</TabsTrigger>
+            </TabsList>
 
-        <TabsContent value="config" className="mt-4 overflow-y-auto space-y-4">
-          {/* Transport Configuration */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-sm">Transport Configuration</CardTitle>
-            </CardHeader>
-            <CardContent className="grid grid-cols-2 gap-4 text-sm">
-              <div>
-                <span className="text-muted-foreground">Transport</span>
-                <p className="uppercase">{server.transport}</p>
-              </div>
-              {server.transport === "stdio" && (
-                <>
-                  <div>
-                    <span className="text-muted-foreground">Command</span>
-                    <p className="font-mono text-xs">{server.command || "(not set)"}</p>
-                  </div>
-                  {server.args && (
-                    <div className="col-span-2">
-                      <span className="text-muted-foreground">Arguments</span>
-                      <p className="font-mono text-xs">{server.args}</p>
-                    </div>
+            <TabsContent value="config" className="mt-4 overflow-y-auto space-y-4">
+              {/* Transport Configuration */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-sm">Transport Configuration</CardTitle>
+                </CardHeader>
+                <CardContent className="grid grid-cols-2 gap-4 text-sm">
+                  <InfoRow label="Transport">
+                    <p className="uppercase">{server.transport}</p>
+                  </InfoRow>
+                  {server.transport === "stdio" && (
+                    <>
+                      <InfoRow label="Command">
+                        <p className="font-mono text-xs">{server.command || "(not set)"}</p>
+                      </InfoRow>
+                      {server.args && (
+                        <InfoRow label="Arguments" className="col-span-2">
+                          <p className="font-mono text-xs">{server.args}</p>
+                        </InfoRow>
+                      )}
+                    </>
                   )}
-                </>
-              )}
-              {(server.transport === "http" || server.transport === "sse") && (
-                <>
-                  <div className="col-span-2">
-                    <span className="text-muted-foreground">URL</span>
-                    <p className="font-mono text-xs break-all">{server.url || "(not set)"}</p>
-                  </div>
-                  {server.headers && (
-                    <div className="col-span-2">
-                      <span className="text-muted-foreground">Headers</span>
-                      <pre className="font-mono text-xs bg-muted p-2 rounded mt-1 whitespace-pre-wrap">
-                        {server.headers}
-                      </pre>
-                    </div>
+                  {(server.transport === "http" || server.transport === "sse") && (
+                    <>
+                      <InfoRow label="URL" className="col-span-2">
+                        <p className="font-mono text-xs break-all">{server.url || "(not set)"}</p>
+                      </InfoRow>
+                      {server.headers && (
+                        <InfoRow label="Headers" className="col-span-2">
+                          <pre className="font-mono text-xs bg-muted p-2 rounded mt-1 whitespace-pre-wrap">
+                            {server.headers}
+                          </pre>
+                        </InfoRow>
+                      )}
+                    </>
                   )}
-                </>
+                </CardContent>
+              </Card>
+
+              {/* Secret References */}
+              {(envKeys.length > 0 || headerKeys.length > 0) && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-sm">Secret References</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4 text-sm">
+                    {envKeys.length > 0 && (
+                      <InfoRow label="Environment Config Keys">
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {envKeys.map((key) => (
+                            <Badge
+                              key={key}
+                              variant="outline"
+                              className="text-[9px] px-1.5 py-0 h-5 font-medium leading-none items-center font-mono"
+                            >
+                              {key}
+                            </Badge>
+                          ))}
+                        </div>
+                      </InfoRow>
+                    )}
+                    {headerKeys.length > 0 && (
+                      <InfoRow label="Header Config Keys">
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {headerKeys.map((key) => (
+                            <Badge
+                              key={key}
+                              variant="outline"
+                              className="text-[9px] px-1.5 py-0 h-5 font-medium leading-none items-center font-mono"
+                            >
+                              {key}
+                            </Badge>
+                          ))}
+                        </div>
+                      </InfoRow>
+                    )}
+                  </CardContent>
+                </Card>
               )}
-            </CardContent>
-          </Card>
+            </TabsContent>
 
-          {/* Secret References */}
-          {(envKeys.length > 0 || headerKeys.length > 0) && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm">Secret References</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4 text-sm">
-                {envKeys.length > 0 && (
-                  <div>
-                    <span className="text-muted-foreground">Environment Config Keys</span>
-                    <div className="flex flex-wrap gap-1 mt-1">
-                      {envKeys.map((key) => (
-                        <Badge
-                          key={key}
-                          variant="outline"
-                          className="text-[9px] px-1.5 py-0 h-5 font-medium leading-none items-center font-mono"
-                        >
-                          {key}
-                        </Badge>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                {headerKeys.length > 0 && (
-                  <div>
-                    <span className="text-muted-foreground">Header Config Keys</span>
-                    <div className="flex flex-wrap gap-1 mt-1">
-                      {headerKeys.map((key) => (
-                        <Badge
-                          key={key}
-                          variant="outline"
-                          className="text-[9px] px-1.5 py-0 h-5 font-medium leading-none items-center font-mono"
-                        >
-                          {key}
-                        </Badge>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          )}
-        </TabsContent>
+            <TabsContent value="auth" className="mt-4 overflow-y-auto space-y-4">
+              <McpOAuthPanel server={server} />
+            </TabsContent>
+          </Tabs>
+        }
+        rail={
+          <DetailPageRail>
+            <QuickStats>
+              <QuickStat label="ID" value={server.id} mono />
+              <QuickStat label="Version" value={server.version} />
+              <QuickStat
+                label="Transport"
+                value={<span className="uppercase">{server.transport}</span>}
+              />
+              <QuickStat label="Scope" value={<span className="capitalize">{server.scope}</span>} />
+              <QuickStat label="Created" value={formatRelativeTime(server.createdAt)} />
+              <QuickStat label="Last Updated" value={formatRelativeTime(server.lastUpdatedAt)} />
+            </QuickStats>
 
-        <TabsContent value="auth" className="mt-4 overflow-y-auto space-y-4">
-          <McpOAuthPanel server={server} />
-        </TabsContent>
-
-        <TabsContent value="metadata" className="mt-4 overflow-y-auto">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-sm">Details</CardTitle>
-            </CardHeader>
-            <CardContent className="grid grid-cols-2 gap-4 text-sm">
-              <div>
-                <span className="text-muted-foreground">ID</span>
-                <p className="font-mono text-xs">{server.id}</p>
-              </div>
-              <div>
-                <span className="text-muted-foreground">Version</span>
-                <p>{server.version}</p>
-              </div>
-              <div>
-                <span className="text-muted-foreground">Scope</span>
-                <p className="capitalize">{server.scope}</p>
-              </div>
-              {server.ownerAgentId && (
-                <div>
-                  <span className="text-muted-foreground">Owner Agent</span>
-                  <p className="font-mono text-xs">{server.ownerAgentId}</p>
-                </div>
-              )}
-              <div>
-                <span className="text-muted-foreground">Created</span>
-                <p>{formatRelativeTime(server.createdAt)}</p>
-              </div>
-              <div>
-                <span className="text-muted-foreground">Last Updated</span>
-                <p>{formatRelativeTime(server.lastUpdatedAt)}</p>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
+            {server.ownerAgentId && (
+              <Relationships>
+                <Relationship label="Owner Agent" to={`/agents/${server.ownerAgentId}`}>
+                  <span className="font-mono">{server.ownerAgentId.slice(0, 8)}…</span>
+                </Relationship>
+              </Relationships>
+            )}
+          </DetailPageRail>
+        }
+      />
     </div>
   );
 }

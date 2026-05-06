@@ -7,6 +7,7 @@ import type { Workflow, WorkflowRun, WorkflowRunStatus } from "@/api/types";
 import { DataGrid } from "@/components/shared/data-grid";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
+import { PageHeader } from "@/components/ui/page-header";
 import {
   Select,
   SelectContent,
@@ -159,7 +160,7 @@ export default function WorkflowsPage() {
         flex: 1,
         cellRenderer: (params: { value?: string }) =>
           params.value ? (
-            <span className="text-red-500 truncate text-xs">{params.value}</span>
+            <span className="text-status-error truncate text-xs">{params.value}</span>
           ) : null,
       },
     ],
@@ -178,7 +179,7 @@ export default function WorkflowsPage() {
   if (isEmpty) {
     return (
       <div className="flex flex-col flex-1 min-h-0 gap-4">
-        <h1 className="text-xl font-semibold">Workflows</h1>
+        <PageHeader title="Workflows" />
         <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
           <WorkflowIcon className="h-8 w-8 mb-2" />
           <p className="text-sm">No workflows configured</p>
@@ -189,7 +190,7 @@ export default function WorkflowsPage() {
 
   return (
     <div className="flex flex-col flex-1 min-h-0 gap-4">
-      <h1 className="text-xl font-semibold">Workflows</h1>
+      <PageHeader title="Workflows" />
 
       <Tabs
         value={activeTab}

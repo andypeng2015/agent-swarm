@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PageHeader } from "@/components/ui/page-header";
 import { Switch } from "@/components/ui/switch";
 
 interface RepoFormData {
@@ -243,7 +244,7 @@ export default function ReposPage() {
             variant="outline"
             className={
               params.value
-                ? "text-[9px] px-1.5 py-0 h-5 font-medium leading-none items-center bg-emerald-500/15 text-emerald-500 border-emerald-500/30"
+                ? "text-[9px] px-1.5 py-0 h-5 font-medium leading-none items-center bg-status-success/15 text-status-success border-status-success/30"
                 : "text-[9px] px-1.5 py-0 h-5 font-medium leading-none items-center"
             }
           >
@@ -275,7 +276,7 @@ export default function ReposPage() {
               <Button
                 size="icon"
                 variant="destructive-outline"
-                className="h-7 w-7 hover:text-red-300"
+                className="h-7 w-7"
                 onClick={(e) => {
                   e.stopPropagation();
                   setDeleteTarget(repo);
@@ -305,12 +306,14 @@ export default function ReposPage() {
   if (!isLoading && (!repos || repos.length === 0)) {
     return (
       <div className="flex flex-col flex-1 min-h-0 gap-4">
-        <div className="flex items-center justify-between">
-          <h1 className="text-xl font-semibold">Repos</h1>
-          <Button onClick={handleAdd} size="sm" className="gap-1 bg-primary hover:bg-primary/90">
-            <Plus className="h-3.5 w-3.5" /> Add Repo
-          </Button>
-        </div>
+        <PageHeader
+          title="Repos"
+          action={
+            <Button onClick={handleAdd} size="sm" className="gap-1 bg-primary hover:bg-primary/90">
+              <Plus className="h-3.5 w-3.5" /> Add Repo
+            </Button>
+          }
+        />
         <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
           <FolderGit2 className="h-8 w-8 mb-2" />
           <p className="text-sm">No repositories registered</p>
@@ -329,12 +332,14 @@ export default function ReposPage() {
 
   return (
     <div className="flex flex-col flex-1 min-h-0 gap-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold">Repos</h1>
-        <Button onClick={handleAdd} size="sm" className="gap-1 bg-primary hover:bg-primary/90">
-          <Plus className="h-3.5 w-3.5" /> Add Repo
-        </Button>
-      </div>
+      <PageHeader
+        title="Repos"
+        action={
+          <Button onClick={handleAdd} size="sm" className="gap-1 bg-primary hover:bg-primary/90">
+            <Plus className="h-3.5 w-3.5" /> Add Repo
+          </Button>
+        }
+      />
 
       <DataGrid
         rowData={repos ?? []}

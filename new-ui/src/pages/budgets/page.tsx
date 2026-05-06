@@ -46,6 +46,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PageHeader } from "@/components/ui/page-header";
 import {
   Select,
   SelectContent,
@@ -68,12 +69,12 @@ function todayISO(): string {
 
 /**
  * Returns a tailwind utility class for the spend bar fill, color-coded by
- * usage ratio: emerald (<70%), amber (70-99%), red (≥100%).
+ * usage ratio: success (<70%), warning (70-99%), error (≥100%).
  */
 function spendBarColor(ratio: number): string {
-  if (ratio >= 1) return "bg-red-500";
-  if (ratio >= 0.7) return "bg-amber-500";
-  return "bg-emerald-500";
+  if (ratio >= 1) return "bg-status-error";
+  if (ratio >= 0.7) return "bg-status-warning";
+  return "bg-status-success";
 }
 
 function SpendBar({ spend, budget }: { spend: number; budget: number | null }) {
@@ -98,13 +99,16 @@ function SpendBar({ spend, budget }: { spend: number; budget: number | null }) {
         <span className="font-mono">
           {formatUsd(spend)} / {formatUsd(budget)}
         </span>
-        <span className={cn("font-medium", ratio >= 1 ? "text-red-400" : "text-muted-foreground")}>
+        <span
+          className={cn("font-medium", ratio >= 1 ? "text-status-error" : "text-muted-foreground")}
+        >
           {pct}%
         </span>
       </div>
       <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
         <div
           className={cn("h-full transition-all", spendBarColor(ratio))}
+          // inline-style: dynamic computed width %
           style={{ width: `${pct}%` }}
         />
       </div>
@@ -300,7 +304,7 @@ function AddPricingDialog({
                 required
               />
             </div>
-            {error ? <p className="text-xs text-red-400">{error}</p> : null}
+            {error ? <p className="text-xs text-status-error">{error}</p> : null}
           </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
@@ -321,13 +325,13 @@ function AddPricingDialog({
 function refusalCauseBadge(cause: BudgetRefusalNotification["cause"]) {
   if (cause === "global") {
     return (
-      <Badge variant="outline" size="tag" className="border-red-500/30 text-red-400">
+      <Badge variant="outline" size="tag" className="border-status-error/30 text-status-error">
         GLOBAL
       </Badge>
     );
   }
   return (
-    <Badge variant="outline" size="tag" className="border-amber-500/30 text-amber-400">
+    <Badge variant="outline" size="tag" className="border-status-active/30 text-status-active">
       AGENT
     </Badge>
   );
@@ -667,7 +671,7 @@ export default function BudgetsPage() {
         headerName: "Token class",
         width: 130,
         cellRenderer: (params: ICellRendererParams<PricingRow>) => (
-          <Badge variant="outline" size="tag" className="border-sky-500/30 text-sky-400">
+          <Badge variant="outline" size="tag" className="border-status-info/30 text-status-info">
             {params.value}
           </Badge>
         ),
@@ -727,10 +731,7 @@ export default function BudgetsPage() {
 
   return (
     <div className="flex-1 min-h-0 overflow-y-auto space-y-6">
-      <div className="flex items-center gap-2">
-        <Wallet className="h-5 w-5 text-muted-foreground" />
-        <h1 className="text-xl font-semibold">Budgets &amp; spend</h1>
-      </div>
+      <PageHeader icon={Wallet} title="Budgets & spend" />
 
       {/* Global budget */}
       <Card>

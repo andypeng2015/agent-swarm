@@ -6,6 +6,7 @@ import type { ApprovalRequest, ApprovalRequestStatus } from "@/api/types";
 import { DataGrid } from "@/components/shared/data-grid";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Badge } from "@/components/ui/badge";
+import { PageHeader } from "@/components/ui/page-header";
 import {
   Select,
   SelectContent,
@@ -113,9 +114,7 @@ export default function ApprovalRequestsPage() {
 
   return (
     <div className="flex flex-col flex-1 min-h-0 gap-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold">Approval Requests</h1>
-      </div>
+      <PageHeader title="Approval Requests" />
 
       <div className="flex items-center gap-3">
         <Select value={statusFilter} onValueChange={setStatusFilter}>

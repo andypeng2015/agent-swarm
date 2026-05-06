@@ -9,6 +9,7 @@ import { DataGrid } from "@/components/shared/data-grid";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PageHeader } from "@/components/ui/page-header";
 import {
   Select,
   SelectContent,
@@ -28,9 +29,9 @@ function TypeBadge({ type }: { type: string }) {
 
 function ScopeBadge({ scope }: { scope: string }) {
   const colors: Record<string, string> = {
-    global: "border-emerald-500/30 text-emerald-400",
-    swarm: "border-amber-500/30 text-amber-400",
-    agent: "border-zinc-500/30 text-zinc-400",
+    global: "border-status-success/30 text-status-success",
+    swarm: "border-status-active/30 text-status-active",
+    agent: "border-status-neutral/30 text-status-neutral",
   };
   return (
     <Badge variant="outline" size="tag" className={`${colors[scope] || ""}`}>
@@ -102,8 +103,8 @@ export default function SkillsPage() {
             size="tag"
             className={`${
               params.value
-                ? "border-emerald-500/30 text-emerald-400"
-                : "border-red-500/30 text-red-400"
+                ? "border-status-success/30 text-status-success"
+                : "border-status-error/30 text-status-error"
             }`}
           >
             {params.value ? "Enabled" : "Disabled"}
@@ -129,18 +130,21 @@ export default function SkillsPage() {
 
   return (
     <div className="flex flex-col flex-1 min-h-0 gap-4">
-      <div className="flex items-center justify-between shrink-0">
-        <h1 className="text-xl font-semibold">Skills</h1>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => syncRemote.mutate({})}
-          disabled={syncRemote.isPending}
-        >
-          <RefreshCw className={`h-4 w-4 mr-2 ${syncRemote.isPending ? "animate-spin" : ""}`} />
-          Sync Remote
-        </Button>
-      </div>
+      <PageHeader
+        className="shrink-0"
+        title="Skills"
+        action={
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => syncRemote.mutate({})}
+            disabled={syncRemote.isPending}
+          >
+            <RefreshCw className={`h-4 w-4 mr-2 ${syncRemote.isPending ? "animate-spin" : ""}`} />
+            Sync Remote
+          </Button>
+        }
+      />
 
       <div className="flex items-center gap-3 shrink-0">
         <Input

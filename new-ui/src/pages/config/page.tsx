@@ -43,6 +43,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PageHeader } from "@/components/ui/page-header";
 import {
   Select,
   SelectContent,
@@ -261,7 +262,11 @@ function ConfigDetailDialog({
                 {config.scope}
               </Badge>
               {config.isSecret && (
-                <Badge variant="outline" size="tag" className="border-amber-500/30 text-amber-400">
+                <Badge
+                  variant="outline"
+                  size="tag"
+                  className="border-status-active/30 text-status-active"
+                >
                   secret
                 </Badge>
               )}
@@ -297,7 +302,7 @@ function ConfigDetailDialog({
                   </Button>
                   <Button size="icon" variant="ghost" className="h-7 w-7" onClick={handleCopy}>
                     {copied ? (
-                      <Check className="h-3.5 w-3.5 text-emerald-400" />
+                      <Check className="h-3.5 w-3.5 text-status-success" />
                     ) : (
                       <Copy className="h-3.5 w-3.5" />
                     )}
@@ -453,7 +458,7 @@ function SwarmConfigSection() {
               <Button
                 size="icon"
                 variant="destructive-outline"
-                className="h-7 w-7 hover:text-red-300"
+                className="h-7 w-7"
                 onClick={(e) => {
                   e.stopPropagation();
                   setDeleteTarget(cfg);
@@ -745,9 +750,9 @@ function ConnectionCard({
             {testStatus === "loading" ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
             ) : testStatus === "success" ? (
-              <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
+              <CheckCircle2 className="h-3.5 w-3.5 text-status-success" />
             ) : testStatus === "error" ? (
-              <XCircle className="h-3.5 w-3.5 text-red-400" />
+              <XCircle className="h-3.5 w-3.5 text-status-error" />
             ) : (
               <Signal className="h-3.5 w-3.5" />
             )}
@@ -765,12 +770,7 @@ function ConnectionCard({
           </Button>
 
           {/* Delete */}
-          <Button
-            size="icon"
-            variant="destructive-outline"
-            className="h-8 w-8 hover:text-red-300"
-            onClick={onDelete}
-          >
+          <Button size="icon" variant="destructive-outline" className="h-8 w-8" onClick={onDelete}>
             <Trash2 className="h-3.5 w-3.5" />
           </Button>
         </div>
@@ -1030,7 +1030,7 @@ function WelcomeCard() {
                 disabled={!apiKey}
               >
                 {copied ? (
-                  <Check className="h-4 w-4 text-emerald-400" />
+                  <Check className="h-4 w-4 text-status-success" />
                 ) : (
                   <Copy className="h-4 w-4" />
                 )}
@@ -1046,7 +1046,7 @@ function WelcomeCard() {
           )}
 
           {status === "success" && (
-            <Alert className="border-emerald-500/30 bg-emerald-500/10 text-emerald-400">
+            <Alert className="border-status-success/30 bg-status-success/10 text-status-success">
               <CheckCircle2 className="h-4 w-4" />
               <AlertDescription>Connected! Redirecting to dashboard...</AlertDescription>
             </Alert>
@@ -1085,7 +1085,7 @@ export default function ConfigPage() {
 
   return (
     <div className="flex-1 min-h-0 overflow-y-auto space-y-8">
-      <h1 className="text-xl font-semibold">Settings</h1>
+      <PageHeader title="Settings" />
 
       {/* Multi-connection management */}
       <ConnectionsSection />

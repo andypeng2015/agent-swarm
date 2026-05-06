@@ -29,6 +29,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { PageHeader } from "@/components/ui/page-header";
 import {
   Select,
   SelectContent,
@@ -292,31 +293,34 @@ export default function TemplateDetailPage() {
           <ArrowLeft className="h-4 w-4" /> Back to Templates
         </button>
 
-        <div className="flex items-center gap-3 flex-wrap">
-          <h1 className="text-xl font-semibold">{template.eventType}</h1>
-          <Badge variant="outline" size="tag">
-            {template.scope}
-          </Badge>
-          <Badge variant={STATE_VARIANTS[template.state] ?? "outline"} size="tag">
-            {template.state.replace(/_/g, " ")}
-          </Badge>
-          <Badge variant="outline" size="tag">
-            v{template.version}
-          </Badge>
-          {template.isDefault && (
-            <Badge variant="secondary" size="tag">
-              Default
-            </Badge>
-          )}
-
-          {!template.isDefault && (
-            <div className="ml-auto">
+        <PageHeader
+          title={
+            <div className="flex items-center gap-3 flex-wrap min-w-0">
+              <h1 className="text-xl font-semibold">{template.eventType}</h1>
+              <Badge variant="outline" size="tag">
+                {template.scope}
+              </Badge>
+              <Badge variant={STATE_VARIANTS[template.state] ?? "outline"} size="tag">
+                {template.state.replace(/_/g, " ")}
+              </Badge>
+              <Badge variant="outline" size="tag">
+                v{template.version}
+              </Badge>
+              {template.isDefault && (
+                <Badge variant="secondary" size="tag">
+                  Default
+                </Badge>
+              )}
+            </div>
+          }
+          action={
+            !template.isDefault && (
               <Button variant="destructive-outline" size="sm" onClick={() => setDeleteOpen(true)}>
                 Delete
               </Button>
-            </div>
-          )}
-        </div>
+            )
+          }
+        />
       </div>
 
       {/* Tabs */}
@@ -488,7 +492,7 @@ export default function TemplateDetailPage() {
                           key={v}
                           variant="outline"
                           size="tag"
-                          className="border-amber-500/30 text-amber-400"
+                          className="border-status-active/30 text-status-active"
                         >
                           {v}
                         </Badge>
@@ -563,7 +567,7 @@ export default function TemplateDetailPage() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction className="bg-red-600 hover:bg-red-700" onClick={handleDelete}>
+            <AlertDialogAction variant="destructive" onClick={handleDelete}>
               Delete
             </AlertDialogAction>
           </AlertDialogFooter>

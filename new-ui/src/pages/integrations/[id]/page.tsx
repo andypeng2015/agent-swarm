@@ -56,6 +56,15 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import {
+  DetailPageBody,
+  DetailPageRail,
+  QuickStat,
+  QuickStats,
+  Relationship,
+  Relationships,
+} from "@/components/ui/detail-page-layout";
+import { PageHeader } from "@/components/ui/page-header";
+import {
   INTEGRATIONS,
   type IntegrationDef,
   type IntegrationField,
@@ -332,147 +341,164 @@ function IntegrationDetailInner({
         <Button asChild size="sm" variant="ghost" className="self-start text-muted-foreground">
           <Link to="/integrations">← All integrations</Link>
         </Button>
-        <div className="flex items-start justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-md bg-muted/50 shrink-0">
-              <Icon className="h-6 w-6 text-foreground" aria-hidden="true" />
+        <PageHeader
+          title={
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="flex h-10 w-10 items-center justify-center rounded-md bg-muted/50 shrink-0">
+                <Icon className="h-6 w-6 text-foreground" aria-hidden="true" />
+              </div>
+              <div className="min-w-0">
+                <h1 className="text-xl font-semibold">{def.name}</h1>
+                <p className="text-sm text-muted-foreground">{def.description}</p>
+              </div>
             </div>
-            <div className="min-w-0">
-              <h1 className="text-xl font-semibold">{def.name}</h1>
-              <p className="text-sm text-muted-foreground">{def.description}</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2 shrink-0">
-            <IntegrationStatusBadge status={status} />
-            <Button asChild size="sm" variant="outline" className="gap-1">
-              <a href={def.docsUrl} target="_blank" rel="noopener noreferrer">
-                <ExternalLink className="h-3.5 w-3.5" /> Docs
-              </a>
-            </Button>
-          </div>
-        </div>
+          }
+          action={<IntegrationStatusBadge status={status} />}
+        />
       </div>
 
-      {/* Action bar — hidden for codex-cli (no catalog fields to save/reset via the generic flow). */}
-      {!isCodexCli && (
-        <div className="flex flex-wrap items-center gap-2 border border-border rounded-md p-3 bg-muted/20">
-          <Button
-            onClick={handleSave}
-            disabled={!hasDirty || upsertBatch.isPending}
-            className="bg-primary hover:bg-primary/90"
-            size="sm"
-          >
-            {upsertBatch.isPending
-              ? "Saving..."
-              : hasDirty
-                ? `Save ${dirtyEntries.length} change${dirtyEntries.length === 1 ? "" : "s"}`
-                : "Save changes"}
-          </Button>
+      <DetailPageBody
+        main={
+          <div className="space-y-6">
+            {/* Action bar — hidden for codex-cli (no catalog fields to save/reset via the generic flow). */}
+            {!isCodexCli && (
+              <div className="flex flex-wrap items-center gap-2 border border-border rounded-md p-3 bg-muted/20">
+                <Button
+                  onClick={handleSave}
+                  disabled={!hasDirty || upsertBatch.isPending}
+                  className="bg-primary hover:bg-primary/90"
+                  size="sm"
+                >
+                  {upsertBatch.isPending
+                    ? "Saving..."
+                    : hasDirty
+                      ? `Save ${dirtyEntries.length} change${dirtyEntries.length === 1 ? "" : "s"}`
+                      : "Save changes"}
+                </Button>
 
-          {def.disableKey && (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={handleToggleDisable}
-              disabled={upsertBatch.isPending}
-            >
-              {isDisabled ? "Enable" : "Disable"} {def.name}
-            </Button>
-          )}
+                {def.disableKey && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={handleToggleDisable}
+                    disabled={upsertBatch.isPending}
+                  >
+                    {isDisabled ? "Enable" : "Disable"} {def.name}
+                  </Button>
+                )}
 
-          <div className="flex-1" />
+                <div className="flex-1" />
 
-          <Button
-            type="button"
-            variant="destructive-outline"
-            size="sm"
-            className="hover:text-red-300"
-            onClick={() => setConfirmResetOpen(true)}
-            disabled={deleteBatch.isPending}
-          >
-            Reset integration
-          </Button>
-        </div>
-      )}
-
-      {/* Linear OAuth connection card — shown ABOVE the generic form. */}
-      {isLinearOAuth && <LinearOAuthSection />}
-
-      {/* Jira OAuth connection card — shown ABOVE the generic form. */}
-      {isJiraOAuth && <JiraOAuthSection />}
-
-      {/* Claude Managed Agents — CLI explainer + Test connection — shown
-          ABOVE the generic form (the form still renders below for editing). */}
-      {isClaudeManagedCli && (
-        <ClaudeManagedSection def={def} configs={configs} envPresence={envPresence} />
-      )}
-
-      {/* Body */}
-      {isCodexCli ? (
-        // Codex has zero catalog fields; swap the generic form entirely.
-        <CodexOAuthSection />
-      ) : def.fields.length === 0 ? (
-        <EmptyState
-          icon={Plug}
-          title="No configurable fields"
-          description="This integration has no key/value fields — see the docs for the required setup steps."
-        />
-      ) : (
-        <div className="space-y-6">
-          {isGithub && (
-            <Alert>
-              <Info className="h-4 w-4" />
-              <AlertDescription>
-                <p className="leading-relaxed">
-                  <strong>PAT mode is the default and simpler path.</strong> For GitHub App
-                  integration (recommended for production), expand <em>Advanced</em> below and fill{" "}
-                  <code className="font-mono text-xs bg-muted px-1 py-0.5 rounded">
-                    GITHUB_APP_ID
-                  </code>{" "}
-                  +{" "}
-                  <code className="font-mono text-xs bg-muted px-1 py-0.5 rounded">
-                    GITHUB_APP_PRIVATE_KEY
-                  </code>
-                  .
-                </p>
-              </AlertDescription>
-            </Alert>
-          )}
-
-          {requiredFields.length > 0 && (
-            <FieldGroup
-              title="Required"
-              fields={requiredFields}
-              state={state}
-              configs={configs}
-              envPresence={envPresence}
-              onUpdate={updateField}
-              onClearField={handleClearField}
-            />
-          )}
-
-          {advancedFields.length > 0 && (
-            <details className="border border-border rounded-md">
-              <summary className="cursor-pointer px-4 py-2 text-sm font-medium select-none">
-                Advanced ({advancedFields.length})
-              </summary>
-              <div className="px-4 pb-4 pt-2">
-                <FieldGroup
-                  title=""
-                  fields={advancedFields}
-                  state={state}
-                  configs={configs}
-                  envPresence={envPresence}
-                  onUpdate={updateField}
-                  onClearField={handleClearField}
-                  bare
-                />
+                <Button
+                  type="button"
+                  variant="destructive-outline"
+                  size="sm"
+                  onClick={() => setConfirmResetOpen(true)}
+                  disabled={deleteBatch.isPending}
+                >
+                  Reset integration
+                </Button>
               </div>
-            </details>
-          )}
-        </div>
-      )}
+            )}
+
+            {/* Linear OAuth connection card — shown ABOVE the generic form. */}
+            {isLinearOAuth && <LinearOAuthSection />}
+
+            {/* Jira OAuth connection card — shown ABOVE the generic form. */}
+            {isJiraOAuth && <JiraOAuthSection />}
+
+            {/* Claude Managed Agents — CLI explainer + Test connection. */}
+            {isClaudeManagedCli && (
+              <ClaudeManagedSection def={def} configs={configs} envPresence={envPresence} />
+            )}
+
+            {/* Body */}
+            {isCodexCli ? (
+              // Codex has zero catalog fields; swap the generic form entirely.
+              <CodexOAuthSection />
+            ) : def.fields.length === 0 ? (
+              <EmptyState
+                icon={Plug}
+                title="No configurable fields"
+                description="This integration has no key/value fields — see the docs for the required setup steps."
+              />
+            ) : (
+              <div className="space-y-6">
+                {isGithub && (
+                  <Alert>
+                    <Info className="h-4 w-4" />
+                    <AlertDescription>
+                      <p className="leading-relaxed">
+                        <strong>PAT mode is the default and simpler path.</strong> For GitHub App
+                        integration (recommended for production), expand <em>Advanced</em> below and
+                        fill{" "}
+                        <code className="font-mono text-xs bg-muted px-1 py-0.5 rounded">
+                          GITHUB_APP_ID
+                        </code>{" "}
+                        +{" "}
+                        <code className="font-mono text-xs bg-muted px-1 py-0.5 rounded">
+                          GITHUB_APP_PRIVATE_KEY
+                        </code>
+                        .
+                      </p>
+                    </AlertDescription>
+                  </Alert>
+                )}
+
+                {requiredFields.length > 0 && (
+                  <FieldGroup
+                    title="Required"
+                    fields={requiredFields}
+                    state={state}
+                    configs={configs}
+                    envPresence={envPresence}
+                    onUpdate={updateField}
+                    onClearField={handleClearField}
+                  />
+                )}
+
+                {advancedFields.length > 0 && (
+                  <details className="border border-border rounded-md">
+                    <summary className="cursor-pointer px-4 py-2 text-sm font-medium select-none">
+                      Advanced ({advancedFields.length})
+                    </summary>
+                    <div className="px-4 pb-4 pt-2">
+                      <FieldGroup
+                        title=""
+                        fields={advancedFields}
+                        state={state}
+                        configs={configs}
+                        envPresence={envPresence}
+                        onUpdate={updateField}
+                        onClearField={handleClearField}
+                        bare
+                      />
+                    </div>
+                  </details>
+                )}
+              </div>
+            )}
+          </div>
+        }
+        rail={
+          <DetailPageRail>
+            <QuickStats>
+              <QuickStat label="Status" value={status} />
+              <QuickStat label="Total fields" value={def.fields.length} />
+              <QuickStat label="Required" value={requiredFields.length} />
+              <QuickStat label="Advanced" value={advancedFields.length} />
+              {def.disableKey && <QuickStat label="Disabled" value={isDisabled ? "Yes" : "No"} />}
+            </QuickStats>
+
+            <Relationships>
+              <Relationship label="Docs" href={def.docsUrl}>
+                <ExternalLink className="h-3 w-3" />
+              </Relationship>
+            </Relationships>
+          </DetailPageRail>
+        }
+      />
 
       {/* Reset confirm dialog */}
       <AlertDialog open={confirmResetOpen} onOpenChange={setConfirmResetOpen}>

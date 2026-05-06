@@ -2,9 +2,11 @@ import { Check, Copy, PlugZap, Terminal } from "lucide-react";
 import { useState } from "react";
 import { useTestClaudeManagedConnection } from "@/api/hooks/use-integrations-meta";
 import type { SwarmConfig } from "@/api/types";
+import { OAuthSection } from "@/components/shared/oauth-section";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { useCopyToClipboard } from "@/hooks/use-copy-to-clipboard";
 import type { IntegrationDef } from "@/lib/integrations-catalog";
 import { deriveIntegrationStatus, type EnvPresence } from "@/lib/integrations-status";
 
@@ -38,7 +40,7 @@ export function ClaudeManagedSection({ def, configs, envPresence }: ClaudeManage
   const status = deriveIntegrationStatus(def, configs, envPresence);
   const testConnection = useTestClaudeManagedConnection();
 
-  const [copied, setCopied] = useState(false);
+  const { copied, copy } = useCopyToClipboard();
   const [lastResult, setLastResult] = useState<{
     ok: boolean;
     agentName?: string | null;
@@ -46,17 +48,7 @@ export function ClaudeManagedSection({ def, configs, envPresence }: ClaudeManage
     error?: string;
   } | null>(null);
 
-  async function handleCopy() {
-    try {
-      if (typeof navigator !== "undefined" && navigator.clipboard) {
-        await navigator.clipboard.writeText(SETUP_SNIPPET);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 1500);
-      }
-    } catch {
-      // Clipboard unavailable — silent.
-    }
-  }
+  const handleCopy = () => copy(SETUP_SNIPPET);
 
   async function handleTest() {
     try {
@@ -70,15 +62,15 @@ export function ClaudeManagedSection({ def, configs, envPresence }: ClaudeManage
 
   const statusBadge =
     status === "configured" ? (
-      <Badge variant="outline" size="tag" className="border-emerald-500/30 text-emerald-400">
+      <Badge variant="outline" size="tag" className="border-status-success/30 text-status-success">
         Connected
       </Badge>
     ) : status === "partial" ? (
-      <Badge variant="outline" size="tag" className="border-amber-500/30 text-amber-400">
+      <Badge variant="outline" size="tag" className="border-status-active/30 text-status-active">
         Partial
       </Badge>
     ) : (
-      <Badge variant="outline" size="tag" className="border-zinc-500/30 text-zinc-400">
+      <Badge variant="outline" size="tag" className="border-status-neutral/30 text-status-neutral">
         Not configured
       </Badge>
     );
@@ -97,11 +89,8 @@ export function ClaudeManagedSection({ def, configs, envPresence }: ClaudeManage
       </Alert>
 
       {/* Command snippet */}
-      <section className="space-y-2">
-        <h2 className="text-sm font-semibold uppercase text-muted-foreground tracking-wide">
-          Setup CLI
-        </h2>
-        <div className="flex items-start gap-2">
+      <OAuthSection title="Setup CLI">
+        <div className="p-4 flex items-start gap-2">
           <code className="flex-1 font-mono text-xs bg-muted px-3 py-2 rounded border border-border break-all">
             {SETUP_SNIPPET}
           </code>
@@ -113,21 +102,18 @@ export function ClaudeManagedSection({ def, configs, envPresence }: ClaudeManage
             className="shrink-0"
           >
             {copied ? (
-              <Check className="h-3.5 w-3.5 text-emerald-500" />
+              <Check className="h-3.5 w-3.5 text-status-success" />
             ) : (
               <Copy className="h-3.5 w-3.5" />
             )}
             {copied ? "Copied" : "Copy"}
           </Button>
         </div>
-      </section>
+      </OAuthSection>
 
       {/* Status + Test connection */}
-      <section className="space-y-2">
-        <h2 className="text-sm font-semibold uppercase text-muted-foreground tracking-wide">
-          Connection
-        </h2>
-        <div className="border border-border rounded-md bg-muted/10 p-4 space-y-3">
+      <OAuthSection title="Connection">
+        <div className="p-4 space-y-3">
           <div className="flex items-center justify-between gap-4 flex-wrap">
             <div className="flex items-center gap-2">
               <span className="text-sm font-medium">Status:</span>
@@ -150,9 +136,14 @@ export function ClaudeManagedSection({ def, configs, envPresence }: ClaudeManage
             <div className="text-xs">
               {lastResult.ok ? (
                 <div className="flex items-start gap-2">
-                  <div className="mt-1 h-2 w-2 rounded-full bg-emerald-500 shrink-0" aria-hidden />
+                  <div
+                    className="mt-1 h-2 w-2 rounded-full bg-status-success shrink-0"
+                    aria-hidden
+                  />
                   <div className="space-y-0.5">
-                    <div className="font-medium text-emerald-400">Connected to managed agent</div>
+                    <div className="font-medium text-status-success">
+                      Connected to managed agent
+                    </div>
                     <div className="text-muted-foreground">
                       Name: <code className="font-mono">{lastResult.agentName ?? "(unnamed)"}</code>
                       {lastResult.model && (
@@ -165,9 +156,9 @@ export function ClaudeManagedSection({ def, configs, envPresence }: ClaudeManage
                 </div>
               ) : (
                 <div className="flex items-start gap-2">
-                  <div className="mt-1 h-2 w-2 rounded-full bg-red-500 shrink-0" aria-hidden />
+                  <div className="mt-1 h-2 w-2 rounded-full bg-status-error shrink-0" aria-hidden />
                   <div className="space-y-0.5">
-                    <div className="font-medium text-red-400">Connection failed</div>
+                    <div className="font-medium text-status-error">Connection failed</div>
                     <div className="text-muted-foreground break-words">
                       {lastResult.error ?? "Unknown error"}
                     </div>
@@ -177,7 +168,7 @@ export function ClaudeManagedSection({ def, configs, envPresence }: ClaudeManage
             </div>
           )}
         </div>
-      </section>
+      </OAuthSection>
     </div>
   );
 }

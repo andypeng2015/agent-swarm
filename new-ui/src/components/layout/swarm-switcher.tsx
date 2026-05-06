@@ -30,7 +30,7 @@ export function SwarmSwitcher() {
                 <div
                   className={cn(
                     "size-2 shrink-0 rounded-full",
-                    isHealthy ? "bg-emerald-500" : "bg-red-500",
+                    isHealthy ? "bg-status-success" : "bg-status-error",
                   )}
                 />
                 <span className="truncate font-medium">{displayName}</span>
@@ -55,9 +55,9 @@ export function SwarmSwitcher() {
                       "size-2 shrink-0 rounded-full",
                       isActive
                         ? isHealthy
-                          ? "bg-emerald-500"
-                          : "bg-red-500"
-                        : "bg-zinc-400 dark:bg-zinc-600",
+                          ? "bg-status-success"
+                          : "bg-status-error"
+                        : "bg-status-neutral",
                     )}
                   />
                   <span className="truncate">{conn.name}</span>

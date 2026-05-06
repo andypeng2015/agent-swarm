@@ -29,6 +29,12 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
+  DetailPageBody,
+  DetailPageRail,
+  QuickStat,
+  QuickStats,
+} from "@/components/ui/detail-page-layout";
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -38,6 +44,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PageHeader } from "@/components/ui/page-header";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { formatSmartTime } from "@/lib/utils";
@@ -150,17 +157,17 @@ function GuidelinesSection({ guidelines }: { guidelines: RepoGuidelines }) {
     {
       title: "PR Checks",
       items: guidelines.prChecks,
-      icon: <ShieldCheck className="h-4 w-4 text-amber-500" />,
+      icon: <ShieldCheck className="h-4 w-4 text-status-active" />,
     },
     {
       title: "Merge Checks",
       items: guidelines.mergeChecks,
-      icon: <GitBranch className="h-4 w-4 text-emerald-500" />,
+      icon: <GitBranch className="h-4 w-4 text-status-success" />,
     },
     {
       title: "Review Guidelines",
       items: guidelines.review,
-      icon: <Check className="h-4 w-4 text-blue-500" />,
+      icon: <Check className="h-4 w-4 text-status-paused" />,
     },
   ];
 
@@ -173,8 +180,8 @@ function GuidelinesSection({ guidelines }: { guidelines: RepoGuidelines }) {
           size="tag"
           className={
             guidelines.allowMerge
-              ? "bg-emerald-500/15 text-emerald-500 border-emerald-500/30"
-              : "bg-red-500/15 text-red-400 border-red-500/30"
+              ? "bg-status-success/15 text-status-success border-status-success/30"
+              : "bg-status-error/15 text-status-error border-status-error/30"
           }
         >
           {guidelines.allowMerge ? "Merge allowed" : "Merge not allowed"}
@@ -257,98 +264,105 @@ export default function RepoDetailPage() {
         <ArrowLeft className="h-4 w-4" /> Back to Repos
       </button>
 
-      <div className="flex items-center justify-between shrink-0">
-        <div className="flex items-center gap-3">
-          <h1 className="text-xl font-semibold">{repo.name}</h1>
-          {provider && (
-            <Badge variant="outline" size="tag">
-              {provider}
+      <PageHeader
+        className="shrink-0"
+        title={
+          <div className="flex items-center gap-3 min-w-0">
+            <h1 className="text-xl font-semibold">{repo.name}</h1>
+            {provider && (
+              <Badge variant="outline" size="tag">
+                {provider}
+              </Badge>
+            )}
+            <Badge
+              variant="outline"
+              size="tag"
+              className={
+                repo.autoClone
+                  ? "bg-status-success/15 text-status-success border-status-success/30"
+                  : ""
+              }
+            >
+              {repo.autoClone ? "Auto-clone ON" : "Auto-clone OFF"}
             </Badge>
-          )}
-          <Badge
-            variant="outline"
-            size="tag"
-            className={
-              repo.autoClone ? "bg-emerald-500/15 text-emerald-500 border-emerald-500/30" : ""
-            }
-          >
-            {repo.autoClone ? "Auto-clone ON" : "Auto-clone OFF"}
-          </Badge>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button size="sm" variant="outline" className="gap-1" onClick={() => setEditOpen(true)}>
-            <Pencil className="h-3.5 w-3.5" /> Edit
-          </Button>
-          <AlertDialog>
-            <AlertDialogTrigger asChild>
-              <Button size="sm" variant="destructive-outline" className="gap-1 hover:text-red-300">
-                <Trash2 className="h-3.5 w-3.5" /> Delete
-              </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Delete Repository</AlertDialogTitle>
-                <AlertDialogDescription>
-                  Are you sure you want to delete <strong>{repo.name}</strong>? This action cannot
-                  be undone.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction variant="destructive" onClick={handleDelete}>
-                  Delete
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
-        </div>
-      </div>
-
-      <Card>
-        <CardContent className="pt-6">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-1">
-              <p className="text-xs text-muted-foreground uppercase tracking-wide">URL</p>
-              <a
-                href={repo.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
-              >
-                {repo.url}
-                <ExternalLink className="h-3 w-3 shrink-0 opacity-60" />
-              </a>
-            </div>
-            <div className="space-y-1">
-              <p className="text-xs text-muted-foreground uppercase tracking-wide">Clone Path</p>
-              <p className="text-sm font-mono">{repo.clonePath}</p>
-            </div>
-            <div className="space-y-1">
-              <p className="text-xs text-muted-foreground uppercase tracking-wide">
-                Default Branch
-              </p>
-              <p className="text-sm inline-flex items-center gap-1">
-                <GitBranch className="h-3 w-3" /> {repo.defaultBranch}
-              </p>
-            </div>
-            <div className="space-y-1">
-              <p className="text-xs text-muted-foreground uppercase tracking-wide">Created</p>
-              <p className="text-sm">{formatSmartTime(repo.createdAt)}</p>
-            </div>
           </div>
-        </CardContent>
-      </Card>
+        }
+        action={
+          <>
+            <Button size="sm" variant="outline" className="gap-1" onClick={() => setEditOpen(true)}>
+              <Pencil className="h-3.5 w-3.5" /> Edit
+            </Button>
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button size="sm" variant="destructive-outline" className="gap-1">
+                  <Trash2 className="h-3.5 w-3.5" /> Delete
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Delete Repository</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    Are you sure you want to delete <strong>{repo.name}</strong>? This action cannot
+                    be undone.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction variant="destructive" onClick={handleDelete}>
+                    Delete
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          </>
+        }
+      />
 
-      {repo.guidelines ? (
-        <GuidelinesSection guidelines={repo.guidelines} />
-      ) : (
-        <Card>
-          <CardContent className="py-8 flex flex-col items-center text-muted-foreground">
-            <X className="h-6 w-6 mb-2 opacity-40" />
-            <p className="text-sm">No guidelines configured for this repository.</p>
-          </CardContent>
-        </Card>
-      )}
+      <DetailPageBody
+        main={
+          repo.guidelines ? (
+            <GuidelinesSection guidelines={repo.guidelines} />
+          ) : (
+            <Card>
+              <CardContent className="py-8 flex flex-col items-center text-muted-foreground">
+                <X className="h-6 w-6 mb-2 opacity-40" />
+                <p className="text-sm">No guidelines configured for this repository.</p>
+              </CardContent>
+            </Card>
+          )
+        }
+        rail={
+          <DetailPageRail>
+            <QuickStats>
+              <QuickStat
+                label="URL"
+                value={
+                  <a
+                    href={repo.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-primary hover:underline"
+                  >
+                    <span className="truncate">{repo.url}</span>
+                    <ExternalLink className="h-3 w-3 shrink-0 opacity-60" />
+                  </a>
+                }
+              />
+              <QuickStat label="Clone Path" value={repo.clonePath} mono />
+              <QuickStat
+                label="Default Branch"
+                value={
+                  <span className="inline-flex items-center gap-1">
+                    <GitBranch className="h-3 w-3" /> {repo.defaultBranch}
+                  </span>
+                }
+              />
+              <QuickStat label="Created" value={formatSmartTime(repo.createdAt)} />
+              <QuickStat label="Auto-clone" value={repo.autoClone ? "Enabled" : "Disabled"} />
+            </QuickStats>
+          </DetailPageRail>
+        }
+      />
 
       <RepoEditDialog
         key={repo.id}

@@ -7,6 +7,7 @@ import { StatusBadge } from "@/components/shared/status-badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { PageHeader } from "@/components/ui/page-header";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { JsonTree } from "@/components/workflows/json-tree";
@@ -103,24 +104,28 @@ export default function WorkflowRunDetailPage() {
           <ArrowLeft className="h-4 w-4" /> Back to Runs
         </button>
 
-        <div className="flex items-center gap-3 flex-wrap">
-          <h1 className="text-xl font-semibold">
-            Run of{" "}
-            <Link to={`/workflows/${run.workflowId}`} className="text-primary hover:underline">
-              {workflow?.name ?? "..."}
-            </Link>
-          </h1>
-          <StatusBadge status={run.status} size="md" />
-          <Badge variant="outline" size="tag">
-            {formatSmartTime(run.startedAt)}
-          </Badge>
-          {duration && (
-            <Badge variant="outline" size="tag" className="font-mono">
-              {duration}
-            </Badge>
-          )}
-          {run.status === "failed" && (
-            <div className="ml-auto">
+        <PageHeader
+          title={
+            <div className="flex items-center gap-3 flex-wrap min-w-0">
+              <h1 className="text-xl font-semibold">
+                Run of{" "}
+                <Link to={`/workflows/${run.workflowId}`} className="text-primary hover:underline">
+                  {workflow?.name ?? "..."}
+                </Link>
+              </h1>
+              <StatusBadge status={run.status} size="md" />
+              <Badge variant="outline" size="tag">
+                {formatSmartTime(run.startedAt)}
+              </Badge>
+              {duration && (
+                <Badge variant="outline" size="tag" className="font-mono">
+                  {duration}
+                </Badge>
+              )}
+            </div>
+          }
+          action={
+            run.status === "failed" && (
               <Button
                 variant="outline"
                 size="sm"
@@ -129,9 +134,9 @@ export default function WorkflowRunDetailPage() {
               >
                 <RefreshCw className="h-3 w-3 mr-1" /> Retry
               </Button>
-            </div>
-          )}
-        </div>
+            )
+          }
+        />
 
         {run.error && (
           <Alert variant="destructive">
@@ -162,12 +167,12 @@ export default function WorkflowRunDetailPage() {
               <span
                 className={cn(
                   "inline-block h-2 w-2 rounded-full",
-                  status === "completed" && "bg-emerald-500",
-                  status === "running" && "bg-amber-500",
-                  status === "waiting" && "bg-yellow-500",
-                  status === "failed" && "bg-red-500",
-                  status === "pending" && "bg-zinc-500",
-                  status === "skipped" && "bg-zinc-400/40",
+                  status === "completed" && "bg-status-success",
+                  status === "running" && "bg-status-active",
+                  status === "waiting" && "bg-status-pending",
+                  status === "failed" && "bg-status-error",
+                  status === "pending" && "bg-status-neutral",
+                  status === "skipped" && "bg-status-neutral/40",
                 )}
               />
               {count} {status}

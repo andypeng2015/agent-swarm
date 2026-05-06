@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PageHeader } from "@/components/ui/page-header";
 import {
   Select,
   SelectContent,
@@ -176,7 +177,7 @@ function CreateTaskDialog({
                       <Badge
                         key={depId}
                         variant="outline"
-                        className="text-[9px] px-1.5 py-0 h-5 font-medium leading-none items-center gap-1 cursor-pointer hover:bg-red-500/10 hover:border-red-500/30"
+                        className="text-[9px] px-1.5 py-0 h-5 font-medium leading-none items-center gap-1 cursor-pointer hover:bg-status-error/10 hover:border-status-error/30"
                         onClick={() =>
                           setForm({ ...form, dependsOn: form.dependsOn.filter((d) => d !== depId) })
                         }
@@ -378,7 +379,7 @@ export default function TasksPage() {
           const v = params.value;
           if (!v) return null;
           const color =
-            v >= 80 ? "text-amber-500" : v >= 60 ? "text-foreground" : "text-muted-foreground";
+            v >= 80 ? "text-status-active" : v >= 60 ? "text-foreground" : "text-muted-foreground";
           return <span className={`text-xs font-medium ${color}`}>{v}</span>;
         },
       },
@@ -484,16 +485,18 @@ export default function TasksPage() {
 
   return (
     <div className="flex flex-col flex-1 min-h-0 gap-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold">Tasks</h1>
-        <Button
-          onClick={() => setDialogOpen(true)}
-          size="sm"
-          className="gap-1 bg-primary hover:bg-primary/90"
-        >
-          <Plus className="h-3.5 w-3.5" /> Create Task
-        </Button>
-      </div>
+      <PageHeader
+        title="Tasks"
+        action={
+          <Button
+            onClick={() => setDialogOpen(true)}
+            size="sm"
+            className="gap-1 bg-primary hover:bg-primary/90"
+          >
+            <Plus className="h-3.5 w-3.5" /> Create Task
+          </Button>
+        }
+      />
 
       <div className="flex items-center gap-3 flex-wrap">
         <div className="relative flex-1 max-w-sm">

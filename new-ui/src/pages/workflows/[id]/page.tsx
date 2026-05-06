@@ -67,8 +67,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { JsonTree } from "@/components/workflows/json-tree";
 import { WorkflowGraph } from "@/components/workflows/workflow-graph";
+import { useCopyToClipboard } from "@/hooks/use-copy-to-clipboard";
 import { useTheme } from "@/hooks/use-theme";
 import { getConfig } from "@/lib/config";
+import { monacoDarkTheme, monacoLightTheme } from "@/lib/monaco-themes";
 import { cn, formatElapsed, formatSmartTime } from "@/lib/utils";
 
 export default function WorkflowDetailPage() {
@@ -128,7 +130,7 @@ export default function WorkflowDetailPage() {
         flex: 1,
         cellRenderer: (params: { value?: string }) =>
           params.value ? (
-            <span className="text-red-500 truncate text-xs">{params.value}</span>
+            <span className="text-status-error truncate text-xs">{params.value}</span>
           ) : null,
       },
     ],
@@ -351,7 +353,7 @@ export default function WorkflowDetailPage() {
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
-              className="bg-red-600 hover:bg-red-700"
+              variant="destructive"
               onClick={() => {
                 deleteWorkflow.mutate(workflow.id, {
                   onSuccess: () => navigate("/workflows"),
@@ -409,7 +411,7 @@ function NodeInspector({ node, allNodes }: { node: WorkflowNode; allNodes: Workf
               {node.type}
             </Badge>
             {executorInfo && (
-              <Badge variant="outline" size="tag" className="text-sky-400">
+              <Badge variant="outline" size="tag" className="text-status-info">
                 {executorInfo.mode}
               </Badge>
             )}
@@ -425,7 +427,7 @@ function NodeInspector({ node, allNodes }: { node: WorkflowNode; allNodes: Workf
                 <div key={key} className="flex items-center gap-2 text-xs font-mono">
                   <span className="text-foreground">{key}</span>
                   <span className="text-muted-foreground">&rarr;</span>
-                  <span className="text-amber-500">{value}</span>
+                  <span className="text-status-active">{value}</span>
                 </div>
               ))}
             </div>
@@ -516,7 +518,7 @@ function HighlightedTemplate({ text }: { text: string }) {
     <div className="bg-muted rounded-md p-3 font-mono text-xs whitespace-pre-wrap">
       {parts.map((part, i) =>
         /^{{[^}]*}}$/.test(part) ? (
-          <span key={i} className="text-amber-500">
+          <span key={i} className="text-status-active">
             {part}
           </span>
         ) : (
@@ -617,58 +619,6 @@ function AgentTaskConfig({ config }: { config: Record<string, unknown> }) {
   );
 }
 
-const GITHUB_LIGHT_THEME = {
-  base: "vs" as const,
-  inherit: true,
-  rules: [
-    { token: "comment", foreground: "6a737d", fontStyle: "italic" },
-    { token: "string", foreground: "032f62" },
-    { token: "keyword", foreground: "d73a49" },
-    { token: "number", foreground: "005cc5" },
-    { token: "type", foreground: "d73a49" },
-    { token: "function", foreground: "6f42c1" },
-    { token: "variable", foreground: "e36209" },
-    { token: "constant", foreground: "005cc5" },
-    { token: "operator", foreground: "d73a49" },
-  ],
-  colors: {
-    "editor.background": "#ffffff",
-    "editor.foreground": "#24292f",
-    "editor.lineHighlightBackground": "#f6f8fa",
-    "editorLineNumber.foreground": "#6e7781",
-    "editorLineNumber.activeForeground": "#24292f",
-    "editor.selectionBackground": "#0366d625",
-    "editorCursor.foreground": "#24292f",
-    "editor.inactiveSelectionBackground": "#0366d610",
-  },
-};
-
-const GITHUB_DARK_THEME = {
-  base: "vs-dark" as const,
-  inherit: true,
-  rules: [
-    { token: "comment", foreground: "8b949e", fontStyle: "italic" },
-    { token: "string", foreground: "a5d6ff" },
-    { token: "keyword", foreground: "ff7b72" },
-    { token: "number", foreground: "79c0ff" },
-    { token: "type", foreground: "ffa657" },
-    { token: "function", foreground: "d2a8ff" },
-    { token: "variable", foreground: "ffa657" },
-    { token: "constant", foreground: "79c0ff" },
-    { token: "operator", foreground: "ff7b72" },
-  ],
-  colors: {
-    "editor.background": "#0d1117",
-    "editor.foreground": "#c9d1d9",
-    "editor.lineHighlightBackground": "#161b22",
-    "editorLineNumber.foreground": "#6e7681",
-    "editorLineNumber.activeForeground": "#c9d1d9",
-    "editor.selectionBackground": "#388bfd44",
-    "editorCursor.foreground": "#c9d1d9",
-    "editor.inactiveSelectionBackground": "#388bfd22",
-  },
-};
-
 function ScriptConfig({ config }: { config: Record<string, unknown> }) {
   const { theme } = useTheme();
   // Schema uses `script` (the code) + `runtime` ("bash" | "ts" | "python").
@@ -691,33 +641,16 @@ function ScriptConfig({ config }: { config: Record<string, unknown> }) {
     <InspectorSection label="Configuration">
       <div className="space-y-2">
         {code && (
-          <div
-            className={cn(
-              "rounded-md border overflow-hidden",
-              theme === "dark" ? "bg-[#0d1117]" : "bg-white",
-            )}
-          >
-            <div
-              className={cn(
-                "flex items-center justify-between px-3 py-1.5 border-b",
-                theme === "dark"
-                  ? "border-white/10 bg-black/20 text-white/60"
-                  : "border-zinc-200 bg-zinc-50 text-zinc-600",
-              )}
-            >
+          <div className="rounded-md border overflow-hidden bg-card">
+            <div className="flex items-center justify-between px-3 py-1.5 border-b border-border bg-muted text-muted-foreground">
               <span className="text-[10px] font-mono uppercase tracking-wide">
                 {runtime ?? language}
               </span>
               <div className="flex items-center gap-3">
-                <span
-                  className={cn(
-                    "text-[10px] font-mono",
-                    theme === "dark" ? "text-white/40" : "text-zinc-400",
-                  )}
-                >
+                <span className="text-[10px] font-mono text-muted-foreground/70">
                   {lineCount} {lineCount === 1 ? "line" : "lines"}
                 </span>
-                <CopyIconButton value={code} darkMode={theme === "dark"} />
+                <CopyIconButton value={code} />
               </div>
             </div>
             <Editor
@@ -726,8 +659,8 @@ function ScriptConfig({ config }: { config: Record<string, unknown> }) {
               value={code}
               height={`${editorHeight}px`}
               beforeMount={(monaco) => {
-                monaco.editor.defineTheme("github-light", GITHUB_LIGHT_THEME);
-                monaco.editor.defineTheme("github-dark", GITHUB_DARK_THEME);
+                monaco.editor.defineTheme("github-light", monacoLightTheme);
+                monaco.editor.defineTheme("github-dark", monacoDarkTheme);
               }}
               options={{
                 readOnly: true,
@@ -894,7 +827,7 @@ function NotifyNodeConfig({ config }: { config: Record<string, unknown> }) {
 
         {(channel || target) && (
           <div className="flex items-center gap-2 text-xs flex-wrap">
-            {ChannelIcon && <ChannelIcon className="h-3.5 w-3.5 text-teal-400 shrink-0" />}
+            {ChannelIcon && <ChannelIcon className="h-3.5 w-3.5 text-action-notify shrink-0" />}
             {channel && (
               <>
                 <span className="text-muted-foreground">Channel:</span>
@@ -947,7 +880,7 @@ function PropertyMatchConfig({ config }: { config: Record<string, unknown> }) {
                 className="rounded-md bg-muted px-3 py-2 font-mono text-xs flex items-center gap-2 flex-wrap"
               >
                 <span className="text-foreground">{cond.field ?? "?"}</span>
-                <span className="text-amber-500">{cond.op ?? "?"}</span>
+                <span className="text-status-active">{cond.op ?? "?"}</span>
                 {cond.value !== undefined && (
                   <span className="text-muted-foreground">{JSON.stringify(cond.value)}</span>
                 )}
@@ -1240,13 +1173,7 @@ function JsonMonacoEditor({
 }) {
   const { theme } = useTheme();
   return (
-    <div
-      className={cn(
-        "rounded-md overflow-hidden border",
-        theme === "dark" ? "border-white/10" : "border-zinc-200",
-      )}
-      data-testid={testId}
-    >
+    <div className="rounded-md overflow-hidden border border-border" data-testid={testId}>
       <Editor
         language="json"
         theme={theme === "dark" ? "github-dark" : "github-light"}
@@ -1254,8 +1181,8 @@ function JsonMonacoEditor({
         height={`${height}px`}
         onChange={(v) => onChange(v ?? "")}
         beforeMount={(monaco) => {
-          monaco.editor.defineTheme("github-light", GITHUB_LIGHT_THEME);
-          monaco.editor.defineTheme("github-dark", GITHUB_DARK_THEME);
+          monaco.editor.defineTheme("github-light", monacoLightTheme);
+          monaco.editor.defineTheme("github-dark", monacoDarkTheme);
         }}
         options={{
           readOnly,
@@ -1575,7 +1502,7 @@ function TriggerSchemaSection({
             </Button>
           </div>
           <div
-            className="rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-1.5 text-xs text-amber-900 dark:text-amber-200"
+            className="rounded-md border border-status-active/40 bg-status-active/10 px-2 py-1.5 text-xs text-status-active-strong"
             data-testid="trigger-schema-real-run-warning"
           >
             <strong className="font-semibold">Heads up:</strong> clicking <em>Send trigger</em>{" "}
@@ -1611,7 +1538,7 @@ function TriggerSchemaSection({
           )}
           {liveStatus === "valid" && (
             <p
-              className="text-xs text-emerald-600 dark:text-emerald-400 flex items-center gap-1"
+              className="text-xs text-status-success-strong flex items-center gap-1"
               data-testid="trigger-schema-live-valid"
             >
               <Check className="h-3 w-3" /> Payload matches the schema. Safe to send.
@@ -1680,12 +1607,12 @@ function TriggerSchemaSection({
           )}
           {testSuccessRunId && (
             <div
-              className="rounded-md border border-emerald-500/30 bg-emerald-500/5 p-2 text-xs"
+              className="rounded-md border border-status-success/30 bg-status-success/5 p-2 text-xs"
               data-testid="trigger-schema-test-success"
             >
               <span className="text-muted-foreground">Run started: </span>
               <a
-                className="font-mono text-emerald-600 dark:text-emerald-400 hover:underline"
+                className="font-mono text-status-success-strong hover:underline"
                 href={`/workflow-runs/${testSuccessRunId}`}
               >
                 {testSuccessRunId}
@@ -1724,7 +1651,7 @@ function TriggerCard({ workflowId, trigger }: { workflowId: string; trigger: Tri
     return (
       <div className="rounded-lg border bg-card p-4 space-y-3">
         <div className="flex items-center gap-2">
-          <Webhook className="h-4 w-4 text-emerald-500" />
+          <Webhook className="h-4 w-4 text-status-success" />
           <Badge variant="outline" size="tag" className="font-mono">
             webhook
           </Badge>
@@ -1852,29 +1779,15 @@ function formatCooldown(c: CooldownConfig): string {
   return parts.length > 0 ? parts.join(" ") : "none";
 }
 
-function CopyIconButton({ value, darkMode }: { value: string; darkMode: boolean }) {
-  const [copied, setCopied] = useState(false);
-  const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(value);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch {
-      // ignore — clipboard not available
-    }
-  };
+function CopyIconButton({ value }: { value: string }) {
+  const { copied, copy } = useCopyToClipboard();
   return (
     <button
       type="button"
-      onClick={handleCopy}
+      onClick={() => copy(value)}
       aria-label={copied ? "Copied" : "Copy code"}
       title={copied ? "Copied" : "Copy code"}
-      className={cn(
-        "rounded p-1 transition-colors focus:outline-none focus:ring-1",
-        darkMode
-          ? "text-white/50 hover:text-white hover:bg-white/10 focus:ring-white/30"
-          : "text-zinc-500 hover:text-zinc-900 hover:bg-zinc-200 focus:ring-zinc-400",
-      )}
+      className="rounded p-1 transition-colors focus:outline-none focus:ring-1 text-muted-foreground hover:text-foreground hover:bg-muted focus:ring-ring"
     >
       {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
     </button>
@@ -1890,16 +1803,7 @@ function CopyableField({
   value: string;
   mono?: boolean;
 }) {
-  const [copied, setCopied] = useState(false);
-  const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(value);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch {
-      // ignore — clipboard not available
-    }
-  };
+  const { copied, copy } = useCopyToClipboard();
   return (
     <div className="space-y-1.5">
       <Label className="text-xs text-muted-foreground uppercase tracking-wide">{label}</Label>
@@ -1914,7 +1818,7 @@ function CopyableField({
           type="button"
           variant="outline"
           size="icon"
-          onClick={handleCopy}
+          onClick={() => copy(value)}
           aria-label={`Copy ${label}`}
           className="shrink-0"
         >
@@ -1927,16 +1831,7 @@ function CopyableField({
 
 function SecretField({ label, value }: { label: string; value: string }) {
   const [revealed, setRevealed] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(value);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch {
-      // ignore
-    }
-  };
+  const { copied, copy } = useCopyToClipboard();
   return (
     <div className="space-y-1.5">
       <Label className="text-xs text-muted-foreground uppercase tracking-wide">{label}</Label>
@@ -1962,7 +1857,7 @@ function SecretField({ label, value }: { label: string; value: string }) {
           type="button"
           variant="outline"
           size="icon"
-          onClick={handleCopy}
+          onClick={() => copy(value)}
           aria-label={`Copy ${label}`}
           className="shrink-0"
         >

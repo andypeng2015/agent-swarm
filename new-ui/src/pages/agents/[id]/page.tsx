@@ -29,6 +29,13 @@ import { UsageSummary } from "@/components/shared/usage-summary";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import {
+  DetailPageBody,
+  DetailPageRail,
+  QuickStat,
+  QuickStats,
+} from "@/components/ui/detail-page-layout";
+import { InfoRow } from "@/components/ui/info-row";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -339,106 +346,95 @@ export default function AgentDetailPage() {
           <TabsTrigger value="usage">Usage</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="profile" className="space-y-4 mt-4 overflow-y-auto">
-          <Card>
-            <CardContent className="p-4 space-y-3">
-              {agent.role && (
-                <div>
-                  <span className="text-xs text-muted-foreground uppercase tracking-wide">
-                    Role
-                  </span>
-                  <p className="text-sm">{agent.role}</p>
-                </div>
-              )}
-              {agent.description && (
-                <div>
-                  <span className="text-xs text-muted-foreground uppercase tracking-wide">
-                    Description
-                  </span>
-                  <p className="text-sm">{agent.description}</p>
-                </div>
-              )}
-              {(agent.capacity || agent.maxTasks != null) && (
-                <div>
-                  <span className="text-xs text-muted-foreground uppercase tracking-wide">
-                    Capacity
-                  </span>
-                  <p className="text-sm">
-                    {agent.capacity ? (
-                      <span className={agent.capacity.available === 0 ? "text-red-400" : ""}>
-                        {agent.capacity.current} / {agent.capacity.max} tasks{" "}
-                        <span className="text-muted-foreground">
-                          ({agent.capacity.available} available)
-                        </span>
-                      </span>
-                    ) : (
-                      <span>Max {agent.maxTasks} tasks</span>
+        <TabsContent value="profile" className="mt-4 overflow-y-auto">
+          <DetailPageBody
+            main={
+              <div className="space-y-4">
+                <Card>
+                  <CardContent className="p-4 space-y-3">
+                    {agent.role && <InfoRow label="Role">{agent.role}</InfoRow>}
+                    {agent.description && (
+                      <InfoRow label="Description">{agent.description}</InfoRow>
                     )}
-                  </p>
-                </div>
-              )}
-              {agent.capabilities && agent.capabilities.length > 0 && (
-                <div>
-                  <span className="text-xs text-muted-foreground uppercase tracking-wide">
-                    Capabilities
-                  </span>
-                  <div className="flex flex-wrap gap-1 mt-1">
-                    {agent.capabilities.map((cap) => (
-                      <Badge key={cap} variant="outline" size="tag">
-                        {cap}
-                      </Badge>
-                    ))}
-                  </div>
-                </div>
-              )}
-              <div className="text-xs text-muted-foreground">
-                Joined {formatSmartTime(agent.createdAt)} &middot; Updated{" "}
-                {formatSmartTime(agent.lastUpdatedAt)}
-              </div>
-            </CardContent>
-          </Card>
+                    {agent.capabilities && agent.capabilities.length > 0 && (
+                      <InfoRow label="Capabilities">
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {agent.capabilities.map((cap) => (
+                            <Badge key={cap} variant="outline" size="tag">
+                              {cap}
+                            </Badge>
+                          ))}
+                        </div>
+                      </InfoRow>
+                    )}
+                  </CardContent>
+                </Card>
 
-          <EditableMarkdownField
-            title="SOUL.md"
-            field="soulMd"
-            agent={agent}
-            onSave={saveField}
-            saving={updateProfile.isPending}
-          />
-          <EditableMarkdownField
-            title="IDENTITY.md"
-            field="identityMd"
-            agent={agent}
-            onSave={saveField}
-            saving={updateProfile.isPending}
-          />
-          <EditableMarkdownField
-            title="CLAUDE.md"
-            field="claudeMd"
-            agent={agent}
-            onSave={saveField}
-            saving={updateProfile.isPending}
-          />
-          <EditableMarkdownField
-            title="TOOLS.md"
-            field="toolsMd"
-            agent={agent}
-            onSave={saveField}
-            saving={updateProfile.isPending}
-          />
-          <EditableMarkdownField
-            title="Setup Script"
-            field="setupScript"
-            agent={agent}
-            onSave={saveField}
-            saving={updateProfile.isPending}
-          />
-          <EditableMarkdownField
-            title="HEARTBEAT.md"
-            field="heartbeatMd"
-            agent={agent}
-            onSave={saveField}
-            saving={updateProfile.isPending}
+                <EditableMarkdownField
+                  title="SOUL.md"
+                  field="soulMd"
+                  agent={agent}
+                  onSave={saveField}
+                  saving={updateProfile.isPending}
+                />
+                <EditableMarkdownField
+                  title="IDENTITY.md"
+                  field="identityMd"
+                  agent={agent}
+                  onSave={saveField}
+                  saving={updateProfile.isPending}
+                />
+                <EditableMarkdownField
+                  title="CLAUDE.md"
+                  field="claudeMd"
+                  agent={agent}
+                  onSave={saveField}
+                  saving={updateProfile.isPending}
+                />
+                <EditableMarkdownField
+                  title="TOOLS.md"
+                  field="toolsMd"
+                  agent={agent}
+                  onSave={saveField}
+                  saving={updateProfile.isPending}
+                />
+                <EditableMarkdownField
+                  title="Setup Script"
+                  field="setupScript"
+                  agent={agent}
+                  onSave={saveField}
+                  saving={updateProfile.isPending}
+                />
+                <EditableMarkdownField
+                  title="HEARTBEAT.md"
+                  field="heartbeatMd"
+                  agent={agent}
+                  onSave={saveField}
+                  saving={updateProfile.isPending}
+                />
+              </div>
+            }
+            rail={
+              <DetailPageRail>
+                <QuickStats>
+                  <QuickStat label="Status" value={agent.status} />
+                  {agent.role && <QuickStat label="Role" value={agent.role} />}
+                  {(agent.capacity || agent.maxTasks != null) && (
+                    <QuickStat
+                      label="Capacity"
+                      value={
+                        agent.capacity
+                          ? `${agent.capacity.current} / ${agent.capacity.max}`
+                          : `Max ${agent.maxTasks}`
+                      }
+                      mono
+                    />
+                  )}
+                  <QuickStat label="Joined" value={formatSmartTime(agent.createdAt)} />
+                  <QuickStat label="Updated" value={formatSmartTime(agent.lastUpdatedAt)} />
+                </QuickStats>
+              </DetailPageRail>
+            }
           />
         </TabsContent>
 
@@ -539,8 +535,8 @@ export default function AgentDetailPage() {
                         size="tag"
                         className={`${
                           skill.isActive
-                            ? "border-emerald-500/30 text-emerald-400"
-                            : "border-zinc-500/30 text-zinc-400"
+                            ? "border-status-success/30 text-status-success"
+                            : "border-status-neutral/30 text-status-neutral"
                         }`}
                       >
                         {skill.isActive ? "Active" : "Inactive"}
@@ -582,10 +578,10 @@ export default function AgentDetailPage() {
                         size="tag"
                         className={`${
                           server.transport === "stdio"
-                            ? "border-blue-500/30 text-blue-400"
+                            ? "border-action-default/30 text-action-default"
                             : server.transport === "http"
-                              ? "border-purple-500/30 text-purple-400"
-                              : "border-cyan-500/30 text-cyan-400"
+                              ? "border-action-delegate-to-agent/30 text-action-delegate-to-agent"
+                              : "border-action-script/30 text-action-script"
                         }`}
                       >
                         {server.transport}
@@ -595,8 +591,8 @@ export default function AgentDetailPage() {
                         size="tag"
                         className={`${
                           server.isActive
-                            ? "border-emerald-500/30 text-emerald-400"
-                            : "border-zinc-500/30 text-zinc-400"
+                            ? "border-status-success/30 text-status-success"
+                            : "border-status-neutral/30 text-status-neutral"
                         }`}
                       >
                         {server.isActive ? "Active" : "Inactive"}

@@ -6,6 +6,7 @@ import { useDbQuery, useTableColumns, useTableList } from "@/api/hooks";
 import { DataGrid } from "@/components/shared/data-grid";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { PageHeader } from "@/components/ui/page-header";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useTheme } from "@/hooks/use-theme";
 
@@ -179,10 +180,7 @@ export default function DebugPage() {
   return (
     <div className="flex flex-col flex-1 min-h-0 gap-0">
       {/* Header */}
-      <div className="flex items-center gap-2 pb-3">
-        <Bug className="h-5 w-5 text-muted-foreground" />
-        <h1 className="text-xl font-semibold">Debug — Database Explorer</h1>
-      </div>
+      <PageHeader icon={Bug} title="Debug — Database Explorer" className="pb-3" />
 
       {/* Main content: sidebar + editor/results */}
       <div className="flex flex-1 min-h-0 border border-border rounded-md overflow-hidden">
@@ -192,7 +190,7 @@ export default function DebugPage() {
         {/* Right panel: editor + results */}
         <div className="flex flex-col flex-1 min-h-0 min-w-0">
           {/* Monaco editor */}
-          <div className="border-b border-border" style={{ height: 200 }}>
+          <div className="border-b border-border h-[200px]">
             <Editor
               language="sql"
               theme={theme === "dark" ? "vs-dark" : "vs"}
@@ -243,7 +241,7 @@ export default function DebugPage() {
             )}
 
             {dbQuery.error && (
-              <span className="text-sm text-red-400 ml-auto truncate">
+              <span className="text-sm text-status-error ml-auto truncate">
                 {dbQuery.error instanceof Error ? dbQuery.error.message : "Query failed"}
               </span>
             )}

@@ -6,7 +6,6 @@ import type { ApiKeyStatus, ApiKeyStatusType } from "@/api/types";
 import { DataGrid } from "@/components/shared/data-grid";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -15,6 +14,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { PageHeader } from "@/components/ui/page-header";
 import {
   Select,
   SelectContent,
@@ -22,26 +22,27 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { StatPanel } from "@/components/ui/stat-panel";
 import { cn, formatSmartTime } from "@/lib/utils";
 
 const statusConfig: Record<ApiKeyStatusType, { label: string; dot: string; text: string }> = {
   available: {
     label: "AVAILABLE",
-    dot: "bg-emerald-500",
-    text: "text-emerald-600 dark:text-emerald-400",
+    dot: "bg-status-success",
+    text: "text-status-success-strong",
   },
   rate_limited: {
     label: "RATE LIMITED",
-    dot: "bg-red-500",
-    text: "text-red-600 dark:text-red-400",
+    dot: "bg-status-error",
+    text: "text-status-error-strong",
   },
 };
 
 function KeyStatusBadge({ status }: { status: ApiKeyStatusType }) {
   const config = statusConfig[status] ?? {
     label: status,
-    dot: "bg-zinc-400",
-    text: "text-zinc-500",
+    dot: "bg-status-neutral",
+    text: "text-status-neutral",
   };
   return (
     <Badge
@@ -73,10 +74,18 @@ function formatProvider(provider: string): string {
   return PROVIDER_LABELS[provider] ?? provider;
 }
 
+/**
+ * Provider tone hints. Mapped to existing semantic tokens by closest hue:
+ * - claude (amber) → `status-active-strong` (exact light/dark match)
+ * - pi (violet) → `action-agent-task` (light shifts amber-600 → -500; dark
+ *   stays violet-400 — single-stop light shift accepted per Phase 4 audit
+ *   decision §7 "no `-strong` action tokens")
+ * - codex (emerald) → `status-success-strong` (exact light/dark match)
+ */
 const PROVIDER_BADGE_TONE: Record<string, string> = {
-  claude: "text-amber-600 dark:text-amber-400",
-  pi: "text-violet-600 dark:text-violet-400",
-  codex: "text-emerald-600 dark:text-emerald-400",
+  claude: "text-status-active-strong",
+  pi: "text-action-agent-task",
+  codex: "text-status-success-strong",
 };
 
 function formatExpiry(until: string | null): string {
@@ -250,7 +259,9 @@ export default function ApiKeysPage() {
           if (params.data?.status !== "rate_limited")
             return <span className="text-muted-foreground">-</span>;
           return (
-            <span className="text-xs font-mono text-red-400">{formatExpiry(params.value)}</span>
+            <span className="text-xs font-mono text-status-error">
+              {formatExpiry(params.value)}
+            </span>
           );
         },
       },
@@ -267,7 +278,7 @@ export default function ApiKeysPage() {
         headerName: "Rate Limits",
         width: 110,
         cellRenderer: (params: { value: number }) => (
-          <span className={cn("font-mono text-xs", params.value > 0 && "text-red-400")}>
+          <span className={cn("font-mono text-xs", params.value > 0 && "text-status-error")}>
             {params.value}
           </span>
         ),
@@ -303,65 +314,27 @@ export default function ApiKeysPage() {
 
   return (
     <div className="flex flex-col flex-1 min-h-0 gap-4">
-      <h1 className="text-xl font-semibold">API Keys</h1>
+      <PageHeader title="API Keys" />
 
       {/* Summary cards */}
       <div className="grid gap-3 grid-cols-2 lg:grid-cols-5">
-        <Card>
-          <CardContent className="p-3 flex items-center gap-3">
-            <div className="rounded-md bg-muted p-2">
-              <Key className="h-4 w-4 text-muted-foreground" />
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">Total Keys</p>
-              <p className="text-lg font-semibold">{stats.total}</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-3 flex items-center gap-3">
-            <div className="rounded-md bg-emerald-500/10 p-2">
-              <ShieldCheck className="h-4 w-4 text-emerald-500" />
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">Available</p>
-              <p className="text-lg font-semibold text-emerald-500">{stats.available}</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-3 flex items-center gap-3">
-            <div className="rounded-md bg-red-500/10 p-2">
-              <ShieldAlert className="h-4 w-4 text-red-500" />
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">Rate Limited</p>
-              <p className="text-lg font-semibold text-red-500">{stats.rateLimited}</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-3 flex items-center gap-3">
-            <div className="rounded-md bg-muted p-2">
-              <BarChart3 className="h-4 w-4 text-muted-foreground" />
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">Total Usage</p>
-              <p className="text-lg font-semibold">{stats.totalUsage.toLocaleString()}</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-3 flex items-center gap-3">
-            <div className="rounded-md bg-muted p-2">
-              <DollarSign className="h-4 w-4 text-muted-foreground" />
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">Total Cost</p>
-              <p className="text-lg font-semibold">${stats.totalCost.toFixed(2)}</p>
-            </div>
-          </CardContent>
-        </Card>
+        <StatPanel icon={Key} label="Total Keys" value={stats.total} />
+        <StatPanel
+          icon={ShieldCheck}
+          label="Available"
+          value={stats.available}
+          tone="success"
+          colorValue
+        />
+        <StatPanel
+          icon={ShieldAlert}
+          label="Rate Limited"
+          value={stats.rateLimited}
+          tone="error"
+          colorValue
+        />
+        <StatPanel icon={BarChart3} label="Total Usage" value={stats.totalUsage.toLocaleString()} />
+        <StatPanel icon={DollarSign} label="Total Cost" value={`$${stats.totalCost.toFixed(2)}`} />
       </div>
 
       {/* Filters */}

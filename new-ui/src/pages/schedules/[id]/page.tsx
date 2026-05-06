@@ -1,5 +1,4 @@
 import type { ColDef, RowClickedEvent } from "ag-grid-community";
-import cronstrue from "cronstrue";
 import { ArrowLeft, Clock, ListTodo, Pencil, Play, Timer, Trash2 } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
@@ -28,6 +27,14 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
+  DetailPageBody,
+  DetailPageRail,
+  QuickStat,
+  QuickStats,
+  Relationship,
+  Relationships,
+} from "@/components/ui/detail-page-layout";
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -35,6 +42,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { InfoRow } from "@/components/ui/info-row";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -48,25 +56,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import { describeCron, formatInterval } from "@/lib/schedule-format";
 import { formatElapsed, formatSmartTime, formatUTCTime } from "@/lib/utils";
-
-function describeCron(expr: string): string {
-  try {
-    return cronstrue.toString(expr, { use24HourTimeFormat: true });
-  } catch {
-    return expr;
-  }
-}
-
-function formatInterval(ms: number): string {
-  const seconds = ms / 1000;
-  if (seconds < 60) return `${seconds}s`;
-  const minutes = seconds / 60;
-  if (minutes < 60) return `${minutes}m`;
-  const hours = minutes / 60;
-  if (hours < 24) return `${hours}h`;
-  return `${hours / 24}d`;
-}
 
 function ScheduleTasks({ scheduleId }: { scheduleId: string }) {
   const navigate = useNavigate();
@@ -213,8 +204,8 @@ export default function ScheduleDetailPage() {
           size="tag"
           className={`${
             schedule.scheduleType === "one_time"
-              ? "border-amber-500/30 text-amber-400"
-              : "border-emerald-500/30 text-emerald-400"
+              ? "border-status-active/30 text-status-active"
+              : "border-status-success/30 text-status-success"
           }`}
         >
           {schedule.scheduleType === "one_time" ? "One-time" : "Recurring"}
@@ -246,186 +237,194 @@ export default function ScheduleDetailPage() {
         <p className="text-sm text-muted-foreground">{schedule.description}</p>
       )}
 
-      <Tabs defaultValue="schedule">
-        <TabsList>
-          <TabsTrigger value="schedule">
-            <Clock className="h-3.5 w-3.5" />
-            Schedule
-          </TabsTrigger>
-          <TabsTrigger value="tasks">
-            <ListTodo className="h-3.5 w-3.5" />
-            Tasks
-          </TabsTrigger>
-        </TabsList>
+      <DetailPageBody
+        main={
+          <Tabs defaultValue="schedule">
+            <TabsList>
+              <TabsTrigger value="schedule">
+                <Clock className="h-3.5 w-3.5" />
+                Schedule
+              </TabsTrigger>
+              <TabsTrigger value="tasks">
+                <ListTodo className="h-3.5 w-3.5" />
+                Tasks
+              </TabsTrigger>
+            </TabsList>
 
-        <TabsContent value="schedule" className="space-y-4">
-          <div className="grid gap-4 md:grid-cols-2">
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm text-muted-foreground">Schedule Info</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div>
-                  <span className="text-xs text-muted-foreground uppercase tracking-wide">
-                    {schedule.scheduleType === "one_time"
-                      ? schedule.lastRunAt
-                        ? "Executed At"
-                        : "Runs At"
-                      : schedule.cronExpression
-                        ? "Cron Expression"
-                        : "Interval"}
-                  </span>
-                  <div className="flex items-center gap-1.5 mt-0.5">
-                    {schedule.scheduleType === "one_time" ? (
-                      <>
-                        <Timer className="h-4 w-4 text-muted-foreground" />
-                        <span className="text-sm">
-                          {schedule.lastRunAt
-                            ? formatUTCTime(schedule.lastRunAt)
-                            : schedule.nextRunAt
-                              ? formatUTCTime(schedule.nextRunAt)
-                              : "—"}
-                        </span>
-                      </>
-                    ) : schedule.cronExpression ? (
-                      <>
-                        <Clock className="h-4 w-4 text-muted-foreground" />
-                        <div className="space-y-0.5">
-                          <code className="text-sm font-mono">{schedule.cronExpression}</code>
+            <TabsContent value="schedule" className="space-y-4">
+              <div className="grid gap-4 md:grid-cols-2">
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm text-muted-foreground">Schedule Info</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <InfoRow
+                      label={
+                        schedule.scheduleType === "one_time"
+                          ? schedule.lastRunAt
+                            ? "Executed At"
+                            : "Runs At"
+                          : schedule.cronExpression
+                            ? "Cron Expression"
+                            : "Interval"
+                      }
+                    >
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        {schedule.scheduleType === "one_time" ? (
+                          <>
+                            <Timer className="h-4 w-4 text-muted-foreground" />
+                            <span className="text-sm">
+                              {schedule.lastRunAt
+                                ? formatUTCTime(schedule.lastRunAt)
+                                : schedule.nextRunAt
+                                  ? formatUTCTime(schedule.nextRunAt)
+                                  : "—"}
+                            </span>
+                          </>
+                        ) : schedule.cronExpression ? (
+                          <>
+                            <Clock className="h-4 w-4 text-muted-foreground" />
+                            <div className="space-y-0.5">
+                              <code className="text-sm font-mono">{schedule.cronExpression}</code>
+                              <p className="text-xs text-muted-foreground">
+                                {describeCron(schedule.cronExpression)}
+                                <span className="ml-1 opacity-60">
+                                  ({schedule.timezone || "UTC"})
+                                </span>
+                              </p>
+                            </div>
+                          </>
+                        ) : schedule.intervalMs ? (
+                          <>
+                            <Timer className="h-4 w-4 text-muted-foreground" />
+                            <span className="text-sm">
+                              Every {formatInterval(schedule.intervalMs)}
+                            </span>
+                          </>
+                        ) : (
+                          <span className="text-sm text-muted-foreground">Not set</span>
+                        )}
+                      </div>
+                    </InfoRow>
+
+                    {schedule.cronExpression && (
+                      <InfoRow label="Timezone">{schedule.timezone || "UTC"}</InfoRow>
+                    )}
+
+                    <InfoRow label="Target Agent">
+                      {schedule.targetAgentId ? (
+                        <Link
+                          to={`/agents/${schedule.targetAgentId}`}
+                          className="text-primary hover:underline"
+                        >
+                          {agentMap.get(schedule.targetAgentId) ??
+                            `${schedule.targetAgentId.slice(0, 8)}...`}
+                        </Link>
+                      ) : (
+                        "Task Pool"
+                      )}
+                    </InfoRow>
+
+                    <InfoRow label="Priority">
+                      <p className="text-sm font-mono">{schedule.priority}</p>
+                    </InfoRow>
+
+                    {schedule.tags.length > 0 && (
+                      <InfoRow label="Tags">
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {schedule.tags.map((tag) => (
+                            <Badge key={tag} variant="outline" size="tag">
+                              {tag}
+                            </Badge>
+                          ))}
+                        </div>
+                      </InfoRow>
+                    )}
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm text-muted-foreground">Timing</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <InfoRow label="Next Run">
+                      {schedule.nextRunAt ? (
+                        <div>
+                          <p className="text-sm">{formatSmartTime(schedule.nextRunAt)}</p>
                           <p className="text-xs text-muted-foreground">
-                            {describeCron(schedule.cronExpression)}
-                            <span className="ml-1 opacity-60">({schedule.timezone || "UTC"})</span>
+                            {formatUTCTime(schedule.nextRunAt)}
                           </p>
                         </div>
-                      </>
-                    ) : schedule.intervalMs ? (
-                      <>
-                        <Timer className="h-4 w-4 text-muted-foreground" />
-                        <span className="text-sm">Every {formatInterval(schedule.intervalMs)}</span>
-                      </>
-                    ) : (
-                      <span className="text-sm text-muted-foreground">Not set</span>
-                    )}
-                  </div>
-                </div>
+                      ) : (
+                        <p className="text-sm">—</p>
+                      )}
+                    </InfoRow>
+                    <InfoRow label="Last Run">
+                      {schedule.lastRunAt ? (
+                        <div>
+                          <p className="text-sm">{formatSmartTime(schedule.lastRunAt)}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {formatUTCTime(schedule.lastRunAt)}
+                          </p>
+                        </div>
+                      ) : (
+                        <p className="text-sm">Never</p>
+                      )}
+                    </InfoRow>
+                    <InfoRow label="Created">{formatSmartTime(schedule.createdAt)}</InfoRow>
+                    <InfoRow label="Last Updated">
+                      {formatSmartTime(schedule.lastUpdatedAt)}
+                    </InfoRow>
+                  </CardContent>
+                </Card>
+              </div>
 
-                {schedule.cronExpression && (
-                  <div>
-                    <span className="text-xs text-muted-foreground uppercase tracking-wide">
-                      Timezone
-                    </span>
-                    <p className="text-sm">{schedule.timezone || "UTC"}</p>
-                  </div>
-                )}
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm text-muted-foreground">Task Template</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <pre className="whitespace-pre-wrap text-sm font-mono leading-relaxed rounded-md bg-muted p-3 text-muted-foreground">
+                    {schedule.taskTemplate}
+                  </pre>
+                </CardContent>
+              </Card>
+            </TabsContent>
 
-                <div>
-                  <span className="text-xs text-muted-foreground uppercase tracking-wide">
-                    Target Agent
-                  </span>
-                  <p className="text-sm">
-                    {schedule.targetAgentId ? (
-                      <Link
-                        to={`/agents/${schedule.targetAgentId}`}
-                        className="text-primary hover:underline"
-                      >
-                        {agentMap.get(schedule.targetAgentId) ??
-                          `${schedule.targetAgentId.slice(0, 8)}...`}
-                      </Link>
-                    ) : (
-                      "Task Pool"
-                    )}
-                  </p>
-                </div>
+            <TabsContent value="tasks">{id && <ScheduleTasks scheduleId={id} />}</TabsContent>
+          </Tabs>
+        }
+        rail={
+          <DetailPageRail>
+            <QuickStats>
+              <QuickStat
+                label="Type"
+                value={schedule.scheduleType === "one_time" ? "One-time" : "Recurring"}
+              />
+              <QuickStat label="Enabled" value={schedule.enabled ? "Yes" : "No"} />
+              <QuickStat label="Priority" value={schedule.priority} mono />
+              <QuickStat
+                label="Next Run"
+                value={schedule.nextRunAt ? formatSmartTime(schedule.nextRunAt) : "—"}
+              />
+              <QuickStat
+                label="Last Run"
+                value={schedule.lastRunAt ? formatSmartTime(schedule.lastRunAt) : "Never"}
+              />
+              <QuickStat label="Created" value={formatSmartTime(schedule.createdAt)} />
+            </QuickStats>
 
-                <div>
-                  <span className="text-xs text-muted-foreground uppercase tracking-wide">
-                    Priority
-                  </span>
-                  <p className="text-sm font-mono">{schedule.priority}</p>
-                </div>
-
-                {schedule.tags.length > 0 && (
-                  <div>
-                    <span className="text-xs text-muted-foreground uppercase tracking-wide">
-                      Tags
-                    </span>
-                    <div className="flex flex-wrap gap-1 mt-1">
-                      {schedule.tags.map((tag) => (
-                        <Badge key={tag} variant="outline" size="tag">
-                          {tag}
-                        </Badge>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm text-muted-foreground">Timing</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div>
-                  <span className="text-xs text-muted-foreground uppercase tracking-wide">
-                    Next Run
-                  </span>
-                  {schedule.nextRunAt ? (
-                    <div>
-                      <p className="text-sm">{formatSmartTime(schedule.nextRunAt)}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {formatUTCTime(schedule.nextRunAt)}
-                      </p>
-                    </div>
-                  ) : (
-                    <p className="text-sm">—</p>
-                  )}
-                </div>
-                <div>
-                  <span className="text-xs text-muted-foreground uppercase tracking-wide">
-                    Last Run
-                  </span>
-                  {schedule.lastRunAt ? (
-                    <div>
-                      <p className="text-sm">{formatSmartTime(schedule.lastRunAt)}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {formatUTCTime(schedule.lastRunAt)}
-                      </p>
-                    </div>
-                  ) : (
-                    <p className="text-sm">Never</p>
-                  )}
-                </div>
-                <div>
-                  <span className="text-xs text-muted-foreground uppercase tracking-wide">
-                    Created
-                  </span>
-                  <p className="text-sm">{formatSmartTime(schedule.createdAt)}</p>
-                </div>
-                <div>
-                  <span className="text-xs text-muted-foreground uppercase tracking-wide">
-                    Last Updated
-                  </span>
-                  <p className="text-sm">{formatSmartTime(schedule.lastUpdatedAt)}</p>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm text-muted-foreground">Task Template</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <pre className="whitespace-pre-wrap text-sm font-mono leading-relaxed rounded-md bg-muted p-3 text-muted-foreground">
-                {schedule.taskTemplate}
-              </pre>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="tasks">{id && <ScheduleTasks scheduleId={id} />}</TabsContent>
-      </Tabs>
+            {schedule.targetAgentId && (
+              <Relationships>
+                <Relationship label="Target Agent" to={`/agents/${schedule.targetAgentId}`}>
+                  {agentMap.get(schedule.targetAgentId) ?? `${schedule.targetAgentId.slice(0, 8)}…`}
+                </Relationship>
+              </Relationships>
+            )}
+          </DetailPageRail>
+        }
+      />
 
       {/* Edit Dialog */}
       {editOpen && (
@@ -454,7 +453,7 @@ export default function ScheduleDetailPage() {
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
-              className="bg-red-600 hover:bg-red-700"
+              variant="destructive"
               onClick={() => {
                 deleteSchedule.mutate(schedule.id, { onSuccess: () => navigate("/schedules") });
               }}

@@ -48,6 +48,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PageHeader } from "@/components/ui/page-header";
 import {
   Select,
   SelectContent,
@@ -146,7 +147,7 @@ function ChannelSidebar({
                 <AlertDialogTrigger asChild>
                   <button
                     type="button"
-                    className="h-4 w-4 shrink-0 inline-flex items-center justify-center rounded opacity-0 group-hover/ch:opacity-100 text-muted-foreground hover:text-red-400 transition-all"
+                    className="h-4 w-4 shrink-0 inline-flex items-center justify-center rounded opacity-0 group-hover/ch:opacity-100 text-muted-foreground hover:text-status-error transition-all"
                     onClick={(e) => e.stopPropagation()}
                   >
                     <Trash2 className="h-3 w-3" />
@@ -161,10 +162,7 @@ function ChannelSidebar({
                   </AlertDialogHeader>
                   <AlertDialogFooter>
                     <AlertDialogCancel>Cancel</AlertDialogCancel>
-                    <AlertDialogAction
-                      onClick={() => handleDelete(ch.id)}
-                      className="bg-red-600 hover:bg-red-700"
-                    >
+                    <AlertDialogAction variant="destructive" onClick={() => handleDelete(ch.id)}>
                       Delete
                     </AlertDialogAction>
                   </AlertDialogFooter>
@@ -302,7 +300,7 @@ function MessageBubble({
                     className="h-6 w-6 inline-flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
                   >
                     {copied ? (
-                      <Check className="h-3 w-3 text-emerald-400" />
+                      <Check className="h-3 w-3 text-status-success" />
                     ) : (
                       <Copy className="h-3 w-3" />
                     )}
@@ -550,7 +548,7 @@ export default function ChatPage() {
   if (channelsLoading) {
     return (
       <div className="flex flex-col flex-1 min-h-0 gap-4">
-        <h1 className="text-xl font-semibold">Chat</h1>
+        <PageHeader title="Chat" />
         <Skeleton className="flex-1 min-h-0 w-full rounded-lg" />
       </div>
     );

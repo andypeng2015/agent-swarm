@@ -9,6 +9,7 @@
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "format": "biome format --write .",
+    "check:tokens": "bash scripts/check-design-tokens.sh",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -24,7 +25,6 @@
     "cronstrue": "^3.14.0",
     "dagre": "^0.8.5",
     "lucide-react": "^0.575.0",
-    "next-themes": "^0.4.6",
     "radix-ui": "^1.4.3",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",

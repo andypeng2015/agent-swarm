@@ -6,14 +6,15 @@ import { useServices } from "@/api/hooks/use-services";
 import type { ServiceStatus } from "@/api/types";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
+import { PageHeader } from "@/components/ui/page-header";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn, formatSmartTime } from "@/lib/utils";
 
 const statusColors: Record<ServiceStatus, string> = {
-  healthy: "bg-emerald-500",
-  unhealthy: "bg-red-500",
-  starting: "bg-yellow-500",
-  stopped: "bg-zinc-500",
+  healthy: "bg-status-success",
+  unhealthy: "bg-status-error",
+  starting: "bg-status-pending",
+  stopped: "bg-status-neutral",
 };
 
 const statusLabels: Record<ServiceStatus, string> = {
@@ -38,7 +39,7 @@ export default function ServicesPage() {
   if (isLoading) {
     return (
       <div className="flex-1 min-h-0 overflow-y-auto space-y-4">
-        <h1 className="text-xl font-semibold">Services</h1>
+        <PageHeader title="Services" />
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {Array.from({ length: 3 }).map((_, i) => (
             <Skeleton key={i} className="h-36" />
@@ -50,7 +51,7 @@ export default function ServicesPage() {
 
   return (
     <div className="flex-1 min-h-0 overflow-y-auto space-y-4">
-      <h1 className="text-xl font-semibold">Services</h1>
+      <PageHeader title="Services" />
 
       {services && services.length > 0 ? (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
@@ -62,7 +63,7 @@ export default function ServicesPage() {
                     <div
                       className={cn(
                         "h-2.5 w-2.5 rounded-full",
-                        statusColors[svc.status] ?? "bg-zinc-500",
+                        statusColors[svc.status] ?? "bg-status-neutral",
                         svc.status === "starting" && "animate-pulse",
                       )}
                     />

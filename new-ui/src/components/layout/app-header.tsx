@@ -27,7 +27,12 @@ export function AppHeader() {
       <div className="flex items-center gap-3">
         {/* Health indicator */}
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <div className={cn("size-2 rounded-full", isHealthy ? "bg-emerald-500" : "bg-red-500")} />
+          <div
+            className={cn(
+              "size-2 rounded-full",
+              isHealthy ? "bg-status-success" : "bg-status-error",
+            )}
+          />
           {activeConnection && (
             <span className="hidden sm:inline font-medium">{activeConnection.name}</span>
           )}

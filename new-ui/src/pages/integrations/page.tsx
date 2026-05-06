@@ -8,6 +8,7 @@ import { PageSkeleton } from "@/components/shared/page-skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { PageHeader } from "@/components/ui/page-header";
 import { INTEGRATIONS, type IntegrationCategory } from "@/lib/integrations-catalog";
 import { deriveIntegrationStatus, findConfigForKey } from "@/lib/integrations-status";
 import { cn } from "@/lib/utils";
@@ -86,11 +87,15 @@ export default function IntegrationsPage() {
   return (
     <div className="flex-1 min-h-0 overflow-y-auto space-y-6 p-2">
       <div className="space-y-2">
-        <h1 className="text-xl font-semibold">Integrations</h1>
-        <p className="text-sm text-muted-foreground">
-          Configure third-party integrations (Slack, GitHub, LLM providers, and more) without
-          hand-editing <code className="font-mono text-xs">.env</code>.
-        </p>
+        <PageHeader
+          title="Integrations"
+          description={
+            <>
+              Configure third-party integrations (Slack, GitHub, LLM providers, and more) without
+              hand-editing <code className="font-mono text-xs">.env</code>.
+            </>
+          }
+        />
         <details className="text-xs text-muted-foreground">
           <summary className="cursor-pointer select-none hover:text-foreground">
             Legend — what do the chips mean?
@@ -100,20 +105,26 @@ export default function IntegrationsPage() {
               <span className="inline-flex items-center gap-1">
                 <StatusChip
                   label="Configured"
-                  colorClass="border-emerald-500/30 text-emerald-400"
+                  colorClass="border-status-success/30 text-status-success"
                 />
                 <span>— every required value is present; integration will load on reload.</span>
               </span>
             </li>
             <li>
               <span className="inline-flex items-center gap-1">
-                <StatusChip label="Partial" colorClass="border-amber-500/30 text-amber-400" />
+                <StatusChip
+                  label="Partial"
+                  colorClass="border-status-active/30 text-status-active"
+                />
                 <span>— some required values set, but not all.</span>
               </span>
             </li>
             <li>
               <span className="inline-flex items-center gap-1">
-                <StatusChip label="Disabled" colorClass="border-slate-500/30 text-slate-400" />
+                <StatusChip
+                  label="Disabled"
+                  colorClass="border-status-neutral/30 text-status-neutral"
+                />
                 <span>
                   — <code className="font-mono text-[11px]">&lt;PREFIX&gt;_DISABLE</code> is truthy
                   in the DB.
@@ -133,7 +144,7 @@ export default function IntegrationsPage() {
             <li>
               <SourceChip
                 label="db+env"
-                colorClass="bg-emerald-500/10 text-emerald-400 border-emerald-500/30"
+                colorClass="bg-status-success/10 text-status-success border-status-success/30"
               />{" "}
               — stored in DB and loaded into the server's{" "}
               <code className="font-mono text-[11px]">process.env</code>. Live.
@@ -141,7 +152,7 @@ export default function IntegrationsPage() {
             <li>
               <SourceChip
                 label="env (deploy)"
-                colorClass="bg-sky-500/10 text-sky-400 border-sky-500/30"
+                colorClass="bg-status-info/10 text-status-info border-status-info/30"
               />{" "}
               — set via deployment env only (<code className="font-mono text-[11px]">.env</code>,
               docker). No DB row; saving here creates one that takes over on reload.
@@ -149,7 +160,7 @@ export default function IntegrationsPage() {
             <li>
               <SourceChip
                 label="db (pending reload)"
-                colorClass="bg-amber-500/10 text-amber-400 border-amber-500/30"
+                colorClass="bg-status-active/10 text-status-active border-status-active/30"
               />{" "}
               — persisted in DB but not yet in{" "}
               <code className="font-mono text-[11px]">process.env</code>. Save or reload to apply.

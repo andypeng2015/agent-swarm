@@ -7,6 +7,7 @@ import "streamdown/styles.css";
 import { usePreviewTemplate, usePromptTemplate, usePromptTemplateEvents } from "@/api/hooks";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { PageHeader } from "@/components/ui/page-header";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useTheme } from "@/hooks/use-theme";
@@ -99,12 +100,16 @@ export default function TemplateVersionDetailPage() {
           </Link>
         </button>
 
-        <div className="flex items-center gap-3 flex-wrap">
-          <h1 className="text-xl font-semibold">Version {versionEntry.version}</h1>
-          <Badge variant="outline" size="tag">
-            {versionEntry.state?.replace(/_/g, " ") ?? "—"}
-          </Badge>
-        </div>
+        <PageHeader
+          title={
+            <div className="flex items-center gap-3 flex-wrap min-w-0">
+              <h1 className="text-xl font-semibold">Version {versionEntry.version}</h1>
+              <Badge variant="outline" size="tag">
+                {versionEntry.state?.replace(/_/g, " ") ?? "—"}
+              </Badge>
+            </div>
+          }
+        />
 
         <div className="flex items-center gap-4 text-sm text-muted-foreground">
           {versionEntry.changedBy && <span>Changed by: {versionEntry.changedBy}</span>}
@@ -153,7 +158,7 @@ export default function TemplateVersionDetailPage() {
                     key={v}
                     variant="outline"
                     size="tag"
-                    className="border-amber-500/30 text-amber-400"
+                    className="border-status-active/30 text-status-active"
                   >
                     {v}
                   </Badge>
