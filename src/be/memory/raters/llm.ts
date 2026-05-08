@@ -18,7 +18,13 @@
  */
 import { z } from "zod";
 import { ClaudeCliLlmRaterClient, type LlmRaterClient, type LlmRaterResult } from "./llm-client";
-import type { MemoryRater, RatingContext, RatingEvent } from "./types";
+import {
+  type MemoryRater,
+  type RatingContext,
+  type RatingEvent,
+  REFERENCES_SOURCE_MAX_LENGTH,
+  sanitizeReferencesSource,
+} from "./types";
 
 /**
  * Per-rating weight, fixed at 0.8 per the research-doc convention
@@ -31,6 +37,11 @@ const RatingSchema = z.object({
   id: z.string().min(1),
   score: z.number().min(0).max(1),
   reasoning: z.string().min(1).max(500),
+  // Step-6 §6 — optional free-form external source ID. Q2 contract: ≤512
+  // chars, no closed enum, no prefix parser. Sanitization (control-char
+  // strip + NUL rejection) happens in `buildRatingsFromLlm` so a single
+  // bad rating drops the field rather than failing the whole batch.
+  referencesSource: z.string().min(1).max(REFERENCES_SOURCE_MAX_LENGTH).optional(),
 });
 
 /**
@@ -129,12 +140,25 @@ export function buildRatingsFromLlm(
   const events: RatingEvent[] = [];
   for (const r of ratings) {
     if (!allowed.has(r.id)) continue;
+    // Step-6 §6 — sanitize before propagation. If the LLM emits a NUL byte
+    // or an all-control-chars string, drop the edge but keep the rating
+    // (best-effort: the memory's own posterior still gets the signal).
+    let cleanedReferencesSource: string | undefined;
+    if (r.referencesSource !== undefined) {
+      const cleaned = sanitizeReferencesSource(r.referencesSource);
+      if (cleaned !== null) {
+        cleanedReferencesSource = cleaned;
+      }
+    }
     events.push({
       memoryId: r.id,
       signal: 2 * r.score - 1,
       weight: LLM_RATER_WEIGHT,
       source: "llm",
       reasoning: r.reasoning,
+      ...(cleanedReferencesSource !== undefined
+        ? { referencesSource: cleanedReferencesSource }
+        : {}),
     });
   }
   return events;
@@ -169,97 +193,28 @@ export function buildSummaryWithRatingsPrompt(
 
   return `${basePrompt}
 
-CRITICAL: Return JSON conforming to this schema (no prose outside the JSON, no markdown fences):
+CRITICAL: Your entire response MUST be a single JSON object that conforms to the schema below. Do NOT wrap it in triple-backtick fences (no \`\`\`json or \`\`\`), do NOT add a prose preamble, do NOT add trailing commentary. Just the JSON object, nothing else.
+
+Schema:
 {
   "summary": string,                        // your existing summary text
   "ratings": [                              // one entry per memory you can score
     {
       "id": string,                         // memory id, copied from the list below
       "score": number,                      // 0 = misleading/unhelpful, 1 = highly useful
-      "reasoning": string                   // 1..500 chars, why
+      "reasoning": string,                  // 1..500 chars, why
+      "referencesSource": string            // OPTIONAL — see note below
     }
   ]
 }
 
 Score ONLY memories present in the list below. Use the exact ids. Omit any you cannot evaluate.
 
+Optionally for each rating, if the memory clearly references a specific external source (a GitHub PR/issue, a Linear issue, a customer, a Slack thread, an AgentMail thread, etc.), include a \`referencesSource\` string using the convention "<source>:<identifier>" (e.g. "github:owner/repo#N", "linear:KEY-N", "customer:<slug>"). Any prefix is fine — pick what matches the source. Omit the field if no clear external source.
+
 Memories retrieved during this session:
 
 ${memoryBlock}`;
-}
-
-/**
- * Best-effort parse of the structured `SummaryWithRatingsSchema` JSON out of
- * the `claude -p --output-format json` envelope (`{ result: "<inner json>" }`).
- *
- * Returns `null` on any parse failure — the caller falls back to the existing
- * summary-only path. NEVER throws.
- */
-export function parseSummaryWithRatings(claudeStdout: string): SummaryWithRatings | null {
-  let envelope: { result?: unknown };
-  try {
-    envelope = JSON.parse(claudeStdout) as { result?: unknown };
-  } catch {
-    return null;
-  }
-  const inner = envelope.result;
-  let candidate: unknown;
-  if (typeof inner === "string") {
-    try {
-      candidate = JSON.parse(inner.trim());
-    } catch {
-      return null;
-    }
-  } else if (inner && typeof inner === "object") {
-    candidate = inner;
-  } else {
-    return null;
-  }
-  const parsed = SummaryWithRatingsSchema.safeParse(candidate);
-  return parsed.success ? parsed.data : null;
-}
-
-/**
- * Fallback summary-text extractor for the hook's `claude -p` envelope. Used
- * when {@link parseSummaryWithRatings} returns null — i.e., when the LLM
- * returned a valid envelope but the inner payload either wasn't structured
- * JSON (unstructured prompt path) OR was structured JSON whose ratings failed
- * `SummaryWithRatingsSchema` validation (e.g., out-of-range scores).
- *
- * In the latter case `envelope.result` is the full inner JSON STRING such as
- * `{"summary":"...","ratings":[...]}`; indexing that verbatim into agent
- * memory would violate the step-4 contract that ratings are best-effort and
- * the existing summary-indexing behavior remains unchanged. We extract the
- * inner `summary` field if present, else return the inner string (treating
- * it as plain summary text). NEVER throws.
- */
-export function extractSummaryFromClaudeStdout(claudeStdout: string): string {
-  let envelope: { result?: unknown };
-  try {
-    envelope = JSON.parse(claudeStdout) as { result?: unknown };
-  } catch {
-    return claudeStdout;
-  }
-  const inner = envelope.result;
-  if (typeof inner === "string") {
-    try {
-      const innerParsed = JSON.parse(inner.trim()) as { summary?: unknown };
-      if (innerParsed && typeof innerParsed.summary === "string") {
-        return innerParsed.summary;
-      }
-    } catch {
-      // inner wasn't JSON — treat it as plain summary text
-    }
-    return inner;
-  }
-  if (
-    inner &&
-    typeof inner === "object" &&
-    typeof (inner as { summary?: unknown }).summary === "string"
-  ) {
-    return (inner as { summary: string }).summary;
-  }
-  return claudeStdout;
 }
 
 /**
@@ -340,6 +295,7 @@ export async function postRatings(opts: {
     weight: e.weight,
     source: e.source,
     ...(e.reasoning !== undefined ? { reasoning: e.reasoning } : {}),
+    ...(e.referencesSource !== undefined ? { referencesSource: e.referencesSource } : {}),
     ...(opts.taskId ? { taskId: opts.taskId } : {}),
   }));
   try {

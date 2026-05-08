@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Agent Swarm API",
-    "version": "1.74.4",
+    "version": "1.75.0",
     "description": "Multi-agent orchestration API for Claude Code, Codex, and Gemini CLI. Enables task distribution, agent communication, and service discovery.\n\nMCP tools are documented separately in [MCP.md](./MCP.md)."
   },
   "servers": [
@@ -617,6 +617,126 @@
           },
           "404": {
             "description": "Agent not found"
+          }
+        }
+      }
+    },
+    "/api/agents/{id}/credential-status": {
+      "put": {
+        "summary": "Worker self-report of credential readiness (Phase 3 boot loop)",
+        "tags": [
+          "Agents"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "ready": {
+                    "type": "boolean"
+                  },
+                  "missing": {
+                    "type": [
+                      "array",
+                      "null"
+                    ],
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": [
+                  "ready"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "State updated; returns the agent row."
+          },
+          "404": {
+            "description": "Agent not found"
+          }
+        }
+      },
+      "get": {
+        "summary": "Single-agent credential-status snapshot for the dashboard",
+        "tags": [
+          "Agents"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Credential status payload"
+          },
+          "404": {
+            "description": "Agent not found"
+          }
+        }
+      }
+    },
+    "/api/agents/credential-status": {
+      "get": {
+        "summary": "Bulk credential-status across all agents (powers the dashboard)",
+        "tags": [
+          "Agents"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "idle",
+                "busy",
+                "offline",
+                "waiting_for_credentials"
+              ]
+            },
+            "required": false,
+            "name": "status",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of {agentId, status, missing[], lastCheckedAt}"
           }
         }
       }
@@ -3081,6 +3201,12 @@
                         "taskId": {
                           "type": "string",
                           "format": "uuid"
+                        },
+                        "referencesSource": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 512,
+                          "description": "Optional external source ID this memory references. Free-form string, convention \"<source>:<identifier>\" (e.g. \"github:owner/repo#N\", \"linear:KEY-N\", \"customer:<slug>\", \"slack:<channel>:<ts>\", \"agentmail:<thread-id>\"). Pick any prefix that fits — no closed enum. When present, an edge from this memory to the external source is created/updated."
                         }
                       },
                       "required": [
@@ -3150,6 +3276,38 @@
           },
           "400": {
             "description": "Missing taskId/sessionId or X-Agent-ID"
+          }
+        }
+      }
+    },
+    "/api/memory/edges": {
+      "get": {
+        "summary": "List references-source edges for a memory",
+        "tags": [
+          "Memory"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "memoryId",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Edges with computed usefulness scores"
+          },
+          "400": {
+            "description": "Missing memoryId or X-Agent-ID"
           }
         }
       }

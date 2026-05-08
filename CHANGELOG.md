@@ -6,6 +6,34 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+- **Memory rater Stop-hook regression chain** (#444, #445, #447) — the LLM piggyback rater introduced in #429 had been silent in production since deploy. Three follow-ups landed the fix:
+  - **#444** — gate-trace logging in the Stop hook to expose which precondition was failing
+  - **#445** — pass `taskId` via `AGENT_SWARM_TASK_ID` (and `AGENT_SWARM_AGENT_ID`) env vars instead of relying on the on-disk `TASK_FILE`. The file disappeared mid-session in production, so `Bun.file().text()` threw ENOENT; the catch swallowed it and `taskId` stayed undefined, which short-circuited `fetchRetrievalsForTask`
+  - **#447** — tolerant JSON parser (`tryParseLooseJson`) for Haiku output that occasionally wrapped the inner `result` in ` ```json ` fences or prefixed it with a short prose preamble. Strict `JSON.parse` rejected those shapes; the new helper strips fences and falls back to first-`{` / last-`}` slicing. The summarizer prompt also got an explicit no-fences / no-preamble directive as defense-in-depth. Includes regression tests for both `parseSummaryWithRatings` and `extractSummaryFromClaudeStdout`
+
+### Changed
+- **`Dockerfile.worker`** — bumped `CODEX_VERSION` from 0.125.0 to 0.128.0; matching `@openai/codex-sdk` bump from `^0.125.0` to `^0.128.0` in `package.json` (#442)
+- **`Dockerfile.worker`** — `@desplega.ai/qa-use` bumped to 2.17.0 to dodge a `workspace:*` resolution failure in 2.15.3 that broke uncached Docker Build CI; pinned `@huggingface/hub` to 2.11.0 via npm overrides to work around `@huggingface/xetchunk-wasm@0.0.4` shipping unpublished `workspace:*` siblings. Switched the global-tool install pattern from `npm install -g` to staging-dir install + symlink-to-`/usr/local/bin` so the override applies (#447)
+
+## [1.75.0] - 2026-05-06
+
+### Added
+- **Memory rater v1.5 — completion (steps 4–7)**:
+  - **Step 4 (#429)** — `LlmRater` (`src/be/memory/raters/llm.ts`) that piggybacks on the existing Stop-hook session-summary Haiku call. When `MEMORY_LLM_RATER_ENABLED=true` the summarizer prompt is augmented to also rate retrieved memories `useful: true | false`; ratings are POSTed to `/api/memory/rate` with `source: "llm"`. Zero extra LLM round-trips on the worker hot path
+  - **Step 5 (#428)** — `memory_rate` MCP tool. Agents can record explicit usefulness ratings on a retrieved memory in their current task (`useful`, optional short `note`, optional `referencesSource` external pointer). Spam-guarded by the `memory_retrieval` row produced when the memory was surfaced; out-of-task calls are rejected. Wired through the worker `ExplicitSelfRatingRater` and surfaced in the runner-injected memory recall prompt (`src/prompts/memories.ts`)
+  - **Step 6 (#436)** — `referencesSource` edges. The optional free-form `<source>:<identifier>` field on `memory_rate` (e.g. `github:owner/repo#N`, `linear:KEY-N`, `customer:<slug>`, `slack:<channel>:<ts>`) creates/updates an edge from the rated memory to the external artifact it cites. Sanitized for NUL bytes and control characters
+  - **Step 7 (#440)** — v1.5 capstone: docs + business-use flow instrumentation + cross-cutting end-to-end tests covering the implicit-citation, llm, and explicit-self rater paths. `MCP.md` regenerated to surface the new `memory_rate` tool entry
+- **Worker credential safe-loop** (#441) — workers no longer crash-loop when harness credentials are missing. The TypeScript-level `awaitCredentials` (`src/commands/credential-wait.ts`) replaces the bash-level fail-fast in `docker-entrypoint.sh`. The container always boots, calls `join-swarm`, and parks in a `waiting_for_credentials` agent status while polling `swarm_config` for the missing variables. Status is reported via `PUT /api/agents/{id}/credential-status`; the dispatcher's `getIdleWorkersWithCapacity` predicate already excludes non-`idle` workers, so blocked agents are routed around without any extra condition. Self-heals as soon as the credential lands — no container restart required. The single hard exit retained is `API_KEY` (without it the worker can't talk to the API at all)
+
+### Changed
+- **`new-ui` directory renamed to `ui`** (a2e86719) — README, configs, and CI workflows updated to reference the canonical `ui/` path. Standalone landing site removed (60bb0ea8) in favor of the rewritten `agent-swarm.dev` (#438)
+- **`new-ui` design system migration** (#439) — tokens, primitives, and composition layer for the dashboard. Lays groundwork for shared-component reuse across the dashboard, templates UI, and docs site
+- **Landing v2 — Coordination Intelligence rewrite of `agent-swarm.dev`** (#438)
+
+### Fixed
+- **Thin meta descriptions across landing & docs pages** (#433) — automated SEO pass expanded short/missing meta descriptions to improve search snippets
+
 ## [1.74.4] - 2026-05-06
 
 ### Added
