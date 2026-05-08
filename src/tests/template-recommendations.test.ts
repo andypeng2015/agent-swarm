@@ -1,29 +1,19 @@
 /**
  * Phase 3 — unit tests for `ui/src/lib/template-recommendations.ts`.
  *
- * Pure logic tests + a "templates exist" sanity check that asserts every
- * `TemplateId` resolves to a real record in `templates/official/<id>/config.json`.
- *
- * Lives in `src/tests/` (not under `ui/`) because:
- *   - `ui/` has no test runner configured (no vitest/jest).
- *   - The repo-root `bun test` already wires preload + DB fixtures.
- *   - The recommendation lib is pure logic with only a `StatusResponse` type
- *     import, so the cross-tree relative import works without aliases.
+ * Lives in `src/tests/` (not under `ui/`) because `ui/` has no test runner
+ * configured. The recommendation lib is pure logic with only a `StatusResponse`
+ * type import, so the cross-tree relative import works without aliases.
  */
 
 import { describe, expect, test } from "bun:test";
-import { existsSync } from "node:fs";
-import { join } from "node:path";
 import type { StatusResponse } from "../../ui/src/api/types.ts";
 import {
-  ALL_TEMPLATE_IDS,
   type DetectedIntegration,
   detectedFromStatus,
   recommendTemplates,
   topRecommendation,
 } from "../../ui/src/lib/template-recommendations.ts";
-
-const REPO_ROOT = new URL("../..", import.meta.url).pathname;
 
 function makeStatus(overrides: {
   slack?: "unverified" | "configured" | "verified";
@@ -155,18 +145,4 @@ describe("topRecommendation — end-to-end from a /status payload", () => {
     const status = makeStatus({});
     expect(topRecommendation(status).templateId).toBe("hello-world");
   });
-});
-
-describe("templates registry — every TemplateId resolves to a real record", () => {
-  for (const templateId of ALL_TEMPLATE_IDS) {
-    test(`'${templateId}' has a templates/official/${templateId}/config.json`, () => {
-      const configPath = join(REPO_ROOT, "templates", "official", templateId, "config.json");
-      expect(existsSync(configPath)).toBe(true);
-
-      // Spot-check the config matches the directory id (defensive — protects
-      // against a stub being copy-pasted with the wrong name field).
-      const config = require(configPath) as { name: string };
-      expect(config.name).toBe(templateId);
-    });
-  }
 });

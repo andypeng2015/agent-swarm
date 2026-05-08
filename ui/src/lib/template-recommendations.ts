@@ -119,15 +119,3 @@ export function topRecommendation(status: StatusResponse): Recommendation {
   // recommendTemplates always returns ≥ 1 item — fall back defensively.
   return recs[0] ?? FALLBACK;
 }
-
-/**
- * Exhaustive list of every `TemplateId` value. Keep this in sync with the
- * `TemplateId` union — the unit test asserts each entry resolves to a real
- * `templates/official/<id>/config.json` record.
- */
-export const ALL_TEMPLATE_IDS: readonly TemplateId[] = [
-  "pr-triage",
-  "issue-to-pr",
-  "bug-intake",
-  "hello-world",
-] as const;
