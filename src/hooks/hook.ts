@@ -8,8 +8,8 @@ import {
   isLlmRaterEnabled,
   postRatings,
   type RetrievalRow,
-  SummaryWithRatingsSchema,
 } from "../be/memory/raters/llm";
+import { runMemoryRater } from "../be/memory/raters/llm-summarizer";
 import type { Agent } from "../types";
 import { checkToolLoop, clearToolHistory } from "./tool-loop-detection";
 
@@ -1150,80 +1150,70 @@ ${transcript}`;
             // POST when there's nothing to send.
             const summarizePrompt = buildSummaryWithRatingsPrompt(baseSummarizePrompt, retrievals);
 
-            const { createOpenAI } = await import("@ai-sdk/openai");
-            const { generateObject } = await import("ai");
-
-            const openrouter = createOpenAI({
-              baseURL: "https://openrouter.ai/api/v1",
+            const raterResult = await runMemoryRater({
+              prompt: summarizePrompt,
               apiKey: process.env.OPENROUTER_API_KEY,
             });
-
-            // Default to Gemini 3 Flash on OpenRouter — materially cheaper
-            // than Claude Haiku 4.5 for an equivalent structured-output call.
-            // `MEMORY_RATER_LLM_MODEL` lets self-hosters pin a different slug.
-            const modelId = process.env.MEMORY_RATER_LLM_MODEL ?? "google/gemini-3-flash-preview";
-
-            const { object } = await generateObject({
-              model: openrouter(modelId),
-              schema: SummaryWithRatingsSchema,
-              prompt: summarizePrompt,
-              providerOptions: {
-                openai: { strictJsonSchema: false },
-              },
-            });
-
-            const summary = object.summary;
-
-            // Skip indexing if the session had no significant learnings
-            if (
-              summary &&
-              summary.length > 20 &&
-              !summary.trim().toLowerCase().includes("no significant learnings")
-            ) {
-              await fetch(`${apiUrl}/api/memory/index`, {
-                method: "POST",
-                headers: {
-                  "Content-Type": "application/json",
-                  ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
-                  "X-Agent-ID": agentInfo.id,
-                },
-                body: JSON.stringify({
-                  agentId: agentInfo.id,
-                  content: summary,
-                  name: taskContext
-                    ? `Session: ${taskContext.slice(0, 80)}`
-                    : `Session: ${new Date().toISOString().slice(0, 16)}`,
-                  scope: "agent",
-                  source: "session_summary",
-                  ...(taskId ? { sourceTaskId: taskId } : {}),
-                }),
+            if (!raterResult.ok) {
+              console.error("[memory-rater:llm] runMemoryRater returned non-ok", {
+                reason: raterResult.reason,
+                ...(raterResult.status !== undefined ? { status: raterResult.status } : {}),
               });
-            }
+            } else {
+              const summary = raterResult.data.summary;
+              const ratings = raterResult.data.ratings;
 
-            // Best-effort: post LLM ratings. Never blocks summary indexing.
-            if (llmRaterEnabled && taskId && retrievals.length > 0 && object.ratings.length === 0) {
-              console.error("[memory-rater:llm] piggyback produced no ratings", {
-                retrievalsLen: retrievals.length,
-                ratingsLen: 0,
-              });
-            }
-            if (llmRaterEnabled && taskId && object.ratings.length > 0) {
-              try {
-                const events = buildRatingsFromLlm(object.ratings, retrievals);
-                if (events.length > 0) {
-                  await postRatings({
-                    apiUrl,
-                    apiKey,
+              // Skip indexing if the session had no significant learnings
+              if (
+                summary &&
+                summary.length > 20 &&
+                !summary.trim().toLowerCase().includes("no significant learnings")
+              ) {
+                await fetch(`${apiUrl}/api/memory/index`, {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                    ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+                    "X-Agent-ID": agentInfo.id,
+                  },
+                  body: JSON.stringify({
                     agentId: agentInfo.id,
-                    taskId,
-                    events,
-                  });
+                    content: summary,
+                    name: taskContext
+                      ? `Session: ${taskContext.slice(0, 80)}`
+                      : `Session: ${new Date().toISOString().slice(0, 16)}`,
+                    scope: "agent",
+                    source: "session_summary",
+                    ...(taskId ? { sourceTaskId: taskId } : {}),
+                  }),
+                });
+              }
+
+              // Best-effort: post LLM ratings. Never blocks summary indexing.
+              if (llmRaterEnabled && taskId && retrievals.length > 0 && ratings.length === 0) {
+                console.error("[memory-rater:llm] piggyback produced no ratings", {
+                  retrievalsLen: retrievals.length,
+                  ratingsLen: 0,
+                });
+              }
+              if (llmRaterEnabled && taskId && ratings.length > 0) {
+                try {
+                  const events = buildRatingsFromLlm(ratings, retrievals);
+                  if (events.length > 0) {
+                    await postRatings({
+                      apiUrl,
+                      apiKey,
+                      agentId: agentInfo.id,
+                      taskId,
+                      events,
+                    });
+                  }
+                } catch (err) {
+                  console.error(
+                    "[memory-rater:llm] piggyback rating emission failed:",
+                    (err as Error).message,
+                  );
                 }
-              } catch (err) {
-                console.error(
-                  "[memory-rater:llm] piggyback rating emission failed:",
-                  (err as Error).message,
-                );
               }
             }
           }
