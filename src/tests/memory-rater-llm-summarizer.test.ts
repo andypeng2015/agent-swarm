@@ -11,6 +11,8 @@ import { describe, expect, test } from "bun:test";
 import {
   DEFAULT_MEMORY_RATER_MODEL,
   getMemoryRaterModel,
+  MEMORY_RATER_JSON_SCHEMA,
+  MEMORY_RATER_SCHEMA_NAME,
   runMemoryRater,
   tryParseLooseJson,
 } from "../be/memory/raters/llm-summarizer";
@@ -100,7 +102,7 @@ describe("tryParseLooseJson", () => {
 });
 
 describe("runMemoryRater — request shape", () => {
-  test("POSTs to OpenRouter chat-completions with the right model, json_object response_format, and Authorization header", async () => {
+  test("POSTs to OpenRouter chat-completions with the right model, strict json_schema response_format, and Authorization header", async () => {
     let capturedUrl: string | URL | Request | undefined;
     let capturedInit: RequestInit | undefined;
     const fakeFetch: typeof fetch = async (url, init) => {
@@ -127,8 +129,49 @@ describe("runMemoryRater — request shape", () => {
 
     const body = JSON.parse(String(capturedInit?.body));
     expect(body.model).toBe(DEFAULT_MEMORY_RATER_MODEL);
-    expect(body.response_format).toEqual({ type: "json_object" });
     expect(body.messages).toEqual([{ role: "user", content: "test prompt" }]);
+
+    // OpenRouter strict json_schema mode — assert the wrapper shape.
+    expect(body.response_format.type).toBe("json_schema");
+    expect(body.response_format.json_schema.name).toBe(MEMORY_RATER_SCHEMA_NAME);
+    expect(body.response_format.json_schema.strict).toBe(true);
+    // Schema is the canonical one derived from SummaryWithRatingsSchema.
+    expect(body.response_format.json_schema.schema).toEqual(MEMORY_RATER_JSON_SCHEMA);
+  });
+
+  test("MEMORY_RATER_JSON_SCHEMA reflects SummaryWithRatingsSchema (key shape only)", () => {
+    // Don't assert exact JSON Schema bytes — Zod's emitter can change with
+    // version bumps. Lock down the contract that matters for the OpenRouter
+    // call: top-level keys, required fields, additionalProperties: false,
+    // and the per-rating shape.
+    expect(MEMORY_RATER_JSON_SCHEMA.type).toBe("object");
+    expect(MEMORY_RATER_JSON_SCHEMA.additionalProperties).toBe(false);
+    expect(Array.isArray(MEMORY_RATER_JSON_SCHEMA.required)).toBe(true);
+    expect(MEMORY_RATER_JSON_SCHEMA.required as string[]).toEqual(
+      expect.arrayContaining(["summary", "ratings"]),
+    );
+    const props = MEMORY_RATER_JSON_SCHEMA.properties as Record<string, Record<string, unknown>>;
+    expect(props.summary.type).toBe("string");
+    expect(props.ratings.type).toBe("array");
+    const items = props.ratings.items as Record<string, unknown>;
+    expect(items.type).toBe("object");
+    expect(items.additionalProperties).toBe(false);
+    const itemProps = items.properties as Record<string, Record<string, unknown>>;
+    expect(itemProps.id.type).toBe("string");
+    expect(itemProps.score.type).toBe("number");
+    expect(itemProps.score.minimum).toBe(0);
+    expect(itemProps.score.maximum).toBe(1);
+    expect(itemProps.reasoning.type).toBe("string");
+    // referencesSource is optional → present in properties but not required.
+    expect(itemProps.referencesSource.type).toBe("string");
+    expect(items.required as string[]).toEqual(
+      expect.arrayContaining(["id", "score", "reasoning"]),
+    );
+    expect((items.required as string[]).includes("referencesSource")).toBe(false);
+  });
+
+  test("schema does NOT carry a $schema metadata key (OpenRouter rejects extras at the root)", () => {
+    expect("$schema" in MEMORY_RATER_JSON_SCHEMA).toBe(false);
   });
 
   test("explicit `model` opt overrides the env default", async () => {

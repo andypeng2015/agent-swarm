@@ -10,6 +10,7 @@
  * Worker-safe — uses raw `fetch` + the tolerant JSON parser landed in PR #447.
  * No `bun:sqlite` / `src/be/db` imports. Boundary script enforces this.
  */
+import { z } from "zod";
 import { type SummaryWithRatings, SummaryWithRatingsSchema } from "./llm";
 
 /**
@@ -19,7 +20,30 @@ import { type SummaryWithRatings, SummaryWithRatingsSchema } from "./llm";
  */
 export const DEFAULT_MEMORY_RATER_MODEL = "google/gemini-3-flash-preview";
 
+/**
+ * `response_format.json_schema.name` sent to OpenRouter. Used by some
+ * providers as a tag in their structured-output telemetry — keep it stable
+ * so model behaviour stays comparable across calls.
+ */
+export const MEMORY_RATER_SCHEMA_NAME = "memory_rater_output";
+
 const OPENROUTER_CHAT_COMPLETIONS_URL = "https://openrouter.ai/api/v1/chat/completions";
+
+/**
+ * JSON Schema derived from {@link SummaryWithRatingsSchema}, the source of
+ * truth. Computed once at module load via Zod v4's native `z.toJSONSchema`
+ * (Zod v3's `zod-to-json-schema` is incompatible with the v4 runtime we
+ * pin). The `$schema` key is stripped because OpenRouter / OpenAI strict
+ * json_schema mode rejects unrecognized top-level keys.
+ *
+ * Probed end-to-end against `google/gemini-3-flash-preview` with
+ * `response_format.json_schema.strict: true` — accepted, no rewrite needed.
+ */
+export const MEMORY_RATER_JSON_SCHEMA: Record<string, unknown> = (() => {
+  const schema = z.toJSONSchema(SummaryWithRatingsSchema) as Record<string, unknown>;
+  delete schema.$schema;
+  return schema;
+})();
 
 /**
  * Resolve the OpenRouter model slug. Reads `MEMORY_RATER_MODEL` from the env;
@@ -122,7 +146,19 @@ export async function runMemoryRater(opts: RunMemoryRaterOpts): Promise<RunMemor
       },
       body: JSON.stringify({
         model,
-        response_format: { type: "json_object" },
+        // OpenRouter strict json_schema — forces the provider's structured-
+        // output guardrails on instead of the looser `json_object` mode.
+        // Schema is derived from the same Zod source of truth, so the
+        // request and the post-validation Zod check can't drift.
+        // https://openrouter.ai/docs/guides/features/structured-outputs
+        response_format: {
+          type: "json_schema",
+          json_schema: {
+            name: MEMORY_RATER_SCHEMA_NAME,
+            strict: true,
+            schema: MEMORY_RATER_JSON_SCHEMA,
+          },
+        },
         messages: [{ role: "user", content: opts.prompt }],
       }),
     });
