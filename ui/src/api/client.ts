@@ -33,8 +33,11 @@ import type {
   ScheduledTasksResponse,
   ServicesResponse,
   SessionCostsResponse,
+  SessionDetailResponse,
+  SessionListItem,
   SessionLog,
   SessionLogsResponse,
+  SessionsListResponse,
   Skill,
   SkillsResponse,
   Stats,
@@ -1538,6 +1541,27 @@ class ApiClient {
     }
     const body = (await res.json()) as { user: User };
     return body.user;
+  }
+
+  // ─── Sessions (Phase 4 ≥1.76.0) ───────────────────────────────────────────
+
+  async listSessions(opts?: { limit?: number; offset?: number }): Promise<SessionListItem[]> {
+    const params = new URLSearchParams();
+    if (opts?.limit != null) params.set("limit", String(opts.limit));
+    if (opts?.offset != null) params.set("offset", String(opts.offset));
+    const qs = params.toString();
+    const url = `${this.getBaseUrl()}/api/sessions${qs ? `?${qs}` : ""}`;
+    const res = await fetch(url, { headers: this.getHeaders() });
+    if (!res.ok) throw new Error(`Failed to list sessions: ${res.status}`);
+    const data = (await res.json()) as SessionsListResponse;
+    return data.sessions;
+  }
+
+  async getSession(rootTaskId: string): Promise<SessionDetailResponse> {
+    const url = `${this.getBaseUrl()}/api/sessions/${encodeURIComponent(rootTaskId)}`;
+    const res = await fetch(url, { headers: this.getHeaders() });
+    if (!res.ok) throw new Error(`Failed to fetch session: ${res.status}`);
+    return res.json();
   }
 }
 

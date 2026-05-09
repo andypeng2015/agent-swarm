@@ -166,6 +166,32 @@ export interface CreateUserInput {
   timezone?: string;
 }
 
+/**
+ * Sessions surface (Phase 4 ≥1.76.0). Mirrors `SessionListItem` from
+ * `src/be/db.ts:8816-8821` — root task plus chain-wide summary used by the
+ * `/sessions` sidebar.
+ */
+export interface SessionListItem {
+  root: AgentTask;
+  chainTaskCount: number;
+  lastActivityAt: string;
+  latestStatus: AgentTaskStatus;
+}
+
+export interface SessionsListResponse {
+  sessions: SessionListItem[];
+}
+
+/**
+ * Full chain payload from `GET /api/sessions/:rootTaskId`. The chain is
+ * already ordered by `createdAt` server-side (via the recursive CTE) so the
+ * UI can DFS from `root` without resorting.
+ */
+export interface SessionDetailResponse {
+  root: AgentTask;
+  chain: AgentTask[];
+}
+
 export type AgentLogEventType =
   | "agent_joined"
   | "agent_status_change"

@@ -12,6 +12,7 @@ import {
   Key,
   LayoutDashboard,
   ListTodo,
+  MessageSquare,
   Plug,
   Settings,
   Users,
@@ -19,6 +20,7 @@ import {
   Workflow,
 } from "lucide-react";
 import { NavLink, useLocation } from "react-router-dom";
+import { useFeatureGate } from "@/api/hooks/use-feature-gate";
 import { useStatusContext } from "@/app/status-context";
 import { CollapsibleSection } from "@/components/shared/collapsible-section";
 import {
@@ -36,13 +38,22 @@ import {
 } from "@/components/ui/sidebar";
 import { SwarmSwitcher } from "./swarm-switcher";
 
-const navGroups = [
+interface NavItem {
+  title: string;
+  path: string;
+  icon: typeof Home;
+  /** When set, item is shown as disabled with this tooltip when condition fails. */
+  gate?: { minVersion: string };
+}
+
+const navGroups: { label: string; items: NavItem[] }[] = [
   {
     label: "Core",
     items: [
       { title: "Home", path: "/", icon: Home },
       { title: "Dashboard", path: "/dashboard", icon: LayoutDashboard },
       { title: "Agents", path: "/agents", icon: Users },
+      { title: "Sessions", path: "/sessions", icon: MessageSquare, gate: { minVersion: "1.76.0" } },
       { title: "Tasks", path: "/tasks", icon: ListTodo },
     ],
   },
@@ -85,6 +96,8 @@ const navGroups = [
 export function AppSidebar() {
   const location = useLocation();
   const { data: status } = useStatusContext();
+  // Phase 4 ≥1.76.0: feature gate for Sessions (and any future v1.76+ entry).
+  const sessionsGate = useFeatureGate("1.76.0");
   // 404 from /status (older API) → hide the Home nav item.
   const homeAvailable = status !== null;
   const identityName = status?.identity.name ?? "Agent Swarm";
@@ -136,6 +149,25 @@ export function AppSidebar() {
                         item.path === "/"
                           ? location.pathname === "/"
                           : location.pathname.startsWith(item.path);
+                      // Soft-degrade gated entries (Phase 4 ≥1.76.0). When
+                      // the gate fails we render a disabled span with a
+                      // tooltip pointing at the upgrade docs.
+                      const gated = item.gate?.minVersion === "1.76.0" && !sessionsGate.supported;
+                      if (gated) {
+                        return (
+                          <SidebarMenuItem key={item.path}>
+                            <SidebarMenuButton
+                              tooltip={`Requires API ≥ ${item.gate?.minVersion}`}
+                              aria-disabled
+                              className="opacity-50 cursor-not-allowed"
+                              onClick={(e) => e.preventDefault()}
+                            >
+                              <item.icon className="size-4" />
+                              <span>{item.title}</span>
+                            </SidebarMenuButton>
+                          </SidebarMenuItem>
+                        );
+                      }
                       return (
                         <SidebarMenuItem key={item.path}>
                           <SidebarMenuButton asChild isActive={isActive}>

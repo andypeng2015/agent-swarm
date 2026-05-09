@@ -3,8 +3,8 @@ date: 2026-05-08T00:00:00Z
 topic: "UI Chat/Session Experience — v1 (Sessions surface + Dashboard revamp)"
 author: taras
 status: in-progress
-last_updated: 2026-05-09T18:30:00Z
-last_updated_by: claude (phase 3 sub-agent)
+last_updated: 2026-05-09T20:00:00Z
+last_updated_by: claude (phase 4 sub-agent)
 related:
   - thoughts/taras/brainstorms/2026-05-08-ui-chat-session-experience.md
   - thoughts/taras/research/2026-05-08-ui-chat-session-experience-research.md
@@ -483,11 +483,13 @@ Card collapsed-by-default body: status pill, agent name, started-at, latest tool
 ### Success Criteria:
 
 #### Automated Verification:
-- [ ] UI type-check: `cd ui && pnpm exec tsc -b`
-- [ ] UI lint: `cd ui && pnpm lint`
-- [ ] Design tokens: `cd ui && pnpm check:tokens`
+- [x] UI type-check: `cd ui && pnpm exec tsc -b`
+- [x] UI lint: `cd ui && pnpm lint`
+- [x] Design tokens: `cd ui && pnpm check:tokens`
 
 #### Automated QA:
+> Note (phase-4 sub-agent, 2026-05-09): qa-use scenarios D / E / F / G below are automated-by-design but **execution is deferred to Phase 7**, where the orchestrator runs the consolidated qa-use sweep against the full stack. Phase 4 implements the code paths these scenarios cover; the boxes stay unchecked until Phase 7 runs them end-to-end.
+
 - [ ] qa-use scenario D: load `/sessions`, sidebar shows seeded sessions, click one, detail loads, click a task card, Sheet opens with transcript, dismiss Sheet, composer present at bottom.
 - [ ] qa-use scenario E: from session detail composer, submit "Run /tmp/foo.sh"; new task appears in the timeline within 5s (polling tick), `parentTaskId` matches the latest leaf.
 - [ ] qa-use scenario F: pin a 3-sibling parallel session (created via API), open it, verify the `[parallel · 3 tasks]` wrapper renders all three.
