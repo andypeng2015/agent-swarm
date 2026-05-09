@@ -38,10 +38,21 @@ export interface TaskCardProps {
   className?: string;
 }
 
-/** First non-empty line of a session log line, trimmed. */
-function summarizeLog(log: SessionLog): string {
+/**
+ * Best-effort human-readable preview of a session log row. Skips raw JSON
+ * blobs (tool_use / tool_result envelopes etc.) so card body lines stay
+ * readable rather than dumping `{"type":"user","message":...}` strings.
+ *
+ * Returns `null` when no preview is appropriate.
+ */
+function summarizeLog(log: SessionLog): string | null {
   const firstLine = log.content.split("\n").find((l) => l.trim().length > 0) ?? "";
-  return firstLine.trim().slice(0, 120);
+  const trimmed = firstLine.trim();
+  if (trimmed.length === 0) return null;
+  // Skip JSON envelopes — only render plain prose lines on the card.
+  if (trimmed.startsWith("{") || trimmed.startsWith("[")) return null;
+  if (trimmed.includes("tool_use_id") || trimmed.includes("tool_result")) return null;
+  return trimmed.slice(0, 120);
 }
 
 export function TaskCard({ task, insideParallelGroup, isRoot, className }: TaskCardProps) {
@@ -55,9 +66,10 @@ export function TaskCard({ task, insideParallelGroup, isRoot, className }: TaskC
   const summaryLines = useMemo(() => {
     if (!cachedLogs || cachedLogs.length === 0) return [] as string[];
     return cachedLogs
-      .slice(-2)
+      .slice(-4)
       .map(summarizeLog)
-      .filter((s) => s.length > 0);
+      .filter((s): s is string => s !== null && s.length > 0)
+      .slice(-2);
   }, [cachedLogs]);
 
   return (
@@ -112,20 +124,53 @@ export function TaskCard({ task, insideParallelGroup, isRoot, className }: TaskC
             <span>{formatRelativeTime(task.createdAt)}</span>
           </div>
 
-          {summaryLines.length > 0 && (
-            <ul className="text-xs text-muted-foreground space-y-0.5 mt-0.5">
-              {summaryLines.map((line, idx) => (
-                <li key={idx} className="truncate">
-                  {line}
-                </li>
-              ))}
-            </ul>
-          )}
+          <TaskOutcomePreview task={task} fallbackLines={summaryLines} />
         </CardContent>
       </Card>
 
       <TaskDetailSheet taskId={task.id} task={task} open={open} onOpenChange={setOpen} />
     </>
+  );
+}
+
+/**
+ * Preview block shown below the meta row of a task card. Picks the most
+ * informative thing we have to show:
+ *   1. failed/cancelled + failureReason → red-tinted snippet
+ *   2. completed + output → success snippet (clipped to ~200 chars)
+ *   3. running with cached log lines → first 1-2 plain-prose log lines
+ *      (JSON tool envelopes are skipped — see `summarizeLog`)
+ */
+function TaskOutcomePreview({ task, fallbackLines }: { task: AgentTask; fallbackLines: string[] }) {
+  if (
+    (task.status === "failed" || task.status === "cancelled") &&
+    task.failureReason &&
+    task.failureReason.trim().length > 0
+  ) {
+    const text = task.failureReason.trim();
+    return (
+      <p className="text-xs text-status-error-strong line-clamp-3 whitespace-pre-wrap break-words mt-0.5">
+        {text.length > 200 ? `${text.slice(0, 200)}…` : text}
+      </p>
+    );
+  }
+  if (task.status === "completed" && task.output && task.output.trim().length > 0) {
+    const text = task.output.trim();
+    return (
+      <p className="text-xs text-muted-foreground line-clamp-3 whitespace-pre-wrap break-words mt-0.5">
+        {text.length > 200 ? `${text.slice(0, 200)}…` : text}
+      </p>
+    );
+  }
+  if (fallbackLines.length === 0) return null;
+  return (
+    <ul className="text-xs text-muted-foreground space-y-0.5 mt-0.5">
+      {fallbackLines.map((line, idx) => (
+        <li key={idx} className="truncate">
+          {line}
+        </li>
+      ))}
+    </ul>
   );
 }
 

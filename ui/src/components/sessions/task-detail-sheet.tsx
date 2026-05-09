@@ -14,10 +14,10 @@ import { Link } from "react-router-dom";
 import { useSessionCosts } from "@/api/hooks/use-costs";
 import { useTaskContext, useTaskSessionLogs } from "@/api/hooks/use-tasks";
 import type { AgentTask } from "@/api/types";
+import { AgentLink } from "@/components/shared/agent-link";
 import { SessionLogViewer } from "@/components/shared/session-log-viewer";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
-import { Separator } from "@/components/ui/separator";
 import {
   Sheet,
   SheetContent,
@@ -59,7 +59,9 @@ export function TaskDetailSheet({ taskId, task, open, onOpenChange }: TaskDetail
         side="right"
         className="w-full sm:max-w-2xl flex flex-col gap-0 p-0 overflow-hidden"
       >
-        <SheetHeader className="border-b border-border pl-4 pr-12 py-3">
+        {/* Header — title + meta row (status, agent link, costs). Whole sheet
+            is locked: only the transcript section scrolls. */}
+        <SheetHeader className="border-b border-border pl-4 pr-12 py-3 shrink-0">
           <div className="flex items-start gap-3 min-w-0">
             <div className="flex flex-col gap-1 min-w-0 flex-1">
               <SheetTitle className="text-sm font-medium truncate min-w-0">
@@ -84,11 +86,40 @@ export function TaskDetailSheet({ taskId, task, open, onOpenChange }: TaskDetail
           </div>
         </SheetHeader>
 
-        <div className="flex-1 min-h-0 overflow-auto">
-          <section className="px-4 py-3 flex flex-col gap-2">
+        {/* Meta row — agent + cost summary above the transcript. */}
+        <div className="border-b border-border px-4 py-2 flex items-center gap-3 text-xs text-muted-foreground shrink-0 flex-wrap">
+          {task?.agentId ? (
+            <span className="flex items-center gap-1.5">
+              <span className="uppercase tracking-wider text-[9px]">Agent</span>
+              <AgentLink agentId={task.agentId} />
+            </span>
+          ) : (
+            <span className="font-mono text-[11px]">Unassigned</span>
+          )}
+          <span aria-hidden="true">·</span>
+          <span className="flex items-center gap-1.5">
+            <span className="uppercase tracking-wider text-[9px]">Cost</span>
+            {costsLoading ? (
+              <Skeleton className="h-3 w-12" />
+            ) : (
+              <span className="font-mono">{usdFormatter.format(totalCost)}</span>
+            )}
+          </span>
+          <span aria-hidden="true">·</span>
+          <span className="flex items-center gap-1.5">
+            <span className="uppercase tracking-wider text-[9px]">Sessions</span>
+            <span className="font-mono">{totalSessions}</span>
+          </span>
+        </div>
+
+        {/* Transcript section — the ONLY scroll surface inside the sheet. */}
+        <section className="flex-1 min-h-0 flex flex-col">
+          <header className="border-b border-border px-4 py-2 shrink-0">
             <h4 className="font-mono font-bold text-[10px] uppercase tracking-[0.08em] text-muted-foreground">
               Transcript
             </h4>
+          </header>
+          <div className="flex-1 min-h-0 overflow-auto px-4 py-3">
             {logsLoading ? (
               <Skeleton className="h-32 w-full" />
             ) : logs && logs.length > 0 ? (
@@ -96,30 +127,8 @@ export function TaskDetailSheet({ taskId, task, open, onOpenChange }: TaskDetail
             ) : (
               <p className="text-xs text-muted-foreground italic">No transcript yet.</p>
             )}
-          </section>
-
-          <Separator />
-
-          <section className="px-4 py-3 flex flex-col gap-2">
-            <h4 className="font-mono font-bold text-[10px] uppercase tracking-[0.08em] text-muted-foreground">
-              Costs
-            </h4>
-            {costsLoading ? (
-              <Skeleton className="h-12 w-full" />
-            ) : (
-              <div className="grid grid-cols-2 gap-2 text-xs">
-                <div className="flex flex-col gap-0.5">
-                  <span className="text-muted-foreground">Total</span>
-                  <span className="font-mono">{usdFormatter.format(totalCost)}</span>
-                </div>
-                <div className="flex flex-col gap-0.5">
-                  <span className="text-muted-foreground">Sessions</span>
-                  <span className="font-mono">{totalSessions}</span>
-                </div>
-              </div>
-            )}
-          </section>
-        </div>
+          </div>
+        </section>
       </SheetContent>
     </Sheet>
   );

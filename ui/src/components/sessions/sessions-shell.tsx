@@ -9,7 +9,7 @@
  * right pane; the new-session button sits next to it.
  */
 
-import { ChevronLeft, MessageSquare, PanelLeftOpen, Plus, Search } from "lucide-react";
+import { ChevronLeft, EyeOff, MessageSquare, PanelLeftOpen, Plus, Search } from "lucide-react";
 import {
   createContext,
   type ReactNode,
@@ -36,30 +36,44 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { cn, formatRelativeTime } from "@/lib/utils";
 
 const COLLAPSE_STORAGE_KEY = "agent-swarm-sessions-sidebar-collapsed";
+const SHOW_SYSTEM_STORAGE_KEY = "agent-swarm-sessions-show-system";
 
-function readCollapsed(): boolean {
-  if (typeof window === "undefined") return false;
+/** Task types we consider "system noise" — hidden by default in the sidebar. */
+const SYSTEM_TASK_TYPES = new Set(["boot-triage"]);
+
+function readBool(key: string, fallback: boolean): boolean {
+  if (typeof window === "undefined") return fallback;
   try {
-    return window.localStorage.getItem(COLLAPSE_STORAGE_KEY) === "1";
+    const v = window.localStorage.getItem(key);
+    if (v === "1") return true;
+    if (v === "0") return false;
+    return fallback;
   } catch {
-    return false;
+    return fallback;
   }
 }
 
-function writeCollapsed(value: boolean) {
+function writeBool(key: string, value: boolean) {
   if (typeof window === "undefined") return;
   try {
-    window.localStorage.setItem(COLLAPSE_STORAGE_KEY, value ? "1" : "0");
+    window.localStorage.setItem(key, value ? "1" : "0");
   } catch {
     /* best-effort */
   }
 }
 
-function filterSessions(sessions: SessionListItem[] | undefined, query: string): SessionListItem[] {
+function filterSessions(
+  sessions: SessionListItem[] | undefined,
+  query: string,
+  showSystem: boolean,
+): SessionListItem[] {
   if (!sessions || sessions.length === 0) return [];
   const q = query.trim().toLowerCase();
-  if (q.length === 0) return sessions;
-  return sessions.filter((s) => s.root.task.toLowerCase().includes(q));
+  return sessions.filter((s) => {
+    if (!showSystem && s.root.taskType && SYSTEM_TASK_TYPES.has(s.root.taskType)) return false;
+    if (q.length > 0 && !s.root.task.toLowerCase().includes(q)) return false;
+    return true;
+  });
 }
 
 interface SessionRowProps {
@@ -99,6 +113,8 @@ interface SessionsListProps {
   activeRootTaskId?: string;
   query: string;
   onQueryChange: (q: string) => void;
+  showSystem: boolean;
+  onShowSystemChange: (value: boolean) => void;
   onCollapse?: () => void;
   onNewSession: () => void;
 }
@@ -109,10 +125,19 @@ function SessionsList({
   activeRootTaskId,
   query,
   onQueryChange,
+  showSystem,
+  onShowSystemChange,
   onCollapse,
   onNewSession,
 }: SessionsListProps) {
-  const filtered = useMemo(() => filterSessions(sessions, query), [sessions, query]);
+  const filtered = useMemo(
+    () => filterSessions(sessions, query, showSystem),
+    [sessions, query, showSystem],
+  );
+  const hiddenCount = useMemo(() => {
+    if (showSystem || !sessions) return 0;
+    return sessions.filter((s) => s.root.taskType && SYSTEM_TASK_TYPES.has(s.root.taskType)).length;
+  }, [sessions, showSystem]);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -138,8 +163,8 @@ function SessionsList({
         </div>
       </header>
 
-      <div className="flex items-center border-b border-border px-3 h-12 shrink-0">
-        <div className="relative w-full">
+      <div className="flex items-center gap-1 border-b border-border px-3 h-12 shrink-0">
+        <div className="relative flex-1 min-w-0">
           <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
           <Input
             value={query}
@@ -149,6 +174,23 @@ function SessionsList({
             aria-label="Search sessions by initial task title"
           />
         </div>
+        <Button
+          size="icon"
+          variant={showSystem ? "secondary" : "ghost"}
+          onClick={() => onShowSystemChange(!showSystem)}
+          className="h-8 w-8 shrink-0"
+          title={
+            showSystem
+              ? "Hide system tasks (boot triage, etc.)"
+              : hiddenCount > 0
+                ? `Show ${hiddenCount} hidden system task${hiddenCount === 1 ? "" : "s"}`
+                : "Show system tasks"
+          }
+          aria-label="Toggle system tasks"
+          aria-pressed={showSystem}
+        >
+          <EyeOff className="h-3.5 w-3.5" />
+        </Button>
       </div>
 
       <div className="flex-1 min-h-0 overflow-y-auto">
@@ -257,12 +299,19 @@ export function SessionsShell({
   children,
 }: SessionsShellProps) {
   const navigate = useNavigate();
-  const [collapsed, setCollapsed] = useState<boolean>(() => readCollapsed());
+  const [collapsed, setCollapsed] = useState<boolean>(() => readBool(COLLAPSE_STORAGE_KEY, false));
+  const [showSystem, setShowSystem] = useState<boolean>(() =>
+    readBool(SHOW_SYSTEM_STORAGE_KEY, false),
+  );
   const [query, setQuery] = useState("");
 
   useEffect(() => {
-    writeCollapsed(collapsed);
+    writeBool(COLLAPSE_STORAGE_KEY, collapsed);
   }, [collapsed]);
+
+  useEffect(() => {
+    writeBool(SHOW_SYSTEM_STORAGE_KEY, showSystem);
+  }, [showSystem]);
 
   // "New session" → navigate to /sessions (the index route renders the
   // new-session view with the standard header + composer; no popup).
@@ -293,6 +342,8 @@ export function SessionsShell({
                 activeRootTaskId={activeRootTaskId}
                 query={query}
                 onQueryChange={setQuery}
+                showSystem={showSystem}
+                onShowSystemChange={setShowSystem}
                 onCollapse={() => setCollapsed(true)}
                 onNewSession={openNew}
               />
