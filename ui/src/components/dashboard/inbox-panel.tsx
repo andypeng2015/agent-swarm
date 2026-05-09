@@ -149,7 +149,12 @@ export function InboxPanel({ className }: { className?: string }) {
   };
 
   return (
-    <div className={cn("grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4", className)}>
+    <div
+      className={cn(
+        "grid h-full min-h-0 grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4",
+        className,
+      )}
+    >
       <BucketColumn
         bucket={blockingBucket}
         onAction={(item, action, ms) => dispatch(item.itemType, item.itemId, action, ms)}
@@ -206,7 +211,7 @@ function BucketColumn<
           {bucket.items.length}
         </Badge>
       </header>
-      <div className="flex flex-col gap-1.5 max-h-[420px] overflow-y-auto pr-0.5">
+      <div className="flex flex-1 min-h-0 flex-col gap-1.5 overflow-y-auto pr-0.5">
         {bucket.isLoading && bucket.items.length === 0 ? (
           <div className="flex flex-col gap-1.5">
             <Skeleton className="h-12 w-full" />

@@ -139,7 +139,7 @@ export function AgentCanvas({ rows, className }: AgentCanvasProps) {
     return (
       <div
         className={cn(
-          "min-h-[400px] h-[500px] rounded-lg border bg-card flex items-center justify-center",
+          "h-[clamp(280px,38vh,460px)] rounded-lg border bg-card flex items-center justify-center",
           className,
         )}
       >
@@ -153,7 +153,7 @@ export function AgentCanvas({ rows, className }: AgentCanvasProps) {
   }
 
   return (
-    <div className={cn("min-h-[400px] h-[500px] rounded-lg border bg-card", className)}>
+    <div className={cn("h-[clamp(280px,38vh,460px)] rounded-lg border bg-card", className)}>
       <ReactFlow
         nodes={nodes}
         edges={edges}
