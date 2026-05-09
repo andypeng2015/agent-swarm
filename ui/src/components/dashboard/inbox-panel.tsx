@@ -195,7 +195,9 @@ function BucketColumn<
     <section
       aria-labelledby={`inbox-bucket-${bucket.id}`}
       className={cn(
-        "flex flex-col gap-2 rounded-lg border bg-card/50 p-3 min-h-0",
+        // Mobile: give each bucket a comfortable minimum so the cards aren't
+        // squeezed when the dashboard is allowed to scroll.
+        "flex flex-col gap-2 rounded-lg border bg-card/50 p-3 min-h-[280px] md:min-h-0",
         bucket.toneClass,
       )}
     >

@@ -69,42 +69,41 @@ export default function SessionDetailPage() {
 
   return (
     <SessionsShell sessions={sessions} isLoading={sessionsLoading} activeRootTaskId={rootTaskId}>
-      {/* Header strip */}
-      <header className="border-b border-border px-4 py-3 flex flex-col gap-2 min-w-0">
-        <div className="flex items-start justify-between gap-3 min-w-0">
-          <div className="flex flex-col gap-1 min-w-0 flex-1">
-            {detailLoading ? (
-              <Skeleton className="h-4 w-64" />
-            ) : detail ? (
-              <h2 className="text-sm font-semibold truncate" title={detail.root.task}>
-                {detail.root.task}
-              </h2>
-            ) : (
-              <p className="text-sm text-muted-foreground">Session not found.</p>
-            )}
-            <div className="flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
-              {detail ? <StatusBadge status={detail.root.status} /> : null}
-              {detail ? (
-                <span>
-                  {detail.chain.length} task{detail.chain.length === 1 ? "" : "s"}
-                </span>
-              ) : null}
-              {requestedByUserName ? (
-                <>
-                  <span aria-hidden="true">·</span>
-                  <span>by {requestedByUserName}</span>
-                </>
-              ) : null}
-              {totalCost > 0 ? (
-                <>
-                  <span aria-hidden="true">·</span>
-                  <span className="font-mono">{usdFormatter.format(totalCost)}</span>
-                </>
-              ) : null}
-            </div>
-          </div>
+      {/* Header strip — split into two rows of h-12 each so the bottom
+          divider aligns pixel-for-pixel with the sidebar's search divider. */}
+      <div className="flex flex-col min-w-0 shrink-0">
+        <div className="flex items-center border-b border-border px-4 h-12 min-w-0">
+          {detailLoading ? (
+            <Skeleton className="h-4 w-64" />
+          ) : detail ? (
+            <h2 className="text-sm font-semibold truncate" title={detail.root.task}>
+              {detail.root.task}
+            </h2>
+          ) : (
+            <p className="text-sm text-muted-foreground">Session not found.</p>
+          )}
         </div>
-      </header>
+        <div className="flex items-center gap-2 border-b border-border px-4 h-12 text-xs text-muted-foreground min-w-0 overflow-x-auto">
+          {detail ? <StatusBadge status={detail.root.status} /> : null}
+          {detail ? (
+            <span>
+              {detail.chain.length} task{detail.chain.length === 1 ? "" : "s"}
+            </span>
+          ) : null}
+          {requestedByUserName ? (
+            <>
+              <span aria-hidden="true">·</span>
+              <span>by {requestedByUserName}</span>
+            </>
+          ) : null}
+          {totalCost > 0 ? (
+            <>
+              <span aria-hidden="true">·</span>
+              <span className="font-mono">{usdFormatter.format(totalCost)}</span>
+            </>
+          ) : null}
+        </div>
+      </div>
 
       {/* Timeline (scrollable) */}
       <div className="flex-1 min-h-0 overflow-auto px-4 py-4">

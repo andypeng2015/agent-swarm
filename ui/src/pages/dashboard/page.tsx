@@ -46,7 +46,7 @@ function NewDashboard() {
   }, [view]);
 
   return (
-    <div className="flex flex-col flex-1 min-h-0 gap-3 md:gap-4 overflow-hidden">
+    <div className="flex flex-col flex-1 min-h-0 gap-3 md:gap-4 overflow-y-auto md:overflow-hidden">
       {/* Canvas / Table toggle */}
       <div className="flex items-center justify-between gap-2 shrink-0">
         <h2 className="text-sm font-semibold">Agents · last 24h</h2>

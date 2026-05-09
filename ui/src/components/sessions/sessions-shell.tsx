@@ -9,15 +9,16 @@
  * right pane; the new-session button sits next to it.
  */
 
+import { ChevronLeft, MessageSquare, PanelLeftOpen, Plus, Search } from "lucide-react";
 import {
-  ChevronLeft,
-  ChevronRight,
-  MessageSquare,
-  PanelLeftOpen,
-  Plus,
-  Search,
-} from "lucide-react";
-import { createContext, type ReactNode, useContext, useEffect, useMemo, useState } from "react";
+  createContext,
+  type ReactNode,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import { Link, useNavigate } from "react-router-dom";
 import type { SessionListItem } from "@/api/types";
 import { EmptyState } from "@/components/shared/empty-state";
@@ -33,7 +34,6 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn, formatRelativeTime } from "@/lib/utils";
-import { NewSessionDialog } from "./new-session-dialog";
 
 const COLLAPSE_STORAGE_KEY = "agent-swarm-sessions-sidebar-collapsed";
 
@@ -116,7 +116,7 @@ function SessionsList({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <header className="flex items-center justify-between gap-2 border-b border-border px-3 py-2.5 shrink-0">
+      <header className="flex items-center justify-between gap-2 border-b border-border px-3 h-12 shrink-0">
         <h2 className="text-sm font-semibold">Sessions</h2>
         <div className="flex items-center gap-1">
           <Button size="sm" variant="ghost" onClick={onNewSession} className="h-7 px-2 text-xs">
@@ -138,8 +138,8 @@ function SessionsList({
         </div>
       </header>
 
-      <div className="border-b border-border px-3 py-2 shrink-0">
-        <div className="relative">
+      <div className="flex items-center border-b border-border px-3 h-12 shrink-0">
+        <div className="relative w-full">
           <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
           <Input
             value={query}
@@ -256,16 +256,18 @@ export function SessionsShell({
   activeRootTaskId,
   children,
 }: SessionsShellProps) {
+  const navigate = useNavigate();
   const [collapsed, setCollapsed] = useState<boolean>(() => readCollapsed());
   const [query, setQuery] = useState("");
-  const [newOpen, setNewOpen] = useState(false);
 
   useEffect(() => {
     writeCollapsed(collapsed);
   }, [collapsed]);
 
-  const api = useMemo<SessionsShellApi>(() => ({ openNew: () => setNewOpen(true) }), []);
-  const openNew = api.openNew;
+  // "New session" → navigate to /sessions (the index route renders the
+  // new-session view with the standard header + composer; no popup).
+  const openNew = useCallback(() => navigate("/sessions"), [navigate]);
+  const api = useMemo<SessionsShellApi>(() => ({ openNew }), [openNew]);
 
   return (
     <SessionsShellContext.Provider value={api}>
@@ -318,28 +320,6 @@ export function SessionsShell({
           </section>
         </div>
       </div>
-
-      <NewSessionDialog open={newOpen} onOpenChange={setNewOpen} />
     </SessionsShellContext.Provider>
-  );
-}
-
-/** Centered "pick a session" placeholder. Reads onNewSession from shell context. */
-export function SessionsEmptyPane() {
-  const { openNew } = useSessionsShell();
-  return (
-    <div className="flex-1 min-h-0 flex items-center justify-center p-6">
-      <EmptyState
-        icon={ChevronRight}
-        title="Pick a session"
-        description="Select a session from the sidebar — or start a fresh one."
-        action={
-          <Button size="sm" onClick={openNew}>
-            <Plus className="h-3.5 w-3.5" />
-            New session
-          </Button>
-        }
-      />
-    </div>
   );
 }

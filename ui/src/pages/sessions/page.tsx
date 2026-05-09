@@ -1,15 +1,17 @@
 /**
  * Sessions surface (Phase 4 ≥1.76.0) — `/sessions` route.
  *
- * Sidebar list + centered empty pane on the right ("pick a session"). The
- * actual chain detail lives at `/sessions/:rootTaskId` (separate route);
- * picking a sidebar entry navigates there.
+ * Shows the shared <SessionsShell> with a "New session" view in the right
+ * pane: header strip + empty timeline + composer that creates a root task
+ * and navigates to `/sessions/{newId}`. Same layout as the session detail
+ * page so the chrome stays consistent.
  */
 
 import { useFeatureGate } from "@/api/hooks/use-feature-gate";
 import { useSessions } from "@/api/hooks/use-sessions";
 import { UpgradeRequired } from "@/components/feature-gate/upgrade-required";
-import { SessionsEmptyPane, SessionsShell } from "@/components/sessions/sessions-shell";
+import { NewSessionView } from "@/components/sessions/new-session-view";
+import { SessionsShell } from "@/components/sessions/sessions-shell";
 
 export default function SessionsPage() {
   const gate = useFeatureGate("1.76.0");
@@ -27,7 +29,7 @@ export default function SessionsPage() {
 
   return (
     <SessionsShell sessions={sessions} isLoading={isLoading}>
-      <SessionsEmptyPane />
+      <NewSessionView />
     </SessionsShell>
   );
 }

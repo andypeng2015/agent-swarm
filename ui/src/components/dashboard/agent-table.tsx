@@ -92,7 +92,7 @@ export function AgentTable({ rows, className }: AgentTableProps) {
         minWidth: 110,
         type: "numericColumn",
         sort: "desc",
-        cellClass: "text-right",
+        cellClass: "ag-right-aligned-cell",
         headerClass: "ag-right-aligned-header",
       },
       {
@@ -102,7 +102,7 @@ export function AgentTable({ rows, className }: AgentTableProps) {
         minWidth: 110,
         type: "numericColumn",
         valueFormatter: (params) => formatCost(Number(params.value ?? 0)),
-        cellClass: "text-right font-mono",
+        cellClass: "ag-right-aligned-cell font-mono",
         headerClass: "ag-right-aligned-header",
       },
     ],
