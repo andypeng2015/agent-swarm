@@ -3,8 +3,8 @@ date: 2026-05-08T00:00:00Z
 topic: "UI Chat/Session Experience — v1 (Sessions surface + Dashboard revamp)"
 author: taras
 status: in-progress
-last_updated: 2026-05-09T17:02:00Z
-last_updated_by: claude (phase 2 sub-agent)
+last_updated: 2026-05-09T18:30:00Z
+last_updated_by: claude (phase 3 sub-agent)
 related:
   - thoughts/taras/brainstorms/2026-05-08-ui-chat-session-experience.md
   - thoughts/taras/research/2026-05-08-ui-chat-session-experience-research.md
@@ -369,12 +369,14 @@ Exposes `useCurrentUser(): { state, userId: string | null, user: User | null, se
 ### Success Criteria:
 
 #### Automated Verification:
-- [ ] UI type-check passes (CI parity): `cd ui && pnpm exec tsc -b`
-- [ ] UI lint passes: `cd ui && pnpm lint`
-- [ ] Design tokens unchanged: `cd ui && pnpm check:tokens`
-- [ ] Backend type-check still green (no API contract drift): `bun run tsc:check`
+- [x] UI type-check passes (CI parity): `cd ui && pnpm exec tsc -b`
+- [x] UI lint passes: `cd ui && pnpm lint`
+- [x] Design tokens unchanged: `cd ui && pnpm check:tokens`
+- [x] Backend type-check still green (no API contract drift): `bun run tsc:check`
 
 #### Automated QA:
+> Note (phase-3 sub-agent, 2026-05-09): qa-use scenarios A / A2 / A3 / B / C below are automated-by-design but **execution is deferred to Phase 7**, where the orchestrator runs the consolidated qa-use sweep against the full stack. Phase 3 implements the code paths these scenarios cover; the boxes stay unchecked until Phase 7 runs them end-to-end.
+
 - [ ] qa-use scenario A: with `localStorage.clear()`, load `http://localhost:5274/`, identity modal appears, list shows seeded users, creating a new user closes the modal, reload preserves selection.
 - [ ] qa-use scenario A2 (per-deployment namespacing): with a chosen identity against `apiUrl=http://localhost:3013`, point the UI at a second deployment via `?apiUrl=http://localhost:3014`; modal **must** re-prompt (different `apiUrl` → different localStorage key per `useDismissibleCard`'s `swarm:v1:${apiUrl}:current-user` scheme). Pick a different user, then return to the first URL; original identity is still intact.
 - [ ] qa-use scenario A3 (auto-show on stale userId): pre-seed `localStorage.setItem('swarm:v1:${apiUrl}:current-user', 'non-existent-user-id')`, reload — `<IdentityModal />` re-pops because `useUsers()` returns no match (defensive: `state` recomputes to `needs-pick`).

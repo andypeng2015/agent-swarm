@@ -35,6 +35,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { StatPanel } from "@/components/ui/stat-panel";
+import { useCurrentUser } from "@/contexts/current-user-context";
 import { useDismissibleCard } from "@/hooks/use-dismissible-card";
 import {
   detectedFromStatus,
@@ -54,6 +55,12 @@ const AGENT_FS_URL = "https://agent-fs.dev";
  */
 function WelcomeCard({ status }: { status: StatusResponse }) {
   const { dismissed, dismiss } = useDismissibleCard("home-welcome");
+  // Phase 3 (Important-I4): defer the welcome card until the identity context
+  // resolves. Otherwise a first-time visitor sees the identity modal stacked
+  // over a fully-rendered page; keeping the card hidden until `state === "ready"`
+  // gives them a clean two-step boot (modal → home with welcome).
+  const { state: identityState } = useCurrentUser();
+  if (identityState !== "ready") return null;
   if (dismissed) return null;
   const orgName = status.identity.name || "Swarm";
   return (

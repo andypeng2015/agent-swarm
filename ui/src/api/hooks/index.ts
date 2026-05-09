@@ -34,6 +34,8 @@ export {
   useTaskUsage,
 } from "./use-costs";
 export { useDbQuery, useTableColumns, useTableList } from "./use-db-query";
+export type { FeatureGateResult } from "./use-feature-gate";
+export { useFeatureGate } from "./use-feature-gate";
 export {
   useDisconnectMcpOAuth,
   useMcpOAuthMetadata,
@@ -91,7 +93,7 @@ export {
   useUninstallSkill,
   useUpdateSkill,
 } from "./use-skills";
-export { useHealth, useLogs, useStats } from "./use-stats";
+export { useApiVersion, useHealth, useLogs, useStats } from "./use-stats";
 export { useStatus, useTestConnection } from "./use-status";
 export type { TaskFilters } from "./use-tasks";
 export {
@@ -104,6 +106,7 @@ export {
   useTaskSessionLogs,
   useTasks,
 } from "./use-tasks";
+export { useCreateUser, useUsers } from "./use-users";
 export {
   useAllWorkflowRuns,
   useDeleteWorkflow,

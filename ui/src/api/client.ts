@@ -13,6 +13,7 @@ import type {
   BudgetsResponse,
   ChannelMessage,
   ChannelsResponse,
+  CreateUserInput,
   DashboardCostResponse,
   EventDefinition,
   LogsResponse,
@@ -46,6 +47,8 @@ import type {
   TaskWithLogs,
   UpsertPromptTemplateInput,
   UsageSummaryResponse,
+  User,
+  UsersResponse,
   Workflow,
   WorkflowRun,
   WorkflowRunStep,
@@ -219,6 +222,14 @@ class ApiClient {
     tags?: string[];
     priority?: number;
     dependsOn?: string[];
+    /** Phase 3 (≥1.76.0): parent task for grouped/parallel sub-tasks. */
+    parentTaskId?: string;
+    /** Phase 3 (≥1.76.0): override the wire `source` ("api"|"mcp"|"slack"). */
+    source?: string;
+    /** Phase 3 (≥1.76.0): identity of the requesting user. */
+    requestedByUserId?: string;
+    /** Phase 3 (≥1.76.0): cross-ingress conversation/thread context key. */
+    contextKey?: string;
   }): Promise<TaskWithLogs> {
     const url = `${this.getBaseUrl()}/api/tasks`;
     const res = await fetch(url, {
@@ -1502,6 +1513,31 @@ class ApiClient {
       throw new Error(err.error || `Failed to delete memory: ${res.status}`);
     }
     return res.json();
+  }
+
+  // ─── Users (Phase 2 ≥1.76.0) ─────────────────────────────────────────────
+
+  async listUsers(): Promise<User[]> {
+    const url = `${this.getBaseUrl()}/api/users`;
+    const res = await fetch(url, { headers: this.getHeaders() });
+    if (!res.ok) throw new Error(`Failed to list users: ${res.status}`);
+    const data = (await res.json()) as UsersResponse;
+    return data.users;
+  }
+
+  async createUser(data: CreateUserInput): Promise<User> {
+    const url = `${this.getBaseUrl()}/api/users`;
+    const res = await fetch(url, {
+      method: "POST",
+      headers: this.getHeaders(),
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: "Failed to create user" }));
+      throw new Error(err.error || `Failed to create user: ${res.status}`);
+    }
+    const body = (await res.json()) as { user: User };
+    return body.user;
   }
 }
 

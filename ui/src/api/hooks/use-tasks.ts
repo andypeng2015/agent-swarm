@@ -55,6 +55,14 @@ export function useCreateTask() {
       tags?: string[];
       priority?: number;
       dependsOn?: string[];
+      /** Phase 3 (≥1.76.0): parent task for grouped/parallel sub-tasks. */
+      parentTaskId?: string;
+      /** Phase 3 (≥1.76.0): override the wire `source` ("api"|"mcp"|"slack"). */
+      source?: string;
+      /** Phase 3 (≥1.76.0): identity of the requesting user. */
+      requestedByUserId?: string;
+      /** Phase 3 (≥1.76.0): cross-ingress conversation/thread context key. */
+      contextKey?: string;
     }) => api.createTask(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["tasks"] });

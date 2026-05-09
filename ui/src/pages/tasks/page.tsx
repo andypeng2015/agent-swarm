@@ -31,6 +31,7 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import { useCurrentUser } from "@/contexts/current-user-context";
 import { formatElapsed, formatSmartTime } from "@/lib/utils";
 
 interface TaskFormData {
@@ -313,6 +314,7 @@ export default function TasksPage() {
 
   const { data: tasksData, isLoading } = useTasks(filters);
   const createTask = useCreateTask();
+  const { userId: currentUserId } = useCurrentUser();
   const [dialogOpen, setDialogOpen] = useState(false);
 
   // Auto-open the create-task dialog when navigated with `?new=true`
@@ -344,6 +346,9 @@ export default function TasksPage() {
       ...(tags.length > 0 && { tags }),
       ...(data.priority !== 50 && { priority: data.priority }),
       ...(data.dependsOn.length > 0 && { dependsOn: data.dependsOn }),
+      // Phase 3: attribute the task to the current identity. `source` is left
+      // unset so the server's "api" default applies.
+      ...(currentUserId && { requestedByUserId: currentUserId }),
     });
   }
 

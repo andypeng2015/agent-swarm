@@ -110,6 +110,10 @@ export interface AgentTask {
   swarmVersion?: string;
   provider?: ProviderName;
   providerMeta?: DevinProviderMeta | Record<string, never>;
+  /** Phase 1 (≥1.76.0): canonical user who requested this task. */
+  requestedByUserId?: string;
+  /** Phase 1 (≥1.76.0): cross-ingress context key for the conversation/thread. */
+  contextKey?: string;
 }
 
 export type ProviderName = "claude" | "codex" | "pi" | "devin" | "claude-managed" | "opencode";
@@ -121,6 +125,45 @@ export type DevinProviderMeta = {
 
 export interface AgentWithTasks extends Agent {
   tasks: AgentTask[];
+}
+
+/**
+ * Identity (Phase 2 ≥1.76.0). Mirrors `UserSchema` in `src/types.ts` —
+ * canonical row from the new `users` table.
+ */
+export interface User {
+  id: string;
+  name: string;
+  email?: string;
+  role?: string;
+  notes?: string;
+  slackUserId?: string;
+  linearUserId?: string;
+  githubUsername?: string;
+  gitlabUsername?: string;
+  emailAliases: string[];
+  preferredChannel: string;
+  timezone?: string;
+  createdAt: string;
+  lastUpdatedAt: string;
+}
+
+export interface UsersResponse {
+  users: User[];
+}
+
+export interface CreateUserInput {
+  name: string;
+  email?: string;
+  role?: string;
+  notes?: string;
+  slackUserId?: string;
+  linearUserId?: string;
+  githubUsername?: string;
+  gitlabUsername?: string;
+  emailAliases?: string[];
+  preferredChannel?: string;
+  timezone?: string;
 }
 
 export type AgentLogEventType =
