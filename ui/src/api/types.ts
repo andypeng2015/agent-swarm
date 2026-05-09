@@ -11,7 +11,19 @@ export type AgentTaskStatus =
   | "completed"
   | "failed"
   | "cancelled";
-export type AgentTaskSource = "mcp" | "slack" | "api";
+export type AgentTaskSource =
+  | "mcp"
+  | "slack"
+  | "api"
+  | "ui"
+  | "github"
+  | "gitlab"
+  | "agentmail"
+  | "system"
+  | "schedule"
+  | "workflow"
+  | "linear"
+  | "jira";
 export type ChannelType = "public" | "dm";
 
 export interface Agent {

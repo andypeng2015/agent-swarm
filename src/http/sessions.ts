@@ -15,6 +15,10 @@ const listSessions = route({
   query: z.object({
     limit: z.coerce.number().int().optional(),
     offset: z.coerce.number().int().optional(),
+    /** Comma-separated source filter (e.g. `ui,slack`). Omit to include all. */
+    source: z.string().optional(),
+    /** Case-insensitive substring match against the root task's text. */
+    q: z.string().optional(),
   }),
   responses: {
     200: { description: "Recent sessions ordered by chain-wide last activity" },
@@ -49,9 +53,17 @@ export async function handleSessions(
   if (listSessions.match(req.method, pathSegments)) {
     const parsed = await listSessions.parse(req, res, pathSegments, queryParams);
     if (!parsed) return true;
+    const sources = parsed.query.source
+      ? parsed.query.source
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean)
+      : undefined;
     const sessions = listRecentSessions({
       limit: parsed.query.limit,
       offset: parsed.query.offset,
+      source: sources,
+      q: parsed.query.q,
     });
     json(res, { sessions });
     return true;

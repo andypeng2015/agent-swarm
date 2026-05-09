@@ -6,7 +6,6 @@ import {
   CircleCheck,
   CircleX,
   ClipboardPlus,
-  Crown,
   ListTodo,
   Loader2,
   MessageSquare,
@@ -24,6 +23,7 @@ import { useDashboardCosts } from "@/api/hooks/use-costs";
 import { useHealth, useLogs, useStats } from "@/api/hooks/use-stats";
 import { useTasks } from "@/api/hooks/use-tasks";
 import type { AgentLog, AgentWithTasks } from "@/api/types";
+import { AgentAvatar } from "@/components/shared/agent-avatar";
 import { StatsBar } from "@/components/shared/stats-bar";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { statusTextClass } from "@/lib/status-tone";
@@ -37,23 +37,15 @@ function AgentRow({ agent, currentTaskText }: { agent: AgentWithTasks; currentTa
       to={`/agents/${agent.id}`}
       className="flex items-center gap-3 px-3 py-2.5 hover:bg-muted/50 transition-colors border-b border-border/30 last:border-0"
     >
-      <div className="shrink-0">
-        {agent.status === "busy" ? (
-          <Loader2 className="h-3 w-3 animate-spin text-status-active" />
-        ) : (
-          <div
-            className={cn(
-              "h-2.5 w-2.5 rounded-full",
-              agent.status === "idle" && "bg-status-success",
-              agent.status === "offline" && "bg-status-neutral",
-            )}
-          />
-        )}
-      </div>
+      <AgentAvatar
+        agentId={agent.id}
+        agentName={agent.name}
+        size="sm"
+        className={cn("shrink-0", agent.status === "busy" && "animate-pulse")}
+      />
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
           <span className="text-sm font-semibold truncate">{agent.name}</span>
-          {agent.isLead && <Crown className="h-3 w-3 text-primary shrink-0" />}
         </div>
         {currentTaskText && (
           <p className="text-[11px] text-muted-foreground/80 truncate">{currentTaskText}</p>

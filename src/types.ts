@@ -57,6 +57,7 @@ export const AgentTaskSourceSchema = z.enum([
   "mcp",
   "slack",
   "api",
+  "ui",
   "github",
   "gitlab",
   "agentmail",

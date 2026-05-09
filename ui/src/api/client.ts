@@ -1558,10 +1558,19 @@ class ApiClient {
 
   // ─── Sessions (Phase 4 ≥1.76.0) ───────────────────────────────────────────
 
-  async listSessions(opts?: { limit?: number; offset?: number }): Promise<SessionListItem[]> {
+  async listSessions(opts?: {
+    limit?: number;
+    offset?: number;
+    /** Filter root-task source. Empty / undefined → all sources. */
+    source?: string[];
+    /** Case-insensitive substring match against the root task's text. */
+    q?: string;
+  }): Promise<SessionListItem[]> {
     const params = new URLSearchParams();
     if (opts?.limit != null) params.set("limit", String(opts.limit));
     if (opts?.offset != null) params.set("offset", String(opts.offset));
+    if (opts?.source && opts.source.length > 0) params.set("source", opts.source.join(","));
+    if (opts?.q && opts.q.length > 0) params.set("q", opts.q);
     const qs = params.toString();
     const url = `${this.getBaseUrl()}/api/sessions${qs ? `?${qs}` : ""}`;
     const res = await fetch(url, { headers: this.getHeaders() });

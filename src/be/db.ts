@@ -28,7 +28,6 @@ import type {
   ContextSnapshotEventType,
   ContextVersion,
   CooldownConfig,
-  DevinProviderMeta,
   InboxItemState,
   InboxItemStatus,
   InboxItemType,
@@ -8829,15 +8828,36 @@ export interface SessionListItem {
  * the candidate task, computed as a correlated subquery so the outer ORDER
  * BY can sort against it.
  */
-export function listRecentSessions(opts?: { limit?: number; offset?: number }): SessionListItem[] {
+export function listRecentSessions(opts?: {
+  limit?: number;
+  offset?: number;
+  /** Filter to root tasks whose `source` is in this list. Empty/undefined → no source filter. */
+  source?: string[];
+  /** Case-insensitive substring match against `r.task`. */
+  q?: string;
+}): SessionListItem[] {
   const limit = opts?.limit ?? 25;
   const offset = opts?.offset ?? 0;
+  const sources = opts?.source?.filter((s) => s.length > 0) ?? [];
+  const q = opts?.q?.trim();
 
-  // Pull root tasks ordered by chain-wide last activity.
+  const conditions: string[] = ["r.parentTaskId IS NULL"];
+  const params: (string | number)[] = [];
+
+  if (sources.length > 0) {
+    conditions.push(`r.source IN (${sources.map(() => "?").join(", ")})`);
+    params.push(...sources);
+  }
+  if (q && q.length > 0) {
+    conditions.push("lower(r.task) LIKE ?");
+    params.push(`%${q.toLowerCase()}%`);
+  }
+  params.push(limit, offset);
+
   const rootRows = getDb()
     .prepare<
       AgentTaskRow & { __chainCount: number; __lastActivityAt: string; __latestStatus: string },
-      [number, number]
+      typeof params
     >(
       `SELECT
          r.*,
@@ -8874,11 +8894,11 @@ export function listRecentSessions(opts?: { limit?: number; offset?: number }): 
             LIMIT 1
          ) AS __latestStatus
        FROM agent_tasks r
-       WHERE r.parentTaskId IS NULL
+       WHERE ${conditions.join(" AND ")}
        ORDER BY __lastActivityAt DESC
        LIMIT ? OFFSET ?`,
     )
-    .all(limit, offset);
+    .all(...params);
 
   return rootRows.map((row) => {
     const { __chainCount, __lastActivityAt, __latestStatus, ...taskRow } = row;

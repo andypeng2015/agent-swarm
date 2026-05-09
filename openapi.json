@@ -5903,6 +5903,22 @@
             "required": false,
             "name": "offset",
             "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "source",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "q",
+            "in": "query"
           }
         ],
         "responses": {
@@ -7744,6 +7760,7 @@
                       "mcp",
                       "slack",
                       "api",
+                      "ui",
                       "github",
                       "gitlab",
                       "agentmail",

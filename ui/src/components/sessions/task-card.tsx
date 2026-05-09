@@ -1,31 +1,28 @@
 /**
- * Sessions surface (Phase 4 ≥1.76.0) — task card rendered inside the timeline.
+ * Sessions surface — single agent turn rendered inside the session timeline.
  *
- * Composed from the shadcn `<Card>` primitive (per ui/CLAUDE.md compose-only
- * rule). Click opens a `<TaskDetailSheet>` with the existing transcript + log
- * components — no new transcript code is introduced.
+ * No outer card chrome. Each turn is a flex row composed of:
+ *   - An <AgentAvatar> that visually sits on the timeline spine (rendered by
+ *     <SessionTimeline>) — it shares the spine's left coordinate via z-index.
+ *   - A content column with a single header line (agent name · time · status
+ *     when not completed · hover actions) and the agent's output rendered as
+ *     Streamdown markdown directly (no nested border).
  *
- * Body (collapsed-by-default):
- *   - status pill via <StatusBadge>
- *   - agent name via <AgentLink> (or "Unassigned" when agentId is null)
- *   - relative started-at
- *   - top 1-2 cached log entries from the QueryClient cache
- *     (`["task", id, "session-logs"]` — populated as soon as TaskDetailSheet
- *      opens. Pre-open we have nothing to show, which is fine — the card
- *      stays compact.)
+ * The tinted "outcome block" only survives for `failed` / `cancelled` turns —
+ * those genuinely benefit from a colored frame; success doesn't.
  */
 
 import { useQueryClient } from "@tanstack/react-query";
-import { Check, ChevronDown, ChevronRight, Copy, CornerDownRight, Maximize2 } from "lucide-react";
+import { Check, ChevronDown, ChevronRight, Copy, GitBranch, Maximize2 } from "lucide-react";
 import { useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { Streamdown } from "streamdown";
 import "streamdown/styles.css";
+import { useAgent } from "@/api/hooks/use-agents";
 import type { AgentTask, SessionLog } from "@/api/types";
-import { AgentLink } from "@/components/shared/agent-link";
+import { AgentAvatar } from "@/components/shared/agent-avatar";
 import { StatusBadge } from "@/components/shared/status-badge";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { useCopyToClipboard } from "@/hooks/use-copy-to-clipboard";
 import { cn, formatRelativeTime, normalizeNewlines } from "@/lib/utils";
 import { TaskDetailSheet } from "./task-detail-sheet";
@@ -33,39 +30,52 @@ import { TaskDetailSheet } from "./task-detail-sheet";
 export interface TaskCardProps {
   task: AgentTask;
   /**
-   * `true` when this card is rendered as a direct child of <ParallelGroup>.
-   * Lets us drop the outer card chrome to ride inside the group's border.
+   * Suppress rendering of `task.task` in the body. Set when the timeline has
+   * already rendered the prompt as a user-side bubble above this card.
    */
+  hideTaskText?: boolean;
+  /** `true` when rendered nested inside a <ParallelGroup>. */
   insideParallelGroup?: boolean;
-  /** `true` when this is the root (session-starting) task. Adds a ROOT pill. */
-  isRoot?: boolean;
+  /** Parent task's agentId — used to render a "via {ParentAgent}" caption
+   *  when work was delegated across agents. Set by the timeline. */
+  parentAgentId?: string | null;
   className?: string;
 }
 
-/**
- * Best-effort human-readable preview of a session log row. Skips raw JSON
- * blobs (tool_use / tool_result envelopes etc.) so card body lines stay
- * readable rather than dumping `{"type":"user","message":...}` strings.
- *
- * Returns `null` when no preview is appropriate.
- */
 function summarizeLog(log: SessionLog): string | null {
   const firstLine = log.content.split("\n").find((l) => l.trim().length > 0) ?? "";
   const trimmed = firstLine.trim();
   if (trimmed.length === 0) return null;
-  // Skip JSON envelopes — only render plain prose lines on the card.
   if (trimmed.startsWith("{") || trimmed.startsWith("[")) return null;
   if (trimmed.includes("tool_use_id") || trimmed.includes("tool_result")) return null;
-  return trimmed.slice(0, 120);
+  return trimmed.slice(0, 160);
 }
 
-export function TaskCard({ task, insideParallelGroup, isRoot, className }: TaskCardProps) {
+const SHOW_STATUS_PILL = new Set<string>([
+  "in_progress",
+  "pending",
+  "failed",
+  "cancelled",
+  "paused",
+  "reviewing",
+  "offered",
+  "backlog",
+  "unassigned",
+]);
+
+export function TaskCard({
+  task,
+  hideTaskText,
+  insideParallelGroup,
+  parentAgentId,
+  className,
+}: TaskCardProps) {
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
+  const { data: agent } = useAgent(task.agentId ?? "");
+  const showDelegation = !!parentAgentId && !!task.agentId && parentAgentId !== task.agentId;
+  const { data: parentAgent } = useAgent(showDelegation ? (parentAgentId ?? "") : "");
 
-  // Read the cached session logs (populated once the user has opened the
-  // sheet at least once — or once any other surface fetched them). Pre-cache
-  // we render the title only.
   const cachedLogs = queryClient.getQueryData<SessionLog[]>(["task", task.id, "session-logs"]);
   const summaryLines = useMemo(() => {
     if (!cachedLogs || cachedLogs.length === 0) return [] as string[];
@@ -76,135 +86,105 @@ export function TaskCard({ task, insideParallelGroup, isRoot, className }: TaskC
       .slice(-2);
   }, [cachedLogs]);
 
+  const showPill = SHOW_STATUS_PILL.has(task.status);
+  const isRunning = task.status === "in_progress";
+  const agentDisplay =
+    agent?.name ?? (task.agentId ? `${task.agentId.slice(0, 8)}…` : "Unassigned");
+
   return (
     <>
-      <Card
+      <article
         data-slot="session-task-card"
         className={cn(
-          "transition-colors py-3 gap-2",
-          isRoot && "border-l-2 border-l-primary",
-          insideParallelGroup && "border-0 shadow-none rounded-none bg-transparent py-2",
+          "group relative flex gap-3 min-w-0",
+          insideParallelGroup ? "pl-4 pb-5" : "pb-7",
           className,
         )}
       >
-        <CardContent
-          className={cn("px-4 flex flex-col gap-1.5", insideParallelGroup && "pl-7 relative")}
-        >
-          {insideParallelGroup ? (
-            <CornerDownRight
-              aria-hidden="true"
-              className="absolute left-2 top-2 h-3 w-3 text-muted-foreground/60"
-            />
-          ) : null}
-          <div className="flex items-start justify-between gap-3">
-            <div className="flex items-center gap-1.5 min-w-0 flex-1">
-              {isRoot ? (
-                <Badge variant="outline" size="tag" className="shrink-0">
-                  Session start
-                </Badge>
-              ) : null}
-              <p className="text-sm font-medium truncate min-w-0">{task.task}</p>
-            </div>
-            <div className="flex items-center gap-1 shrink-0">
-              <StatusBadge status={task.status} />
+        {/* Per-row spine fragment — only on top-level rows (parallel groups
+            draw their own dashed sub-spine). Each row's spine spans top to
+            bottom, so adjacent rows form a continuous line via touching
+            paddings. The line is hidden behind the avatar by `ring-4
+            ring-background` on the avatar. */}
+        {insideParallelGroup ? null : (
+          <span
+            aria-hidden="true"
+            className="pointer-events-none absolute top-0 bottom-0 left-3.5 w-px bg-border/70"
+          />
+        )}
+        <AgentAvatar
+          agentId={task.agentId}
+          agentName={agent?.name}
+          size={insideParallelGroup ? "sm" : "md"}
+          className={cn(
+            "relative z-10 mt-0.5 shrink-0",
+            insideParallelGroup ? "ring-2 ring-background" : "ring-4 ring-background",
+            isRunning && "ring-primary/40 animate-pulse",
+          )}
+        />
+        <div className="flex-1 min-w-0 flex flex-col gap-1.5 pb-1">
+          <header className="flex items-center gap-2 min-w-0 text-xs">
+            {task.agentId ? (
+              <Link
+                to={`/agents/${task.agentId}`}
+                className="font-medium text-foreground truncate hover:text-primary hover:underline underline-offset-2"
+                title={`Open ${agentDisplay}`}
+              >
+                {agentDisplay}
+              </Link>
+            ) : (
+              <span className="font-medium text-muted-foreground italic truncate">Unassigned</span>
+            )}
+            <span aria-hidden="true" className="text-muted-foreground">
+              ·
+            </span>
+            <span className="text-muted-foreground whitespace-nowrap">
+              {formatRelativeTime(task.createdAt)}
+            </span>
+            {showPill ? <StatusBadge status={task.status} /> : null}
+            <div className="ml-auto flex items-center gap-0.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
               <Button
                 size="icon"
                 variant="ghost"
                 onClick={() => setOpen(true)}
-                className="h-7 w-7"
+                className="h-6 w-6"
                 title="Open task details"
                 aria-label="Open task details"
               >
-                <Maximize2 className="h-3.5 w-3.5" />
+                <Maximize2 className="h-3 w-3" />
               </Button>
             </div>
-          </div>
+          </header>
 
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            {task.agentId ? (
-              <AgentLink agentId={task.agentId} />
-            ) : (
-              <span className="font-mono text-xs">Unassigned</span>
-            )}
-            <span aria-hidden="true">·</span>
-            <span>{formatRelativeTime(task.createdAt)}</span>
-          </div>
+          {showDelegation ? (
+            <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground -mt-0.5">
+              ↳ via {parentAgent?.name ?? `${(parentAgentId ?? "").slice(0, 8)}…`}
+            </p>
+          ) : null}
 
-          <TaskOutcomePreview task={task} fallbackLines={summaryLines} />
-        </CardContent>
-      </Card>
+          {hideTaskText ? null : (
+            <blockquote className="border-l-2 border-border pl-3 py-0.5 text-xs text-muted-foreground italic min-w-0 break-words whitespace-pre-wrap">
+              {task.task}
+            </blockquote>
+          )}
+
+          <TaskOutcome task={task} fallbackLines={summaryLines} />
+        </div>
+      </article>
 
       <TaskDetailSheet taskId={task.id} task={task} open={open} onOpenChange={setOpen} />
     </>
   );
 }
 
-/**
- * Preview block shown below the meta row of a task card. Picks the most
- * informative thing we have to show:
- *   1. failed/cancelled + failureReason → red-tinted snippet
- *   2. completed + output → success snippet (clipped to ~200 chars)
- *   3. running with cached log lines → first 1-2 plain-prose log lines
- *      (JSON tool envelopes are skipped — see `summarizeLog`)
- */
-function OutcomeBlock({
-  label,
-  text,
-  tone,
-}: {
-  label: string;
-  text: string;
-  tone: "error" | "neutral";
-}) {
-  const { copied, copy } = useCopyToClipboard();
-  const trimmed = text.trim();
-  return (
-    <div
-      className={cn(
-        "rounded-md border px-3 py-2 mt-1 min-w-0 relative group",
-        tone === "error" ? "border-status-error/30 bg-status-error/5" : "border-border bg-muted/30",
-      )}
-    >
-      <div className="flex items-center justify-between gap-2 mb-1">
-        <p
-          className={cn(
-            "text-[10px] uppercase tracking-wider font-mono",
-            tone === "error" ? "text-status-error-strong" : "text-muted-foreground",
-          )}
-        >
-          {label}
-        </p>
-        <Button
-          size="icon"
-          variant="ghost"
-          onClick={() => copy(trimmed)}
-          className="h-6 w-6 -mr-1 opacity-60 hover:opacity-100"
-          title={copied ? "Copied" : "Copy output"}
-          aria-label={copied ? "Copied" : "Copy output to clipboard"}
-        >
-          {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
-        </Button>
-      </div>
-      <div
-        className={cn(
-          "text-xs min-w-0 break-words [&_pre]:overflow-x-auto [&_pre]:max-w-full",
-          tone === "error" ? "text-status-error-strong" : "text-foreground",
-        )}
-      >
-        <Streamdown>{normalizeNewlines(trimmed)}</Streamdown>
-      </div>
-    </div>
-  );
-}
-
-function TaskOutcomePreview({ task, fallbackLines }: { task: AgentTask; fallbackLines: string[] }) {
+function TaskOutcome({ task, fallbackLines }: { task: AgentTask; fallbackLines: string[] }) {
   if (
     (task.status === "failed" || task.status === "cancelled") &&
     task.failureReason &&
     task.failureReason.trim().length > 0
   ) {
     return (
-      <OutcomeBlock
+      <OutcomeFrame
         label={task.status === "cancelled" ? "Cancelled" : "Failure"}
         text={task.failureReason}
         tone="error"
@@ -212,17 +192,79 @@ function TaskOutcomePreview({ task, fallbackLines }: { task: AgentTask; fallback
     );
   }
   if (task.status === "completed" && task.output && task.output.trim().length > 0) {
-    return <OutcomeBlock label="Output" text={task.output} tone="neutral" />;
+    return <OutcomeProse text={task.output} />;
   }
   if (fallbackLines.length === 0) return null;
   return (
-    <ul className="text-xs text-muted-foreground space-y-0.5 mt-0.5">
+    <ul className="text-xs text-muted-foreground space-y-0.5 italic">
       {fallbackLines.map((line, idx) => (
         <li key={idx} className="truncate">
           {line}
         </li>
       ))}
     </ul>
+  );
+}
+
+/**
+ * Successful output — renders inline as plain prose, no border. Hover surfaces
+ * a single Copy action top-right so the chrome is invisible until needed.
+ */
+function OutcomeProse({ text }: { text: string }) {
+  const trimmed = text.trim();
+  const { copied, copy } = useCopyToClipboard();
+  return (
+    <div className="relative min-w-0 group/outcome">
+      <div className="text-sm leading-relaxed text-foreground/85 min-w-0 break-words [&_pre]:overflow-x-auto [&_pre]:max-w-full prose-chat">
+        <Streamdown>{normalizeNewlines(trimmed)}</Streamdown>
+      </div>
+      <Button
+        size="icon"
+        variant="ghost"
+        onClick={() => copy(trimmed)}
+        className="absolute top-0 right-0 h-6 w-6 opacity-0 group-hover/outcome:opacity-70 hover:opacity-100 transition-opacity"
+        title={copied ? "Copied" : "Copy output"}
+        aria-label={copied ? "Copied" : "Copy output to clipboard"}
+      >
+        {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+      </Button>
+    </div>
+  );
+}
+
+/**
+ * Tinted block — only used for failed/cancelled. Worth the chrome because the
+ * negative state genuinely needs attention.
+ */
+function OutcomeFrame({ label, text, tone }: { label: string; text: string; tone: "error" }) {
+  const trimmed = text.trim();
+  const { copied, copy } = useCopyToClipboard();
+  return (
+    <div
+      className={cn(
+        "rounded-md border px-3 py-2 mt-0.5 min-w-0 relative group/outcome",
+        tone === "error" ? "border-status-error/30 bg-status-error/5" : "",
+      )}
+    >
+      <div className="flex items-center justify-between gap-2 mb-1">
+        <p className="text-[10px] uppercase tracking-wider font-mono text-status-error-strong">
+          {label}
+        </p>
+        <Button
+          size="icon"
+          variant="ghost"
+          onClick={() => copy(trimmed)}
+          className="h-6 w-6 -mr-1 opacity-60 hover:opacity-100"
+          title={copied ? "Copied" : "Copy"}
+          aria-label={copied ? "Copied" : "Copy to clipboard"}
+        >
+          {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+        </Button>
+      </div>
+      <div className="text-xs min-w-0 break-words [&_pre]:overflow-x-auto [&_pre]:max-w-full text-status-error-strong">
+        <Streamdown>{normalizeNewlines(trimmed)}</Streamdown>
+      </div>
+    </div>
   );
 }
 
@@ -233,34 +275,38 @@ export interface ParallelGroupProps {
 }
 
 /**
- * Wrapper for siblings sharing a `parentTaskId`. Collapsible — header click
- * toggles. Default expanded for 2-3 children, default collapsed for 4+
- * (otherwise large parallel groups bury the rest of the timeline).
+ * Wraps sibling turns that share a parent into a visually distinct branched
+ * sub-tree: a labelled header chip + an indented dashed sub-spine. Children
+ * leave the main spine and sit on the sub-spine via `insideParallelGroup`
+ * (smaller avatars + thinner ring).
+ *
+ * Default expanded for ≤3 children; collapsed for 4+ (otherwise large
+ * fan-outs bury the rest of the timeline).
  */
 export function ParallelGroup({ count, children, className }: ParallelGroupProps) {
   const [expanded, setExpanded] = useState<boolean>(count <= 3);
   return (
-    <div
-      data-slot="session-parallel-group"
-      className={cn("border border-border bg-muted/30 rounded-md overflow-hidden", className)}
-    >
+    <div data-slot="session-parallel-group" className={cn("relative ml-9", className)}>
       <button
         type="button"
         onClick={() => setExpanded((v) => !v)}
-        className="flex w-full items-center gap-2 px-3 py-1.5 border-b border-border bg-muted/40 hover:bg-muted/60 transition-colors text-left"
+        className={cn(
+          "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-border",
+          "text-[10px] uppercase tracking-wider font-mono font-medium",
+          "bg-muted/60 text-foreground/80 hover:bg-muted transition-colors",
+        )}
         aria-expanded={expanded}
         aria-label={`${expanded ? "Collapse" : "Expand"} parallel group of ${count} tasks`}
       >
-        {expanded ? (
-          <ChevronDown className="h-3 w-3 text-muted-foreground shrink-0" />
-        ) : (
-          <ChevronRight className="h-3 w-3 text-muted-foreground shrink-0" />
-        )}
-        <span className="text-[9px] uppercase tracking-wider text-muted-foreground font-mono font-medium">
-          parallel · {count} tasks
-        </span>
+        {expanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+        <GitBranch className="h-3 w-3 text-primary" />
+        <span>{count} in parallel</span>
       </button>
-      {expanded ? <div className="flex flex-col divide-y divide-border">{children}</div> : null}
+      {expanded ? (
+        <div className="mt-3 pl-4 border-l-2 border-dashed border-border/70 flex flex-col gap-4 py-1">
+          {children}
+        </div>
+      ) : null}
     </div>
   );
 }

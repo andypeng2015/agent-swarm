@@ -1,9 +1,9 @@
 import type { ColDef, ICellRendererParams } from "ag-grid-community";
-import { Crown } from "lucide-react";
 import { useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import type { AgentActivityRow } from "@/api/hooks/use-agent-activity";
 import type { AgentStatus } from "@/api/types";
+import { AgentAvatar } from "@/components/shared/agent-avatar";
 import { DataGrid } from "@/components/shared/data-grid";
 import { StatusBadge } from "@/components/shared/status-badge";
 
@@ -61,9 +61,9 @@ export function AgentTable({ rows, className }: AgentTableProps) {
           const r = params.data;
           if (!r) return null;
           return (
-            <span className="inline-flex items-center gap-1.5">
+            <span className="inline-flex items-center gap-2">
+              <AgentAvatar agentId={r.id} agentName={r.name} size="xs" className="shrink-0" />
               <span className="font-semibold">{r.name}</span>
-              {r.isLead ? <Crown className="h-3 w-3 text-primary" /> : null}
             </span>
           );
         },

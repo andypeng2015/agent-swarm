@@ -8,14 +8,12 @@
  */
 
 import { useFeatureGate } from "@/api/hooks/use-feature-gate";
-import { useSessions } from "@/api/hooks/use-sessions";
 import { UpgradeRequired } from "@/components/feature-gate/upgrade-required";
 import { NewSessionView } from "@/components/sessions/new-session-view";
 import { SessionsShell } from "@/components/sessions/sessions-shell";
 
 export default function SessionsPage() {
   const gate = useFeatureGate("1.76.0");
-  const { data: sessions, isLoading } = useSessions({ limit: 50 });
 
   if (!gate.supported) {
     return (
@@ -28,7 +26,7 @@ export default function SessionsPage() {
   }
 
   return (
-    <SessionsShell sessions={sessions} isLoading={isLoading}>
+    <SessionsShell>
       <NewSessionView />
     </SessionsShell>
   );
