@@ -35,6 +35,7 @@ import {
 import { useUpdateInboxItem } from "@/api/hooks/use-inbox-state";
 import type { InboxItemType } from "@/api/types";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useCurrentUser } from "@/contexts/current-user-context";
 import { cn } from "@/lib/utils";
 import { InboxCard } from "./inbox-card";
@@ -91,7 +92,7 @@ export function InboxPanel({ className }: { className?: string }) {
     title: "Blocking",
     icon: AlertCircle,
     toneClass: "border-status-error/40",
-    emptyText: "Nothing blocked.",
+    emptyText: "All clear",
     items: blocking.items,
     isLoading: blocking.isLoading,
     activate: (it) => {
@@ -112,7 +113,7 @@ export function InboxPanel({ className }: { className?: string }) {
     title: "Broken",
     icon: AlertTriangle,
     toneClass: "border-status-error/40",
-    emptyText: "No failed tasks (last 7d).",
+    emptyText: "No broken tasks",
     items: broken.items,
     isLoading: broken.isLoading,
     activate: (it) => navigate(`/tasks/${it.task.id}`),
@@ -124,7 +125,7 @@ export function InboxPanel({ className }: { className?: string }) {
     title: "To read",
     icon: BookOpen,
     toneClass: "border-status-info/40",
-    emptyText: "Nothing new to read.",
+    emptyText: "Nothing to read",
     items: toRead.items,
     isLoading: toRead.isLoading,
     activate: (it) => navigate(`/sessions/${it.session.root.id}`),
@@ -136,7 +137,7 @@ export function InboxPanel({ className }: { className?: string }) {
     title: "To start",
     icon: FilePlus,
     toneClass: "border-status-neutral/40",
-    emptyText: "No starter templates.",
+    emptyText: "All starters used",
     items: toStart.items,
     isLoading: toStart.isLoading,
     activate: (it) => {
@@ -206,10 +207,15 @@ function BucketColumn<
         </Badge>
       </header>
       <div className="flex flex-col gap-1.5 max-h-[420px] overflow-y-auto pr-0.5">
-        {bucket.items.length === 0 ? (
+        {bucket.isLoading && bucket.items.length === 0 ? (
+          <div className="flex flex-col gap-1.5">
+            <Skeleton className="h-12 w-full" />
+            <Skeleton className="h-12 w-full" />
+          </div>
+        ) : bucket.items.length === 0 ? (
           <div className="flex items-center justify-center gap-1.5 rounded-md border border-dashed border-border px-3 py-4 text-[11px] text-muted-foreground">
             <Inbox className="h-3 w-3" />
-            <span>{bucket.isLoading ? "Loading…" : bucket.emptyText}</span>
+            <span>{bucket.emptyText}</span>
           </div>
         ) : (
           bucket.items.map((item) => (

@@ -3,8 +3,8 @@ date: 2026-05-08T00:00:00Z
 topic: "UI Chat/Session Experience — v1 (Sessions surface + Dashboard revamp)"
 author: taras
 status: in-progress
-last_updated: 2026-05-09T21:00:00Z
-last_updated_by: claude (phase 5 sub-agent)
+last_updated: 2026-05-09T22:00:00Z
+last_updated_by: claude (phase 7 sub-agent)
 related:
   - thoughts/taras/brainstorms/2026-05-08-ui-chat-session-experience.md
   - thoughts/taras/research/2026-05-08-ui-chat-session-experience-research.md
@@ -681,9 +681,9 @@ Empty states for every new surface, loading skeletons, a clean qa-use session ca
 ### Success Criteria:
 
 #### Automated Verification:
-- [ ] All backend checks: `bun run tsc:check && bun run lint && bun test && bash scripts/check-db-boundary.sh`
-- [ ] OpenAPI clean: `bun run docs:openapi && git diff --exit-code openapi.json docs-site/content/docs/api-reference`
-- [ ] All UI checks: `cd ui && pnpm exec tsc -b && pnpm lint && pnpm check:tokens`
+- [x] All backend checks: `bun run tsc:check && bun run lint && bun test && bash scripts/check-db-boundary.sh`
+- [x] OpenAPI clean: `bun run docs:openapi && git diff --exit-code openapi.json docs-site/content/docs/api-reference`
+- [x] All UI checks: `cd ui && pnpm exec tsc -b && pnpm lint && pnpm check:tokens`
 
 #### Automated QA:
 - [ ] All qa-use scenarios A–O re-run end-to-end in a single session, screenshots stored in QA doc.

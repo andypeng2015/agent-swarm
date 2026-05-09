@@ -1,5 +1,6 @@
 import { Background, Controls, type Edge, MarkerType, type Node, ReactFlow } from "@xyflow/react";
 import dagre from "dagre";
+import { Bot } from "lucide-react";
 import { useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import "@xyflow/react/dist/style.css";
@@ -10,6 +11,7 @@ import {
   MAX_NODE_WIDTH,
   nodeSizeFromScore,
 } from "@/api/hooks/use-agent-activity";
+import { EmptyState } from "@/components/shared/empty-state";
 import { useTheme } from "@/hooks/use-theme";
 import { cn } from "@/lib/utils";
 import { AgentNode, type AgentNodeData } from "./agent-node";
@@ -137,11 +139,15 @@ export function AgentCanvas({ rows, className }: AgentCanvasProps) {
     return (
       <div
         className={cn(
-          "min-h-[400px] h-[500px] rounded-lg border bg-card flex items-center justify-center text-sm text-muted-foreground",
+          "min-h-[400px] h-[500px] rounded-lg border bg-card flex items-center justify-center",
           className,
         )}
       >
-        No agents connected
+        <EmptyState
+          icon={Bot}
+          title="No agents connected"
+          description="Start a worker (e.g. `bun run pm2-start`) to see it appear here."
+        />
       </div>
     );
   }
