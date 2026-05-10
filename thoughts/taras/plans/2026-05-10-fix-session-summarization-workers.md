@@ -9,7 +9,7 @@ tags: [plan, memory, session-summary, harness-providers, pi, opencode, codex, cl
 status: in-progress
 autonomy: critical
 last_updated: 2026-05-11
-last_updated_by: Claude (phase-0 sub-agent)
+last_updated_by: Claude (phase-1 sub-agent)
 revisions:
   - "v1 (2026-05-10): scaffold"
   - "v2 (2026-05-10): full draft after research + critical questions; reframed around reusable structured-output abstraction; added Phase 4 (claude migration with CLAUDE_CODE_OAUTH_TOKEN fallback)"
@@ -483,12 +483,12 @@ Rewrite `src/providers/pi-mono-extension.ts:280-376` to call `summarizeSession` 
 ### Success Criteria:
 
 #### Automated Verification:
-- [ ] Pi extension tests pass: `bun test src/tests/pi-mono-extension.test.ts`
-- [ ] Full unit suite passes: `bun test`
-- [ ] Type check passes: `bun run tsc:check`
-- [ ] Lint passes: `bun run lint`
-- [ ] DB-boundary check passes: `bash scripts/check-db-boundary.sh`
-- [ ] `grep -n "Bun.spawn" src/providers/pi-mono-extension.ts` returns zero matches (the shellout is gone).
+- [x] Pi extension tests pass: `bun test src/tests/pi-mono-extension.test.ts` (9 pass / 0 fail)
+- [x] Full unit suite passes: `bun test` (3690 pass / 0 fail)
+- [x] Type check passes: `bun run tsc:check`
+- [x] Lint passes: `bun run lint` (exit 0; pre-existing warnings only)
+- [x] DB-boundary check passes: `bash scripts/check-db-boundary.sh`
+- [x] `grep -n "Bun.spawn" src/providers/pi-mono-extension.ts` returns zero matches in code (1 doc-comment mention of the removed shellout remains by design).
 
 #### Automated QA:
 - [ ] **Real pi session against local API server** (sub-agent): bring up the stack with `bun run pm2-start`, set `OPENROUTER_API_KEY`, create a pi task that does a small piece of real work, wait for completion, then `GET /api/memory/list?source=session_summary&taskId=<id>` and assert a non-empty row. Capture the memory id and content for the report.
