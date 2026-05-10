@@ -44,6 +44,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useCopyToClipboard } from "@/hooks/use-copy-to-clipboard";
 import { cn, formatRelativeTime, normalizeNewlines } from "@/lib/utils";
 import { ChainOfThought } from "./chain-of-thought";
@@ -214,17 +215,21 @@ export function TaskCard({
             <div className="ml-auto flex items-center gap-0.5 opacity-100 md:opacity-0 md:group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
               {canCancel ? (
                 <AlertDialog>
-                  <AlertDialogTrigger asChild>
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className="h-6 w-6 hover:text-status-error hover:bg-status-error/10"
-                      title="Cancel task"
-                      aria-label="Cancel task"
-                    >
-                      <Ban className="h-3 w-3" />
-                    </Button>
-                  </AlertDialogTrigger>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <AlertDialogTrigger asChild>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-6 w-6 hover:text-status-error hover:bg-status-error/10"
+                          aria-label="Cancel task"
+                        >
+                          <Ban className="h-3 w-3" />
+                        </Button>
+                      </AlertDialogTrigger>
+                    </TooltipTrigger>
+                    <TooltipContent>Cancel task</TooltipContent>
+                  </Tooltip>
                   <AlertDialogContent>
                     <AlertDialogHeader>
                       <AlertDialogTitle>Cancel Task</AlertDialogTitle>
@@ -247,41 +252,53 @@ export function TaskCard({
                 </AlertDialog>
               ) : null}
               {canPause ? (
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  onClick={() => pauseTask.mutate(task.id)}
-                  disabled={pauseTask.isPending}
-                  className="h-6 w-6"
-                  title="Pause task"
-                  aria-label="Pause task"
-                >
-                  <Pause className="h-3 w-3" />
-                </Button>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      onClick={() => pauseTask.mutate(task.id)}
+                      disabled={pauseTask.isPending}
+                      className="h-6 w-6"
+                      aria-label="Pause task"
+                    >
+                      <Pause className="h-3 w-3" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Pause task</TooltipContent>
+                </Tooltip>
               ) : null}
               {canResume ? (
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  onClick={() => resumeTask.mutate(task.id)}
-                  disabled={resumeTask.isPending}
-                  className="h-6 w-6"
-                  title="Resume task"
-                  aria-label="Resume task"
-                >
-                  <Play className="h-3 w-3" />
-                </Button>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      onClick={() => resumeTask.mutate(task.id)}
+                      disabled={resumeTask.isPending}
+                      className="h-6 w-6"
+                      aria-label="Resume task"
+                    >
+                      <Play className="h-3 w-3" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Resume task</TooltipContent>
+                </Tooltip>
               ) : null}
-              <Button
-                size="icon"
-                variant="ghost"
-                onClick={() => setOpen(true)}
-                className="h-6 w-6"
-                title="Open task details"
-                aria-label="Open task details"
-              >
-                <Maximize2 className="h-3 w-3" />
-              </Button>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    onClick={() => setOpen(true)}
+                    className="h-6 w-6"
+                    aria-label="Open task details"
+                  >
+                    <Maximize2 className="h-3 w-3" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Open details</TooltipContent>
+              </Tooltip>
             </div>
           </header>
 
@@ -391,16 +408,20 @@ function OutcomeProse({ text }: { text: string }) {
       <div className="text-sm leading-relaxed text-foreground/85 min-w-0 break-words [&_pre]:overflow-x-auto [&_pre]:max-w-full prose-chat">
         <Streamdown>{normalizeNewlines(trimmed)}</Streamdown>
       </div>
-      <Button
-        size="icon"
-        variant="ghost"
-        onClick={() => copy(trimmed)}
-        className="absolute top-0 right-0 h-6 w-6 opacity-70 md:opacity-0 md:group-hover/outcome:opacity-70 hover:opacity-100 transition-opacity"
-        title={copied ? "Copied" : "Copy output"}
-        aria-label={copied ? "Copied" : "Copy output to clipboard"}
-      >
-        {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
-      </Button>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            size="icon"
+            variant="ghost"
+            onClick={() => copy(trimmed)}
+            className="absolute top-0 right-0 h-6 w-6 opacity-70 md:opacity-0 md:group-hover/outcome:opacity-70 hover:opacity-100 transition-opacity"
+            aria-label={copied ? "Copied" : "Copy output to clipboard"}
+          >
+            {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>{copied ? "Copied" : "Copy output"}</TooltipContent>
+      </Tooltip>
     </div>
   );
 }
@@ -423,16 +444,20 @@ function OutcomeFrame({ label, text, tone }: { label: string; text: string; tone
         <p className="text-[10px] uppercase tracking-wider font-mono text-status-error-strong">
           {label}
         </p>
-        <Button
-          size="icon"
-          variant="ghost"
-          onClick={() => copy(trimmed)}
-          className="h-6 w-6 -mr-1 opacity-60 hover:opacity-100"
-          title={copied ? "Copied" : "Copy"}
-          aria-label={copied ? "Copied" : "Copy to clipboard"}
-        >
-          {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
-        </Button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              size="icon"
+              variant="ghost"
+              onClick={() => copy(trimmed)}
+              className="h-6 w-6 -mr-1 opacity-60 hover:opacity-100"
+              aria-label={copied ? "Copied" : "Copy to clipboard"}
+            >
+              {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>{copied ? "Copied" : "Copy"}</TooltipContent>
+        </Tooltip>
       </div>
       <div className="text-xs min-w-0 break-words [&_pre]:overflow-x-auto [&_pre]:max-w-full text-status-error-strong">
         <Streamdown>{normalizeNewlines(trimmed)}</Streamdown>

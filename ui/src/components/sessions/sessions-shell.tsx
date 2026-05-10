@@ -46,6 +46,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { cn, formatRelativeTime } from "@/lib/utils";
 
@@ -161,27 +162,35 @@ function SessionsList({
           Sessions
         </h2>
         <div className="flex items-center gap-0.5">
-          <Button
-            size="icon"
-            variant="ghost"
-            onClick={onNewSession}
-            className="h-6 w-6"
-            title="New session"
-            aria-label="New session"
-          >
-            <Plus className="h-3.5 w-3.5" />
-          </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                size="icon"
+                variant="ghost"
+                onClick={onNewSession}
+                className="h-6 w-6"
+                aria-label="New session"
+              >
+                <Plus className="h-3.5 w-3.5" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>New session</TooltipContent>
+          </Tooltip>
           {onCollapse ? (
-            <Button
-              size="icon"
-              variant="ghost"
-              onClick={onCollapse}
-              className="h-6 w-6"
-              title="Collapse sessions list"
-              aria-label="Collapse sessions list"
-            >
-              <ChevronLeft className="h-3.5 w-3.5" />
-            </Button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  onClick={onCollapse}
+                  className="h-6 w-6"
+                  aria-label="Collapse sessions list"
+                >
+                  <ChevronLeft className="h-3.5 w-3.5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Collapse list</TooltipContent>
+            </Tooltip>
           ) : null}
         </div>
       </div>
@@ -198,23 +207,27 @@ function SessionsList({
           />
         </div>
         <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              size="icon"
-              variant="ghost"
-              className={cn("h-8 w-8 shrink-0 relative", showSystem && "text-primary")}
-              title="Filters"
-              aria-label="Session filters"
-            >
-              <Filter className="h-3.5 w-3.5" />
-              {showSystem ? (
-                <span
-                  aria-hidden="true"
-                  className="absolute top-1.5 right-1.5 h-1.5 w-1.5 rounded-full bg-primary"
-                />
-              ) : null}
-            </Button>
-          </DropdownMenuTrigger>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className={cn("h-8 w-8 shrink-0 relative", showSystem && "text-primary")}
+                  aria-label="Session filters"
+                >
+                  <Filter className="h-3.5 w-3.5" />
+                  {showSystem ? (
+                    <span
+                      aria-hidden="true"
+                      className="absolute top-1.5 right-1.5 h-1.5 w-1.5 rounded-full bg-primary"
+                    />
+                  ) : null}
+                </Button>
+              </DropdownMenuTrigger>
+            </TooltipTrigger>
+            <TooltipContent>Filters</TooltipContent>
+          </Tooltip>
           <DropdownMenuContent align="end" className="w-56">
             <DropdownMenuLabel className="text-[10px] uppercase tracking-wider font-mono text-muted-foreground">
               Filters
@@ -396,16 +409,20 @@ export function SessionsShell({ activeRootTaskId, children }: SessionsShellProps
           >
             {collapsed ? (
               <div className="hidden lg:flex absolute top-3 left-3 z-10">
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  onClick={() => setCollapsed(false)}
-                  className="h-7 w-7"
-                  title="Show sessions list"
-                  aria-label="Show sessions list"
-                >
-                  <PanelLeftOpen className="h-3.5 w-3.5" />
-                </Button>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      onClick={() => setCollapsed(false)}
+                      className="h-7 w-7"
+                      aria-label="Show sessions list"
+                    >
+                      <PanelLeftOpen className="h-3.5 w-3.5" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="right">Show sessions list</TooltipContent>
+                </Tooltip>
               </div>
             ) : null}
             {children}

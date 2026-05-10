@@ -12,6 +12,7 @@ import { ArrowUp } from "lucide-react";
 import { useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 export interface ComposerDockProps {
@@ -106,16 +107,20 @@ export function ComposerDock({
             <span className="text-[10px] font-mono text-muted-foreground tracking-wider hidden sm:inline">
               ⌘↵
             </span>
-            <Button
-              type="submit"
-              size="icon"
-              disabled={!canSubmit}
-              aria-label={sendLabel}
-              title={sendLabel}
-              className="h-8 w-8 rounded-full shadow-sm"
-            >
-              <ArrowUp className="h-4 w-4" />
-            </Button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="submit"
+                  size="icon"
+                  disabled={!canSubmit}
+                  aria-label={sendLabel}
+                  className="h-8 w-8 rounded-full shadow-sm"
+                >
+                  <ArrowUp className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{sendLabel}</TooltipContent>
+            </Tooltip>
           </div>
         </div>
       </div>

@@ -22,6 +22,7 @@ import { SessionsShell } from "@/components/sessions/sessions-shell";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useAutoScroll } from "@/hooks/use-auto-scroll";
 import { useLocalToggle } from "@/hooks/use-local-toggle";
 
@@ -131,24 +132,28 @@ export default function SessionDetailPage() {
               </>
             ) : null}
             {hasInternalHandoffs ? (
-              <button
-                type="button"
-                onClick={() => setShowInternalHandoffs(!showInternalHandoffs)}
-                className="ml-auto inline-flex items-center gap-1 text-[10px] font-mono uppercase tracking-wider text-muted-foreground hover:text-foreground transition-colors shrink-0"
-                title={
-                  showInternalHandoffs
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    onClick={() => setShowInternalHandoffs(!showInternalHandoffs)}
+                    className="ml-auto inline-flex items-center gap-1 text-[10px] font-mono uppercase tracking-wider text-muted-foreground hover:text-foreground transition-colors shrink-0"
+                    aria-pressed={showInternalHandoffs}
+                  >
+                    {showInternalHandoffs ? (
+                      <EyeOff className="h-3 w-3" />
+                    ) : (
+                      <Eye className="h-3 w-3" />
+                    )}
+                    <span>Handoffs · {showInternalHandoffs ? "On" : "Off"}</span>
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">
+                  {showInternalHandoffs
                     ? "Hide auto-spawned review tasks"
-                    : "Show auto-spawned review tasks as full rows"
-                }
-                aria-pressed={showInternalHandoffs}
-              >
-                {showInternalHandoffs ? (
-                  <EyeOff className="h-3 w-3" />
-                ) : (
-                  <Eye className="h-3 w-3" />
-                )}
-                <span>Handoffs · {showInternalHandoffs ? "On" : "Off"}</span>
-              </button>
+                    : "Show auto-spawned review tasks as full rows"}
+                </TooltipContent>
+              </Tooltip>
             ) : null}
           </div>
         ) : null}

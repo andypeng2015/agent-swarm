@@ -21,6 +21,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 export interface InboxCardProps {
@@ -91,29 +92,39 @@ export function InboxCard({
           onKeyDown={stop}
         >
           {/* Done */}
-          <button
-            type="button"
-            aria-label="Mark done"
-            disabled={busy}
-            onClick={(e) => {
-              stop(e);
-              onDone();
-            }}
-            className="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-status-success/10 hover:text-status-success-strong focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-40"
-          >
-            <Check className="h-3.5 w-3.5" />
-          </button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                aria-label="Mark done"
+                disabled={busy}
+                onClick={(e) => {
+                  stop(e);
+                  onDone();
+                }}
+                className="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-status-success/10 hover:text-status-success-strong focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-40"
+              >
+                <Check className="h-3.5 w-3.5" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>Mark done</TooltipContent>
+          </Tooltip>
           {/* Snooze */}
           <DropdownMenu>
-            <DropdownMenuTrigger
-              type="button"
-              aria-label="Snooze"
-              disabled={busy}
-              onClick={stop}
-              className="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-status-info/10 hover:text-status-info-strong focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-40"
-            >
-              <ChevronDown className="h-3.5 w-3.5" />
-            </DropdownMenuTrigger>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <DropdownMenuTrigger
+                  type="button"
+                  aria-label="Snooze"
+                  disabled={busy}
+                  onClick={stop}
+                  className="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-status-info/10 hover:text-status-info-strong focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-40"
+                >
+                  <ChevronDown className="h-3.5 w-3.5" />
+                </DropdownMenuTrigger>
+              </TooltipTrigger>
+              <TooltipContent>Snooze</TooltipContent>
+            </Tooltip>
             <DropdownMenuContent align="end" onClick={stop}>
               <DropdownMenuLabel>Snooze for…</DropdownMenuLabel>
               <DropdownMenuSeparator />
@@ -130,18 +141,23 @@ export function InboxCard({
             </DropdownMenuContent>
           </DropdownMenu>
           {/* Dismiss */}
-          <button
-            type="button"
-            aria-label="Dismiss"
-            disabled={busy}
-            onClick={(e) => {
-              stop(e);
-              onDismiss();
-            }}
-            className="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-status-error/10 hover:text-status-error-strong focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-40"
-          >
-            <X className="h-3.5 w-3.5" />
-          </button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                aria-label="Dismiss"
+                disabled={busy}
+                onClick={(e) => {
+                  stop(e);
+                  onDismiss();
+                }}
+                className="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-status-error/10 hover:text-status-error-strong focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-40"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>Dismiss</TooltipContent>
+          </Tooltip>
         </div>
       </div>
     </div>

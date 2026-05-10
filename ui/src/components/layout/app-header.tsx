@@ -94,10 +94,23 @@ export function AppHeader() {
         <UserSwitcher />
 
         {/* Theme toggle */}
-        <Button variant="ghost" size="icon" onClick={toggleTheme} className="size-8">
-          {theme === "dark" ? <Sun className="size-4" /> : <Moon className="size-4" />}
-          <span className="sr-only">Toggle theme</span>
-        </Button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={toggleTheme}
+              className="size-8"
+              aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+            >
+              {theme === "dark" ? <Sun className="size-4" /> : <Moon className="size-4" />}
+              <span className="sr-only">Toggle theme</span>
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">
+            {theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+          </TooltipContent>
+        </Tooltip>
       </div>
     </header>
   );
