@@ -345,7 +345,15 @@ if [ -n "$AGENT_ID" ]; then
         CONFIG_COUNT=$(jq '.configs | length' /tmp/swarm_config.json 2>/dev/null || echo "0")
         if [ "$CONFIG_COUNT" -gt 0 ]; then
             echo "Found $CONFIG_COUNT config entries, exporting as env vars..."
-            jq -r '.configs[] | select(.key != "codex_oauth") | "\(.key)=" + (.value | @sh)' /tmp/swarm_config.json > /tmp/swarm_config.env 2>/dev/null || true
+            # Skip keys whose value is read dynamically by the runner from
+            # /api/config/resolved on each iteration. Baking them into env at
+            # boot would persist a stale value if the operator later deletes
+            # the swarm_config row (env would shadow the now-missing config).
+            #   - codex_oauth: provider auth blob, read on demand
+            #   - HARNESS_PROVIDER: live-reconciled by runner.ts poll loop;
+            #     baking it would also defeat the precedence invariant
+            #     (swarm_config > env > "claude")
+            jq -r '.configs[] | select(.key != "codex_oauth" and .key != "HARNESS_PROVIDER") | "\(.key)=" + (.value | @sh)' /tmp/swarm_config.json > /tmp/swarm_config.env 2>/dev/null || true
             if [ -f /tmp/swarm_config.env ]; then
                 set -a
                 . /tmp/swarm_config.env

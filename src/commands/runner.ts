@@ -2388,8 +2388,10 @@ export async function runAgent(config: RunnerConfig, opts: RunnerOptions) {
   }
   console.log(`[runner] Resolved HARNESS_PROVIDER: ${bootProvider}`);
 
-  // Create provider adapter using the resolved value.
-  const adapter = createProviderAdapter(bootProvider);
+  // Create provider adapter using the resolved value. `let` so the poll-loop
+  // reconciliation block (Section 4) can swap it live when an operator changes
+  // HARNESS_PROVIDER in swarm_config — call sites read the current binding.
+  let adapter = createProviderAdapter(bootProvider);
 
   // Configure HTTP-based template resolution (workers resolve via API, not local DB)
   if (process.env.API_KEY) {
@@ -2460,9 +2462,11 @@ export async function runAgent(config: RunnerConfig, opts: RunnerOptions) {
   // Slack context for current task (gates Slack instructions in prompt)
   let currentTaskSlackContext: BasePromptArgs["slackContext"] | undefined;
 
-  // Generate base prompt (identity fields injected after profile fetch below)
-  const { traits } = adapter;
+  // Generate base prompt (identity fields injected after profile fetch below).
+  // Traits are read fresh on each call so a live adapter swap (Section 4)
+  // produces a prompt matching the new provider's capabilities.
   const buildSystemPrompt = async () => {
+    const { traits } = adapter;
     return getBasePrompt({
       role,
       agentId,
@@ -2593,11 +2597,18 @@ export async function runAgent(config: RunnerConfig, opts: RunnerOptions) {
 
     // Migration 055 — cache the harness_provider value used when we last
     // built a `cred_status` snapshot. Re-runs the post-task check only when
-    // it changed (today this is degenerate since process.env.HARNESS_PROVIDER
-    // doesn't change at runtime; meaningful once DES-359 lands and operators
-    // can re-assign harness via PATCH /api/agents/:id/harness-provider).
-    // TODO(DES-359): read from agent row at post-task time instead.
+    // the resolved provider changes. Section 4 of the swarm_config-overrides-
+    // HARNESS_PROVIDER work makes this dynamic: state.harnessProvider is
+    // reconciled below from `swarm_config`, so an operator's change reaches
+    // here without a worker restart.
     let cachedCredHarnessProvider: string | null = null;
+
+    // Throttle for live HARNESS_PROVIDER reconciliation. Each reconciliation
+    // calls `fetchResolvedEnv` which also re-resolves credential pools — we
+    // don't want that on every 2s poll. 10s gives operator changes a near-
+    // immediate effect from a UX perspective without hammering the API.
+    let lastHarnessReconcileAt = 0;
+    const HARNESS_RECONCILE_INTERVAL_MS = 10_000;
 
     // Create API config for ping/close
     const apiConfig: ApiConfig = { apiUrl, apiKey, agentId };
@@ -3175,15 +3186,54 @@ export async function runAgent(config: RunnerConfig, opts: RunnerOptions) {
       // Check for completed processes first and ensure tasks are marked as finished
       await checkCompletedProcesses(state, role, apiConfig);
 
-      // Migration 055 — post-task credential refresh, cache-keyed on
-      // `harness_provider`. Today this is degenerate (the env var doesn't
-      // change at runtime), so the inner branch effectively never fires —
-      // but the wiring is here for DES-359 (dynamic per-agent harness).
-      // TODO(DES-359): read harness_provider from the agent row instead
-      // of process.env so an operator's PATCH /api/agents/:id/harness-provider
-      // takes effect without a worker restart.
+      // Live HARNESS_PROVIDER reconciliation. Re-fetches `swarm_config` (overlaid
+      // on env) and swaps the adapter if the resolved provider changed —
+      // typically because an operator PATCH'd /api/agents/:id/harness-provider
+      // (which writes a swarm_config row) or upserted a config row directly.
+      //
+      // Safety: in-flight sessions hold their own `ProviderSession` references
+      // and continue on the old adapter unaffected. New spawns (below) read
+      // the current `adapter` binding and pick up the swap. `basePrompt` is
+      // rebuilt because traits (and therefore prompt content) may differ across
+      // providers.
+      if (Date.now() - lastHarnessReconcileAt > HARNESS_RECONCILE_INTERVAL_MS) {
+        lastHarnessReconcileAt = Date.now();
+        try {
+          const { resolvedProvider } = await fetchResolvedEnv(apiUrl, apiKey, agentId);
+          if (resolvedProvider !== state.harnessProvider) {
+            const previous = state.harnessProvider;
+            console.log(
+              `[${role}] [harness] Reconciling adapter: ${previous} → ${resolvedProvider}`,
+            );
+            try {
+              adapter = createProviderAdapter(resolvedProvider);
+              state.harnessProvider = resolvedProvider;
+              basePrompt = await buildSystemPrompt();
+              resolvedSystemPrompt = additionalSystemPrompt
+                ? `${basePrompt}\n\n${additionalSystemPrompt}`
+                : basePrompt;
+              // Force a fresh cred_status report below for the new provider.
+              cachedCredHarnessProvider = null;
+              console.log(
+                `[${role}] [harness] Swapped to ${resolvedProvider} (basePrompt rebuilt: ${basePrompt.length} chars)`,
+              );
+            } catch (err) {
+              console.warn(
+                `[${role}] [harness] Failed to swap to ${resolvedProvider} (staying on ${previous}): ${err}`,
+              );
+            }
+          }
+        } catch (err) {
+          console.warn(`[${role}] [harness] Reconcile fetch failed (non-fatal): ${err}`);
+        }
+      }
+
+      // Migration 055 — post-task credential refresh, cache-keyed on the
+      // *resolved* harness_provider. Re-runs the snapshot when the provider
+      // changes (boot, or after a live swap above) so the dashboard shows
+      // up-to-date credential status for the active adapter.
       if (!isCredCheckDisabled(process.env)) {
-        const currentHarness = process.env.HARNESS_PROVIDER || "claude";
+        const currentHarness = state.harnessProvider;
         if (currentHarness !== cachedCredHarnessProvider) {
           cachedCredHarnessProvider = currentHarness;
           buildCredStatusReport(currentHarness, process.env, {}, "post_task")

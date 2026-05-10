@@ -390,8 +390,8 @@
     },
     "/api/agents/{id}/harness-provider": {
       "patch": {
-        "summary": "Re-assign an agent's harness_provider (planning/forecast — not live)",
-        "description": "Updates the `agents.harness_provider` column. Worker does NOT react in real time — the new value is picked up on the next worker restart, where the env-driven HARNESS_PROVIDER still wins on register. Live per-agent re-assignment is tracked in DES-359.",
+        "summary": "Re-assign an agent's harness_provider (live)",
+        "description": "Updates `agents.harness_provider` and upserts `swarm_config` (scope=agent, key=HARNESS_PROVIDER) so the worker's poll-loop reconciliation picks up the new provider within ~10s. No restart required. The swarm_config row is what actually drives the worker; the column mirrors the latest set value for dashboards.",
         "tags": [
           "Agents"
         ],
