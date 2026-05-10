@@ -228,9 +228,7 @@ describe("resolveOpencodeAuth", () => {
       });
       expect(result).toBeNull();
       // Should have logged the skip.
-      const sawSkipLog = errs.some((args) =>
-        String(args[0] ?? "").includes("OAuth not supported"),
-      );
+      const sawSkipLog = errs.some((args) => String(args[0] ?? "").includes("OAuth not supported"));
       expect(sawSkipLog).toBe(true);
     } finally {
       console.error = origConsoleError;
@@ -260,9 +258,7 @@ describe("resolveOpencodeAuth", () => {
       });
       expect(result).toBeNull();
       // Should have logged a refresh-failed error.
-      const sawErr = errs.some((args) =>
-        String(args[0] ?? "").includes("OAuth refresh failed"),
-      );
+      const sawErr = errs.some((args) => String(args[0] ?? "").includes("OAuth refresh failed"));
       expect(sawErr).toBe(true);
     } finally {
       console.error = origConsoleError;

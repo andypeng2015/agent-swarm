@@ -13,13 +13,11 @@
  */
 
 import type { Plugin } from "@opencode-ai/plugin";
-import { summarizeSessionForOpencode, type SwarmConfig } from "./lib/summarize";
+import { type SwarmConfig, summarizeSessionForOpencode } from "./lib/summarize";
 
 function readConfig(): SwarmConfig {
   return {
-    apiUrl:
-      process.env.SWARM_API_URL ||
-      `http://localhost:${process.env.PORT || "3013"}`,
+    apiUrl: process.env.SWARM_API_URL || `http://localhost:${process.env.PORT || "3013"}`,
     apiKey: process.env.SWARM_API_KEY || "",
     agentId: process.env.SWARM_AGENT_ID || "",
     taskId: process.env.SWARM_TASK_ID || "",

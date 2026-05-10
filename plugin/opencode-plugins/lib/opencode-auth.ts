@@ -214,10 +214,7 @@ async function defaultReadAuthFile(path: string): Promise<Record<string, AuthEnt
   }
 }
 
-async function defaultWriteAuthFile(
-  path: string,
-  data: Record<string, AuthEntry>,
-): Promise<void> {
+async function defaultWriteAuthFile(path: string, data: Record<string, AuthEntry>): Promise<void> {
   await Bun.write(path, JSON.stringify(data, null, 2));
 }
 

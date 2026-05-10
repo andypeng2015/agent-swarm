@@ -28,7 +28,7 @@
 
 import type { PluginInput } from "@opencode-ai/plugin";
 import type { Message, Part } from "@opencode-ai/sdk";
-import { resolveOpencodeAuth, type ResolvedCredential } from "./opencode-auth";
+import { type ResolvedCredential, resolveOpencodeAuth } from "./opencode-auth";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -143,9 +143,7 @@ ${memoryBlock}`;
  * snapshot, patch, agent, retry, compaction parts — they're high-volume noise
  * for the learnings-extraction prompt.
  */
-export function flattenOpencodeTranscript(
-  items: Array<{ info: Message; parts: Part[] }>,
-): string {
+export function flattenOpencodeTranscript(items: Array<{ info: Message; parts: Part[] }>): string {
   const lines: string[] = [];
   for (const { info, parts } of items) {
     const role = info.role === "user" ? "User" : "Assistant";
@@ -372,11 +370,23 @@ async function callOpenAICompat(
 
 // ── Ratings → events (mirrors src/be/memory/raters/llm.ts:buildRatingsFromLlm) ─
 
+/**
+ * Mirrors `src/be/memory/raters/types.ts:sanitizeReferencesSource`. Uses
+ * char-code iteration (not a regex) so biome's no-control-chars-in-regex
+ * rule stays happy.
+ */
 function sanitizeReferencesSource(s: string): string | null {
-  if (s.includes("\0")) return null;
-  const cleaned = s.replace(/[\x00-\x1f\x7f]/g, "").trim();
-  if (cleaned.length === 0) return null;
-  return cleaned;
+  let out = "";
+  for (let i = 0; i < s.length; i++) {
+    const code = s.charCodeAt(i);
+    if (code === 0) return null;
+    // Strip non-NUL C0 control bytes (1..31) and DEL (127).
+    if (code < 32 || code === 127) continue;
+    out += s[i];
+  }
+  const trimmed = out.trim();
+  if (trimmed.length === 0) return null;
+  return trimmed;
 }
 
 export function buildRatingsFromLlm(
@@ -523,8 +533,7 @@ export async function summarizeSessionForOpencode(
   const _fetchRetrievals = deps.fetchRetrievalsForTask ?? fetchRetrievalsForTask;
   const _postRatings = deps.postRatings ?? postRatings;
   const _buildRatings = deps.buildRatingsFromLlm ?? buildRatingsFromLlm;
-  const _fetchTaskDetails =
-    deps.fetchTaskDetails ?? (async () => null);
+  const _fetchTaskDetails = deps.fetchTaskDetails ?? (async () => null);
 
   try {
     const resp = await client.session.messages({ path: { id: sessionID } });
@@ -538,8 +547,7 @@ export async function summarizeSessionForOpencode(
     if (!Array.isArray(items) || items.length === 0) return;
 
     const transcriptRaw = flattenOpencodeTranscript(items);
-    const transcript =
-      transcriptRaw.length > 20_000 ? transcriptRaw.slice(-20_000) : transcriptRaw;
+    const transcript = transcriptRaw.length > 20_000 ? transcriptRaw.slice(-20_000) : transcriptRaw;
     if (transcript.length <= 100) return;
 
     const sourceTaskId = config.taskId;
@@ -614,9 +622,7 @@ export async function summarizeSessionForOpencode(
           agentId,
           taskId: sourceTaskId,
           events: ratingEvents,
-        }).catch((err) =>
-          console.error("session_summary: postRatings failed (opencode):", err),
-        );
+        }).catch((err) => console.error("session_summary: postRatings failed (opencode):", err));
       }
     }
   } catch (err) {
