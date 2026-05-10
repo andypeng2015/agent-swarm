@@ -9,7 +9,7 @@ tags: [plan, memory, session-summary, harness-providers, pi, opencode, codex, cl
 status: in-progress
 autonomy: critical
 last_updated: 2026-05-11
-last_updated_by: Claude (phase-2 sub-agent)
+last_updated_by: Claude (phase-3 sub-agent)
 revisions:
   - "v1 (2026-05-10): scaffold"
   - "v2 (2026-05-10): full draft after research + critical questions; reframed around reusable structured-output abstraction; added Phase 4 (claude migration with CLAUDE_CODE_OAUTH_TOKEN fallback)"
@@ -866,16 +866,16 @@ import { fetchRetrievalsForTask, postRatings, buildRatingsFromLlm } from "../be/
 ### Success Criteria:
 
 #### Automated Verification:
-- [ ] Codex adapter tests pass: `bun test src/tests/codex-adapter.test.ts`
-- [ ] Full unit suite passes: `bun test`
-- [ ] Type check passes: `bun run tsc:check`
-- [ ] Lint passes: `bun run lint`
-- [ ] DB-boundary check passes: `bash scripts/check-db-boundary.sh`
+- [x] Codex adapter tests pass: `bun test src/tests/codex-adapter.test.ts`
+- [x] Full unit suite passes: `bun test`
+- [x] Type check passes: `bun run tsc:check`
+- [x] Lint passes: `bun run lint`
+- [x] DB-boundary check passes: `bash scripts/check-db-boundary.sh`
 
 #### Automated QA:
 - [ ] **Real codex session against local API server** (sub-agent): bring up the stack with codex OAuth configured (`bun run src/cli.tsx codex-oauth-login` per `thoughts/taras/plans/2026-04-10-codex-oauth-support.md`), create a codex task, wait for completion, assert a `session_summary` row exists.
 - [ ] **Env fallback path** (sub-agent): same as above but with `OPENAI_API_KEY` env set and no codex OAuth → confirm summary still indexed (the wrapper falls through env precedence).
-- [ ] **Cleanup-after-failure** (in the unit test): inject a fault that makes `runSummarize` reject, assert `agentsMdHandle.cleanup()` still runs.
+- [x] **Cleanup-after-failure** (in the unit test): inject a fault that makes `runSummarize` reject, assert `agentsMdHandle.cleanup()` still runs.
 
 #### Manual Verification:
 - [ ] On a real codex session, eyeball the indexed `session_summary` content for coherence (codex transcript is event-buffered rather than file-sourced; quality may differ from claude's). If garbled, refine `shortenItemResult`.
