@@ -359,7 +359,7 @@ This is a no-op refactor for now (claude's hook still inlines its own copy until
 
 #### Automated QA:
 - [x] **Credential resolver matrix** (sub-agent): import `resolveCredential`, mock env vars one combination at a time (just OPENROUTER, just ANTHROPIC, both, codex-OAuth-only, CLAUDE_CODE_OAUTH_TOKEN-only, none), print the resolved `{kind, modelDefault}` table. Assert against expected precedence. — Covered by `src/tests/internal-ai/credentials.test.ts`.
-- [ ] **End-to-end happy path with real OpenRouter** (gated on `OPENROUTER_API_KEY`): a test calls `summarizeSession({harness:"pi", transcript:"<minimal real transcript>", retrievals:[], taskContext:{sourceTaskId:"t1",agentId:"a1"}})` and asserts the returned object has a non-empty `summary` field. `describe.skipIf(!process.env.OPENROUTER_API_KEY)` so CI doesn't require the key.
+- [x] **End-to-end happy path with real OpenRouter** (gated on `OPENROUTER_API_KEY`): a test calls `summarizeSession({harness:"pi", transcript:"<minimal real transcript>", retrievals:[], taskContext:{sourceTaskId:"t1",agentId:"a1"}})` and asserts the returned object has a non-empty `summary` field. `describe.skipIf(!process.env.OPENROUTER_API_KEY)` so CI doesn't require the key.
 
 #### Manual Verification:
 - [ ] Read `src/utils/internal-ai/credentials.ts` and confirm the codex-OAuth shape reshaping (`{access, refresh, expires} → { "openai-codex": creds }`) matches pi-ai's `getOAuthApiKey` expectation.
@@ -698,8 +698,8 @@ Add unit tests in `plugin/opencode-plugins/tests/opencode-auth.test.ts` (NEW fil
 - [x] `grep -n "claude -p\|Bun.spawn" plugin/opencode-plugins/agent-swarm.ts` returns zero matches.
 
 #### Automated QA:
-- [ ] **Real opencode session** (sub-agent): bring up the stack, set `OPENROUTER_API_KEY` (or populate `~/.local/share/opencode/auth.json`), create an opencode task, wait for completion, assert a `session_summary` row exists for the task.
-- [ ] **Plugin import path verification**: have the sub-agent run `docker run --rm <worker-image> sh -c 'cat /home/worker/.opencode/swarm/agent-swarm.js | grep -c "summarizeSessionForOpencode"'` — confirm the bundled plugin includes the new function.
+- [x] **Real opencode session** (sub-agent): bring up the stack, set `OPENROUTER_API_KEY` (or populate `~/.local/share/opencode/auth.json`), create an opencode task, wait for completion, assert a `session_summary` row exists for the task.
+- [x] **Plugin import path verification**: have the sub-agent run `docker run --rm <worker-image> sh -c 'cat /home/worker/.opencode/swarm/agent-swarm.js | grep -c "summarizeSessionForOpencode"'` — confirm the bundled plugin includes the new function. (Actual path: `/home/worker/.config/opencode/plugins/agent-swarm.ts`. `summarizeSessionForOpencode` is imported and invoked on `session.idle` — see line 16, line 264.)
 
 #### Manual Verification:
 - [ ] Inspect `flattenOpencodeTranscript` output from a real session: confirm tool calls + text alternations read coherently (not garbled JSON).
@@ -874,8 +874,8 @@ import { fetchRetrievalsForTask, postRatings, buildRatingsFromLlm } from "../be/
 - [x] DB-boundary check passes: `bash scripts/check-db-boundary.sh`
 
 #### Automated QA:
-- [ ] **Real codex session against local API server** (sub-agent): bring up the stack with codex OAuth configured (`bun run src/cli.tsx codex-oauth-login` per `thoughts/taras/plans/2026-04-10-codex-oauth-support.md`), create a codex task, wait for completion, assert a `session_summary` row exists.
-- [ ] **Env fallback path** (sub-agent): same as above but with `OPENAI_API_KEY` env set and no codex OAuth → confirm summary still indexed (the wrapper falls through env precedence).
+- [x] **Real codex session against local API server** (sub-agent): bring up the stack with codex OAuth configured (`bun run src/cli.tsx codex-oauth-login` per `thoughts/taras/plans/2026-04-10-codex-oauth-support.md`), create a codex task, wait for completion, assert a `session_summary` row exists.
+- [x] **Env fallback path** (sub-agent): same as above but with `OPENAI_API_KEY` env set and no codex OAuth → confirm summary still indexed (the wrapper falls through env precedence).
 - [x] **Cleanup-after-failure** (in the unit test): inject a fault that makes `runSummarize` reject, assert `agentsMdHandle.cleanup()` still runs.
 
 #### Manual Verification:
@@ -963,7 +963,7 @@ test("CLAUDE_CODE_OAUTH_TOKEN-only env → claude-cli kind", async () => {
 
 #### Automated QA:
 - [ ] **`CLAUDE_CODE_OAUTH_TOKEN`-only fallback** (sub-agent): bring up the stack with ONLY `CLAUDE_CODE_OAUTH_TOKEN` set (no OpenRouter/Anthropic/OpenAI keys). Run a claude task. Assert a `session_summary` row is produced via the `claude -p` fallback path. Verify by tailing worker logs for a line like `internal-ai: kind=claude-cli` (add this log in Phase 0).
-- [ ] **OpenRouter precedence** (sub-agent): same with `OPENROUTER_API_KEY` also set → confirm the OpenRouter path takes precedence (the `claude-cli` shellout is NOT invoked — verify by absence of `kind=claude-cli` log line and presence of `kind=openrouter`).
+- [x] **OpenRouter precedence** (sub-agent): same with `OPENROUTER_API_KEY` also set → confirm the OpenRouter path takes precedence (the `claude-cli` shellout is NOT invoked — verify by absence of `kind=claude-cli` log line and presence of `kind=openrouter`).
 
 #### Manual Verification:
 - [ ] Compare a Phase 4 claude `session_summary` row (via wrapper, OpenRouter path) to a pre-Phase 4 row (via old `runMemoryRater`): content quality should be equivalent. If degraded, investigate the typebox tool-call schema vs the old `response_format: json_schema` approach (the tool-call retry loop may help or hurt — eyeball a few examples).
