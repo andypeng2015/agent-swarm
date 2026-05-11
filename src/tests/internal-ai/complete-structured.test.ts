@@ -160,9 +160,38 @@ describe("completeStructured", () => {
       },
     });
     expect(spawnCalls).toBe(1);
-    expect(receivedPrompt).toBe("SYSTEM\n\nUSER");
+    expect(receivedPrompt).toStartWith("SYSTEM\n\nUSER");
+    // userPrompt is augmented with the JSON schema for the claude-cli path.
+    expect(receivedPrompt).toContain('matching this schema:\n{"');
     expect(receivedModel).toBe("haiku");
     expect(result).toEqual({ summary: "cli result", count: 1 });
+  });
+
+  test("claude-cli kind: receives a JSON schema derived from zodSchema", async () => {
+    let receivedSchema: object | undefined;
+    await completeStructured({
+      zodSchema: ResultZodSchema,
+      toolSchema: ResultToolSchema,
+      toolName: "record_result",
+      toolDescription: "Record the result.",
+      systemPrompt: "sys",
+      userPrompt: "user",
+      _credentialOverride: { kind: "claude-cli", modelDefault: "haiku" } as ResolvedCredential,
+      _spawnClaudeCli: async (_prompt, _model, _signal, jsonSchema) => {
+        receivedSchema = jsonSchema;
+        return JSON.stringify({ summary: "ok", count: 1 });
+      },
+    });
+    expect(receivedSchema).toBeDefined();
+    const schema = receivedSchema as {
+      type: string;
+      properties: { summary: { type: string }; count: { type: string } };
+      required: string[];
+    };
+    expect(schema.type).toBe("object");
+    expect(schema.properties.summary.type).toBe("string");
+    expect(schema.properties.count.type).toBe("number");
+    expect(schema.required).toEqual(expect.arrayContaining(["summary", "count"]));
   });
 
   test("claude-cli kind: retries when JSON parse fails", async () => {

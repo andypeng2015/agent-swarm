@@ -18,7 +18,7 @@
 import type { ToolCall } from "@mariozechner/pi-ai";
 import { complete, getModel } from "@mariozechner/pi-ai";
 import type { TSchema } from "typebox";
-import type { z } from "zod";
+import { z } from "zod";
 import { type ResolvedCredential, resolveCredential } from "./credentials.js";
 import { parseModelStr } from "./models.js";
 
@@ -47,7 +47,12 @@ export interface CompleteStructuredOptions<TZod extends z.ZodTypeAny> {
   // Test injection points:
   _resolveCredential?: typeof resolveCredential;
   _complete?: typeof complete;
-  _spawnClaudeCli?: (prompt: string, model: string, signal?: AbortSignal) => Promise<string>;
+  _spawnClaudeCli?: (
+    prompt: string,
+    model: string,
+    signal?: AbortSignal,
+    jsonSchema?: object,
+  ) => Promise<string>;
   /**
    * Bypass `resolveCredential` entirely — opencode auth path (and tests)
    * pass an already-resolved credential.
@@ -62,13 +67,36 @@ export interface CompleteStructuredOptions<TZod extends z.ZodTypeAny> {
  */
 const CLAUDE_CLI_TIMEOUT_MS = 30_000;
 
+/**
+ * Tolerant JSON extractor for `claude -p` `result` strings. Claude sometimes
+ * wraps JSON in ```json … ``` fences despite a "no code fences" prompt; this
+ * peels off the fence so `JSON.parse` can handle it.
+ */
+function stripJsonFences(raw: string): string {
+  const trimmed = raw.trim();
+  const fenced = trimmed.match(/^```(?:json)?\s*\n?([\s\S]*?)\n?```$/);
+  return fenced?.[1] ? fenced[1].trim() : trimmed;
+}
+
 async function defaultSpawnClaudeCli(
   prompt: string,
   model: string,
   signal?: AbortSignal,
+  jsonSchema?: object,
 ): Promise<string> {
+  const cmd = [
+    process.env.CLAUDE_BINARY ?? "claude",
+    "-p",
+    "--model",
+    model,
+    "--output-format",
+    "json",
+  ];
+  if (jsonSchema) {
+    cmd.push("--json-schema", JSON.stringify(jsonSchema));
+  }
   const proc = Bun.spawn({
-    cmd: [process.env.CLAUDE_BINARY ?? "claude", "-p", "--model", model, "--output-format", "json"],
+    cmd,
     stdin: "pipe",
     stdout: "pipe",
     stderr: "pipe",
@@ -99,12 +127,19 @@ async function defaultSpawnClaudeCli(
     if (exitCode !== 0) {
       console.error(`internal-ai: claude -p exited ${exitCode}; stderr=${stderr.slice(0, 500)}`);
     }
-    // Parse `{ ..., result: "<json>" }` envelope — claude -p --output-format json wraps the result.
+    // claude -p --output-format json envelope shape:
+    //   { ..., result: "<text>", structured_output?: <validated-object> }
+    // When --json-schema is passed, prefer `structured_output` (validated
+    // by claude server-side). When it's absent, fall back to `result` — the
+    // caller has also embedded the schema in the prompt so `result` should
+    // be valid JSON; if it isn't, the caller's JSON.parse retry surfaces it.
     try {
-      const envelope = JSON.parse(stdout) as { result?: string };
+      const envelope = JSON.parse(stdout) as { result?: string; structured_output?: unknown };
+      if (jsonSchema && envelope.structured_output !== undefined) {
+        return JSON.stringify(envelope.structured_output);
+      }
       return envelope.result ?? stdout;
     } catch {
-      // Fallback — return raw stdout so the caller's JSON.parse retry surfaces it.
       return stdout;
     }
   } finally {
@@ -148,17 +183,26 @@ export async function completeStructured<TZod extends z.ZodTypeAny>(
   // 2. Claude-CLI fallback path.
   if (cred.kind === "claude-cli") {
     const spawn = opts._spawnClaudeCli ?? defaultSpawnClaudeCli;
+    // Belt-and-suspenders: pass the schema both as `--json-schema` (sets
+    // `envelope.structured_output` when the model complies) AND inline in
+    // the prompt (forces JSON-only `envelope.result` when it doesn't).
+    // The CLI flag alone is unreliable — claude sometimes asks "where's
+    // the schema?" if the prompt doesn't reference one.
+    const jsonSchema = z.toJSONSchema(opts.zodSchema) as object;
+    const schemaStr = JSON.stringify(jsonSchema);
+    const claudeUserPrompt = `${opts.userPrompt}\n\nRespond with ONLY a JSON object (no prose, no code fences) matching this schema:\n${schemaStr}`;
     let lastErr: unknown = null;
     for (let attempt = 0; attempt < retries; attempt++) {
       try {
         const raw = await spawn(
-          `${opts.systemPrompt}\n\n${opts.userPrompt}`,
+          `${opts.systemPrompt}\n\n${claudeUserPrompt}`,
           cred.modelDefault,
           opts.signal,
+          jsonSchema,
         );
         let parsedJson: unknown;
         try {
-          parsedJson = JSON.parse(raw);
+          parsedJson = JSON.parse(stripJsonFences(raw));
         } catch (err) {
           lastErr = err;
           continue;
