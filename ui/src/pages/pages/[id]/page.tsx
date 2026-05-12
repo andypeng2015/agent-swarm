@@ -61,33 +61,42 @@ function getAbsoluteApiUrl(): string {
  * unlock form instead (the metadata fetch is bypassed for password pages on
  * the first attempt — we instead synthesize a minimal metadata stub).
  */
+function passwordStub(id: string): PageMetadata {
+  return {
+    id,
+    version: 0,
+    title: "Password-protected page",
+    description: null,
+    contentType: "text/html",
+    authMode: "password",
+    body: "",
+  };
+}
+
 async function fetchPageMetadataWithLaunchRetry(id: string): Promise<PageMetadata> {
   try {
     return await api.fetchPageMetadata(id);
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    // 401 = no cookie. 403 = cookie scoped to a different page (stale from a
-    // prior page-session). Both are recoverable by launching a fresh cookie
-    // for THIS page id; only blow up on anything else.
-    if (!msg.includes(": 401") && !msg.includes(": 403")) throw e;
+    const err = e as Error & { status?: number; bodyText?: string };
+    const status = err.status;
+    // Server hints "password required" on 401 — short-circuit straight to
+    // the password-form stub without making an extra `/launch` round-trip
+    // (which always 400s for password mode and can stall on slow networks
+    // or strict CORS preflights).
+    if (status === 401 && err.bodyText?.includes("password required")) {
+      return passwordStub(id);
+    }
+    // 401 (no cookie) or 403 (cookie scoped to a different page) → try
+    // launch + retry. Anything else → surface to the caller.
+    if (status !== 401 && status !== 403) throw e;
   }
-  // 401/403 → try launch + retry. If launch returns 400, the page is password-mode;
-  // synthesize a stub so the password-frame branch renders.
   try {
     await api.launchPage(id);
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    if (msg.includes(": 400")) {
-      return {
-        id,
-        version: 0,
-        title: "Password-protected page",
-        description: null,
-        contentType: "text/html",
-        authMode: "password",
-        body: "",
-      };
-    }
+    // Password pages reject the bearer-launch path with 400; fall back to
+    // the password stub so the unlock form renders.
+    if (msg.includes(": 400")) return passwordStub(id);
     throw e;
   }
   return api.fetchPageMetadata(id);

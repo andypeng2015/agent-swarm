@@ -75,12 +75,19 @@ swarm API.
 
 | URL | Shape | Notes |
 |---|---|---|
-| `app_url` | `${UI_URL}/pages/:id` | SPA route. Renders HTML in a sandboxed iframe, JSON via `@json-render/react`. Default share target. |
-| `api_url` | `${API_URL}/p/:id` | Direct API render. HTML inlines and serves; JSON 302-redirects to `app_url`. Useful for no-SPA-required links. |
+| `app_url` | `${APP_URL}/pages/:id` | SPA route. Renders HTML in a sandboxed iframe, JSON via `@json-render/react`. Default share target. |
+| `app_url` (full mode) | `${APP_URL}/pages/:id?mode=full` | Same SPA route, maximized — hides the SPA sidebar/header so the page body gets the full viewport. Slim header with title + Exit-Full button. Useful for embeds + standalone dashboards. |
+| `api_url` | `${MCP_BASE_URL}/p/:id` | Direct API render. HTML inlines and serves; JSON 302-redirects to `app_url`. Useful for no-SPA-required links. |
 
-**Default**: share `app_url`. Only use `api_url` when you specifically need a
-link that bypasses the SPA (e.g. embedding in Slack, where Slack's unfurl
-preview only follows the API origin).
+`${APP_URL}` is the SPA origin (e.g. `https://app.agent-swarm.dev` in prod).
+`${MCP_BASE_URL}` is the API origin (e.g. `https://api.desplega.agent-swarm.dev`
+in prod). Both are surfaced as env vars to your agent — never hardcode hosts;
+read them from `process.env`.
+
+**Default**: share `app_url`. Append `?mode=full` when the recipient should
+see ONLY the page (no surrounding swarm chrome). Use `api_url` only when you
+specifically need a link that bypasses the SPA (e.g. embedding in Slack,
+where the unfurl preview only follows the API origin).
 
 ## Versioning
 

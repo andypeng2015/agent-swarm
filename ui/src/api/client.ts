@@ -1719,7 +1719,26 @@ class ApiClient {
       headers: this.getHeaders(),
       credentials: "include",
     });
-    if (!res.ok) throw new Error(`fetchPageMetadata ${id}: ${res.status}`);
+    if (!res.ok) {
+      // Read the body so callers can branch on the server's hint without
+      // doing a second round-trip (e.g. password pages return 401 with
+      // body `{error: "password required"}`; the retry path uses that to
+      // short-circuit instead of calling /launch which always 400s for
+      // password mode).
+      let bodyText = "";
+      try {
+        bodyText = await res.text();
+      } catch {
+        /* ignore */
+      }
+      const err = new Error(`fetchPageMetadata ${id}: ${res.status}`) as Error & {
+        status?: number;
+        bodyText?: string;
+      };
+      err.status = res.status;
+      err.bodyText = bodyText;
+      throw err;
+    }
     return res.json();
   }
 
