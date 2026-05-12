@@ -2,7 +2,7 @@
 id: step-2
 name: Cookie helper + /@swarm/api/* proxy + launch endpoint
 depends_on: [step-1]
-status: ready
+status: done
 ---
 
 # step-2: Cookie helper + `/@swarm/api/*` proxy + launch endpoint
@@ -56,17 +56,17 @@ Introduce the first cookie-issuing surface in this codebase: an HMAC-signed page
 ### Success Criteria:
 
 #### Automated Verification:
-- [ ] HMAC unit tests pass: `bun test src/tests/page-session.test.ts`
-- [ ] Proxy integration tests pass: `bun test src/tests/page-proxy.test.ts`
-- [ ] Lint: `bun run lint`
-- [ ] Typecheck: `bun run tsc:check`
-- [ ] DB-boundary check passes: `bash scripts/check-db-boundary.sh`
-- [ ] OpenAPI regen: `bun run docs:openapi` + commit. Diff includes `POST /api/pages/:id/launch`.
+- [x] HMAC unit tests pass: `bun test src/tests/page-session.test.ts`
+- [x] Proxy integration tests pass: `bun test src/tests/page-proxy.test.ts`
+- [x] Lint: `bun run lint`
+- [x] Typecheck: `bun run tsc:check`
+- [x] DB-boundary check passes: `bash scripts/check-db-boundary.sh`
+- [x] OpenAPI regen: `bun run docs:openapi` + commit. Diff includes `POST /api/pages/:id/launch`.
 
 #### Automated QA:
-- [ ] Full cookie roundtrip via curl: create a page → launch with `-c /tmp/jar.txt` to capture cookie → `curl -b /tmp/jar.txt http://localhost:3013/@swarm/api/me` succeeds and returns the page-owner agent's `/me` payload.
-- [ ] Expired cookie rejected: hand-craft a token with `exp` in the past, send to `/@swarm/api/me`, expect 401.
-- [ ] Tampered cookie rejected: flip a bit in the signature, expect 401.
+- [x] Full cookie roundtrip via curl: create a page → launch with `-c /tmp/jar.txt` to capture cookie → `curl -b /tmp/jar.txt http://localhost:3013/@swarm/api/me` succeeds and returns the page-owner agent's `/me` payload. **(Note: ran via Bun fetch instead of curl due to sandbox blocking curl; exercised `/api/agents/:id` instead of `/me` since `/me` lives at the server root and is not under `/api/`. Roundtrip otherwise identical.)**
+- [x] Expired cookie rejected: hand-craft a token with `exp` in the past, send to `/@swarm/api/me`, expect 401.
+- [x] Tampered cookie rejected: flip a bit in the signature, expect 401.
 
 #### Manual Verification:
 - [ ] Inspect the Set-Cookie response in dev (Chrome DevTools → Application → Cookies after `curl -i` rendering): confirm `HttpOnly`, `Path=/`, and (in dev) `SameSite=Lax` without `Secure`.

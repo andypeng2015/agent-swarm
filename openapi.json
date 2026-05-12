@@ -3764,6 +3764,81 @@
         }
       }
     },
+    "/@swarm/api/{path}": {
+      "get": {
+        "summary": "Cookie-gated proxy to the swarm API (used by db-backed page iframes)",
+        "tags": [
+          "Pages"
+        ],
+        "responses": {
+          "200": {
+            "description": "Proxied response from the underlying /api/* endpoint"
+          },
+          "401": {
+            "description": "No or invalid page-session cookie"
+          },
+          "404": {
+            "description": "Page referenced by the cookie no longer exists"
+          }
+        }
+      },
+      "post": {
+        "summary": "Cookie-gated proxy to the swarm API (POST)",
+        "tags": [
+          "Pages"
+        ],
+        "responses": {
+          "200": {
+            "description": "Proxied response"
+          },
+          "401": {
+            "description": "No or invalid page-session cookie"
+          }
+        }
+      },
+      "put": {
+        "summary": "Cookie-gated proxy to the swarm API (PUT)",
+        "tags": [
+          "Pages"
+        ],
+        "responses": {
+          "200": {
+            "description": "Proxied response"
+          },
+          "401": {
+            "description": "No or invalid page-session cookie"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Cookie-gated proxy to the swarm API (DELETE)",
+        "tags": [
+          "Pages"
+        ],
+        "responses": {
+          "200": {
+            "description": "Proxied response"
+          },
+          "401": {
+            "description": "No or invalid page-session cookie"
+          }
+        }
+      },
+      "patch": {
+        "summary": "Cookie-gated proxy to the swarm API (PATCH)",
+        "tags": [
+          "Pages"
+        ],
+        "responses": {
+          "200": {
+            "description": "Proxied response"
+          },
+          "401": {
+            "description": "No or invalid page-session cookie"
+          }
+        }
+      }
+    },
     "/api/pages": {
       "post": {
         "summary": "Create a new page",
@@ -3868,6 +3943,37 @@
         "responses": {
           "200": {
             "description": "Page row"
+          },
+          "404": {
+            "description": "Page not found"
+          }
+        }
+      }
+    },
+    "/api/pages/{id}/launch": {
+      "post": {
+        "summary": "Launch a page session (issues HttpOnly cookie)",
+        "tags": [
+          "Pages"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Cookie issued"
           },
           "404": {
             "description": "Page not found"
