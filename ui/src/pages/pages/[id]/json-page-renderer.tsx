@@ -300,11 +300,7 @@ export function JsonPageRenderer({ body, fetchImpl }: JsonPageRendererProps) {
             fetch: fetchImpl,
           });
           try {
-            const result = await (
-              sdk[params.sdk as keyof ReturnType<typeof makeSwarmSDK>] as (
-                args: Record<string, unknown>,
-              ) => Promise<unknown>
-            )(params.args ?? {});
+            const result = await sdk.invoke(params.sdk as SwarmSdkMethod, params.args ?? {});
             updateState({ lastResponse: result });
           } catch (e) {
             updateState({ actionError: e instanceof Error ? e.message : String(e) });

@@ -106,27 +106,109 @@ per-version body cap is 5 MiB).
 
 ## Browser SDK
 
-For `text/html` pages, the same `window.SwarmSDK` from the artifact subsystem
-is auto-injected. Methods: `createTask`, `getTasks`, `getTaskDetails`,
-`storeProgress`, `postMessage`, `readMessages`, `getSwarm`, `listServices`,
-`slackReply`. Inline usage:
+Every HTML page automatically gets `window.SwarmSDK` (the class) and
+`window.swarmSdk` (a ready-to-use singleton) injected. The SDK routes through
+the `/@swarm/api/*` proxy, which resolves the `page_session` cookie to a user
+identity and forwards with proper auth headers server-side — your page never
+sees or handles tokens.
+
+The SDK is **domain-grouped**. Each domain exposes idiomatic CRUD-ish methods
+that map 1:1 to the public REST API documented at
+[**docs.agent-swarm.dev/docs/api-reference**](https://docs.agent-swarm.dev/docs/api-reference).
+
+| Domain | Methods | Maps to |
+|---|---|---|
+| `swarmSdk.tasks` | `create(body)`, `list(filters?)`, `get(id)`, `storeProgress(id, data)` | `/api/tasks*` |
+| `swarmSdk.agents` | `list()`, `get(id)` | `/api/agents*` |
+| `swarmSdk.events` | `create(body)`, `list(filters?)`, `batch(body)`, `counts(filters?)` | `/api/events*` |
+| `swarmSdk.memory` | `search(body)`, `list(filters?)`, `get(id)`, `rate(body)` | `/api/memory*` |
+| `swarmSdk.repos` | `list()`, `get(id)`, `create(body)`, `update(id, body)`, `delete(id)` | `/api/repos*` |
+| `swarmSdk.schedules` | `list()`, `get(id)`, `create(body)`, `update(id, body)`, `delete(id)`, `run(id)` | `/api/schedules*` |
+| `swarmSdk.approvalRequests` | `list(filters?)`, `get(id)`, `create(body)`, `respond(id, body)` | `/api/approval-requests*` |
+
+Inline usage:
 
 ```html
 <script>
-  const swarm = new SwarmSDK();
-  const tasks = await swarm.getTasks({ status: 'in_progress' });
-  // render...
+  // Singleton is ready immediately — no `new SwarmSDK()` needed.
+  const tasks = await window.swarmSdk.tasks.list({ status: 'in_progress' });
+  const agents = await window.swarmSdk.agents.list();
+
+  // Create an event from a button click
+  document.querySelector('#log-btn').onclick = async () => {
+    await window.swarmSdk.events.create({ name: 'page.button.clicked', payload: { at: Date.now() } });
+  };
+
+  // Approve / reject an approval request
+  await window.swarmSdk.approvalRequests.respond(reqId, { decision: 'approved' });
 </script>
 ```
+
+Every method returns the parsed JSON response. Errors throw with `.status`
+and `.response` attached to the `Error` object so callers can branch on the
+HTTP status.
 
 > **`public` pages cannot call authed endpoints.** No cookie is minted on a
 > public page load → SDK calls 401. If your page needs to call swarm APIs,
 > use `authed` (or `password`).
 
-The SDK talks to the swarm API via the `/@swarm/api/*` proxy on the API
-origin. The proxy resolves the `page_session` cookie to a user identity and
-forwards with proper auth headers — agent-side credentials are never exposed
-to the browser.
+### Full signature
+
+This is the entire surface — copy it into your page if you want autocomplete
+hints in an editor. The runtime version is auto-injected; you don't need to
+include this in the page source.
+
+```js
+class SwarmSDK {
+  tasks: {
+    create(body)                       // POST /api/tasks
+    list(filters?)                     // GET  /api/tasks
+    get(id)                            // GET  /api/tasks/:id
+    storeProgress(id, data)            // POST /api/tasks/:id/progress
+  }
+  agents: {
+    list()                             // GET  /api/agents
+    get(id)                            // GET  /api/agents/:id
+  }
+  events: {
+    create(body)                       // POST /api/events
+    list(filters?)                     // GET  /api/events
+    batch(body)                        // POST /api/events/batch
+    counts(filters?)                   // GET  /api/events/counts
+  }
+  memory: {
+    search(body)                       // POST /api/memory/search
+    list(filters?)                     // GET  /api/memory/list
+    get(id)                            // GET  /api/memory/:id
+    rate(body)                         // POST /api/memory/rate
+  }
+  repos: {
+    list()                             // GET  /api/repos
+    get(id)                            // GET  /api/repos/:id
+    create(body)                       // POST /api/repos
+    update(id, body)                   // PUT  /api/repos/:id
+    delete(id)                         // DELETE /api/repos/:id
+  }
+  schedules: {
+    list()                             // GET  /api/schedules
+    get(id)                            // GET  /api/schedules/:id
+    create(body)                       // POST /api/schedules
+    update(id, body)                   // PUT  /api/schedules/:id
+    delete(id)                         // DELETE /api/schedules/:id
+    run(id)                            // POST /api/schedules/:id/run
+  }
+  approvalRequests: {
+    list(filters?)                     // GET  /api/approval-requests
+    get(id)                            // GET  /api/approval-requests/:id
+    create(body)                       // POST /api/approval-requests
+    respond(id, body)                  // POST /api/approval-requests/:id/respond
+  }
+}
+```
+
+For the full list of fields each endpoint accepts/returns, see
+[**docs.agent-swarm.dev/docs/api-reference**](https://docs.agent-swarm.dev/docs/api-reference).
+The SDK is a thin domain wrapper — anything documented there is reachable.
 
 ## JSON Renderer
 
