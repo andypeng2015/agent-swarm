@@ -76,8 +76,17 @@ export interface AgentCredStatus {
   satisfiedBy?: "env" | "file" | "side-effect-pending" | null;
   hint?: string | null;
   liveTest?: AgentCredStatusLiveTest | null;
+  latestModel?: AgentLatestModel | null;
   reportedAt: number;
   reportKind?: "boot" | "post_task";
+}
+
+export interface AgentLatestModel {
+  model: string;
+  source: "task" | "agent_config" | "adapter_default" | "custom";
+  taskId?: string | null;
+  harnessProvider?: ProviderName | null;
+  reportedAt: number;
 }
 
 export interface AgentTask {
@@ -1171,6 +1180,8 @@ export interface StatusIdentity {
   is_cloud: boolean;
   marketing_url: string | null;
   hide_cloud_promo: boolean;
+  /** Stable org/tenant identifier (set via `SWARM_ORG_ID`); null on self-host. */
+  org_id: string | null;
 }
 
 export interface StatusActivity {
