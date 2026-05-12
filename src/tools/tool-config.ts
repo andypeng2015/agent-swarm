@@ -140,6 +140,14 @@ export const DEFERRED_TOOLS = new Set([
   "mcp-server-uninstall",
   "mcp-server-update",
 
+  // Code-Health MCP (5) — DES-366. Deferred because they're niche to the
+  // Code-Health Agent workflow; most sessions don't need them in context.
+  "code-health-scan",
+  "code-health-next",
+  "code-health-resolve",
+  "code-health-backlog",
+  "code-health-rescore",
+
   // User Identity (2)
   "resolve-user",
   "manage-user",

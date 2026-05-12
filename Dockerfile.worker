@@ -46,6 +46,19 @@ RUN apt-get update && apt-get install -y curl ca-certificates gnupg \
     gh \
     && rm -rf /var/lib/apt/lists/*
 
+# Install pipx + desloppify (Code-Health MCP scanner — DES-366).
+# pipx isolates Python tools into per-tool virtualenvs and adds shims to
+# /root/.local/bin. We install under root so the binary lands in a system
+# path; pass `--global` so all users (worker too) get the shim.
+# `knip` is invoked on-demand via `bunx knip` (no global install required —
+# it's a per-repo dev dep), so we don't install it here.
+ARG DESLOPPIFY_VERSION=0.9.15
+RUN apt-get update && apt-get install -y --no-install-recommends pipx \
+    && rm -rf /var/lib/apt/lists/* \
+    && pipx ensurepath --global \
+    && PIPX_HOME=/opt/pipx PIPX_BIN_DIR=/usr/local/bin pipx install --pip-args="--no-cache-dir" "desloppify[full]==${DESLOPPIFY_VERSION}" \
+    && desloppify --version
+
 # Install GitLab CLI (glab) for GitLab integration
 ARG GLAB_VERSION=1.89.0
 ARG TARGETARCH

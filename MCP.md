@@ -1075,6 +1075,62 @@ Delete an MCP server definition. Only the owning agent or lead can delete.
 |-----------|------|----------|---------|-------------|
 | `id` | `string` | Yes | - | ID of the MCP server to delete |
 
+### code-health-resolve
+
+**Code-Health Resolve**
+
+Mark a queue item as resolved, deferred, or wontfix. `prUrl` and `note` are optional but recommended — they record the human/agent decision for audit and `rescore`. Resolving an item zeroes its score; it stays in the queue but drops out of `next`.
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `repoPath` | `string` | Yes | - | Absolute path to the target repo's working tree. |
+| `itemId` | `string` | Yes | - | Queue item ID (from `next` / `backlog`). |
+| `prUrl` | `string` | No | - | PR URL that resolved this item, if any. |
+| `note` | `string` | No | - | Human-readable rationale. |
+
+### code-health-next
+
+**Code-Health Next**
+
+Return the single highest-priority open item from the queue. Pass `scanner` or `kindPrefix` to filter (e.g., scanner='knip' to bias toward dead-export work). Returns `{ item: null }` when the queue is drained.
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `repoPath` | `string` | Yes | - | Absolute path to the target repo's working tree. |
+| `kindPrefix` | `string` | No | - | Match items whose `kind` starts with this string (e.g. 'dead-'). |
+
+### code-health-backlog
+
+**Code-Health Backlog**
+
+List queue items, sorted by priority (highest first). Defaults to open items only — pass `includeResolved=true` for a full audit view, or `status` to filter to a single outcome. Designed for human/lead review of the slop backlog.
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `repoPath` | `string` | Yes | - | Absolute path to the target repo's working tree. |
+| `limit` | `number` | No | - | Max items to return (default 50). |
+| `includeResolved` | `boolean` | No | - | If true, include all non-open statuses (resolved/deferred/wontfix). Ignored if `status` is set. |
+
+### code-health-scan
+
+**Code-Health Scan**
+
+Run a code-health scanner against a repo and merge results into the on-disk queue at <repoPath>/.code-health/queue.json. Pass `scanner` to run a single scanner (knip or desloppify), or omit to run all scanners sequentially. Returns a summary (items added, re-seen, total open). The repo's queue is the source of truth — the MCP itself is stateless.
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `repoPath` | `string` | Yes | - | Absolute path to the target repo's working tree. |
+
+### code-health-rescore
+
+**Code-Health Rescore**
+
+Recompute priority scores on all existing queue items without re-running scanners. Designed to be called by the (future) Code-Health Agent after a PR merges, so the queue re-orders without a full scan. Cheap: pure function over the existing queue.
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `repoPath` | `string` | Yes | - | Absolute path to the target repo's working tree. |
+
 ### tracker-map-agent
 
 **Map Agent to Tracker User**

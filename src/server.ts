@@ -26,6 +26,15 @@ import {
   registerMcpServerUninstallTool,
   registerMcpServerUpdateTool,
 } from "./tools/mcp-servers";
+// Code-Health capability (DES-366) — wraps desloppify + knip behind a unified
+// per-repo queue (stateless MCP, state on disk in <repoPath>/.code-health/).
+import {
+  registerCodeHealthBacklogTool,
+  registerCodeHealthNextTool,
+  registerCodeHealthRescoreTool,
+  registerCodeHealthResolveTool,
+  registerCodeHealthScanTool,
+} from "./tools/mcp-servers/code-health";
 // Memory capability
 import { registerMemoryDeleteTool } from "./tools/memory-delete";
 import { registerMemoryGetTool } from "./tools/memory-get";
@@ -282,6 +291,15 @@ export function createServer() {
   registerSkillInstallRemoteTool(server);
   registerSkillSyncRemoteTool(server);
   registerSkillPublishTool(server);
+
+  // Code-Health capability - always registered (no DB / network dependency;
+  // safe even when the swarm runs without external integrations). Tools take
+  // an absolute `repoPath` and read/write a per-repo queue on disk.
+  registerCodeHealthScanTool(server);
+  registerCodeHealthNextTool(server);
+  registerCodeHealthResolveTool(server);
+  registerCodeHealthBacklogTool(server);
+  registerCodeHealthRescoreTool(server);
 
   // MCP Servers - always registered
   registerMcpServerCreateTool(server);
