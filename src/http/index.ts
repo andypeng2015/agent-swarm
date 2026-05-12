@@ -37,6 +37,7 @@ import { handleMcpServers } from "./mcp-servers";
 import { handleMemory } from "./memory";
 import { handlePageProxy } from "./page-proxy";
 import { handlePages } from "./pages";
+import { handlePagesPublic } from "./pages-public";
 import { handlePoll } from "./poll";
 import { handlePricing } from "./pricing";
 import { handlePromptTemplates } from "./prompt-templates";
@@ -149,6 +150,7 @@ const httpServer = createHttpServer(async (req, res) => {
     () => handleMcpServers(req, res, pathSegments, queryParams),
     () => handleMcpOAuth(req, res, pathSegments, queryParams),
     () => handleMemory(req, res, pathSegments, myAgentId),
+    () => handlePagesPublic(req, res, pathSegments, queryParams),
     () => handlePageProxy(req, res),
     () => handlePages(req, res, pathSegments, queryParams, myAgentId),
     () => handleApiKeys(req, res, pathSegments, queryParams),

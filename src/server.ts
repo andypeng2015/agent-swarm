@@ -5,6 +5,7 @@ import { registerCancelTaskTool } from "./tools/cancel-task";
 import { registerContextDiffTool } from "./tools/context-diff";
 import { registerContextHistoryTool } from "./tools/context-history";
 import { registerCreateChannelTool } from "./tools/create-channel";
+import { registerCreatePageTool } from "./tools/create-page";
 import { registerDbQueryTool } from "./tools/db-query";
 import { registerDeleteChannelTool } from "./tools/delete-channel";
 import { registerGetSwarmTool } from "./tools/get-swarm";
@@ -283,6 +284,14 @@ export function createServer() {
   registerSkillInstallRemoteTool(server);
   registerSkillSyncRemoteTool(server);
   registerSkillPublishTool(server);
+
+  // Pages capability - DB-backed lightweight artifacts (HTML / JSON specs).
+  // NOT yet in DEFAULT_CAPABILITIES — operator must opt in via
+  // `CAPABILITIES=...,pages` until step-9 of the db-backed-pages plan flips
+  // the default. See thoughts/taras/plans/2026-05-12-db-backed-pages/root.md.
+  if (hasCapability("pages")) {
+    registerCreatePageTool(server);
+  }
 
   // MCP Servers - always registered
   registerMcpServerCreateTool(server);

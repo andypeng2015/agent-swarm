@@ -17,6 +17,7 @@ import "../src/http/integrations";
 import "../src/http/memory";
 import "../src/http/page-proxy";
 import "../src/http/pages";
+import "../src/http/pages-public";
 import "../src/http/prompt-templates";
 import "../src/http/poll";
 import "../src/http/pricing";

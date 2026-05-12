@@ -2,7 +2,7 @@
 id: step-3
 name: HTTP REST mutations + MCP tool + public /p/:id
 depends_on: [step-2]
-status: ready
+status: done
 ---
 
 # step-3: HTTP REST mutations + MCP tool + public `/p/:id`
@@ -108,23 +108,23 @@ Do NOT yet add `pages` to `DEFAULT_CAPABILITIES` (`src/server.ts:123`). The tool
 ### Success Criteria:
 
 #### Automated Verification:
-- [ ] All new tests pass: `bun test src/tests/pages-versioning.test.ts src/tests/pages-public-html.test.ts src/tests/pages-public-json-redirect.test.ts src/tests/pages-public-authed-401.test.ts src/tests/create-page-tool.test.ts`
-- [ ] Existing tests still pass: `bun test`
-- [ ] Lint: `bun run lint`
-- [ ] Typecheck: `bun run tsc:check`
-- [ ] DB-boundary check: `bash scripts/check-db-boundary.sh`
-- [ ] OpenAPI fresh: `bun run docs:openapi && test -z "$(git status --porcelain openapi.json docs-site/content/docs/api-reference/)"`
+- [x] All new tests pass: `bun test src/tests/pages-versioning.test.ts src/tests/pages-public-html.test.ts src/tests/pages-public-json-redirect.test.ts src/tests/pages-public-authed-401.test.ts src/tests/create-page-tool.test.ts`
+- [x] Existing tests still pass: `bun test`
+- [x] Lint: `bun run lint`
+- [x] Typecheck: `bun run tsc:check`
+- [x] DB-boundary check: `bash scripts/check-db-boundary.sh`
+- [x] OpenAPI fresh: `bun run docs:openapi && test -z "$(git status --porcelain openapi.json docs-site/content/docs/api-reference/)"`
 
 #### Automated QA:
-- [ ] End-to-end public HTML via curl:
+- [x] End-to-end public HTML via curl:
   ```bash
   curl -sS -X POST http://localhost:3013/api/pages \
     -H "Authorization: Bearer ${API_KEY:-123123}" -H "Content-Type: application/json" \
     -d '{"title":"Public Report","contentType":"text/html","authMode":"public","body":"<h1>Hi</h1>"}'
   curl -sS http://localhost:3013/p/<id> | grep -q "class SwarmSDK"
   ```
-- [ ] End-to-end versioning: PUT same id three times with different bodies → `GET /api/pages/<id>/versions` returns 3 rows (descending).
-- [ ] MCP tool (via stdio transport test harness or `bun run src/cli.tsx call-tool ...` if available): `create_page` returns `{id, version, app_url, api_url}` with URLs containing `/p/` and `/artifacts/` respectively.
+- [x] End-to-end versioning: PUT same id three times with different bodies → `GET /api/pages/<id>/versions` returns 3 rows (descending).
+- [x] MCP tool (via stdio transport test harness or `bun run src/cli.tsx call-tool ...` if available): `create_page` returns `{id, version, app_url, api_url}` with URLs containing `/p/` and `/artifacts/` respectively.
 
 #### Manual Verification:
 - [ ] Open a public HTML page in Chrome via the `api_url` returned from the MCP tool. Confirm SDK is on `window.SwarmSDK` in DevTools console: `typeof window.SwarmSDK` → `"function"`. (Note: SDK calls will 401 because public pages don't issue cookies — this is the documented v1 behavior.)

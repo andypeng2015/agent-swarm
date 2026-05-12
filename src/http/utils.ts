@@ -45,6 +45,43 @@ export async function parseBody<T = unknown>(req: IncomingMessage): Promise<T> {
   return JSON.parse(Buffer.concat(chunks).toString()) as T;
 }
 
+/**
+ * Sentinel returned by `enforceContentLengthCap` when the request exceeds the
+ * provided byte cap. The caller has already received a `413` response — it
+ * should stop processing the request immediately.
+ */
+export const BODY_TOO_LARGE = Symbol("body-too-large");
+
+/**
+ * Reject the request with `413 Payload Too Large` when its `Content-Length`
+ * header exceeds `maxBytes`. Returns `BODY_TOO_LARGE` after writing the
+ * response (caller short-circuits); otherwise returns `null` and processing
+ * continues.
+ *
+ * This is a cheap pre-flight; downstream `parseBody`/streamed parsers can be
+ * a second defence if a malicious client lies about Content-Length.
+ *
+ * Used by `/api/pages` POST/PUT to bound the per-row body size — page bodies
+ * land in SQLite as a TEXT column and there is no per-instance quota yet.
+ */
+export function enforceContentLengthCap(
+  req: IncomingMessage,
+  res: ServerResponse,
+  maxBytes: number,
+): typeof BODY_TOO_LARGE | null {
+  const raw = req.headers["content-length"];
+  const val = Array.isArray(raw) ? raw[0] : raw;
+  if (!val) return null; // No header — best-effort; parseBody will still buffer.
+  const n = Number(val);
+  if (!Number.isFinite(n) || n < 0) return null;
+  if (n > maxBytes) {
+    res.writeHead(413, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: `Payload too large (max ${maxBytes} bytes)` }));
+    return BODY_TOO_LARGE;
+  }
+  return null;
+}
+
 /** Send JSON response */
 export function json(res: ServerResponse, data: unknown, status = 200) {
   res.writeHead(status, { "Content-Type": "application/json" });

@@ -4,7 +4,7 @@ author: Taras
 plan_type: dag
 status: in-progress
 last_updated: 2026-05-12
-last_updated_by: Claude
+last_updated_by: Claude (step-3 done)
 ---
 
 # DB-backed Pages — Plan (DAG)
@@ -139,7 +139,7 @@ graph TD
 |----|------|------------|--------|------|
 | step-1 | Storage spine | — | ready | [step-1.md](./step-1.md) |
 | step-2 | Cookie helper + `/@swarm/api/*` proxy | step-1 | ready | [step-2.md](./step-2.md) |
-| step-3 | HTTP REST + MCP tool + public `/p/:id` | step-2 | ready | [step-3.md](./step-3.md) |
+| step-3 | HTTP REST + MCP tool + public `/p/:id` | step-2 | done | [step-3.md](./step-3.md) |
 | step-4 | Authed mode (launch cookie) | step-3 | ready | [step-4.md](./step-4.md) |
 | step-5 | Password mode (`?key=` + Basic) | step-3 | ready | [step-5.md](./step-5.md) |
 | step-6 | SPA `/artifacts/:id` + HTML iframe | step-3 | ready | [step-6.md](./step-6.md) |

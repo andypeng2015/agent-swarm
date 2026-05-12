@@ -3917,6 +3917,46 @@
             "description": "Slug already exists for this agent"
           }
         }
+      },
+      "get": {
+        "summary": "List pages",
+        "tags": [
+          "Pages"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0
+            },
+            "required": false,
+            "name": "offset",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Page list with totals + share-URL pointers"
+          }
+        }
       }
     },
     "/api/pages/{id}": {
@@ -3948,6 +3988,122 @@
             "description": "Page not found"
           }
         }
+      },
+      "put": {
+        "summary": "Update an existing page",
+        "tags": [
+          "Pages"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "title": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "description": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "contentType": {
+                    "type": "string",
+                    "enum": [
+                      "text/html",
+                      "application/json"
+                    ]
+                  },
+                  "authMode": {
+                    "type": "string",
+                    "enum": [
+                      "public",
+                      "authed",
+                      "password"
+                    ]
+                  },
+                  "password": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "minLength": 1
+                  },
+                  "body": {
+                    "type": "string"
+                  },
+                  "needsCredentials": {
+                    "type": [
+                      "array",
+                      "null"
+                    ],
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Page updated"
+          },
+          "404": {
+            "description": "Page not found"
+          },
+          "413": {
+            "description": "Payload too large"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete a page (and all version history)",
+        "tags": [
+          "Pages"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Page deleted"
+          },
+          "404": {
+            "description": "Page not found"
+          }
+        }
       }
     },
     "/api/pages/{id}/launch": {
@@ -3974,6 +4130,138 @@
         "responses": {
           "204": {
             "description": "Cookie issued"
+          },
+          "404": {
+            "description": "Page not found"
+          }
+        }
+      }
+    },
+    "/api/pages/{id}/versions": {
+      "get": {
+        "summary": "List version snapshots for a page",
+        "tags": [
+          "Pages"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Version list (newest first)"
+          },
+          "404": {
+            "description": "Page not found"
+          }
+        }
+      }
+    },
+    "/api/pages/{id}/versions/{version}": {
+      "get": {
+        "summary": "Get a single page-version snapshot",
+        "tags": [
+          "Pages"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "required": true,
+            "name": "version",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Version snapshot"
+          },
+          "404": {
+            "description": "Page or version not found"
+          }
+        }
+      }
+    },
+    "/p/{id}": {
+      "get": {
+        "summary": "Render a page (HTML inline; JSON redirects to SPA)",
+        "tags": [
+          "Pages"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Rendered HTML page"
+          },
+          "302": {
+            "description": "Redirect to SPA for JSON content"
+          },
+          "401": {
+            "description": "Page requires an authenticated session"
+          },
+          "404": {
+            "description": "Page not found"
+          }
+        }
+      }
+    },
+    "/p/{id}.json": {
+      "get": {
+        "summary": "Page metadata + body as JSON (used by SPA renderer)",
+        "tags": [
+          "Pages"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Page JSON"
+          },
+          "401": {
+            "description": "Page requires an authenticated session"
           },
           "404": {
             "description": "Page not found"
