@@ -4149,6 +4149,24 @@
         }
       }
     },
+    "/api/pages/actions": {
+      "get": {
+        "summary": "List JSON-page action allowlist (with param JSON Schemas)",
+        "tags": [
+          "Pages"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Action allowlist"
+          }
+        }
+      }
+    },
     "/api/pages/{id}/versions": {
       "get": {
         "summary": "List version snapshots for a page",

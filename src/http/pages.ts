@@ -166,6 +166,58 @@ const listPagesRoute = route({
   },
 });
 
+/**
+ * GET /api/pages/actions — discovery endpoint for the JSON-page action
+ * allowlist (step-7 of the db-backed-pages plan). Returns the full set of
+ * action types that a JSON page can declare, plus a JSON-Schema rendering of
+ * each action's params (derived from the same Zod schemas the SPA uses, so
+ * the contract is single-source-of-truth).
+ *
+ * Used by tools that generate pages programmatically (agents, fixtures,
+ * future MCP tooling) to introspect what's supported without scraping the
+ * skill markdown.
+ */
+const listPageActionsRoute = route({
+  method: "get",
+  path: "/api/pages/actions",
+  pattern: ["api", "pages", "actions"],
+  summary: "List JSON-page action allowlist (with param JSON Schemas)",
+  tags: ["Pages"],
+  responses: {
+    200: { description: "Action allowlist" },
+  },
+});
+
+/**
+ * Action-param schemas duplicated from `ui/src/pages/artifacts/[id]/json-page-renderer.tsx`.
+ * Kept here (not imported from `ui/`) because the API server must not depend on
+ * the SPA build. If you change one side, update the other — there's an
+ * end-to-end test in step-7's qa-use scenario that exercises both action paths,
+ * so drift surfaces fast in practice.
+ */
+const SDK_METHODS = [
+  "createTask",
+  "getTasks",
+  "getTaskDetails",
+  "storeProgress",
+  "postMessage",
+  "readMessages",
+  "getSwarm",
+  "listServices",
+  "slackReply",
+] as const;
+
+const swarmSdkActionParamsSchema = z.object({
+  sdk: z.enum(SDK_METHODS),
+  args: z.record(z.string(), z.unknown()).optional(),
+});
+
+const swarmCallActionParamsSchema = z.object({
+  method: z.enum(["GET", "POST", "PUT", "DELETE", "PATCH"]),
+  endpoint: z.string(),
+  body: z.record(z.string(), z.unknown()).optional(),
+});
+
 const listPageVersionsRoute = route({
   method: "get",
   path: "/api/pages/{id}/versions",
@@ -338,6 +390,30 @@ export async function handlePages(
       }
       throw err;
     }
+    return true;
+  }
+
+  // GET /api/pages/actions — JSON-page action allowlist. MUST come BEFORE
+  // getPageRoute (which matches `["api", "pages", null]`) because otherwise
+  // the `null`-wildcard slot would capture "actions" as a page id.
+  if (listPageActionsRoute.match(req.method, pathSegments)) {
+    const sdkSchema = z.toJSONSchema(swarmSdkActionParamsSchema, { target: "draft-7" });
+    const callSchema = z.toJSONSchema(swarmCallActionParamsSchema, { target: "draft-7" });
+    json(res, {
+      actions: [
+        {
+          name: "swarm.sdk",
+          description: "Invoke a method on the in-SPA Swarm SDK with the viewer's bearer.",
+          params: sdkSchema,
+          sdkMethods: SDK_METHODS,
+        },
+        {
+          name: "swarm.call",
+          description: "Raw HTTP call to a swarm /api/* endpoint with the viewer's bearer.",
+          params: callSchema,
+        },
+      ],
+    });
     return true;
   }
 

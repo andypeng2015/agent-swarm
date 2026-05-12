@@ -38,6 +38,7 @@ import { Label } from "@/components/ui/label";
 import { PageHeader } from "@/components/ui/page-header";
 import { Skeleton } from "@/components/ui/skeleton";
 import { getConfig } from "@/lib/config";
+import { JsonPageRenderer } from "./json-page-renderer";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -172,28 +173,10 @@ function PasswordHtmlFrame({ id, title }: FrameProps) {
   );
 }
 
-function JsonPlaceholder({ id }: { id: string }) {
-  const apiUrl = `${getAbsoluteApiUrl()}/p/${encodeURIComponent(id)}`;
-  return (
-    <AlertCallout tone="info" icon={AlertCircle} title="JSON renderer coming in step-7">
-      <p className="mb-2">
-        This page is a JSON artifact. The interactive renderer is not yet wired up — track progress
-        in step-7 of the db-backed-pages plan.
-      </p>
-      <p>
-        Inspect the raw JSON at:{" "}
-        <a
-          href={`${apiUrl}.json`}
-          target="_blank"
-          rel="noreferrer"
-          className="underline text-primary"
-        >
-          {apiUrl}.json
-        </a>
-      </p>
-    </AlertCallout>
-  );
-}
+// JSON pages render through `@json-render/react` via the `JsonPageRenderer`
+// component imported from `./json-page-renderer`. The catalog + action
+// handlers live there (kept separate so the artifact page itself stays
+// focused on the iframe / auth-mode plumbing).
 
 // ─── Loading / error ────────────────────────────────────────────────────────
 
@@ -243,7 +226,7 @@ export default function ArtifactPage() {
 
   let body: React.ReactNode;
   if (data.contentType === "application/json") {
-    body = <JsonPlaceholder id={id} />;
+    body = <JsonPageRenderer body={data.body} />;
   } else {
     switch (data.authMode) {
       case "public":

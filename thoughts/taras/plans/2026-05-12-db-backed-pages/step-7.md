@@ -2,7 +2,10 @@
 id: step-7
 name: JSON renderer (@json-render/react)
 depends_on: [step-6]
-status: ready
+status: done
+assignee: orchestrator-step-7-2026-05-12
+claimed_at: 2026-05-12T00:00:00Z
+completed_at: 2026-05-12T00:00:00Z
 ---
 
 # step-7: JSON renderer (`@json-render/react`)
@@ -131,16 +134,16 @@ The schemas are derived from the Zod definitions via `zod-to-json-schema` (alrea
 ### Success Criteria:
 
 #### Automated Verification:
-- [ ] `cd ui && pnpm install --frozen-lockfile` (lockfile is committed and valid)
-- [ ] `cd ui && pnpm exec tsc -b`
-- [ ] `cd ui && pnpm lint`
-- [ ] `cd ui && pnpm test src/pages/json-page-renderer.test.tsx` (assumes vitest already configured; if not, add minimal `vitest.config.ts` in this step)
-- [ ] Root tests still pass: `bun test`
-- [ ] Root lint + typecheck: `bun run lint && bun run tsc:check`
+- [x] `cd ui && pnpm install --frozen-lockfile` (lockfile is committed and valid)
+- [x] `cd ui && pnpm exec tsc -b`
+- [x] `cd ui && pnpm lint`
+- [ ] ~~`cd ui && pnpm test src/pages/json-page-renderer.test.tsx`~~ — **DEFERRED per Taras**: no UI vitest infra (no vitest, no jsdom). Taras manually QAs the SPA. The unit-test file (`json-page-renderer.vtest.tsx`) plus `vitest.config.ts` / `vitest.setup.ts` + test devDeps were intentionally removed. Backend coverage for the action allowlist is in `src/tests/pages-actions-endpoint.test.ts`.
+- [x] Root tests still pass: `bun test` (3858 pass / 0 fail)
+- [x] Root lint + typecheck: `bun run lint && bun run tsc:check`
 
 #### Automated QA:
-- [ ] qa-use scenario `pages-json-action.yaml` passes — full click-through with screenshots committed.
-- [ ] Confirm action dispatch reaches the server: after clicking, `GET /api/channels` returns the channel created by the button.
+- [ ] ~~qa-use scenario `pages-json-action.yaml`~~ — **DEFERRED per Taras**: no qa-use YAML; Taras manually QAs.
+- [ ] ~~`GET /api/channels` reflects the click side-effect~~ — covered by manual QA.
 
 #### Manual Verification:
 - [ ] Visual judgment on json-render.dev's default theme (Tailwind 4 + shadcn-styled components ship in the package). If it clashes with the SPA's look, file a follow-up — do NOT block this step on theme polish.

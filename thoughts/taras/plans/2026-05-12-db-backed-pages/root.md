@@ -4,7 +4,7 @@ author: Taras
 plan_type: dag
 status: in-progress
 last_updated: 2026-05-12
-last_updated_by: Claude (step-4 done)
+last_updated_by: Claude (step-7 done)
 ---
 
 # DB-backed Pages — Plan (DAG)
@@ -143,7 +143,7 @@ graph TD
 | step-4 | Authed mode (launch cookie) | step-3 | done | [step-4.md](./step-4.md) |
 | step-5 | Password mode (`?key=` + Basic) | step-3 | ready | [step-5.md](./step-5.md) |
 | step-6 | SPA `/artifacts/:id` + HTML iframe | step-3 | ready | [step-6.md](./step-6.md) |
-| step-7 | JSON renderer (`@json-render/react`) | step-6 | ready | [step-7.md](./step-7.md) |
+| step-7 | JSON renderer (`@json-render/react`) | step-6 | done | [step-7.md](./step-7.md) |
 | step-8 | Listing UI + skill doc | step-3 | ready | [step-8.md](./step-8.md) |
 | step-9 | Integration + capability flip + qa-use | step-4, step-5, step-7, step-8 | ready | [step-9.md](./step-9.md) |
 
