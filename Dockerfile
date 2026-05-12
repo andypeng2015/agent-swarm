@@ -22,11 +22,15 @@ FROM debian:bookworm-slim
 
 # Install minimal dependencies (for bun:sqlite and networking).
 # python3 is required by the script-workflow executor's `python` runtime.
+# openssl is required by the gsc CLI (JWT signing for Google Search Console auth).
+# bash is required by the script-workflow executor's `bash` runtime.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     wget \
     curl \
     jq \
+    openssl \
+    bash \
     python3 \
     fuse3 libfuse2 \
     && rm -rf /var/lib/apt/lists/*
@@ -53,6 +57,11 @@ COPY src/be/migrations/*.sql /app/migrations/
 # The glob matches whichever arch-specific sqlite-vec optional dep bun installed
 # for this build (sqlite-vec-linux-x64 or sqlite-vec-linux-arm64).
 COPY --from=builder /build/node_modules/sqlite-vec-linux-*/vec0.so /app/extensions/vec0.so
+
+# Copy gsc CLI (Google Search Console bash wrapper, vendored from desplega-ai/agent-work)
+# Used by workflow script nodes to query GSC data.
+COPY scripts/gsc /usr/local/bin/gsc
+RUN chmod +x /usr/local/bin/gsc
 
 # Install archil CLI for FUSE/R2-backed disk mounts
 RUN curl https://s3.amazonaws.com/archil-client/install | sh
