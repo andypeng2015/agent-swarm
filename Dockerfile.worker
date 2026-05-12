@@ -53,9 +53,13 @@ RUN apt-get update && apt-get install -y curl ca-certificates gnupg \
 # without an extra ensurepath step. `knip` is invoked per-repo via `bunx knip`
 # (no global install — it's a dev dep of each target repo).
 ARG DESLOPPIFY_VERSION=0.9.15
+# tree-sitter-language-pack 1.8.0 has a tree-sitter ABI mismatch that crashes
+# every desloppify scan (see cohesion.py:52 → extractors.py:90 TypeError).
+# Pin <1.8 until peteromallet/desloppify#605 merges, then drop the inject line.
 RUN apt-get update && apt-get install -y --no-install-recommends pipx \
     && rm -rf /var/lib/apt/lists/* \
     && PIPX_HOME=/opt/pipx PIPX_BIN_DIR=/usr/local/bin pipx install --pip-args="--no-cache-dir" "desloppify[full]==${DESLOPPIFY_VERSION}" \
+    && PIPX_HOME=/opt/pipx PIPX_BIN_DIR=/usr/local/bin pipx inject --force desloppify "tree-sitter-language-pack<1.8" \
     && desloppify --version
 
 # Install GitLab CLI (glab) for GitLab integration
