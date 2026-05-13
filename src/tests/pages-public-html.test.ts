@@ -83,7 +83,16 @@ describe("GET /p/:id — HTML public path", () => {
     const res = await fetch(`${BASE}/p/${id}`);
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")?.toLowerCase()).toContain("text/html");
-    expect(res.headers.get("content-security-policy")).toBeTruthy();
+    const csp = res.headers.get("content-security-policy");
+    expect(csp).toBeTruthy();
+    // jsdelivr + unpkg are allowlisted so pages can <script src="…"> common
+    // viz libs (Chart.js, ApexCharts, D3, …) instead of inlining bundles.
+    const scriptSrc = csp?.split(";").find((d) => d.trim().startsWith("script-src ")) ?? "";
+    expect(scriptSrc).toContain("https://cdn.jsdelivr.net");
+    expect(scriptSrc).toContain("https://unpkg.com");
+    const styleSrc = csp?.split(";").find((d) => d.trim().startsWith("style-src ")) ?? "";
+    expect(styleSrc).toContain("https://cdn.jsdelivr.net");
+    expect(styleSrc).toContain("https://unpkg.com");
     const text = await res.text();
     expect(text).toContain("<h1>Hello</h1>");
     expect(text).toContain("class SwarmSDK"); // BROWSER_SDK_JS sentinel
