@@ -202,11 +202,14 @@ function buildCsp(): string {
   // Fonts (`fonts.googleapis.com` stylesheets + `fonts.gstatic.com` font
   // files) for the swarm default typography, and same-origin /@swarm/api/*
   // for the Browser SDK. Inline scripts/styles remain allowed so
-  // agent-emitted styles work.
+  // agent-emitted styles work. `cdn.jsdelivr.net` + `unpkg.com` are the two
+  // dominant npm-package CDNs (Chart.js, ApexCharts, D3, htmx, Alpine, …) so
+  // pages that need a viz library can `<script src="…">` instead of inlining
+  // a multi-hundred-KB bundle.
   return [
     "default-src 'self'",
-    "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.tailwindcss.com",
-    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.tailwindcss.com",
+    "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.tailwindcss.com https://cdn.jsdelivr.net https://unpkg.com",
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.tailwindcss.com https://cdn.jsdelivr.net https://unpkg.com",
     "font-src 'self' https://fonts.gstatic.com data:",
     "img-src 'self' data: https:",
     "connect-src 'self'",
