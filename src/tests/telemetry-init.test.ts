@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import {
   _getInstallationIdForTests,
   _resetTelemetryStateForTests,
+  _resolveCloudMode,
   initTelemetry,
   track,
 } from "../telemetry";
@@ -13,6 +14,9 @@ process.env.ANONYMIZED_TELEMETRY = "true";
 describe("initTelemetry", () => {
   beforeEach(() => {
     _resetTelemetryStateForTests();
+    // Tests below set MCP_BASE_URL to assert classification — clear between
+    // tests so cases that expect "unset" don't inherit a prior test's value.
+    delete process.env.MCP_BASE_URL;
   });
 
   test("without generateIfMissing + missing config → installationId stays null (track no-ops)", async () => {
@@ -240,5 +244,164 @@ describe("initTelemetry", () => {
     );
     expect(_getInstallationIdForTests()).toBe(existing);
     expect(writesB).toEqual([]);
+  });
+
+  describe("_resolveCloudMode (URL → is_cloud + mcp_host)", () => {
+    test("cloud apex host → cloud=true", () => {
+      expect(_resolveCloudMode("https://agent-swarm-mcp.desplega.sh")).toEqual({
+        isCloud: true,
+        mcpHost: "agent-swarm-mcp.desplega.sh",
+      });
+      expect(_resolveCloudMode("https://api.agent-swarm.dev")).toEqual({
+        isCloud: true,
+        mcpHost: "api.agent-swarm.dev",
+      });
+      expect(_resolveCloudMode("https://agent-swarm.dev")).toEqual({
+        isCloud: true,
+        mcpHost: "agent-swarm.dev",
+      });
+      // Future cloud subdomains (suffix match)
+      expect(_resolveCloudMode("https://mcp.agent-swarm.dev/")).toEqual({
+        isCloud: true,
+        mcpHost: "mcp.agent-swarm.dev",
+      });
+      // Trailing path / port / auth must not change the host classification
+      expect(_resolveCloudMode("https://user:tok@api.agent-swarm.dev:443/api/foo?x=1")).toEqual({
+        isCloud: true,
+        mcpHost: "api.agent-swarm.dev",
+      });
+      // Case-insensitive
+      expect(_resolveCloudMode("https://API.Agent-Swarm.DEV")).toEqual({
+        isCloud: true,
+        mcpHost: "api.agent-swarm.dev",
+      });
+    });
+
+    test("self-hosted hosts → cloud=false (hostname still emitted)", () => {
+      expect(_resolveCloudMode("http://localhost:3013")).toEqual({
+        isCloud: false,
+        mcpHost: "localhost",
+      });
+      expect(_resolveCloudMode("https://my-internal-mcp.example.com")).toEqual({
+        isCloud: false,
+        mcpHost: "my-internal-mcp.example.com",
+      });
+      // Substring trap — must NOT be treated as cloud
+      expect(_resolveCloudMode("https://agent-swarm.dev.attacker.com")).toEqual({
+        isCloud: false,
+        mcpHost: "agent-swarm.dev.attacker.com",
+      });
+      // IPv4 self-host
+      expect(_resolveCloudMode("http://127.0.0.1:3013")).toEqual({
+        isCloud: false,
+        mcpHost: "127.0.0.1",
+      });
+    });
+
+    test("bare hostname / unset / weird scheme → safe fallback", () => {
+      // Bare hostname (no scheme) — URL constructor throws
+      expect(_resolveCloudMode("agent-swarm-mcp.desplega.sh")).toEqual({
+        isCloud: false,
+        mcpHost: "",
+      });
+      // Empty / undefined / null
+      expect(_resolveCloudMode(undefined)).toEqual({ isCloud: false, mcpHost: "" });
+      expect(_resolveCloudMode(null)).toEqual({ isCloud: false, mcpHost: "" });
+      expect(_resolveCloudMode("")).toEqual({ isCloud: false, mcpHost: "" });
+      // Obvious garbage
+      expect(_resolveCloudMode("not a url")).toEqual({ isCloud: false, mcpHost: "" });
+      // Weird scheme with no host component
+      expect(_resolveCloudMode("file:///tmp/foo")).toEqual({ isCloud: false, mcpHost: "" });
+    });
+  });
+
+  describe("track() ships is_cloud + mcp_host in properties", () => {
+    const originalFetch = globalThis.fetch;
+    let captured: Record<string, unknown> | null = null;
+
+    beforeEach(() => {
+      captured = null;
+      globalThis.fetch = (async (_url: string, init?: { body?: string }) => {
+        captured = init?.body ? JSON.parse(init.body) : null;
+        return new Response(null, { status: 204 });
+      }) as typeof fetch;
+    });
+
+    afterEach(() => {
+      globalThis.fetch = originalFetch;
+      delete process.env.MCP_BASE_URL;
+    });
+
+    test("cloud MCP_BASE_URL → properties.is_cloud=true + hostname", async () => {
+      process.env.MCP_BASE_URL = "https://agent-swarm-mcp.desplega.sh";
+      await initTelemetry(
+        "worker",
+        async () => "install_cloud_test",
+        async () => {},
+      );
+
+      track({ event: "server.started", properties: { port: 3013 } });
+      await new Promise((r) => setTimeout(r, 0));
+
+      const properties = (captured as { properties: Record<string, unknown> }).properties;
+      expect(properties.is_cloud).toBe(true);
+      expect(properties.mcp_host).toBe("agent-swarm-mcp.desplega.sh");
+      // Caller's properties preserved alongside the cohort signals.
+      expect(properties.port).toBe(3013);
+    });
+
+    test("self-hosted MCP_BASE_URL → properties.is_cloud=false + hostname", async () => {
+      process.env.MCP_BASE_URL = "http://localhost:3013";
+      await initTelemetry(
+        "worker",
+        async () => "install_self_test",
+        async () => {},
+      );
+
+      track({ event: "test.event", properties: {} });
+      await new Promise((r) => setTimeout(r, 0));
+
+      const properties = (captured as { properties: Record<string, unknown> }).properties;
+      expect(properties.is_cloud).toBe(false);
+      expect(properties.mcp_host).toBe("localhost");
+    });
+
+    test("missing MCP_BASE_URL → safe fallback (false / empty host)", async () => {
+      delete process.env.MCP_BASE_URL;
+      await initTelemetry(
+        "api-server",
+        async () => "install_no_url",
+        async () => {},
+      );
+
+      track({ event: "test.event", properties: {} });
+      await new Promise((r) => setTimeout(r, 0));
+
+      const properties = (captured as { properties: Record<string, unknown> }).properties;
+      expect(properties.is_cloud).toBe(false);
+      expect(properties.mcp_host).toBe("");
+    });
+
+    test("caller properties cannot override is_cloud / mcp_host", async () => {
+      // Defense-in-depth: even if a caller passes through user-supplied
+      // values, the cohort signals shipped on every event must come from
+      // initTelemetry — not from arbitrary call sites.
+      process.env.MCP_BASE_URL = "https://agent-swarm-mcp.desplega.sh";
+      await initTelemetry(
+        "worker",
+        async () => "install_override_test",
+        async () => {},
+      );
+
+      track({
+        event: "test.event",
+        properties: { is_cloud: false, mcp_host: "spoofed.example.com" },
+      });
+      await new Promise((r) => setTimeout(r, 0));
+
+      const properties = (captured as { properties: Record<string, unknown> }).properties;
+      expect(properties.is_cloud).toBe(true);
+      expect(properties.mcp_host).toBe("agent-swarm-mcp.desplega.sh");
+    });
   });
 });

@@ -14,9 +14,52 @@ const TIMEOUT_MS = 5_000;
 
 let installationId: string | null = null;
 let source = "unknown";
+let cachedIsCloud = false;
+let cachedMcpHost = "";
 
 function isEnabled(): boolean {
   return process.env.ANONYMIZED_TELEMETRY !== "false";
+}
+
+/**
+ * Hosts we own that indicate a cloud-pointed install. Exact-match for known
+ * hostnames + suffix-match for the cloud apex so future cloud subdomains
+ * (`mcp.agent-swarm.dev`, etc.) are automatically classified as cloud.
+ * Substring match is intentionally avoided — `agent-swarm.dev.attacker.com`
+ * must NOT be treated as cloud.
+ */
+const CLOUD_HOST_EXACT = new Set<string>(["agent-swarm-mcp.desplega.sh", "agent-swarm.dev"]);
+const CLOUD_HOST_SUFFIX = ".agent-swarm.dev";
+
+function isCloudHostname(hostname: string): boolean {
+  if (!hostname) return false;
+  const normalized = hostname.toLowerCase();
+  if (CLOUD_HOST_EXACT.has(normalized)) return true;
+  return normalized.endsWith(CLOUD_HOST_SUFFIX);
+}
+
+/**
+ * Parse `MCP_BASE_URL` (or any candidate URL) into the cloud flag + bare
+ * hostname we ship on every telemetry event. URL parsing — not substring
+ * match — so we never confuse an attacker-controlled `agent-swarm.dev.bad`
+ * for cloud. On any parse failure returns a safe `{ false, "" }` so callers
+ * never need to defend against this throwing.
+ *
+ * Exported for tests; not part of the public API.
+ */
+export function _resolveCloudMode(mcpBaseUrl: string | undefined | null): {
+  isCloud: boolean;
+  mcpHost: string;
+} {
+  if (!mcpBaseUrl) return { isCloud: false, mcpHost: "" };
+  let hostname: string;
+  try {
+    hostname = new URL(mcpBaseUrl).hostname;
+  } catch {
+    return { isCloud: false, mcpHost: "" };
+  }
+  if (!hostname) return { isCloud: false, mcpHost: "" };
+  return { isCloud: isCloudHostname(hostname), mcpHost: hostname };
 }
 
 interface InitTelemetryOptions {
@@ -48,6 +91,12 @@ export async function initTelemetry(
   if (!isEnabled()) return;
   source = sourceId;
   const generateIfMissing = options.generateIfMissing === true;
+
+  const resolved = _resolveCloudMode(process.env.MCP_BASE_URL);
+  cachedIsCloud = resolved.isCloud;
+  cachedMcpHost = resolved.mcpHost;
+  console.log(`telemetry: cloud=${cachedIsCloud} host=${cachedMcpHost || "(none)"}`);
+
   try {
     const existing = await getConfig("telemetry_installation_id");
     if (existing) {
@@ -110,7 +159,15 @@ export function track(options: TrackOptions): void {
       source,
       actor_mode: "anonymous" as const,
       actor_anonymous_id: installationId,
-      properties: options.properties ?? {},
+      properties: {
+        ...(options.properties ?? {}),
+        // Cloud-cohort signals derived from MCP_BASE_URL at init time.
+        // Placed at the top level of `properties_json` so ClickHouse can
+        // GROUP BY without descending into nested objects. Spread LAST so
+        // caller-supplied keys can never spoof the cohort classification.
+        is_cloud: cachedIsCloud,
+        mcp_host: cachedMcpHost,
+      },
       metadata: {
         transport: "https",
         schema_version: 1,
@@ -138,6 +195,8 @@ export function track(options: TrackOptions): void {
 export function _resetTelemetryStateForTests(): void {
   installationId = null;
   source = "unknown";
+  cachedIsCloud = false;
+  cachedMcpHost = "";
 }
 
 /** Test-only: read the resolved install ID. */
