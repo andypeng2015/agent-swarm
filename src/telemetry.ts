@@ -22,19 +22,23 @@ function isEnabled(): boolean {
 
 /**
  * Hosts we own that indicate a cloud-pointed install. Exact-match for known
- * hostnames + suffix-match for the cloud apex so future cloud subdomains
- * (`mcp.agent-swarm.dev`, etc.) are automatically classified as cloud.
- * Substring match is intentionally avoided — `agent-swarm.dev.attacker.com`
- * must NOT be treated as cloud.
+ * hostnames + suffix-match for the cloud apexes so future cloud subdomains
+ * (`mcp.agent-swarm.dev`, `api.agent-swarm.cloud`, etc.) are automatically
+ * classified as cloud. Substring match is intentionally avoided —
+ * `agent-swarm.dev.attacker.com` must NOT be treated as cloud.
  */
-const CLOUD_HOST_EXACT = new Set<string>(["agent-swarm-mcp.desplega.sh", "agent-swarm.dev"]);
-const CLOUD_HOST_SUFFIX = ".agent-swarm.dev";
+const CLOUD_HOST_EXACT = new Set<string>([
+  "agent-swarm-mcp.desplega.sh",
+  "agent-swarm.dev",
+  "agent-swarm.cloud",
+]);
+const CLOUD_HOST_SUFFIXES = [".agent-swarm.dev", ".agent-swarm.cloud"];
 
 function isCloudHostname(hostname: string): boolean {
   if (!hostname) return false;
   const normalized = hostname.toLowerCase();
   if (CLOUD_HOST_EXACT.has(normalized)) return true;
-  return normalized.endsWith(CLOUD_HOST_SUFFIX);
+  return CLOUD_HOST_SUFFIXES.some((suffix) => normalized.endsWith(suffix));
 }
 
 /**

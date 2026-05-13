@@ -261,11 +261,28 @@ describe("initTelemetry", () => {
       expect(_resolveCloudMode("https://API.Agent-Swarm.DEV")).toEqual({ isCloud: true });
     });
 
+    test("agent-swarm.cloud apex host → cloud=true", () => {
+      // Exact apex
+      expect(_resolveCloudMode("https://agent-swarm.cloud")).toEqual({ isCloud: true });
+      // Suffix subdomain
+      expect(_resolveCloudMode("https://api.agent-swarm.cloud")).toEqual({ isCloud: true });
+      expect(_resolveCloudMode("https://mcp.agent-swarm.cloud/")).toEqual({ isCloud: true });
+      // Trailing path / port / auth must not change classification
+      expect(_resolveCloudMode("https://user:tok@api.agent-swarm.cloud:443/api/foo?x=1")).toEqual({
+        isCloud: true,
+      });
+      // Case-insensitive
+      expect(_resolveCloudMode("https://API.Agent-Swarm.CLOUD")).toEqual({ isCloud: true });
+    });
+
     test("self-hosted hosts → cloud=false", () => {
       expect(_resolveCloudMode("http://localhost:3013")).toEqual({ isCloud: false });
       expect(_resolveCloudMode("https://my-internal-mcp.example.com")).toEqual({ isCloud: false });
       // Substring trap — must NOT be treated as cloud
       expect(_resolveCloudMode("https://agent-swarm.dev.attacker.com")).toEqual({ isCloud: false });
+      expect(_resolveCloudMode("https://agent-swarm.cloud.attacker.com")).toEqual({
+        isCloud: false,
+      });
       // IPv4 self-host
       expect(_resolveCloudMode("http://127.0.0.1:3013")).toEqual({ isCloud: false });
     });
