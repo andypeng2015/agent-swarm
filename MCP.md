@@ -80,6 +80,12 @@
   - [request-human-input](#request-human-input)
 - [Pages Tools](#pages-tools)
   - [create_page](#create_page)
+- [Kv Tools](#kv-tools)
+  - [kv-get](#kv-get)
+  - [kv-set](#kv-set)
+  - [kv-delete](#kv-delete)
+  - [kv-incr](#kv-incr)
+  - [kv-list](#kv-list)
 
 ---
 
@@ -491,7 +497,7 @@ Register an AgentMail inbox ID to route incoming emails to this agent. When emai
 
 ## Task Pool Tools
 
-*Messaging*
+*KV*
 
 ### task-action
 
@@ -966,6 +972,59 @@ Stores an HTML or JSON page in the swarm and returns shareable URLs. Calls are u
 | `password` | `string` | No | - | Plaintext password, hashed before storage. Only meaningful for authMode='password'. |
 | `description` | `string` | No | - | Optional short description, used in listings + OG-tag unfurl. |
 | `needsCredentials` | `array` | No | - | Declared credential needs for JSON pages (renderer ignores for v1 — reserved for follow-up). |
+
+## Kv Tools
+
+*KV*
+
+### kv-get
+
+**KV Get**
+
+Read a key from the swarm KV store. Returns the entry or null if missing/expired. Namespace defaults to your current context (Slack thread / PR / Linear issue when invoked from a task; otherwise your agent scratchpad).
+
+*No parameters*
+
+### kv-set
+
+**KV Set**
+
+Write a key in the swarm KV store. Upserts atomically. Namespace defaults to your current context. Use `expiresInSec` for opt-in TTL (default: never expires). 2 MiB body cap.
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `value` | `unknown` | Yes | - | Value. Stored as JSON by default; pass `valueType: 'string'` or `'integer'` to skip JSON wrapping. |
+| `expiresInSec` | `number` | No | - | Optional TTL in seconds. Omit for no expiry. |
+
+### kv-delete
+
+**KV Delete**
+
+Remove a key from the swarm KV store. Returns whether a row was actually deleted. Namespace defaults to your current context.
+
+*No parameters*
+
+### kv-incr
+
+**KV Incr**
+
+Atomically increment an integer KV entry. Creates the entry (set to `by`) if it doesn't exist or has expired. Fails if the existing value_type is not 'integer' (use kv-delete first if you want to switch).
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `by` | `number` | No | - | Increment (or decrement when negative). Default: 1. |
+
+### kv-list
+
+**KV List**
+
+List KV entries in the resolved namespace (optionally filtered by key prefix). Expired entries are filtered out. Pagination via limit/offset (limit capped at 1000).
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `prefix` | `string` | No | - | Key prefix to filter on. |
+| `limit` | `number` | No | - | Max entries to return (default 100, max 1000). |
+| `offset` | `number` | No | - | - |
 
 ## Other Tools
 

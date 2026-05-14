@@ -476,6 +476,61 @@ Stores an HTML or JSON page in the swarm and returns shareable URLs. Calls are u
 
 Returns the page id, an `app_url` (`${APP_URL}/pages/:id` — opens in the SPA), and an `api_url` (`${MCP_BASE_URL}/p/:id` — direct HTML render or JSON 302→SPA). Append `?mode=full` to the app URL for a maximized chrome-light view. The returned `version` is a monotonic edit counter (`MAX(page_versions.version) + 1`).
 
+## KV Tools
+
+A Redis-like, namespaced key/value store. Calls auto-resolve namespace from your current context (Slack thread / PR / Linear issue / agent scratchpad / page). 2 MiB value cap, opt-in TTL.
+
+### kv-get
+
+Read a key. Returns the entry or `null` if missing/expired. Namespace defaults to your current context.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `key` | string | Yes | Key to read |
+| `namespace` | string | No | Override the auto-resolved namespace |
+
+### kv-set
+
+Write a key. Upserts atomically. 2 MiB body cap.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `key` | string | Yes | Key to write |
+| `value` | unknown | Yes | Value. Stored as JSON by default; pass `valueType: 'string'` or `'integer'` to skip JSON wrapping |
+| `valueType` | enum | No | `json` (default), `string`, or `integer` |
+| `expiresInSec` | number | No | Optional TTL in seconds. Omit for no expiry |
+| `namespace` | string | No | Override the auto-resolved namespace |
+
+### kv-delete
+
+Remove a key. Returns whether a row was actually deleted.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `key` | string | Yes | Key to delete |
+| `namespace` | string | No | Override the auto-resolved namespace |
+
+### kv-incr
+
+Atomically increment an integer entry. Creates the entry (set to `by`) if missing or expired. Fails if the existing `value_type` is not `integer`.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `key` | string | Yes | Key to increment |
+| `by` | number | No | Increment (or decrement when negative). Default: 1 |
+| `namespace` | string | No | Override the auto-resolved namespace |
+
+### kv-list
+
+List entries in the resolved namespace, optionally filtered by key prefix. Expired entries are filtered out.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `prefix` | string | No | Key prefix to filter on |
+| `limit` | number | No | Max entries (default 100, max 1000) |
+| `offset` | number | No | Pagination offset |
+| `namespace` | string | No | Override the auto-resolved namespace |
+
 ## Skill Tools
 
 Manage reusable procedural knowledge (skills) that agents can create, share, and install.

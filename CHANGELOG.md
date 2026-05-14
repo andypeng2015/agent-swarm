@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.79.1] - 2026-05-13
+
+### Added
+- **KV store + Pages SDK + `kv-storage` skill** (#478) — Redis-like, namespaced key/value store auto-scoped to the agent's current context (Slack thread / PR / Linear issue / agent scratchpad / page). New `kv` capability and five MCP tools (`kv-get`, `kv-set`, `kv-delete`, `kv-incr`, `kv-list`) plus public `/api/kv` HTTP routes for the Pages SDK. 2 MiB body cap, opt-in TTL via `expiresInSec`, atomic upserts/increments. Adds migration `061_kv_store.sql`. The `kv-storage` SKILL.md documents context auto-resolution rules and includes the "do NOT use for secrets / embedded knowledge / files" guardrail.
+- **Pages: diff helper + PDF export + view counter** (#479) — page versions now support diff retrieval, a built-in PDF export endpoint, and a monotonic view counter (migration `062_pages_view_count.sql`). Counter surfaces in the dashboard pages listing.
+- **Telemetry: `is_cloud` emitted on every event** (#476) — the telemetry initializer attaches an `is_cloud` flag derived from the runtime environment to every event so downstream pipelines can filter cloud vs self-hosted traffic without joining to a separate dimension.
+
+### Changed
+- **Pages public renderer CSP: allowlist `jsdelivr.net` + `unpkg.com` for `script-src`** (#480) — published HTML pages can now load CDN-hosted libraries from the two most common JS CDNs without inline-script workarounds. CSP otherwise unchanged.
+- **`pi-coding-agent` migrated to `@earendil-works` scope @ 0.74.0** (#459) — `Dockerfile.worker`, provider credential plumbing, and the `harness-providers` docs page were updated to the new package name. Existing installs on the old scope continue to work; new builds pull from `@earendil-works/pi-coding-agent`.
+
 ## [1.79.0] - 2026-05-13
 
 ### Added
