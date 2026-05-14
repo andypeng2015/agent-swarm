@@ -548,8 +548,21 @@ export class ClaudeAdapter implements ProviderAdapter {
     const credType = validateClaudeCredentials(config.env || process.env);
     console.log(`\x1b[2m[claude]\x1b[0m Using credential: ${credType}`);
 
-    // Resolve claude binary: CLAUDE_BINARY env var > "claude" (PATH lookup)
+    // Resolve the binary that gets argv[0]. The same flags (`-p`, `--model`,
+    // `--output-format stream-json`, etc.) work across alternates; only the
+    // executable name changes. Setting `CLAUDE_BINARY=shannon` swaps in
+    // dexhorthy/shannon, which drives `claude` interactively in tmux to stay on
+    // the subscription credit pool after the 2026-06-15 programmatic-credit
+    // split. See `runbooks/harness-providers.md` § "Alt-binary: shannon".
     const claudeBinary = process.env.CLAUDE_BINARY || "claude";
+
+    // Fail fast: shannon shells out to tmux. If it's missing, surface a
+    // clear error here rather than letting the spawn fail opaquely.
+    if (claudeBinary.toLowerCase().includes("shannon") && !Bun.which("tmux")) {
+      throw new Error(
+        "CLAUDE_BINARY=shannon requires 'tmux' on PATH (install via apt/brew). See runbooks/harness-providers.md.",
+      );
+    }
 
     const taskFilePid = process.pid;
     const taskFilePath = await writeTaskFile(taskFilePid, {

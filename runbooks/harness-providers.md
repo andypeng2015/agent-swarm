@@ -77,6 +77,44 @@ Internal refactors that don't change observable behavior don't need a doc update
 6. Add the new provider to `README.md`'s multi-provider bullet.
 7. Verify the docs build per [docs-site/CLAUDE.md](../docs-site/CLAUDE.md).
 
+## Alt-binary: shannon (subscription-pool variant)
+
+[`@dexhorthy/shannon`](https://github.com/dexhorthy/shannon) is a drop-in front for `claude -p` that drives an interactive `claude` session inside `tmux` and tails the JSONL transcript. It accepts the same flags the swarm passes today (`-p`, `--model`, `--verbose`, `--output-format stream-json`, `--permission-mode`, `--append-system-prompt`, `--mcp-config`, `--strict-mcp-config`, `--dangerously-skip-permissions`, `--allow-dangerously-skip-permissions`), so `ClaudeAdapter.buildCommand()` does not branch — only `argv[0]` changes.
+
+**Why it exists.** Starting **2026-06-15**, `claude -p` (and the Agent SDK / GitHub Actions surfaces) draws from a dedicated programmatic-credit pool rather than the Max/Pro subscription quota. Interactive `claude` sessions stay on the subscription pool. Routing the harness through shannon keeps swarm runs on the subscription pool for users who pay for one.
+
+### Opt in
+
+Set the worker env var:
+
+```bash
+CLAUDE_BINARY=shannon
+```
+
+Resolution: `process.env.CLAUDE_BINARY || "claude"` in `ClaudeAdapter.createSession` (`src/providers/claude-adapter.ts`). An absolute path is also accepted (`CLAUDE_BINARY=/usr/local/bin/shannon`). Leave unset to use `claude` (the default — no behavior change).
+
+### Install
+
+```bash
+bun add -g @dexh/shannon
+```
+
+Shannon shells out to `tmux` and `claude` — both must be on PATH on the worker.
+
+`createSession` performs a fail-fast `Bun.which("tmux")` check when the resolved binary contains `"shannon"` and throws if tmux is missing. Shannon's own startup surfaces a clear message if `claude` is missing, so the swarm doesn't double-check that one.
+
+### One-time workspace-trust caveat
+
+Shannon does not pre-accept the `claude` workspace-trust dialog. Before shannon can drive a directory non-interactively, run `claude` interactively once in the worker's cwd and accept the trust prompt. For containerized workers this means a one-shot interactive boot at provisioning time.
+
+### Auth
+
+Same env vars as the default claude flow: `CLAUDE_CODE_OAUTH_TOKEN` (preferred) or `ANTHROPIC_API_KEY`. The credential check is unchanged.
+
+### Not a new `HARNESS_PROVIDER`
+
+Shannon is an env-based alternate binary on the existing `claude` adapter, not a separate provider. There is no `HARNESS_PROVIDER=claude-shannon`. `buildCommand()` is shared, and the same MCP/stop-hook plumbing applies.
+
 ## Trigger paths
 
 This runbook applies when modifying:
