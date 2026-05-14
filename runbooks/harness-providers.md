@@ -87,7 +87,15 @@ User-facing guide: [docs-site/.../guides/shannon-experimental.mdx](../docs-site/
 
 ### Binary resolution
 
-`CLAUDE_BINARY` is parsed by `parseClaudeBinary` (in `src/providers/claude-adapter.ts`): trim + whitespace-split. No shell parsing. The resulting argv tokens replace the single `"claude"` token at the head of the spawn command. Supported forms:
+`CLAUDE_BINARY` follows the same overlay-then-fallback precedence as `HARNESS_PROVIDER`. `ClaudeAdapter.createSession` calls `resolveClaudeBinary(config.env || process.env)` (also in `claude-adapter.ts`), where `config.env` is the swarm_config overlay produced by `fetchResolvedEnv` in `src/commands/runner.ts`. Resolution order:
+
+1. **swarm_config** `CLAUDE_BINARY` (scope: repo > agent > global) — overlay value in `config.env`.
+2. **`process.env.CLAUDE_BINARY`** — container env, set at boot.
+3. **`"claude"`** — final default.
+
+This makes the binary reloadable: an operator can `PUT /api/config CLAUDE_BINARY="bunx @dexh/shannon"` and the next spawned task picks it up (~10s, one poll cycle). In-flight sessions stay on the binary they spawned with; new spawns get the new value. Same lifecycle as `HARNESS_PROVIDER` re-assignment.
+
+The resolved raw string is then parsed by `parseClaudeBinary`: trim + whitespace-split. No shell parsing. The resulting argv tokens replace the single `"claude"` token at the head of the spawn command. Supported forms:
 
 | `CLAUDE_BINARY` | Resulting argv prefix |
 |---|---|

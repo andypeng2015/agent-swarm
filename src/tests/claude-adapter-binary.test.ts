@@ -28,6 +28,7 @@ import {
   ClaudeAdapter,
   parseClaudeBinary,
   preseedClaudeTrustDialog,
+  resolveClaudeBinary,
 } from "../providers/claude-adapter";
 import type { ProviderSessionConfig } from "../providers/types";
 
@@ -94,6 +95,58 @@ describe("parseClaudeBinary", () => {
   test("multiple-space tolerance → trims + collapses", () => {
     expect(parseClaudeBinary("  bunx  shannon  ")).toEqual(["bunx", "shannon"]);
     expect(parseClaudeBinary("\tbunx\t@dexh/shannon\n")).toEqual(["bunx", "@dexh/shannon"]);
+  });
+});
+
+describe("resolveClaudeBinary precedence", () => {
+  test("resolvedEnv wins over fallbackEnv (swarm_config overrides process.env)", () => {
+    const resolvedEnv = { CLAUDE_BINARY: "shannon" };
+    const fallbackEnv = { CLAUDE_BINARY: "claude" };
+    expect(resolveClaudeBinary(resolvedEnv, fallbackEnv)).toBe("shannon");
+  });
+
+  test("falls back to fallbackEnv when resolvedEnv is absent", () => {
+    const resolvedEnv = {};
+    const fallbackEnv = { CLAUDE_BINARY: "bunx @dexh/shannon" };
+    expect(resolveClaudeBinary(resolvedEnv, fallbackEnv)).toBe("bunx @dexh/shannon");
+  });
+
+  test("both absent → 'claude' default", () => {
+    expect(resolveClaudeBinary({}, {})).toBe("claude");
+  });
+
+  test("empty / whitespace-only resolvedEnv value falls through to fallbackEnv", () => {
+    // `.trim() || …` falls through on empty/whitespace.
+    expect(resolveClaudeBinary({ CLAUDE_BINARY: "" }, { CLAUDE_BINARY: "shannon" })).toBe(
+      "shannon",
+    );
+    expect(resolveClaudeBinary({ CLAUDE_BINARY: "   " }, { CLAUDE_BINARY: "shannon" })).toBe(
+      "shannon",
+    );
+  });
+
+  test("empty fallback after empty resolved → 'claude' default", () => {
+    expect(resolveClaudeBinary({ CLAUDE_BINARY: "" }, { CLAUDE_BINARY: "" })).toBe("claude");
+  });
+
+  test("command-string passes through unchanged (caller does the argv split)", () => {
+    const resolvedEnv = { CLAUDE_BINARY: "bunx @dexh/shannon@1.2.3" };
+    expect(resolveClaudeBinary(resolvedEnv, {})).toBe("bunx @dexh/shannon@1.2.3");
+  });
+
+  test("fallbackEnv defaults to process.env when omitted", () => {
+    // Smoke-test the default arg. Set + read process.env directly.
+    const orig = process.env.CLAUDE_BINARY;
+    process.env.CLAUDE_BINARY = "test-default-arg";
+    try {
+      expect(resolveClaudeBinary({})).toBe("test-default-arg");
+    } finally {
+      if (orig === undefined) {
+        delete process.env.CLAUDE_BINARY;
+      } else {
+        process.env.CLAUDE_BINARY = orig;
+      }
+    }
   });
 });
 
@@ -318,6 +371,56 @@ describe("CLAUDE_BINARY env override", () => {
     const argvClaude = spawnedArgs[0].slice(1);
 
     expect(argvShannon).toEqual(argvClaude);
+  });
+
+  test("swarm_config overlay (config.env) wins over process.env CLAUDE_BINARY", async () => {
+    // process.env says "claude" — but the runner's resolvedEnv overlay (passed
+    // through config.env) says "shannon". The overlay must win, mirroring the
+    // HARNESS_PROVIDER reload path.
+    process.env.CLAUDE_BINARY = "claude";
+
+    const adapter = new ClaudeAdapter();
+    await adapter.createSession(
+      makeConfig({
+        env: { CLAUDE_BINARY: "shannon", CLAUDE_CODE_OAUTH_TOKEN: "test-token" } as Record<
+          string,
+          string
+        >,
+      }),
+    );
+
+    expect(spawnedArgs[0][0]).toBe("shannon");
+  });
+
+  test("config.env CLAUDE_BINARY='bunx @dexh/shannon' (swarm_config override) splits + spawns correctly", async () => {
+    delete process.env.CLAUDE_BINARY;
+
+    const adapter = new ClaudeAdapter();
+    await adapter.createSession(
+      makeConfig({
+        env: {
+          CLAUDE_BINARY: "bunx @dexh/shannon",
+          CLAUDE_CODE_OAUTH_TOKEN: "test-token",
+        } as Record<string, string>,
+      }),
+    );
+
+    expect(spawnedArgs[0][0]).toBe("bunx");
+    expect(spawnedArgs[0][1]).toBe("@dexh/shannon");
+  });
+
+  test("config.env without CLAUDE_BINARY falls back to process.env", async () => {
+    process.env.CLAUDE_BINARY = "shannon";
+
+    const adapter = new ClaudeAdapter();
+    await adapter.createSession(
+      makeConfig({
+        // env has CLAUDE_CODE_OAUTH_TOKEN but no CLAUDE_BINARY → process.env wins.
+        env: { CLAUDE_CODE_OAUTH_TOKEN: "test-token" } as Record<string, string>,
+      }),
+    );
+
+    expect(spawnedArgs[0][0]).toBe("shannon");
   });
 });
 

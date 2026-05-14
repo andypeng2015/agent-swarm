@@ -78,6 +78,29 @@ export function parseClaudeBinary(raw: string | undefined): string[] {
 }
 
 /**
+ * Resolve the effective `CLAUDE_BINARY` for a worker (raw string, pre-parse).
+ *
+ * Precedence (highest first), mirroring `resolveHarnessProvider`:
+ *   1. `resolvedEnv.CLAUDE_BINARY` — overlay from `swarm_config`
+ *      (scoped repo > agent > global, applied by `fetchResolvedEnv` in
+ *      `src/commands/runner.ts`). Lets operators flip a worker via
+ *      `set-config` without a container restart.
+ *   2. `fallbackEnv.CLAUDE_BINARY` — raw `process.env` (container env).
+ *   3. `"claude"` — final default; no behavior change for users who don't set it.
+ *
+ * Returns the raw string (caller pipes through `parseClaudeBinary` for argv split).
+ *
+ * Exported for unit testing.
+ */
+export function resolveClaudeBinary(
+  resolvedEnv: Record<string, string | undefined>,
+  fallbackEnv: Record<string, string | undefined> = process.env,
+): string {
+  const candidate = resolvedEnv.CLAUDE_BINARY?.trim() || fallbackEnv.CLAUDE_BINARY?.trim();
+  return candidate || "claude";
+}
+
+/**
  * Pre-seed `~/.claude.json` so the per-project trust-dialog ("Quick safety
  * check: Is this a project you trust?") doesn't block on first run.
  *
@@ -624,9 +647,15 @@ export class ClaudeAdapter implements ProviderAdapter {
     // Setting it to anything containing `shannon` opts into the dexhorthy/shannon
     // variant, which drives `claude` interactively in tmux to stay on the
     // subscription credit pool after the 2026-06-15 programmatic-credit split.
+    //
+    // `config.env` carries the swarm_config overlay (resolved repo > agent > global
+    // by `fetchResolvedEnv` in src/commands/runner.ts), so operators can flip
+    // a worker's binary via `set-config CLAUDE_BINARY=...` without a restart.
+    // Falls back to process.env, then "claude". See `resolveClaudeBinary` above.
+    //
     // See `docs-site/.../shannon-experimental.mdx` for the user-facing guide
     // and `runbooks/harness-providers.md` for engineering notes.
-    const claudeBinaryRaw = (process.env.CLAUDE_BINARY ?? "claude").trim();
+    const claudeBinaryRaw = resolveClaudeBinary(config.env || process.env);
     const claudeBinaryArgv = parseClaudeBinary(claudeBinaryRaw);
     const isShannon = claudeBinaryRaw.toLowerCase().includes("shannon");
 

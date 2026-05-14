@@ -36,9 +36,34 @@ The value is **whitespace-split** into argv tokens — no shell parsing, no quot
 
 Set it where you set your other worker env (`/workspace/start-up.sh`, `docker-compose`, k8s manifest, agent profile via `set-config`, etc.). The runner picks it up on the next session spawn.
 
+## Reloadable via swarm_config
+
+`CLAUDE_BINARY` participates in the same overlay-then-fallback pattern as `HARNESS_PROVIDER`. The runner fetches `swarm_config` once per task spawn via `/api/config/resolved` and overlays it onto `process.env` before constructing the session, so an operator can flip a worker between `claude` and `shannon` (or back) **without a container restart**.
+
+Precedence (highest first):
+1. `swarm_config` `CLAUDE_BINARY` (scope: repo > agent > global)
+2. `process.env.CLAUDE_BINARY` (container env)
+3. `"claude"` (final default)
+
+Set it from your dashboard, the MCP `set-config` tool, or `PUT /api/config`:
+
+```bash
+# Global default — every worker picks it up on the next task spawn (~10s).
+curl -X PUT "$MCP_BASE_URL/api/config" \
+  -H "Authorization: Bearer $API_KEY" \
+  -H 'Content-Type: application/json' \
+  -d '{"scope":"global","key":"CLAUDE_BINARY","value":"bunx @dexh/shannon"}'
+
+# Or scoped to a single agent / a specific repo:
+# scope="agent" + scopeId=<agentId>  →  only that worker picks it up
+# scope="repo"  + scopeId=<repoFullName>  →  only tasks for that repo
+```
+
+In-flight task sessions stay on the binary they spawned with; new spawns pick up the change.
+
 ## Requirements
 
-- **`tmux` on `PATH`.** Shannon shells out to tmux. The swarm fail-fasts at session-create with `CLAUDE_BINARY=shannon requires 'tmux' on PATH (install via apt/brew). See runbooks/harness-providers.md.` if it's missing.
+- **`tmux` on `PATH`.** Shannon shells out to tmux. The swarm fail-fasts at session-create with `CLAUDE_BINARY=shannon requires 'tmux' on PATH (install via apt/brew). See runbooks/harness-providers.md.` if it's missing. `Dockerfile.worker` apt-installs tmux by default.
 - **`claude` on `PATH`.** Shannon drives the real `claude` CLI — make sure it's installed and on PATH. Shannon's own startup surfaces a clear error if it isn't, so the swarm doesn't double-check.
 - **Auth: unchanged.** Same `CLAUDE_CODE_OAUTH_TOKEN` (preferred) or `ANTHROPIC_API_KEY` as the default flow. Shannon inherits the env, claude reads it.
 
