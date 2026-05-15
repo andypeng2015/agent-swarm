@@ -24,8 +24,7 @@ import { handlePagesPublic } from "../http/pages-public";
 import { getPathSegments, parseQueryParams } from "../http/utils";
 
 const TEST_DB_PATH = "./test-pages-view-count.sqlite";
-const TEST_PORT = 13095;
-const BASE = `http://localhost:${TEST_PORT}`;
+let BASE = "";
 
 function createTestServer(): Server {
   return createHttpServer(async (req: IncomingMessage, res: ServerResponse) => {
@@ -39,6 +38,30 @@ function createTestServer(): Server {
   });
 }
 
+async function startTestServer(): Promise<Server> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 10; attempt++) {
+    const candidate = 20_000 + Math.floor(Math.random() * 20_000);
+    const candidateServer = createTestServer();
+    try {
+      await new Promise<void>((resolve, reject) => {
+        candidateServer.once("error", reject);
+        candidateServer.listen(candidate, () => {
+          BASE = `http://localhost:${candidate}`;
+          resolve();
+        });
+      });
+      return candidateServer;
+    } catch (err) {
+      lastError = err;
+      candidateServer.close();
+    }
+  }
+  throw lastError instanceof Error
+    ? lastError
+    : new Error("Failed to start pages view-count test server");
+}
+
 async function getViewCount(id: string, agentId: string): Promise<number> {
   const res = await fetch(`${BASE}/api/pages/${id}`, {
     headers: { "X-Agent-ID": agentId },
@@ -50,23 +73,30 @@ async function getViewCount(id: string, agentId: string): Promise<number> {
 
 describe("Pages — view_count counter", () => {
   let server: Server;
+  let originalPageSessionSecret: string | undefined;
   const agentId = crypto.randomUUID();
   const headers = { "Content-Type": "application/json", "X-Agent-ID": agentId };
 
   beforeAll(async () => {
+    originalPageSessionSecret = process.env.PAGE_SESSION_SECRET;
+    process.env.PAGE_SESSION_SECRET = "test-pages-view-count-secret";
     for (const suffix of ["", "-wal", "-shm"]) {
       try {
         await unlink(`${TEST_DB_PATH}${suffix}`);
       } catch {}
     }
     initDb(TEST_DB_PATH);
-    server = createTestServer();
-    await new Promise<void>((resolve) => server.listen(TEST_PORT, () => resolve()));
+    server = await startTestServer();
   });
 
   afterAll(async () => {
     await new Promise<void>((resolve) => server.close(() => resolve()));
     closeDb();
+    if (originalPageSessionSecret === undefined) {
+      delete process.env.PAGE_SESSION_SECRET;
+    } else {
+      process.env.PAGE_SESSION_SECRET = originalPageSessionSecret;
+    }
     for (const suffix of ["", "-wal", "-shm"]) {
       try {
         await unlink(`${TEST_DB_PATH}${suffix}`);

@@ -25,6 +25,8 @@ services:
       - API_KEY=${API_KEY}
       - SLACK_DISABLE=true
       - GITHUB_DISABLE=true
+      - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      - OTEL_SERVICE_NAME=${OTEL_SERVICE_NAME:-agent-swarm-api}
 
     ports:
       - "3013:3013"
@@ -61,6 +63,8 @@ services:
       - GITHUB_TOKEN=${GITHUB_TOKEN:-}
       - GITHUB_EMAIL=${GITHUB_EMAIL:-dev@localhost}
       - GITHUB_NAME=${GITHUB_NAME:-Lead Agent}
+      - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      - OTEL_SERVICE_NAME=${OTEL_SERVICE_NAME:-agent-swarm-worker}
 
     ports:
       - "3020:3000"
@@ -99,6 +103,8 @@ services:
       - GITHUB_TOKEN=${GITHUB_TOKEN:-}
       - GITHUB_EMAIL=${GITHUB_EMAIL:-dev@localhost}
       - GITHUB_NAME=${GITHUB_NAME:-Pi Worker}
+      - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      - OTEL_SERVICE_NAME=${OTEL_SERVICE_NAME:-agent-swarm-worker}
 
     ports:
       - "3021:3000"
@@ -141,6 +147,8 @@ services:
       - GITHUB_TOKEN=${GITHUB_TOKEN:-}
       - GITHUB_EMAIL=${GITHUB_EMAIL:-dev@localhost}
       - GITHUB_NAME=${GITHUB_NAME:-Codex Worker}
+      - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      - OTEL_SERVICE_NAME=${OTEL_SERVICE_NAME:-agent-swarm-worker}
 
     ports:
       - "3022:3000"
