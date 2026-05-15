@@ -102,6 +102,49 @@ The echoed `triggerSchema` lets agents self-correct without a follow-up `get-wor
 - HTTP 400 helper: `src/http/utils.ts` (`triggerSchemaErrorResponse`)
 - MCP error formatting: `src/tools/workflows/trigger-workflow.ts` (`TriggerSchemaError` branch)
 
+## Script-node authoring gotchas
+
+These bit us hard during DES-373 — the workflow runtime in production runs `script` nodes via `bash -c <script>` (`src/workflows/executors/script.ts`), but the jq binary inside that container has parser quirks that don't reproduce locally.
+
+### jq variable names — avoid grammar keywords
+
+Production jq refuses to bind `--arg start`/`--arg end`/`--arg label` (and similar) inside filters. The error has the misleading hint `(Unix shell quoting issues?)`:
+
+```
+jq: error: syntax error, unexpected end, expecting IDENT or __loc__ (Unix shell quoting issues?) at <top-level>, line 1:
+{startDate: $start, endDate: $end, rows: $rows}
+jq: 1 compile error
+```
+
+Rename to non-keyword names: `$startDate`, `$endDate`, `$lblStr`, `$statusStr`, etc. Avoid: `start`, `end`, `label`, `as`, `def`, `if`, `then`, `else`, `elif`, `and`, `or`, `not`, `reduce`, `foreach`, `try`, `catch`, `import`, `include`.
+
+### Default raw-llm step timeout is 30 s
+
+The engine reads `config.timeoutMs` as the wall-clock per-step timeout (`src/workflows/engine.ts`); when omitted it falls back to `DEFAULT_TIMEOUT_MS = 30000`, which times out any non-trivial Sonnet/Opus prompt. Set explicitly on every raw-llm node:
+
+- Sonnet → `timeoutMs: 300000` (5 min)
+- Opus with long prompts → `timeoutMs: 360000` (6 min)
+
+The zod config schema doesn't declare `timeoutMs`, but the engine reads it from the raw `node.config` before validation, so it's honoured.
+
+### Prefer stdin over `--argjson` for shell vars
+
+If `--argjson rows "$CUSP"` and `$CUSP` isn't valid JSON, jq's error is confusing. Validate first, then read via stdin:
+
+```bash
+echo "$CUSP" > "$TMP"
+jq -e '.' < "$TMP" >/dev/null || echo '[]' > "$TMP"
+CONTENT=$(jq --arg sd "$START" --arg ed "$END" '{startDate: $sd, endDate: $ed, rows: .}' < "$TMP")
+```
+
+### onNodeFailure: continue
+
+Set `onNodeFailure: "continue"` at the definition level if a downstream convergence node can handle partial output — failed steps then surface as `[FAILED: reason]` in their interpolation slot instead of aborting the run. Useful for `notify-slack` consuming both `dispatch` and `litmus-final`.
+
+### End-to-end example
+
+See [`runbooks/gsc-topic-miner.md`](./gsc-topic-miner.md) — covers a 11-node DAG with 4 parallel sources, 5 LLM stages, two-stage litmus retry, defensive downstream dispatch, native 13-day cooldown, and a sibling litmus-smoke workflow for fixture-based testing.
+
 ## Wait nodes
 
 A `wait` node pauses a workflow until either a duration elapses or a named event satisfies a filter. It is async — the run transitions to `waiting` and resumes via the `wait-poller` (time mode + event-mode timeout) or the `workflowEventBus` listener (event mode).
