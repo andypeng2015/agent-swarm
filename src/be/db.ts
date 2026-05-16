@@ -4136,16 +4136,33 @@ export interface DashboardCostSummary {
 }
 
 export function getDashboardCostSummary(): DashboardCostSummary {
+  // Phase 13: compute the date boundaries in TS and pass them as ISO 8601
+  // strings. `session_costs.createdAt` is a TEXT ISO 8601 column; lexicographic
+  // comparison on ISO 8601 sorts correctly, so the comparison works as long
+  // as both sides are the same shape. The old code compared an ISO string
+  // (`2026-05-15T03:45:12.123Z`) against `date('now')` (which returns the
+  // string `2026-05-15`) — lexicographically `2026-05-15T...` > `2026-05-15`,
+  // so post-midnight rows correctly counted, BUT rows whose ISO began with
+  // the EXACT bare-date string would fail the `>=` check inconsistently
+  // depending on millisecond precision. Use a proper ISO-millisecond boundary
+  // for both halves so the comparison is unambiguous.
+  const now = new Date();
+  const startOfDayUtc = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
+  ).toISOString();
+  const startOfMonthUtc = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1),
+  ).toISOString();
   type CostRow = { costToday: number; costMtd: number };
   const row = getDb()
-    .prepare<CostRow, []>(
+    .prepare<CostRow, [string, string]>(
       `SELECT
-        COALESCE(SUM(CASE WHEN createdAt >= date('now') THEN totalCostUsd ELSE 0 END), 0) as costToday,
+        COALESCE(SUM(CASE WHEN createdAt >= ? THEN totalCostUsd ELSE 0 END), 0) as costToday,
         COALESCE(SUM(totalCostUsd), 0) as costMtd
       FROM session_costs
-      WHERE createdAt >= date('now', 'start of month')`,
+      WHERE createdAt >= ?`,
     )
-    .get();
+    .get(startOfDayUtc, startOfMonthUtc);
 
   return row ?? { costToday: 0, costMtd: 0 };
 }
@@ -8683,6 +8700,12 @@ export function getKeyCostSummary(keyType?: string): KeyCostSummary[] {
   }
 
   const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+  // Phase 13: INNER JOIN -> LEFT JOIN. The `WHERE t.credentialKeySuffix IS NOT NULL`
+  // still filters out rows whose taskId doesn't link to a task with credentials,
+  // but switching to LEFT JOIN means a future change that drops the WHERE
+  // (or a debugging query that wants orphan rows visible) doesn't silently
+  // disappear them. Equivalent for the current `WHERE … IS NOT NULL` filter;
+  // makes the query's intent (cost rows owned by a credential) explicit.
   return db
     .prepare<KeyCostSummary, string[]>(
       `SELECT
@@ -8693,7 +8716,7 @@ export function getKeyCostSummary(keyType?: string): KeyCostSummary[] {
         COALESCE(SUM(sc.outputTokens), 0) as totalOutputTokens,
         COUNT(DISTINCT sc.taskId) as taskCount
       FROM session_costs sc
-      JOIN agent_tasks t ON sc.taskId = t.id
+      LEFT JOIN agent_tasks t ON sc.taskId = t.id
       ${where}
       GROUP BY t.credentialKeyType, t.credentialKeySuffix`,
     )
