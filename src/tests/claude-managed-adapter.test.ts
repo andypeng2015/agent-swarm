@@ -319,11 +319,14 @@ describe("ClaudeManagedAdapter (Phase 3) — session lifecycle", () => {
     }
 
     // context_usage emitted on span.model_request_end.
+    // Phase 5 / Phase 9 unified formula = input + cache_read + cache_write + output.
     const ctx = emitted.find((e) => e.type === "context_usage");
     expect(ctx).toBeDefined();
     if (ctx && ctx.type === "context_usage") {
-      expect(ctx.contextUsedTokens).toBe(150); // 100 input + 50 output
+      expect(ctx.contextUsedTokens).toBe(165); // 100 + 10 + 5 + 50
       expect(ctx.outputTokens).toBe(50);
+      // Phase 9: every snapshot carries the formula tag.
+      expect(ctx.contextFormula).toBe("input-cache-output");
     }
 
     // result emitted with accumulated cost. Phase 3 leaves totalCostUsd at 0
@@ -1268,9 +1271,11 @@ describe("ClaudeManagedAdapter (Phase 6) — full happy-path integration", () =>
     const ctxUsage = emitted.find((e) => e.type === "context_usage");
     expect(ctxUsage?.type).toBe("context_usage");
     if (ctxUsage?.type === "context_usage") {
-      // 1M input + 200k output = 1.2M used; output = 200k.
-      expect(ctxUsage.contextUsedTokens).toBe(1_200_000);
+      // Phase 5 / Phase 9 unified: input + cache_read + cache_write + output.
+      // 1M + 50k + 25k + 200k = 1,275,000.
+      expect(ctxUsage.contextUsedTokens).toBe(1_275_000);
       expect(ctxUsage.outputTokens).toBe(200_000);
+      expect(ctxUsage.contextFormula).toBe("input-cache-output");
     }
 
     // The terminal `result` ProviderEvent — the contract Phase 4 hardened —
