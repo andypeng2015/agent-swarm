@@ -75,9 +75,7 @@ describe("Migration 063 — cost & context schema relax", () => {
 
   test("session_costs has reasoningOutputTokens + thinkingTokens", () => {
     const cols = getDb()
-      .prepare<{ name: string; dflt_value: string | null }, []>(
-        "PRAGMA table_info(session_costs)",
-      )
+      .prepare<{ name: string; dflt_value: string | null }, []>("PRAGMA table_info(session_costs)")
       .all() as Array<{ name: string; dflt_value: string | null }>;
     const byName = new Map(cols.map((c) => [c.name, c]));
     expect(byName.has("reasoningOutputTokens")).toBe(true);
