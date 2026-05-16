@@ -980,7 +980,7 @@ type AgentTaskRow = {
   progress: string | null;
   compactionCount: number | null;
   peakContextPercent: number | null;
-  totalContextTokensUsed: number | null;
+  peakContextTokens: number | null;
   contextWindowSize: number | null;
   was_paused: number;
   credentialKeySuffix: string | null;
@@ -1036,7 +1036,7 @@ function rowToAgentTask(row: AgentTaskRow): AgentTask {
     contextKey: row.contextKey ?? undefined,
     compactionCount: row.compactionCount ?? undefined,
     peakContextPercent: row.peakContextPercent ?? undefined,
-    totalContextTokensUsed: row.totalContextTokensUsed ?? undefined,
+    peakContextTokens: row.peakContextTokens ?? undefined,
     contextWindowSize: row.contextWindowSize ?? undefined,
     createdAt: row.createdAt,
     lastUpdatedAt: row.lastUpdatedAt,
@@ -3761,8 +3761,11 @@ type SessionCostRow = {
   outputTokens: number;
   cacheReadTokens: number;
   cacheWriteTokens: number;
+  // Migration 063 additions:
+  reasoningOutputTokens: number;
+  thinkingTokens: number;
   durationMs: number;
-  numTurns: number;
+  numTurns: number | null;
   model: string;
   isError: number;
   costSource: string;
@@ -3780,6 +3783,8 @@ function rowToSessionCost(row: SessionCostRow): SessionCost {
     outputTokens: row.outputTokens,
     cacheReadTokens: row.cacheReadTokens,
     cacheWriteTokens: row.cacheWriteTokens,
+    reasoningOutputTokens: row.reasoningOutputTokens ?? 0,
+    thinkingTokens: row.thinkingTokens ?? 0,
     durationMs: row.durationMs,
     numTurns: row.numTurns,
     model: row.model,
@@ -3803,15 +3808,24 @@ const sessionCostQueries = {
         number,
         number,
         number,
-        number,
-        number,
-        string,
-        number,
-        string,
+        number, // reasoningOutputTokens
+        number, // thinkingTokens
+        number, // durationMs
+        number | null, // numTurns
+        string, // model
+        number, // isError
+        string, // costSource
       ]
     >(
-      `INSERT INTO session_costs (id, sessionId, taskId, agentId, totalCostUsd, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens, durationMs, numTurns, model, isError, costSource, createdAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))`,
+      `INSERT INTO session_costs (
+         id, sessionId, taskId, agentId,
+         totalCostUsd, inputTokens, outputTokens,
+         cacheReadTokens, cacheWriteTokens,
+         reasoningOutputTokens, thinkingTokens,
+         durationMs, numTurns, model, isError,
+         costSource, createdAt
+       )
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))`,
     ),
 
   getByTaskId: () =>
@@ -3839,16 +3853,22 @@ export interface CreateSessionCostInput {
   outputTokens?: number;
   cacheReadTokens?: number;
   cacheWriteTokens?: number;
+  // Migration 063 additions — adapters that have these numbers should pass
+  // them; defaulting to 0 preserves the old write shape for callers that don't.
+  reasoningOutputTokens?: number;
+  thinkingTokens?: number;
   durationMs: number;
-  numTurns: number;
+  // Nullable: some adapters (claude when num_turns is absent) can't honestly
+  // report a turn count; we prefer null over a faked 1.
+  numTurns: number | null;
   model: string;
   isError?: boolean;
   /**
-   * Phase 6: where the recorded `totalCostUsd` came from.
+   * Phase 6 (migration 063 added 'unpriced'): where `totalCostUsd` came from.
    *  - 'harness'        — value reported by the harness as-is (default).
-   *  - 'pricing-table'  — value recomputed by the API from `pricing` rows
-   *                       (Codex when DB pricing rows exist for all three
-   *                       token classes).
+   *  - 'pricing-table'  — value recomputed by the API from `pricing` rows.
+   *  - 'unpriced'       — recompute attempted but no matching pricing rows;
+   *                       `totalCostUsd` is whatever the worker submitted.
    */
   costSource?: SessionCostSource;
 }
@@ -3856,6 +3876,8 @@ export interface CreateSessionCostInput {
 export function createSessionCost(input: CreateSessionCostInput): SessionCost {
   const id = crypto.randomUUID();
   const costSource: SessionCostSource = input.costSource ?? "harness";
+  const reasoningOutputTokens = input.reasoningOutputTokens ?? 0;
+  const thinkingTokens = input.thinkingTokens ?? 0;
   sessionCostQueries
     .insert()
     .run(
@@ -3868,6 +3890,8 @@ export function createSessionCost(input: CreateSessionCostInput): SessionCost {
       input.outputTokens ?? 0,
       input.cacheReadTokens ?? 0,
       input.cacheWriteTokens ?? 0,
+      reasoningOutputTokens,
+      thinkingTokens,
       input.durationMs,
       input.numTurns,
       input.model,
@@ -3885,6 +3909,8 @@ export function createSessionCost(input: CreateSessionCostInput): SessionCost {
     outputTokens: input.outputTokens ?? 0,
     cacheReadTokens: input.cacheReadTokens ?? 0,
     cacheWriteTokens: input.cacheWriteTokens ?? 0,
+    reasoningOutputTokens,
+    thinkingTokens,
     durationMs: input.durationMs,
     numTurns: input.numTurns,
     model: input.model,
@@ -8245,6 +8271,8 @@ type ContextSnapshotRow = {
   preCompactTokens: number | null;
   cumulativeInputTokens: number;
   cumulativeOutputTokens: number;
+  // Migration 063 — see ContextFormulaSchema in src/types.ts for the value set.
+  contextFormula: string | null;
   createdAt: string;
 };
 
@@ -8258,10 +8286,11 @@ function rowToContextSnapshot(row: ContextSnapshotRow): ContextSnapshot {
     contextTotalTokens: row.contextTotalTokens ?? undefined,
     contextPercent: row.contextPercent ?? undefined,
     eventType: row.eventType,
-    compactTrigger: (row.compactTrigger as "auto" | "manual" | null) ?? undefined,
+    compactTrigger: (row.compactTrigger as "auto" | "manual" | "auto-inferred" | null) ?? undefined,
     preCompactTokens: row.preCompactTokens ?? undefined,
     cumulativeInputTokens: row.cumulativeInputTokens,
     cumulativeOutputTokens: row.cumulativeOutputTokens,
+    contextFormula: (row.contextFormula as ContextSnapshot["contextFormula"]) ?? undefined,
     createdAt: row.createdAt,
   };
 }
@@ -8283,11 +8312,12 @@ const contextSnapshotQueries = {
         number | null,
         number,
         number,
+        string | null, // contextFormula (migration 063)
         string,
       ]
     >(
-      `INSERT INTO task_context_snapshots (id, taskId, agentId, sessionId, contextUsedTokens, contextTotalTokens, contextPercent, eventType, compactTrigger, preCompactTokens, cumulativeInputTokens, cumulativeOutputTokens, createdAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO task_context_snapshots (id, taskId, agentId, sessionId, contextUsedTokens, contextTotalTokens, contextPercent, eventType, compactTrigger, preCompactTokens, cumulativeInputTokens, cumulativeOutputTokens, contextFormula, createdAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ),
 
   getByTaskId: () =>
@@ -8309,10 +8339,12 @@ export interface CreateContextSnapshotInput {
   contextTotalTokens?: number;
   contextPercent?: number;
   eventType: ContextSnapshotEventType;
-  compactTrigger?: "auto" | "manual";
+  compactTrigger?: "auto" | "manual" | "auto-inferred";
   preCompactTokens?: number;
   cumulativeInputTokens?: number;
   cumulativeOutputTokens?: number;
+  // Migration 063 — adapter-supplied formula tag.
+  contextFormula?: ContextSnapshot["contextFormula"];
 }
 
 export function createContextSnapshot(input: CreateContextSnapshotInput): ContextSnapshot {
@@ -8334,6 +8366,7 @@ export function createContextSnapshot(input: CreateContextSnapshotInput): Contex
       input.preCompactTokens ?? null,
       input.cumulativeInputTokens ?? 0,
       input.cumulativeOutputTokens ?? 0,
+      input.contextFormula ?? null,
       now,
     );
 
@@ -8347,10 +8380,15 @@ export function createContextSnapshot(input: CreateContextSnapshotInput): Contex
       .run(input.contextPercent, input.taskId);
   }
 
-  // Keep totalContextTokensUsed up to date with the latest known value
+  // Migration 063: peakContextTokens is monotonic-max across snapshots, not a
+  // rolling latest. Mirrors Claude Code's status-line "peak context" semantic.
   if (input.contextUsedTokens != null) {
     getDb()
-      .prepare("UPDATE agent_tasks SET totalContextTokensUsed = ? WHERE id = ?")
+      .prepare(
+        `UPDATE agent_tasks
+         SET peakContextTokens = MAX(COALESCE(peakContextTokens, 0), ?)
+         WHERE id = ?`,
+      )
       .run(input.contextUsedTokens, input.taskId);
   }
 
@@ -8362,9 +8400,17 @@ export function createContextSnapshot(input: CreateContextSnapshotInput): Contex
       .run(input.taskId);
   }
 
-  if (input.eventType === "completion" && input.contextTotalTokens != null) {
+  // Phase 10: set contextWindowSize on the FIRST snapshot that carries one
+  // (was previously gated on eventType === 'completion', meaning the UI saw
+  // NULL throughout running tasks). Subsequent snapshots leave it alone — the
+  // window doesn't change mid-session.
+  if (input.contextTotalTokens != null) {
     getDb()
-      .prepare("UPDATE agent_tasks SET contextWindowSize = ? WHERE id = ?")
+      .prepare(
+        `UPDATE agent_tasks
+         SET contextWindowSize = ?
+         WHERE id = ? AND contextWindowSize IS NULL`,
+      )
       .run(input.contextTotalTokens, input.taskId);
   }
 
@@ -8381,6 +8427,7 @@ export function createContextSnapshot(input: CreateContextSnapshotInput): Contex
     preCompactTokens: input.preCompactTokens,
     cumulativeInputTokens: input.cumulativeInputTokens ?? 0,
     cumulativeOutputTokens: input.cumulativeOutputTokens ?? 0,
+    contextFormula: input.contextFormula,
     createdAt: now,
   };
 }
@@ -8396,7 +8443,8 @@ export function getContextSnapshotsBySessionId(sessionId: string, limit = 500): 
 export interface ContextSummary {
   compactionCount: number;
   peakContextPercent: number | null;
-  totalContextTokensUsed: number | null;
+  // Migration 063: renamed from totalContextTokensUsed.
+  peakContextTokens: number | null;
   contextWindowSize: number | null;
   snapshotCount: number;
 }
@@ -8412,7 +8460,7 @@ export function getContextSummaryByTaskId(taskId: string): ContextSummary {
   return {
     compactionCount: task?.compactionCount ?? 0,
     peakContextPercent: task?.peakContextPercent ?? null,
-    totalContextTokensUsed: task?.totalContextTokensUsed ?? null,
+    peakContextTokens: task?.peakContextTokens ?? null,
     contextWindowSize: task?.contextWindowSize ?? null,
     snapshotCount: countRow?.cnt ?? 0,
   };

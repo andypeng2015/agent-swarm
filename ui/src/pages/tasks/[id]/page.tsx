@@ -410,7 +410,7 @@ function TaskContextSection({
   const { summary } = context;
   const latestSnapshot = context.snapshots[context.snapshots.length - 1];
   const currentPercent = latestSnapshot?.contextPercent ?? summary.peakContextPercent ?? 0;
-  const usedTokens = latestSnapshot?.contextUsedTokens ?? summary.totalContextTokensUsed ?? 0;
+  const usedTokens = latestSnapshot?.contextUsedTokens ?? summary.peakContextTokens ?? 0;
   const totalTokens = latestSnapshot?.contextTotalTokens ?? summary.contextWindowSize ?? 0;
 
   return (

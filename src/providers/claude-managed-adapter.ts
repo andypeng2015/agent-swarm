@@ -524,7 +524,7 @@ class ClaudeManagedSession implements ProviderSession {
           (this.cost.cacheReadTokens ?? 0) + usage.cache_read_input_tokens;
         this.cost.cacheWriteTokens =
           (this.cost.cacheWriteTokens ?? 0) + usage.cache_creation_input_tokens;
-        this.cost.numTurns += 1;
+        this.cost.numTurns = (this.cost.numTurns ?? 0) + 1;
 
         const used = (this.cost.inputTokens ?? 0) + (this.cost.outputTokens ?? 0);
         const total = DEFAULT_CONTEXT_TOTAL_TOKENS;

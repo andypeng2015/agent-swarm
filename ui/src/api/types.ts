@@ -985,7 +985,8 @@ export interface ContextSnapshot {
 export interface ContextSummary {
   compactionCount: number;
   peakContextPercent: number | null;
-  totalContextTokensUsed: number | null;
+  // Migration 063: renamed from totalContextTokensUsed; monotonic max across snapshots.
+  peakContextTokens: number | null;
   contextWindowSize: number | null;
   snapshotCount: number;
 }

@@ -65,17 +65,24 @@ const createSessionCostRoute = route({
     inputTokens: z.number().int().optional(),
     outputTokens: z.number().int().optional(),
     cacheReadTokens: z.number().int().optional(),
-    cacheWriteTokens: z.number().int().optional(),
+    // Migration 063: nullable — adapters that can't honestly report cache writes
+    // (e.g. Codex SDK) prefer null over a faked 0.
+    cacheWriteTokens: z.number().int().nullable().optional(),
+    // Migration 063: new token classes previously dropped on the floor.
+    reasoningOutputTokens: z.number().int().nonnegative().optional(),
+    thinkingTokens: z.number().int().nonnegative().optional(),
     durationMs: z.number().int().optional(),
-    numTurns: z.number().int().optional(),
+    // Migration 063: nullable for adapters that can't honestly report numTurns.
+    numTurns: z.number().int().nullable().optional(),
     model: z.string().optional(),
     isError: z.boolean().optional(),
     /**
-     * Phase 6: when present, drives the codex pricing-table recompute path.
-     * Other providers ('claude' / 'pi' / 'opencode') always trust harness-reported USD.
-     * Optional / undefined keeps back-compat for existing callers.
+     * Phase 6 (extended migration 063): drives the API recompute path. After
+     * Phase 2 every provider with seeded pricing rows participates.
      */
-    provider: z.enum(["claude", "codex", "pi", "opencode"]).optional(),
+    provider: z
+      .enum(["claude", "claude-managed", "codex", "pi", "opencode", "devin", "gemini"])
+      .optional(),
     /**
      * Phase 6: epoch-ms timestamp used as the "active price at time T" lookup
      * basis. Defaults to `Date.now()` when omitted. Including it lets
@@ -226,8 +233,11 @@ export async function handleSessionData(
         outputTokens,
         cacheReadTokens: cachedInputTokens,
         cacheWriteTokens: parsed.body.cacheWriteTokens ?? 0,
+        reasoningOutputTokens: parsed.body.reasoningOutputTokens ?? 0,
+        thinkingTokens: parsed.body.thinkingTokens ?? 0,
         durationMs: parsed.body.durationMs ?? 0,
-        numTurns: parsed.body.numTurns ?? 1,
+        // Migration 063: pass null through honestly instead of faking a 1.
+        numTurns: parsed.body.numTurns ?? null,
         model,
         isError: parsed.body.isError ?? false,
         costSource,
