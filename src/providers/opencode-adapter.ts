@@ -12,7 +12,11 @@ import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { AssistantMessage, Config, Event as OpencodeEvent } from "@opencode-ai/sdk";
 import { createOpencode } from "@opencode-ai/sdk";
-import { getContextWindowSize } from "../utils/context-window";
+import {
+  CONTEXT_FORMULA,
+  clampContextPercent,
+  getContextWindowSize,
+} from "../utils/context-window";
 import { validateOpencodeCredentials } from "../utils/credentials";
 import { fetchInstalledMcpServers } from "../utils/mcp-server-fetcher";
 import { scrubSecrets } from "../utils/secret-scrubber";
@@ -253,15 +257,21 @@ class OpencodeSession implements ProviderSession {
         const turnOutput = msg.tokens?.output ?? 0;
         const turnCacheRead = msg.tokens?.cache?.read ?? 0;
         const turnCacheWrite = msg.tokens?.cache?.write ?? 0;
-        const contextUsed = turnInput + turnCacheRead + turnCacheWrite;
+        // Phase 8 + Phase 9: unified `input + cache + output` formula instead
+        // of the previous `input + cache_read + cache_write` (which omitted
+        // output and slightly mis-counted vs every other adapter).
+        const contextUsed = turnInput + turnCacheRead + turnCacheWrite + turnOutput;
         const contextTotal = getContextWindowSize(this.model || msg.modelID || "default");
         if (contextTotal > 0) {
           this.emit({
             type: "context_usage",
             contextUsedTokens: contextUsed,
             contextTotalTokens: contextTotal,
-            contextPercent: (contextUsed / contextTotal) * 100,
+            // Phase 8: clamp so a turn that briefly overshoots (e.g. due to
+            // a stale total) doesn't render as a 130% gauge in the UI.
+            contextPercent: clampContextPercent(contextUsed, contextTotal) ?? 0,
             outputTokens: turnOutput,
+            contextFormula: CONTEXT_FORMULA,
           });
         }
         break;

@@ -279,6 +279,12 @@ class DevinSession implements ProviderSession {
     if (this.settled || this.aborted) return;
     this.pollCount += 1;
 
+    // Phase 8: Devin's session API does NOT report per-poll context-window
+    // info (the model is fully managed by Devin). We deliberately don't emit
+    // a synthetic `context_usage` event here — faking one with `contextUsedTokens=0`
+    // would be misleading. `peakContextTokens` stays null for devin tasks,
+    // which the UI surfaces as "not available" rather than "0".
+
     let response: DevinSessionResponse;
     try {
       response = await getSession(this.orgId, this.devinApiKey, this._sessionId!);
