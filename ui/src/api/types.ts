@@ -150,7 +150,8 @@ export interface AgentWithTasks extends Agent {
 
 /**
  * Identity (Phase 2 ≥1.76.0). Mirrors `UserSchema` in `src/types.ts` —
- * canonical row from the new `users` table.
+ * canonical row from the new `users` table. Phase 064: identity columns
+ * normalized into `user_external_ids`; surfaced here via `identities[]`.
  */
 export interface User {
   id: string;
@@ -158,13 +159,15 @@ export interface User {
   email?: string;
   role?: string;
   notes?: string;
-  slackUserId?: string;
-  linearUserId?: string;
-  githubUsername?: string;
-  gitlabUsername?: string;
   emailAliases: string[];
   preferredChannel: string;
   timezone?: string;
+  // Phase 064: list of platform identities composed from `user_external_ids`.
+  identities?: Array<{ kind: string; externalId: string }>;
+  // Phase 064: NULL/undefined = unlimited.
+  dailyBudgetUsd?: number | null;
+  status: "invited" | "active" | "suspended";
+  metadata?: Record<string, unknown>;
   createdAt: string;
   lastUpdatedAt: string;
 }
@@ -178,13 +181,54 @@ export interface CreateUserInput {
   email?: string;
   role?: string;
   notes?: string;
-  slackUserId?: string;
-  linearUserId?: string;
-  githubUsername?: string;
-  gitlabUsername?: string;
   emailAliases?: string[];
   preferredChannel?: string;
   timezone?: string;
+  identities?: Array<{ kind: string; externalId: string }>;
+  dailyBudgetUsd?: number | null;
+  status?: "invited" | "active" | "suspended";
+  metadata?: Record<string, unknown>;
+}
+
+/**
+ * Identity event types — mirrors `IdentityEventTypeSchema` in `src/types.ts`
+ * and the CHECK constraint on `user_identity_events.eventType` in migration 064.
+ */
+export type IdentityEventType =
+  | "auto_merge"
+  | "manual_merge"
+  | "identity_added"
+  | "identity_removed"
+  | "email_added"
+  | "email_removed"
+  | "token_minted"
+  | "token_revoked"
+  | "budget_changed"
+  | "status_changed";
+
+export interface IdentityEvent {
+  id: string;
+  userId: string;
+  eventType: IdentityEventType;
+  actor: string;
+  beforeJson: string | null;
+  afterJson: string | null;
+  createdAt: number;
+}
+
+/**
+ * Read shape for a user-owned MCP token (Phase 064 schema, endpoints ship
+ * with the future MCP-token plan). `tokenPreview` is the last 4 chars of
+ * the plaintext for UI display ("…ax7b").
+ */
+export interface UserToken {
+  id: string;
+  userId: string;
+  label: string | null;
+  tokenPreview: string;
+  createdAt: number;
+  lastUsedAt: number | null;
+  revokedAt: number | null;
 }
 
 /**
