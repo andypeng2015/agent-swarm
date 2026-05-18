@@ -57,6 +57,62 @@ async function waitForOperations(service: string, expected: string[]): Promise<v
   throw new Error(`${service} did not receive expected operations: ${expected.join(", ")}`);
 }
 
+type JaegerSpan = {
+  traceID: string;
+  spanID: string;
+  operationName: string;
+  references?: Array<{ refType: string; traceID: string; spanID: string }>;
+};
+
+type JaegerTrace = {
+  traceID: string;
+  spans: JaegerSpan[];
+};
+
+async function fetchTraces(service: string, operation: string): Promise<JaegerTrace[]> {
+  const response = await fetch(
+    `${jaegerQueryUrl}/api/traces?service=${encodeURIComponent(service)}&operation=${encodeURIComponent(
+      operation,
+    )}&limit=20`,
+  );
+  if (!response.ok) {
+    throw new Error(`Jaeger trace query failed for ${service}/${operation}: ${response.status}`);
+  }
+  const payload = (await response.json()) as { data?: JaegerTrace[] };
+  return payload.data ?? [];
+}
+
+async function waitForTraceShape(
+  service: string,
+  operation: string,
+  assertTrace: (trace: JaegerTrace) => string | null,
+): Promise<JaegerTrace> {
+  const deadline = Date.now() + 30_000;
+  let lastFailure = "no traces returned";
+  while (Date.now() < deadline) {
+    const traces = await fetchTraces(service, operation);
+    for (const trace of traces) {
+      const failure = assertTrace(trace);
+      if (!failure) return trace;
+      lastFailure = failure;
+    }
+    await Bun.sleep(500);
+  }
+  throw new Error(`${service}/${operation} trace shape did not match: ${lastFailure}`);
+}
+
+function childOf(child: JaegerSpan | undefined, parent: JaegerSpan | undefined): boolean {
+  if (!child || !parent) return false;
+  return Boolean(
+    child.references?.some(
+      (ref) =>
+        ref.refType === "CHILD_OF" &&
+        ref.traceID === parent.traceID &&
+        ref.spanID === parent.spanID,
+    ),
+  );
+}
+
 async function emitApiSpan(): Promise<void> {
   await run(
     "bun",
@@ -116,28 +172,39 @@ async function emitWorkerSpans(): Promise<void> {
           "gen_ai.request.model": "test-model"
         });
       });
-        await otel.withSpan("worker.session", async (sessionSpan) => {
-          sessionSpan.setAttributes({
-            "agentswarm.task.id": "otel-e2e-task",
-            "agentswarm.harness_provider": "codex",
-            "agentswarm.provider.session_id": "otel-e2e-provider-session",
-            "agentswarm.session.exit_code": 0,
-            "agentswarm.session.outcome": "ok"
-          });
-          await otel.withSpan("worker.mcp.tool", async (toolSpan) => {
-            toolSpan.setAttributes({
-              "agent.id": "otel-e2e-agent",
-              "agentswarm.task.id": "otel-e2e-task",
-              "agentswarm.harness_provider": "codex",
-              "agentswarm.provider.session_id": "otel-e2e-provider-session",
-              "agentswarm.tool.name": "mcp__agent_swarm__store_progress",
-              "agentswarm.tool.normalized_name": "agent_swarm.store_progress",
-              "agentswarm.tool.kind": "mcp",
-              "mcp.server.name": "agent_swarm",
-              "mcp.tool.name": "store_progress"
-            });
-          });
-        }, { "agent.id": "otel-e2e-agent" });
+      const sessionSpan = otel.startSpan("worker.session", {
+        "agent.id": "otel-e2e-agent",
+        "agentswarm.task.id": "otel-e2e-task",
+        "agentswarm.harness_provider": "codex",
+        "agentswarm.provider.session_id": "otel-e2e-provider-session",
+        "agentswarm.session.exit_code": 0,
+        "agentswarm.session.outcome": "ok"
+      });
+      await otel.withSpanContext(sessionSpan, async () => {
+        const mcpToolSpan = otel.startSpan("worker.mcp.tool", {
+          "agent.id": "otel-e2e-agent",
+          "agentswarm.task.id": "otel-e2e-task",
+          "agentswarm.harness_provider": "codex",
+          "agentswarm.provider.session_id": "otel-e2e-provider-session",
+          "agentswarm.tool.name": "mcp__agent_swarm__store_progress",
+          "agentswarm.tool.normalized_name": "agent_swarm.store_progress",
+          "agentswarm.tool.kind": "mcp",
+          "mcp.server.name": "agent_swarm",
+          "mcp.tool.name": "store_progress"
+        });
+        mcpToolSpan.end();
+        const shellToolSpan = otel.startSpan("worker.tool", {
+          "agent.id": "otel-e2e-agent",
+          "agentswarm.task.id": "otel-e2e-task",
+          "agentswarm.harness_provider": "codex",
+          "agentswarm.provider.session_id": "otel-e2e-provider-session",
+          "agentswarm.tool.name": "shell",
+          "agentswarm.tool.normalized_name": "shell",
+          "agentswarm.tool.kind": "tool"
+        });
+        shellToolSpan.end();
+      });
+      sessionSpan.end();
       await otel.shutdownOtel();
       `,
     ],
@@ -178,9 +245,39 @@ async function main() {
       "worker.session.create",
       "worker.session",
       "worker.mcp.tool",
+      "worker.tool",
     ]);
+    const apiTrace = await waitForTraceShape("agent-swarm-api", "http.server", (trace) => {
+      const httpServer = trace.spans.find((span) => span.operationName === "http.server");
+      const mcpTool = trace.spans.find((span) => span.operationName === "mcp.tool");
+      if (!httpServer) return "missing http.server span";
+      if (!mcpTool) return "missing mcp.tool span";
+      if (!childOf(mcpTool, httpServer)) return "mcp.tool is not a child of http.server";
+      return null;
+    });
+    const workerTrace = await waitForTraceShape("agent-swarm-worker", "worker.session", (trace) => {
+      const session = trace.spans.find((span) => span.operationName === "worker.session");
+      const sessionCreate = trace.spans.find(
+        (span) => span.operationName === "worker.session.create",
+      );
+      const mcpTool = trace.spans.find((span) => span.operationName === "worker.mcp.tool");
+      const shellTool = trace.spans.find((span) => span.operationName === "worker.tool");
+      if (!session) return "missing worker.session span";
+      if (!mcpTool) return "missing worker.mcp.tool span";
+      if (!shellTool) return "missing worker.tool span";
+      if (!childOf(mcpTool, session)) return "worker.mcp.tool is not a child of worker.session";
+      if (!childOf(shellTool, session)) return "worker.tool is not a child of worker.session";
+      if (sessionCreate && childOf(mcpTool, sessionCreate)) {
+        return "worker.mcp.tool is still nested under worker.session.create";
+      }
+      return null;
+    });
     console.log(
-      "Jaeger received OpenTelemetry spans: agent-swarm-api/http.server, agent-swarm-api/mcp.tool, agent-swarm-worker/worker.poll, agent-swarm-worker/worker.session.create, agent-swarm-worker/worker.session, agent-swarm-worker/worker.mcp.tool",
+      [
+        "Jaeger received OpenTelemetry spans with expected nesting:",
+        `api trace ${apiTrace.traceID}: mcp.tool -> http.server`,
+        `worker trace ${workerTrace.traceID}: worker.mcp.tool + worker.tool -> worker.session`,
+      ].join("\n"),
     );
   } finally {
     await run("docker", ["rm", "-f", containerName]).catch(() => "");

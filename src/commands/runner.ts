@@ -9,6 +9,7 @@ import {
   type SwarmSpan,
   startSpan,
   withSpan,
+  withSpanContext,
 } from "../otel.ts";
 import { type BasePromptArgs, getBasePrompt } from "../prompts/base-prompt.ts";
 import {
@@ -1894,10 +1895,10 @@ function providerEventAttributes(event: ProviderEvent): Attributes {
       return { "agentswarm.progress.message": telemetryPreview(event.message) };
     case "context_usage":
       return {
-        "agentswarm.context.used_tokens": event.contextUsedTokens,
-        "agentswarm.context.total_tokens": event.contextTotalTokens,
-        "agentswarm.context.percent": event.contextPercent,
-        "gen_ai.usage.output_tokens": event.outputTokens,
+        "agentswarm.context.used_tokens": event.contextUsedTokens ?? undefined,
+        "agentswarm.context.total_tokens": event.contextTotalTokens ?? undefined,
+        "agentswarm.context.percent": event.contextPercent ?? undefined,
+        "gen_ai.usage.output_tokens": event.outputTokens ?? undefined,
       };
     case "compaction":
       return {
@@ -2110,131 +2111,53 @@ async function spawnProviderProcess(
   // snapshots carry a real `cumulativeOutputTokens` (was 0 until completion).
   let cumulativeProgressOutputTokens = 0;
 
-  session.onEvent((event) => {
-    sessionSpan.addEvent(`provider.${event.type}`, providerEventAttributes(event));
-    switch (event.type) {
-      case "session_init":
-        providerSessionId = event.sessionId;
-        sessionSpan.setAttributes({
-          "agentswarm.provider.session_id": providerSessionId,
-          "agentswarm.provider.name": event.provider,
-          "agentswarm.provider.meta_preview": telemetryPreview(event.providerMeta),
-        });
-        if (realTaskId) {
-          saveProviderSessionId(
-            opts.apiUrl,
-            opts.apiKey,
-            realTaskId,
-            event.sessionId,
-            event.provider,
-            event.providerMeta,
-            model,
-          ).catch((err) => console.warn(`[runner] Failed to save session ID: ${err}`));
-        } else {
-          // Pool task: save provider session ID on active session so it can be
-          // propagated to the real task when the agent claims one
-          saveProviderSessionIdOnActiveSession(
-            opts.apiUrl,
-            opts.apiKey,
-            effectiveTaskId,
-            event.sessionId,
-          ).catch((err) =>
-            console.warn(`[runner] Failed to save provider session on active session: ${err}`),
-          );
-        }
-
-        // Buffer session start event
-        bufferEvent({
-          category: "session",
-          event: "session.start",
-          source: "worker",
-          agentId: opts.agentId,
-          taskId: effectiveTaskId,
-          sessionId: event.sessionId,
-        });
-        break;
-      case "tool_start": {
-        const tool = classifyTool(event.toolName, event.args);
-        const toolSpan = startSpan(tool.kind === "mcp" ? "worker.mcp.tool" : "worker.tool", {
-          "agent.id": opts.agentId,
-          "agentswarm.task.id": effectiveTaskId,
-          "agentswarm.task.real_id": realTaskId,
-          "agentswarm.agent.role": opts.role,
-          "agentswarm.harness_provider": opts.harnessProvider,
-          "agentswarm.provider.session_id": providerSessionId,
-          "agentswarm.tool.name": tool.name,
-          "agentswarm.tool.normalized_name": tool.normalizedName,
-          "agentswarm.tool.kind": tool.kind,
-          "agentswarm.tool.call_id": event.toolCallId,
-          "mcp.server.name": tool.mcpServer,
-          "mcp.tool.name": tool.mcpTool,
-          "agentswarm.tool.args_preview": telemetryPreview(event.args),
-        });
-        activeToolSpans.set(event.toolCallId, {
-          span: toolSpan,
-          startedAt: Date.now(),
-        });
-
-        // Auto-progress: report tool activity as task progress (throttled)
-        const now = Date.now();
-        if (effectiveTaskId && opts.apiUrl && now - lastProgressTime >= PROGRESS_THROTTLE_MS) {
-          const progress = toolCallToProgress(event.toolName, event.args);
-          if (progress) {
-            lastProgressTime = now;
-            updateProgressViaAPI(opts.apiUrl, opts.apiKey, effectiveTaskId, progress).catch(
-              () => {},
+  session.onEvent((event) =>
+    withSpanContext(sessionSpan, () => {
+      sessionSpan.addEvent(`provider.${event.type}`, providerEventAttributes(event));
+      switch (event.type) {
+        case "session_init":
+          providerSessionId = event.sessionId;
+          sessionSpan.setAttributes({
+            "agentswarm.provider.session_id": providerSessionId,
+            "agentswarm.provider.name": event.provider,
+            "agentswarm.provider.meta_preview": telemetryPreview(event.providerMeta),
+          });
+          if (realTaskId) {
+            saveProviderSessionId(
+              opts.apiUrl,
+              opts.apiKey,
+              realTaskId,
+              event.sessionId,
+              event.provider,
+              event.providerMeta,
+              model,
+            ).catch((err) => console.warn(`[runner] Failed to save session ID: ${err}`));
+          } else {
+            // Pool task: save provider session ID on active session so it can be
+            // propagated to the real task when the agent claims one
+            saveProviderSessionIdOnActiveSession(
+              opts.apiUrl,
+              opts.apiKey,
+              effectiveTaskId,
+              event.sessionId,
+            ).catch((err) =>
+              console.warn(`[runner] Failed to save provider session on active session: ${err}`),
             );
           }
-        }
 
-        // Buffer tool event
-        bufferEvent({
-          category: "tool",
-          event: "tool.start",
-          source: "worker",
-          agentId: opts.agentId,
-          taskId: effectiveTaskId,
-          sessionId: opts.runnerSessionId,
-          data: {
-            toolName: event.toolName,
-            toolCallId: event.toolCallId,
-            ...extractToolKey(event.toolName, event.args),
-            clientTimestamp: new Date().toISOString(),
-          },
-        });
-
-        // Also emit skill event when tool is Skill
-        if (event.toolName === "Skill") {
-          const args = event.args as Record<string, unknown>;
+          // Buffer session start event
           bufferEvent({
-            category: "skill",
-            event: "skill.invoke",
+            category: "session",
+            event: "session.start",
             source: "worker",
             agentId: opts.agentId,
             taskId: effectiveTaskId,
-            sessionId: opts.runnerSessionId,
-            data: {
-              skillName: args.skill as string,
-              clientTimestamp: new Date().toISOString(),
-            },
+            sessionId: event.sessionId,
           });
-        }
-        break;
-      }
-      case "tool_end": {
-        const active = activeToolSpans.get(event.toolCallId);
-        const now = Date.now();
-        if (active) {
-          active.span.setAttributes({
-            "agentswarm.tool.duration_ms": now - active.startedAt,
-            "agentswarm.tool.result_preview": telemetryPreview(event.result),
-          });
-          active.span.setStatus({ code: 1 });
-          active.span.end();
-          activeToolSpans.delete(event.toolCallId);
-        } else {
-          const tool = classifyTool(event.toolName, undefined);
-          const span = startSpan(tool.kind === "mcp" ? "worker.mcp.tool" : "worker.tool", {
+          break;
+        case "tool_start": {
+          const tool = classifyTool(event.toolName, event.args);
+          const toolSpan = startSpan(tool.kind === "mcp" ? "worker.mcp.tool" : "worker.tool", {
             "agent.id": opts.agentId,
             "agentswarm.task.id": effectiveTaskId,
             "agentswarm.task.real_id": realTaskId,
@@ -2247,71 +2170,173 @@ async function spawnProviderProcess(
             "agentswarm.tool.call_id": event.toolCallId,
             "mcp.server.name": tool.mcpServer,
             "mcp.tool.name": tool.mcpTool,
-            "agentswarm.tool.result_preview": telemetryPreview(event.result),
-            "agentswarm.tool.missing_start": true,
+            "agentswarm.tool.args_preview": telemetryPreview(event.args),
           });
-          span.end();
-        }
-        break;
-      }
-      case "result":
-        {
-          const latestModel = buildLatestModelReport({
-            model: event.cost.model,
-            taskModel: opts.model,
-            configModel,
-            taskId: realTaskId,
-            harnessProvider: opts.harnessProvider,
+          activeToolSpans.set(event.toolCallId, {
+            span: toolSpan,
+            startedAt: Date.now(),
           });
-          if (latestModel) {
-            reportLatestModel(opts.apiUrl, opts.apiKey, opts.agentId, latestModel).catch((err) =>
-              console.warn(`[runner] Failed to report latest model: ${err}`),
-            );
-          }
-        }
-        // Cost save is handled in waitForCompletion().then() to ensure
-        // it completes before the process exits (fire-and-forget here
-        // races with container shutdown).
 
-        // Buffer session end event
-        bufferEvent({
-          category: "session",
-          event: "session.end",
-          source: "worker",
-          agentId: opts.agentId,
-          taskId: effectiveTaskId,
-          sessionId: opts.runnerSessionId,
-          status: event.isError ? "error" : "ok",
-          durationMs: Date.now() - sessionStartTime,
-          data: {
-            model: event.cost.model,
-            totalCostUsd: event.cost.totalCostUsd,
-            inputTokens: event.cost.inputTokens,
-            outputTokens: event.cost.outputTokens,
-          },
-        });
-        break;
-      case "error":
-        sessionSpan.setStatus({
-          code: 2,
-          message: event.message,
-        });
-        break;
-      case "context_usage": {
-        const now2 = Date.now();
-        if (now2 - lastContextPostTime >= CONTEXT_THROTTLE_MS) {
-          lastContextPostTime = now2;
-          // Phase 10: track cumulative output tokens on the worker side and
-          // forward them on every progress snapshot. Previously these were
-          // 0 until the `completion` snapshot at session end, so the
-          // dashboard's "tokens consumed" line was a flat zero throughout.
-          cumulativeProgressOutputTokens += event.outputTokens ?? 0;
-          // For inputs we don't get a per-turn delta on the `context_usage`
-          // event (the unified formula bakes it into contextUsedTokens), so
-          // we report the latest contextUsedTokens as the running input proxy.
-          // The DB column is `cumulativeInputTokens` but the semantic on
-          // progress rows is "running used-tokens" — both inputs and outputs
-          // contribute, exact decomposition lives on the cost row.
+          // Auto-progress: report tool activity as task progress (throttled)
+          const now = Date.now();
+          if (effectiveTaskId && opts.apiUrl && now - lastProgressTime >= PROGRESS_THROTTLE_MS) {
+            const progress = toolCallToProgress(event.toolName, event.args);
+            if (progress) {
+              lastProgressTime = now;
+              updateProgressViaAPI(opts.apiUrl, opts.apiKey, effectiveTaskId, progress).catch(
+                () => {},
+              );
+            }
+          }
+
+          // Buffer tool event
+          bufferEvent({
+            category: "tool",
+            event: "tool.start",
+            source: "worker",
+            agentId: opts.agentId,
+            taskId: effectiveTaskId,
+            sessionId: opts.runnerSessionId,
+            data: {
+              toolName: event.toolName,
+              toolCallId: event.toolCallId,
+              ...extractToolKey(event.toolName, event.args),
+              clientTimestamp: new Date().toISOString(),
+            },
+          });
+
+          // Also emit skill event when tool is Skill
+          if (event.toolName === "Skill") {
+            const args = event.args as Record<string, unknown>;
+            bufferEvent({
+              category: "skill",
+              event: "skill.invoke",
+              source: "worker",
+              agentId: opts.agentId,
+              taskId: effectiveTaskId,
+              sessionId: opts.runnerSessionId,
+              data: {
+                skillName: args.skill as string,
+                clientTimestamp: new Date().toISOString(),
+              },
+            });
+          }
+          break;
+        }
+        case "tool_end": {
+          const active = activeToolSpans.get(event.toolCallId);
+          const now = Date.now();
+          if (active) {
+            active.span.setAttributes({
+              "agentswarm.tool.duration_ms": now - active.startedAt,
+              "agentswarm.tool.result_preview": telemetryPreview(event.result),
+            });
+            active.span.setStatus({ code: 1 });
+            active.span.end();
+            activeToolSpans.delete(event.toolCallId);
+          } else {
+            const tool = classifyTool(event.toolName, undefined);
+            const span = startSpan(tool.kind === "mcp" ? "worker.mcp.tool" : "worker.tool", {
+              "agent.id": opts.agentId,
+              "agentswarm.task.id": effectiveTaskId,
+              "agentswarm.task.real_id": realTaskId,
+              "agentswarm.agent.role": opts.role,
+              "agentswarm.harness_provider": opts.harnessProvider,
+              "agentswarm.provider.session_id": providerSessionId,
+              "agentswarm.tool.name": tool.name,
+              "agentswarm.tool.normalized_name": tool.normalizedName,
+              "agentswarm.tool.kind": tool.kind,
+              "agentswarm.tool.call_id": event.toolCallId,
+              "mcp.server.name": tool.mcpServer,
+              "mcp.tool.name": tool.mcpTool,
+              "agentswarm.tool.result_preview": telemetryPreview(event.result),
+              "agentswarm.tool.missing_start": true,
+            });
+            span.end();
+          }
+          break;
+        }
+        case "result":
+          {
+            const latestModel = buildLatestModelReport({
+              model: event.cost.model,
+              taskModel: opts.model,
+              configModel,
+              taskId: realTaskId,
+              harnessProvider: opts.harnessProvider,
+            });
+            if (latestModel) {
+              reportLatestModel(opts.apiUrl, opts.apiKey, opts.agentId, latestModel).catch((err) =>
+                console.warn(`[runner] Failed to report latest model: ${err}`),
+              );
+            }
+          }
+          // Cost save is handled in waitForCompletion().then() to ensure
+          // it completes before the process exits (fire-and-forget here
+          // races with container shutdown).
+
+          // Buffer session end event
+          bufferEvent({
+            category: "session",
+            event: "session.end",
+            source: "worker",
+            agentId: opts.agentId,
+            taskId: effectiveTaskId,
+            sessionId: opts.runnerSessionId,
+            status: event.isError ? "error" : "ok",
+            durationMs: Date.now() - sessionStartTime,
+            data: {
+              model: event.cost.model,
+              totalCostUsd: event.cost.totalCostUsd,
+              inputTokens: event.cost.inputTokens,
+              outputTokens: event.cost.outputTokens,
+            },
+          });
+          break;
+        case "error":
+          sessionSpan.setStatus({
+            code: 2,
+            message: event.message,
+          });
+          break;
+        case "context_usage": {
+          const now2 = Date.now();
+          if (now2 - lastContextPostTime >= CONTEXT_THROTTLE_MS) {
+            lastContextPostTime = now2;
+            // Phase 10: track cumulative output tokens on the worker side and
+            // forward them on every progress snapshot. Previously these were
+            // 0 until the `completion` snapshot at session end, so the
+            // dashboard's "tokens consumed" line was a flat zero throughout.
+            cumulativeProgressOutputTokens += event.outputTokens ?? 0;
+            // For inputs we don't get a per-turn delta on the `context_usage`
+            // event (the unified formula bakes it into contextUsedTokens), so
+            // we report the latest contextUsedTokens as the running input proxy.
+            // The DB column is `cumulativeInputTokens` but the semantic on
+            // progress rows is "running used-tokens" — both inputs and outputs
+            // contribute, exact decomposition lives on the cost row.
+            fetch(`${opts.apiUrl}/api/tasks/${realTaskId}/context`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "X-Agent-ID": opts.agentId,
+                Authorization: `Bearer ${opts.apiKey}`,
+              },
+              body: JSON.stringify({
+                eventType: "progress",
+                sessionId: opts.runnerSessionId,
+                contextUsedTokens: event.contextUsedTokens,
+                contextTotalTokens: event.contextTotalTokens,
+                contextPercent: event.contextPercent,
+                cumulativeInputTokens: event.contextUsedTokens,
+                cumulativeOutputTokens: cumulativeProgressOutputTokens,
+                contextFormula: event.contextFormula,
+              }),
+            }).catch(() => {});
+          }
+          break;
+        }
+        case "compaction": {
+          // Always record compaction events (no throttle)
           fetch(`${opts.apiUrl}/api/tasks/${realTaskId}/context`, {
             method: "POST",
             headers: {
@@ -2320,76 +2345,54 @@ async function spawnProviderProcess(
               Authorization: `Bearer ${opts.apiKey}`,
             },
             body: JSON.stringify({
-              eventType: "progress",
+              eventType: "compaction",
               sessionId: opts.runnerSessionId,
-              contextUsedTokens: event.contextUsedTokens,
+              preCompactTokens: event.preCompactTokens,
+              compactTrigger: event.compactTrigger,
               contextTotalTokens: event.contextTotalTokens,
-              contextPercent: event.contextPercent,
-              cumulativeInputTokens: event.contextUsedTokens,
-              cumulativeOutputTokens: cumulativeProgressOutputTokens,
-              contextFormula: event.contextFormula,
             }),
           }).catch(() => {});
+          break;
         }
-        break;
-      }
-      case "compaction": {
-        // Always record compaction events (no throttle)
-        fetch(`${opts.apiUrl}/api/tasks/${realTaskId}/context`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "X-Agent-ID": opts.agentId,
-            Authorization: `Bearer ${opts.apiKey}`,
-          },
-          body: JSON.stringify({
-            eventType: "compaction",
-            sessionId: opts.runnerSessionId,
-            preCompactTokens: event.preCompactTokens,
-            compactTrigger: event.compactTrigger,
-            contextTotalTokens: event.contextTotalTokens,
-          }),
-        }).catch(() => {});
-        break;
-      }
-      case "raw_log":
-        prettyPrintLine(event.content, opts.role);
-        if (shouldStream) {
-          logBuffer.lines.push(event.content);
-          const shouldFlush =
-            logBuffer.lines.length >= LOG_BUFFER_SIZE ||
-            Date.now() - logBuffer.lastFlush >= LOG_FLUSH_INTERVAL_MS;
-          if (shouldFlush) {
-            flushLogBuffer(logBuffer, {
-              apiUrl: opts.apiUrl,
-              apiKey: opts.apiKey,
-              agentId: opts.agentId,
-              sessionId: opts.runnerSessionId,
-              iteration: opts.iteration,
-              taskId: effectiveTaskId,
-              cli: adapter.name,
-            }).catch(() => {});
+        case "raw_log":
+          prettyPrintLine(event.content, opts.role);
+          if (shouldStream) {
+            logBuffer.lines.push(event.content);
+            const shouldFlush =
+              logBuffer.lines.length >= LOG_BUFFER_SIZE ||
+              Date.now() - logBuffer.lastFlush >= LOG_FLUSH_INTERVAL_MS;
+            if (shouldFlush) {
+              flushLogBuffer(logBuffer, {
+                apiUrl: opts.apiUrl,
+                apiKey: opts.apiKey,
+                agentId: opts.agentId,
+                sessionId: opts.runnerSessionId,
+                iteration: opts.iteration,
+                taskId: effectiveTaskId,
+                cli: adapter.name,
+              }).catch(() => {});
+            }
           }
-        }
-        break;
-      case "raw_stderr":
-        prettyPrintStderr(event.content, opts.role);
-        break;
+          break;
+        case "raw_stderr":
+          prettyPrintStderr(event.content, opts.role);
+          break;
 
-      case "progress": {
-        if (effectiveTaskId && opts.apiUrl) {
-          const now = Date.now();
-          if (now - lastProgressTime >= PROGRESS_THROTTLE_MS) {
-            lastProgressTime = now;
-            updateProgressViaAPI(opts.apiUrl, opts.apiKey, effectiveTaskId, event.message).catch(
-              () => {},
-            );
+        case "progress": {
+          if (effectiveTaskId && opts.apiUrl) {
+            const now = Date.now();
+            if (now - lastProgressTime >= PROGRESS_THROTTLE_MS) {
+              lastProgressTime = now;
+              updateProgressViaAPI(opts.apiUrl, opts.apiKey, effectiveTaskId, event.message).catch(
+                () => {},
+              );
+            }
           }
+          break;
         }
-        break;
       }
-    }
-  });
+    }),
+  );
 
   function closeActiveToolSpans(status: "ok" | "error", message?: string) {
     for (const [toolCallId, active] of activeToolSpans) {
@@ -2409,115 +2412,119 @@ async function spawnProviderProcess(
   // Create promise that handles completion
   const promise: Promise<ProviderResult> = session
     .waitForCompletion()
-    .then(async (result) => {
-      // Stop event flush timer and do a final flush
-      clearInterval(eventFlushTimer);
-      await flushEvents();
+    .then((result) =>
+      withSpanContext(sessionSpan, async () => {
+        // Stop event flush timer and do a final flush
+        clearInterval(eventFlushTimer);
+        await flushEvents();
 
-      // Final log flush
-      if (shouldStream && logBuffer.lines.length > 0) {
-        await flushLogBuffer(logBuffer, {
-          apiUrl: opts.apiUrl,
-          apiKey: opts.apiKey,
-          agentId: opts.agentId,
-          sessionId: opts.runnerSessionId,
-          iteration: opts.iteration,
-          taskId: effectiveTaskId,
-          cli: adapter.name,
-        });
-      }
-
-      // Error logging for non-zero exit
-      if (result.exitCode !== 0) {
-        const errorLog = {
-          timestamp: new Date().toISOString(),
-          iteration: opts.iteration,
-          exitCode: result.exitCode,
-          taskId: effectiveTaskId,
-          error: true,
-        };
-
-        const errorsFile = `${logDir}/errors.jsonl`;
-        const errorsFileRef = Bun.file(errorsFile);
-        const existingErrors = (await errorsFileRef.exists()) ? await errorsFileRef.text() : "";
-        await Bun.write(errorsFile, `${existingErrors}${JSON.stringify(errorLog)}\n`);
-
-        if (!isYolo) {
-          console.error(
-            `[${opts.role}] Task ${effectiveTaskId.slice(0, 8)} exited with code ${result.exitCode}.`,
-          );
-        } else {
-          console.warn(
-            `[${opts.role}] Task ${effectiveTaskId.slice(0, 8)} exited with code ${result.exitCode}. YOLO mode - continuing...`,
-          );
-        }
-      }
-
-      // Save cost data (awaited to ensure it completes before container exits)
-      if (result.cost) {
-        sessionSpan.setAttributes({
-          "gen_ai.response.model": result.cost.model,
-          "gen_ai.usage.input_tokens": result.cost.inputTokens ?? 0,
-          "gen_ai.usage.output_tokens": result.cost.outputTokens ?? 0,
-          "agentswarm.cost.total_usd": result.cost.totalCostUsd ?? 0,
-        });
-        try {
-          await saveCostData(
-            { ...result.cost, taskId: realTaskId, sessionId: opts.runnerSessionId },
-            opts.apiUrl,
-            opts.apiKey,
-          );
-        } catch (err) {
-          console.warn(`[runner] Failed to save cost: ${err}`);
-        }
-      }
-
-      // Post completion context usage snapshot
-      if (result.cost && realTaskId) {
-        fetch(`${opts.apiUrl}/api/tasks/${realTaskId}/context`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "X-Agent-ID": opts.agentId,
-            Authorization: `Bearer ${opts.apiKey}`,
-          },
-          body: JSON.stringify({
-            eventType: "completion",
+        // Final log flush
+        if (shouldStream && logBuffer.lines.length > 0) {
+          await flushLogBuffer(logBuffer, {
+            apiUrl: opts.apiUrl,
+            apiKey: opts.apiKey,
+            agentId: opts.agentId,
             sessionId: opts.runnerSessionId,
-            cumulativeInputTokens: result.cost.inputTokens ?? 0,
-            cumulativeOutputTokens: result.cost.outputTokens ?? 0,
-            contextTotalTokens: getContextWindowSize(result.cost.model || "default"),
-          }),
-        }).catch(() => {});
-      }
+            iteration: opts.iteration,
+            taskId: effectiveTaskId,
+            cli: adapter.name,
+          });
+        }
 
-      sessionSpan.setAttributes({
-        "agentswarm.session.duration_ms": Date.now() - sessionStartTime,
-        "agentswarm.session.exit_code": result.exitCode,
-        "agentswarm.session.outcome": result.exitCode === 0 ? "ok" : "error",
-      });
-      if (result.exitCode !== 0) {
+        // Error logging for non-zero exit
+        if (result.exitCode !== 0) {
+          const errorLog = {
+            timestamp: new Date().toISOString(),
+            iteration: opts.iteration,
+            exitCode: result.exitCode,
+            taskId: effectiveTaskId,
+            error: true,
+          };
+
+          const errorsFile = `${logDir}/errors.jsonl`;
+          const errorsFileRef = Bun.file(errorsFile);
+          const existingErrors = (await errorsFileRef.exists()) ? await errorsFileRef.text() : "";
+          await Bun.write(errorsFile, `${existingErrors}${JSON.stringify(errorLog)}\n`);
+
+          if (!isYolo) {
+            console.error(
+              `[${opts.role}] Task ${effectiveTaskId.slice(0, 8)} exited with code ${result.exitCode}.`,
+            );
+          } else {
+            console.warn(
+              `[${opts.role}] Task ${effectiveTaskId.slice(0, 8)} exited with code ${result.exitCode}. YOLO mode - continuing...`,
+            );
+          }
+        }
+
+        // Save cost data (awaited to ensure it completes before container exits)
+        if (result.cost) {
+          sessionSpan.setAttributes({
+            "gen_ai.response.model": result.cost.model,
+            "gen_ai.usage.input_tokens": result.cost.inputTokens ?? 0,
+            "gen_ai.usage.output_tokens": result.cost.outputTokens ?? 0,
+            "agentswarm.cost.total_usd": result.cost.totalCostUsd ?? 0,
+          });
+          try {
+            await saveCostData(
+              { ...result.cost, taskId: realTaskId, sessionId: opts.runnerSessionId },
+              opts.apiUrl,
+              opts.apiKey,
+            );
+          } catch (err) {
+            console.warn(`[runner] Failed to save cost: ${err}`);
+          }
+        }
+
+        // Post completion context usage snapshot
+        if (result.cost && realTaskId) {
+          fetch(`${opts.apiUrl}/api/tasks/${realTaskId}/context`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "X-Agent-ID": opts.agentId,
+              Authorization: `Bearer ${opts.apiKey}`,
+            },
+            body: JSON.stringify({
+              eventType: "completion",
+              sessionId: opts.runnerSessionId,
+              cumulativeInputTokens: result.cost.inputTokens ?? 0,
+              cumulativeOutputTokens: result.cost.outputTokens ?? 0,
+              contextTotalTokens: getContextWindowSize(result.cost.model || "default"),
+            }),
+          }).catch(() => {});
+        }
+
+        sessionSpan.setAttributes({
+          "agentswarm.session.duration_ms": Date.now() - sessionStartTime,
+          "agentswarm.session.exit_code": result.exitCode,
+          "agentswarm.session.outcome": result.exitCode === 0 ? "ok" : "error",
+        });
+        if (result.exitCode !== 0) {
+          sessionSpan.setStatus({
+            code: 2,
+            message: result.failureReason || `Provider exited with ${result.exitCode}`,
+          });
+        }
+        closeActiveToolSpans(result.exitCode === 0 ? "ok" : "error", result.failureReason);
+        sessionSpan.end();
+
+        return result;
+      }),
+    )
+    .catch((error) =>
+      withSpanContext(sessionSpan, () => {
+        clearInterval(eventFlushTimer);
+        sessionSpan.recordException(error);
         sessionSpan.setStatus({
           code: 2,
-          message: result.failureReason || `Provider exited with ${result.exitCode}`,
+          message: error instanceof Error ? error.message : String(error),
         });
-      }
-      closeActiveToolSpans(result.exitCode === 0 ? "ok" : "error", result.failureReason);
-      sessionSpan.end();
-
-      return result;
-    })
-    .catch((error) => {
-      clearInterval(eventFlushTimer);
-      sessionSpan.recordException(error);
-      sessionSpan.setStatus({
-        code: 2,
-        message: error instanceof Error ? error.message : String(error),
-      });
-      closeActiveToolSpans("error", error instanceof Error ? error.message : String(error));
-      sessionSpan.end();
-      throw error;
-    });
+        closeActiveToolSpans("error", error instanceof Error ? error.message : String(error));
+        sessionSpan.end();
+        throw error;
+      }),
+    );
 
   // Build credential info for rate limit tracking
   const primarySelection = credentialSelections[0] ?? oauthSelection;

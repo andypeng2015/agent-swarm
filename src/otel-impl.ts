@@ -18,6 +18,7 @@ type AttributeValue = string | number | boolean | string[] | number[] | boolean[
 type Attributes = Record<string, AttributeValue | undefined>;
 
 const TRACER_NAME = "agent-swarm";
+const RAW_SPAN = Symbol("agent-swarm.raw-span");
 
 let sdk: NodeSDK | undefined;
 
@@ -74,8 +75,11 @@ export function scrubOtelStatus(status: { code: number; message?: string }) {
       };
 }
 
-function spanAdapter(span: Span): SwarmSpan {
+type AdaptedSwarmSpan = SwarmSpan & { [RAW_SPAN]: Span };
+
+function spanAdapter(span: Span): AdaptedSwarmSpan {
   return {
+    [RAW_SPAN]: span,
     setAttribute(key, value) {
       span.setAttribute(key, value);
       return this;
@@ -174,6 +178,12 @@ export function startSpan(name: string, attributes?: Attributes): SwarmSpan {
     attributes: cleanAttributes(attributes),
   });
   return spanAdapter(span);
+}
+
+export function withSpanContext<T>(span: SwarmSpan, fn: () => T): T {
+  const rawSpan = (span as Partial<AdaptedSwarmSpan>)[RAW_SPAN];
+  if (!rawSpan) return fn();
+  return context.with(trace.setSpan(context.active(), rawSpan), fn);
 }
 
 export async function withRemoteContext<T>(

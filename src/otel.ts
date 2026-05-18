@@ -38,6 +38,7 @@ let realStartSpan: ((name: string, attributes?: Attributes) => SwarmSpan) | unde
 let realWithRemoteContext:
   | (<T>(carrier: Record<string, unknown>, fn: () => Promise<T> | T) => Promise<T>)
   | undefined;
+let realWithSpanContext: (<T>(span: SwarmSpan, fn: () => T) => T) | undefined;
 let realInjectTraceContext:
   | ((headers: Record<string, string>) => Record<string, string>)
   | undefined;
@@ -57,6 +58,7 @@ export async function initOtel(serviceRole = process.env.AGENT_ROLE || "api"): P
     realWithSpan = impl.withSpan;
     realStartSpan = impl.startSpan;
     realWithRemoteContext = impl.withRemoteContext;
+    realWithSpanContext = impl.withSpanContext;
     realInjectTraceContext = impl.injectTraceContext;
     realShutdown = impl.shutdown;
     console.log(
@@ -83,6 +85,13 @@ export function startSpan(name: string, attributes?: Attributes): SwarmSpan {
     return NOOP_SPAN;
   }
   return realStartSpan(name, attributes);
+}
+
+export function withSpanContext<T>(span: SwarmSpan, fn: () => T): T {
+  if (!enabled || !realWithSpanContext) {
+    return fn();
+  }
+  return realWithSpanContext(span, fn);
 }
 
 export async function withRemoteContext<T>(
@@ -112,6 +121,7 @@ export function _resetOtelForTests() {
   realWithSpan = undefined;
   realStartSpan = undefined;
   realWithRemoteContext = undefined;
+  realWithSpanContext = undefined;
   realInjectTraceContext = undefined;
   realShutdown = undefined;
 }
