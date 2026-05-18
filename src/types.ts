@@ -660,6 +660,8 @@ export const EventNameSchema = z.enum([
   "system.boot",
   "system.migration",
   "system.error",
+  // Script catalog events
+  "script.global_upsert",
 ]);
 
 export const SwarmEventSchema = z.object({
@@ -1286,6 +1288,51 @@ export const PromptTemplateHistorySchema = z.object({
   changeReason: z.string().nullable(),
 });
 export type PromptTemplateHistory = z.infer<typeof PromptTemplateHistorySchema>;
+
+// ============================================================================
+// Script Types
+// ============================================================================
+
+export const ScriptScopeSchema = z.enum(["global", "agent"]);
+export type ScriptScope = z.infer<typeof ScriptScopeSchema>;
+
+export const ScriptFsModeSchema = z.enum(["none", "workspace-rw"]);
+export type ScriptFsMode = z.infer<typeof ScriptFsModeSchema>;
+
+export const ScriptRecordSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  scope: ScriptScopeSchema,
+  scopeId: z.string().nullable(),
+  source: z.string(),
+  description: z.string(),
+  intent: z.string(),
+  signatureJson: z.string(),
+  contentHash: z.string(),
+  version: z.number(),
+  isScratch: z.boolean(),
+  typeChecked: z.boolean(),
+  fsMode: ScriptFsModeSchema,
+  createdByAgentId: z.string().nullable(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+export type ScriptRecord = z.infer<typeof ScriptRecordSchema>;
+
+export const ScriptVersionRecordSchema = z.object({
+  id: z.string(),
+  scriptId: z.string(),
+  version: z.number(),
+  source: z.string(),
+  description: z.string(),
+  intent: z.string(),
+  signatureJson: z.string(),
+  contentHash: z.string(),
+  changedByAgentId: z.string().nullable(),
+  changedAt: z.string(),
+  changeReason: z.string().nullable(),
+});
+export type ScriptVersionRecord = z.infer<typeof ScriptVersionRecordSchema>;
 
 // ============================================================================
 // Skill Types
