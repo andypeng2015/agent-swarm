@@ -101,9 +101,7 @@ beforeEach(() => {
 });
 
 function countUsers(): number {
-  return (
-    getDb().prepare<{ n: number }, []>("SELECT COUNT(*) AS n FROM users").get()?.n ?? 0
-  );
+  return getDb().prepare<{ n: number }, []>("SELECT COUNT(*) AS n FROM users").get()?.n ?? 0;
 }
 
 function externalIdRows(): Array<{ kind: string; externalId: string; userId: string }> {

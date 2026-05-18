@@ -16,15 +16,7 @@
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { unlink } from "node:fs/promises";
-import {
-  closeDb,
-  createAgent,
-  createUser,
-  deleteKv,
-  getDb,
-  getKv,
-  initDb,
-} from "../be/db";
+import { closeDb, createAgent, createUser, deleteKv, getDb, getKv, initDb } from "../be/db";
 import { linkIdentity } from "../be/users";
 import {
   handleComment,

@@ -37,15 +37,7 @@ export function createAssistant(): Assistant {
       await saveThreadContext();
     },
 
-    userMessage: async ({
-      message,
-      body,
-      say,
-      setStatus,
-      setTitle,
-      getThreadContext,
-      client,
-    }) => {
+    userMessage: async ({ message, body, say, setStatus, setTitle, getThreadContext, client }) => {
       // Slack retries deliveries on 3s timeout / 5xx. Drop duplicates before
       // any task-creation work runs (DES-293).
       const eventId = body?.event_id;
