@@ -1,7 +1,48 @@
 import { scrubObject } from "../utils/secret-scrubber";
 import { Redacted } from "./redacted";
-import { isSdkToolAllowed, mcpToolNameForSdkMethod } from "./sdk-allowlist";
+import { isSdkToolAllowed } from "./sdk-allowlist";
 import type { SwarmConfig } from "./swarm-config";
+
+function headers(config: SwarmConfig): Record<string, string> {
+  return {
+    Authorization: `Bearer ${Redacted.value(config.apiKey)}`,
+    "X-Agent-ID": Redacted.value(config.agentId),
+    "Content-Type": "application/json",
+  };
+}
+
+async function callScriptsApi(name: string, args: unknown, config: SwarmConfig): Promise<unknown> {
+  const baseUrl = Redacted.value(config.mcpBaseUrl).replace(/\/$/, "");
+  const body = args && typeof args === "object" ? (args as Record<string, unknown>) : {};
+  const method = "POST";
+  let path = "";
+
+  switch (name) {
+    case "script_search":
+      path = "/api/scripts/search";
+      break;
+    case "script_run":
+      path = "/api/scripts/run";
+      break;
+    default:
+      throw new Error(`Tool '${name}' is not exposed through the scripts SDK bridge`);
+  }
+
+  const res = await fetch(`${baseUrl}${path}`, {
+    method,
+    headers: headers(config),
+    body: JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const message =
+      data && typeof data === "object" && "error" in data
+        ? String((data as { error: unknown }).error)
+        : `scripts api failed with ${res.status}`;
+    throw new Error(`swarm-sdk: ${name} failed with ${res.status}: ${message}`);
+  }
+  return scrubObject({ success: true, status: res.status, data });
+}
 
 async function callTool(name: string, args: unknown, config: SwarmConfig): Promise<unknown> {
   if (!isSdkToolAllowed(name)) {
@@ -10,23 +51,13 @@ async function callTool(name: string, args: unknown, config: SwarmConfig): Promi
     );
   }
 
-  const mcpToolName = mcpToolNameForSdkMethod(name);
-  const baseUrl = Redacted.value(config.mcpBaseUrl).replace(/\/$/, "");
-  const res = await fetch(`${baseUrl}/api/mcp/tools/${mcpToolName}/call`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${Redacted.value(config.apiKey)}`,
-      "X-Agent-ID": Redacted.value(config.agentId),
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(args ?? {}),
-  });
-
-  if (!res.ok) {
-    throw new Error(`swarm-sdk: ${name} failed with ${res.status}`);
+  if (name === "script_search" || name === "script_run") {
+    return callScriptsApi(name, args, config);
   }
 
-  return scrubObject(await res.json());
+  throw new Error(
+    `Tool '${name}' is declared in the script SDK types but is not available from the scripts HTTP bridge yet`,
+  );
 }
 
 export function createSwarmSdk(

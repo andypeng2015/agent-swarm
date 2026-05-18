@@ -5,8 +5,7 @@ const EXECUTORS: Record<string, () => ScriptExecutor> = {
   native: () => new NativeScriptExecutor(),
 };
 
-export function getScriptExecutor(): ScriptExecutor {
-  const name = process.env.SCRIPT_EXECUTOR ?? "native";
+export function getScriptExecutor(name = process.env.SCRIPT_EXECUTOR ?? "native"): ScriptExecutor {
   const factory = EXECUTORS[name];
   if (!factory) {
     throw new Error(

@@ -44,7 +44,57 @@ function collectImportSpecifiers(source: string): string[] {
   return imports;
 }
 
+function findForbiddenDynamicCode(source: string): string | null {
+  const sourceFile = ts.createSourceFile(
+    "user-script.ts",
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TS,
+  );
+  let diagnostic: string | null = null;
+
+  const visit = (node: ts.Node) => {
+    if (diagnostic) return;
+
+    if (
+      ts.isCallExpression(node) &&
+      node.expression.kind === ts.SyntaxKind.Identifier &&
+      node.expression.getText(sourceFile) === "eval"
+    ) {
+      diagnostic = "eval is not allowed in swarm scripts";
+      return;
+    }
+
+    if (
+      ts.isNewExpression(node) &&
+      node.expression.kind === ts.SyntaxKind.Identifier &&
+      node.expression.getText(sourceFile) === "Function"
+    ) {
+      diagnostic = "Function constructor is not allowed in swarm scripts";
+      return;
+    }
+
+    if (
+      ts.isCallExpression(node) &&
+      node.expression.kind === ts.SyntaxKind.Identifier &&
+      node.expression.getText(sourceFile) === "Function"
+    ) {
+      diagnostic = "Function constructor is not allowed in swarm scripts";
+      return;
+    }
+
+    ts.forEachChild(node, visit);
+  };
+
+  visit(sourceFile);
+  return diagnostic;
+}
+
 export function validateScriptImports(source: string): ImportAllowlistResult {
+  const dynamicDiagnostic = findForbiddenDynamicCode(source);
+  if (dynamicDiagnostic) return { ok: false, diagnostic: dynamicDiagnostic, imports: [] };
+
   const imports = collectImportSpecifiers(source);
   const rejected = imports.filter((specifier) => !isAllowed(specifier));
   if (rejected.length === 0) return { ok: true };

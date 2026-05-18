@@ -38,4 +38,18 @@ describe("script import allowlist", () => {
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.diagnostic).toContain("fs");
   });
+
+  test("rejects Function constructor dynamic import bypasses", () => {
+    const result = validateScriptImports(
+      `export default async () => new Function("return import('node:fs')")()`,
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.diagnostic).toContain("Function constructor");
+  });
+
+  test("rejects eval dynamic import bypasses", () => {
+    const result = validateScriptImports(`export default async () => eval("import('node:fs')")`);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.diagnostic).toContain("eval");
+  });
 });
