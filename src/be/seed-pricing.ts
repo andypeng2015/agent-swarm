@@ -21,6 +21,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import type { PricingProvider, PricingTokenClass } from "../types";
 import { getDb } from "./db";
+import { normalizeModelKey } from "./pricing-normalize";
 
 interface ModelsDevCostBlock {
   input?: number;
@@ -124,17 +125,21 @@ function projectCostBlock(
   model: string,
   cost: ModelsDevCostBlock,
 ): PricingSeedRow[] {
+  // Phase 2 fix — canonicalize the seed key with the same normalizer the
+  // lookup path uses. Idempotent for keys models.dev already serves in
+  // canonical form (the common case); also collapses any future drift.
+  const key = normalizeModelKey(provider, model);
   const rows: PricingSeedRow[] = [];
   if (typeof cost.input === "number") {
-    rows.push({ provider, model, tokenClass: "input", pricePerMillionUsd: cost.input });
+    rows.push({ provider, model: key, tokenClass: "input", pricePerMillionUsd: cost.input });
   }
   if (typeof cost.output === "number") {
-    rows.push({ provider, model, tokenClass: "output", pricePerMillionUsd: cost.output });
+    rows.push({ provider, model: key, tokenClass: "output", pricePerMillionUsd: cost.output });
   }
   if (typeof cost.cache_read === "number") {
     rows.push({
       provider,
-      model,
+      model: key,
       tokenClass: "cached_input",
       pricePerMillionUsd: cost.cache_read,
     });
@@ -142,7 +147,7 @@ function projectCostBlock(
   if (typeof cost.cache_write === "number") {
     rows.push({
       provider,
-      model,
+      model: key,
       tokenClass: "cache_write",
       pricePerMillionUsd: cost.cache_write,
     });
@@ -198,6 +203,13 @@ function buildModelsDevSeedRows(cache: ModelsDevCache): PricingSeedRow[] {
   for (const [id, model] of Object.entries(openai)) {
     if (!model?.cost) continue;
     for (const row of projectCostBlock("codex", id, model.cost)) {
+      rows.push(row);
+    }
+    // Phase 2 fix — pi-mono can route to openai models through the
+    // github-copilot proxy (`github-copilot/gpt-5.4`). The lookup helper
+    // strips the prefix, so we seed the bare id under `pi` too. Without this
+    // every gh-copilot-backed pi run fell through to `costSource='unpriced'`.
+    for (const row of projectCostBlock("pi", id, model.cost)) {
       rows.push(row);
     }
   }

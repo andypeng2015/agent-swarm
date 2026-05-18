@@ -13,6 +13,7 @@ import {
   getSessionLogsByTaskId,
   getTaskById,
 } from "../be/db";
+import { normalizeModelKey } from "../be/pricing-normalize";
 import type { SessionCost, SessionCostSource } from "../types";
 import { route } from "./route-def";
 import { json, jsonError } from "./utils";
@@ -211,17 +212,33 @@ export async function handleSessionData(
 
       if (parsed.body.provider && model) {
         const lookupTime = parsed.body.createdAt ?? Date.now();
-        const inputRow = getActivePricingRow(parsed.body.provider, model, "input", lookupTime);
+        // Phase 2 fix — different harnesses prepend routing prefixes
+        // (`openrouter/`, `github-copilot/`, …) to the same underlying model
+        // id. The pricing seed stores canonical (un-prefixed) keys, so we
+        // strip the prefix here before lookup. The original adapter-emitted
+        // string is still persisted to `session_costs.model` for debugging.
+        const lookupModel = normalizeModelKey(parsed.body.provider, model);
+        const inputRow = getActivePricingRow(
+          parsed.body.provider,
+          lookupModel,
+          "input",
+          lookupTime,
+        );
         const cachedRow = getActivePricingRow(
           parsed.body.provider,
-          model,
+          lookupModel,
           "cached_input",
           lookupTime,
         );
-        const outputRow = getActivePricingRow(parsed.body.provider, model, "output", lookupTime);
+        const outputRow = getActivePricingRow(
+          parsed.body.provider,
+          lookupModel,
+          "output",
+          lookupTime,
+        );
         const cacheWriteRow = getActivePricingRow(
           parsed.body.provider,
-          model,
+          lookupModel,
           "cache_write",
           lookupTime,
         );
