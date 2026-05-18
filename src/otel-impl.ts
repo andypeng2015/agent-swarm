@@ -12,6 +12,7 @@ import { NodeSDK } from "@opentelemetry/sdk-node";
 import { ATTR_SERVICE_NAME, ATTR_SERVICE_VERSION } from "@opentelemetry/semantic-conventions";
 import pkg from "../package.json";
 import type { SwarmSpan } from "./otel";
+import { scrubSecrets } from "./utils/secret-scrubber";
 
 type AttributeValue = string | number | boolean | string[] | number[] | boolean[];
 type Attributes = Record<string, AttributeValue | undefined>;
@@ -27,6 +28,28 @@ function cleanAttributes(attributes?: Attributes): Record<string, AttributeValue
     if (value !== undefined) cleaned[key] = value;
   }
   return cleaned;
+}
+
+export function scrubOtelException(error: unknown): Error | string {
+  if (!(error instanceof Error)) {
+    return scrubSecrets(String(error));
+  }
+
+  const scrubbed = new Error(scrubSecrets(error.message));
+  scrubbed.name = error.name;
+  if (error.stack) {
+    scrubbed.stack = scrubSecrets(error.stack);
+  }
+  return scrubbed;
+}
+
+export function scrubOtelStatus(status: { code: number; message?: string }) {
+  return status.message === undefined
+    ? status
+    : {
+        ...status,
+        message: scrubSecrets(status.message),
+      };
 }
 
 function spanAdapter(span: Span): SwarmSpan {
@@ -46,10 +69,10 @@ function spanAdapter(span: Span): SwarmSpan {
       return this;
     },
     recordException(error) {
-      span.recordException(error instanceof Error ? error : String(error));
+      span.recordException(scrubOtelException(error));
     },
     setStatus(status) {
-      span.setStatus(status);
+      span.setStatus(scrubOtelStatus(status));
       return this;
     },
     end() {
@@ -107,10 +130,10 @@ export async function withSpan<T>(
       span.setStatus({ code: SpanStatusCode.OK });
       return result;
     } catch (error) {
-      span.recordException(error instanceof Error ? error : String(error));
+      span.recordException(scrubOtelException(error));
       span.setStatus({
         code: SpanStatusCode.ERROR,
-        message: error instanceof Error ? error.message : String(error),
+        message: scrubSecrets(error instanceof Error ? error.message : String(error)),
       });
       throw error;
     } finally {
