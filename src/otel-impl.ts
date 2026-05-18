@@ -21,6 +21,28 @@ const TRACER_NAME = "agent-swarm";
 
 let sdk: NodeSDK | undefined;
 
+function decodeResourceAttributeValue(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+function parseResourceAttributes(value = process.env.OTEL_RESOURCE_ATTRIBUTES): Attributes {
+  if (!value) return {};
+  const attributes: Attributes = {};
+  for (const pair of value.split(",")) {
+    const [rawKey, ...rawValueParts] = pair.split("=");
+    const key = rawKey?.trim();
+    if (!key) continue;
+    const rawValue = rawValueParts.join("=").trim();
+    if (!rawValue) continue;
+    attributes[key] = decodeResourceAttributeValue(rawValue);
+  }
+  return attributes;
+}
+
 function cleanAttributes(attributes?: Attributes): Record<string, AttributeValue> | undefined {
   if (!attributes) return undefined;
   const cleaned: Record<string, AttributeValue> = {};
@@ -84,16 +106,21 @@ function spanAdapter(span: Span): SwarmSpan {
 export async function boot(serviceRole: string): Promise<void> {
   if (sdk) return;
 
+  const configuredResourceAttributes = parseResourceAttributes();
+  const deploymentEnvironment =
+    configuredResourceAttributes["deployment.environment"] || process.env.NODE_ENV || "development";
   const serviceName =
     process.env.OTEL_SERVICE_NAME ||
     (serviceRole === "api" ? "agent-swarm-api" : "agent-swarm-worker");
   sdk = new NodeSDK({
     resource: resourceFromAttributes({
+      ...configuredResourceAttributes,
       [ATTR_SERVICE_NAME]: serviceName,
       [ATTR_SERVICE_VERSION]: pkg.version,
-      "service.namespace": "agent-swarm",
+      "service.namespace": configuredResourceAttributes["service.namespace"] || "agent-swarm",
       "service.instance.id": process.env.AGENT_ID || crypto.randomUUID(),
-      "deployment.environment": process.env.NODE_ENV || "development",
+      "deployment.environment": deploymentEnvironment,
+      env: configuredResourceAttributes.env || deploymentEnvironment,
       "agentswarm.service.role": serviceRole,
     }),
     traceExporter: new OTLPTraceExporter(),
