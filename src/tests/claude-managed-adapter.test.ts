@@ -649,17 +649,24 @@ describe("ClaudeManagedAdapter (Phase 4) — repo provisioning + cost data", () 
     process.env.ANTHROPIC_API_KEY = "sk-test";
     process.env.MANAGED_AGENT_ID = "agent_x";
     process.env.MANAGED_ENVIRONMENT_ID = "env_x";
+    // Defensive: vault env vars may leak in from the host .env (Bun auto-loads
+    // it); each vault-related test sets exactly what it asserts on.
+    delete process.env.MANAGED_GITHUB_TOKEN;
+    delete process.env.MANAGED_GITHUB_VAULT_ID;
+    delete process.env.MANAGED_MCP_VAULT_ID;
   });
 
   afterAll(() => {
     rmSync(tmpLogDir, { recursive: true, force: true });
     delete process.env.MANAGED_GITHUB_TOKEN;
     delete process.env.MANAGED_GITHUB_VAULT_ID;
+    delete process.env.MANAGED_MCP_VAULT_ID;
   });
 
   afterEach(() => {
     delete process.env.MANAGED_GITHUB_TOKEN;
     delete process.env.MANAGED_GITHUB_VAULT_ID;
+    delete process.env.MANAGED_MCP_VAULT_ID;
   });
 
   test("normalizeRepoUrl: passes through https URLs and expands owner/repo shorthand", () => {
