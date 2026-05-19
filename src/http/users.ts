@@ -411,7 +411,11 @@ export async function handleUsers(
     const actor = getOperatorActor(req, res);
     if (!actor) return true;
 
-    const { kind, externalId } = parsed.params;
+    const { kind } = parsed.params;
+    // Path params arrive URL-encoded — decode so externalIds with `@`, `+`, `:`
+    // etc. (AgentMail email-as-externalId, "@handle" Linear usernames) land
+    // both in user_external_ids and kv-delete with their real value.
+    const externalId = decodeURIComponent(parsed.params.externalId);
     try {
       let targetUserId: string;
       if ("userId" in parsed.body) {
@@ -484,7 +488,10 @@ export async function handleUsers(
       return true;
     }
     try {
-      unlinkIdentity(parsed.params.id, parsed.params.kind, parsed.params.externalId, actor);
+      // Path params arrive URL-encoded — decode so a stored `@handle` /
+      // email-as-externalId can actually be unlinked from the UI.
+      const externalId = decodeURIComponent(parsed.params.externalId);
+      unlinkIdentity(parsed.params.id, parsed.params.kind, externalId, actor);
       json(res, { identities: getUserIdentities(parsed.params.id) });
     } catch (err) {
       jsonError(res, err instanceof Error ? err.message : "Failed to unlink identity", 500);

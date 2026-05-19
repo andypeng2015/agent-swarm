@@ -322,6 +322,38 @@ describe("identity link/unlink", () => {
     };
     expect(delBody.identities).toEqual([]);
   });
+
+  test("DELETE with URL-encoded externalId removes the literal identity", async () => {
+    // Webhook auto-link can store an externalId containing `@` (AgentMail
+    // email-as-id, Linear `@handle`). The UI sends the path URL-encoded; the
+    // handler must decode before SELECT/DELETE or the row sticks around.
+    const u = createUser({ name: "DecodeDelete" });
+    const literal = "@deletable";
+
+    const add = await authedFetch(`/api/users/${u.id}/identities`, {
+      method: "POST",
+      body: JSON.stringify({ kind: "slack", externalId: literal }),
+    });
+    expect(add.status).toBe(200);
+
+    const del = await authedFetch(
+      `/api/users/${u.id}/identities/slack/${encodeURIComponent(literal)}`,
+      { method: "DELETE" },
+    );
+    expect(del.status).toBe(200);
+    const delBody = (await del.json()) as {
+      identities: Array<{ kind: string; externalId: string }>;
+    };
+    // Before the fix this still passed but the underlying row was never
+    // touched — the SELECT for `%40deletable` found nothing. Verify the
+    // literal-keyed row is actually gone by re-reading it.
+    expect(delBody.identities.some((i) => i.externalId === literal)).toBe(false);
+    const reread = await authedFetch(`/api/users/${u.id}`);
+    const rb = (await reread.json()) as {
+      user: { identities: Array<{ kind: string; externalId: string }> };
+    };
+    expect(rb.user.identities.some((i) => i.externalId === literal)).toBe(false);
+  });
 });
 
 describe("GET /api/users/:id/events", () => {
@@ -420,6 +452,44 @@ describe("POST /api/users/unmapped/:kind/:externalId/resolve", () => {
     };
     expect(user.name).toBe("GH User");
     expect(user.identities).toContainEqual({ kind: "github", externalId: "ghuser" });
+  });
+
+  test("URL-encoded externalId is decoded — kv rows clear, identity stored decoded", async () => {
+    // Mimics an AgentMail/Linear @handle entry that contains `@` (or any
+    // URL-reserved char). Kv keys are written by the webhook with the literal
+    // externalId; the path param arrives URL-encoded; the handler must decode
+    // before linking AND before deleting the two kv rows.
+    const ns = "integration:unmapped:slack";
+    const literal = "@alexdev";
+    upsertKv({
+      namespace: ns,
+      key: `${literal}:meta`,
+      value: { lastSeenAt: "2026-05-19T00:00:00Z", sampleEventType: "message" },
+      valueType: "json",
+    });
+    upsertKv({ namespace: ns, key: `${literal}:count`, value: 2, valueType: "integer" });
+
+    const r = await authedFetch(
+      `/api/users/unmapped/slack/${encodeURIComponent(literal)}/resolve`,
+      {
+        method: "POST",
+        body: JSON.stringify({ name: "Alex Dev", email: "alexdev@example.com" }),
+      },
+    );
+    expect(r.status).toBe(200);
+    const { user } = (await r.json()) as {
+      user: { identities: Array<{ kind: string; externalId: string }> };
+    };
+    // Identity stored DECODED.
+    expect(user.identities).toContainEqual({ kind: "slack", externalId: literal });
+
+    // Kv rows for the literal key are gone (the bug was: handler deleted
+    // `%40alexdev:meta`/`%40alexdev:count` instead of the literal `@…` keys).
+    const listR = await authedFetch("/api/users/unmapped?kind=slack");
+    const listBody = (await listR.json()) as {
+      unmapped: Array<{ externalId: string }>;
+    };
+    expect(listBody.unmapped.some((u) => u.externalId === literal)).toBe(false);
   });
 });
 
