@@ -516,6 +516,34 @@ describe("ScriptExecutor", () => {
     const valid = ScriptOutputSchema.safeParse({ exitCode: 0, stdout: "hi", stderr: "" });
     expect(valid.success).toBe(true);
   });
+
+  test("keeps raw {exitCode, stdout, stderr} when stdout is not valid JSON", async () => {
+    const result = await executor.run(
+      input({ runtime: "bash", script: "echo 'not-json {at all'" }, {}),
+    );
+    expect(result.status).toBe("success");
+    const out = result.output as { exitCode: number; stdout: string; stderr: string } & {
+      parsed?: unknown;
+    };
+    expect(out.exitCode).toBe(0);
+    expect(out.stdout).toBe("not-json {at all");
+    expect(out.stderr).toBe("");
+    // No parsed key merged in — only the raw three fields are present.
+    expect(Object.keys(out).sort()).toEqual(["exitCode", "stderr", "stdout"]);
+  });
+
+  test("populates structured output on timeout instead of leaving it null", async () => {
+    const result = await executor.run(
+      input({ runtime: "bash", script: "sleep 5", timeout: 1000 }, {}),
+    );
+    expect(result.status).toBe("failed");
+    expect(result.error).toContain("Script timed out after 1000ms");
+    const out = result.output as { exitCode: number; stdout: string; stderr: string };
+    expect(out).toBeDefined();
+    expect(out.exitCode).toBe(-1);
+    expect(out.stdout).toBe("");
+    expect(out.stderr).toContain("Script timed out after 1000ms");
+  });
 });
 
 // ─── VCS Executor ────────────────────────────────────────────

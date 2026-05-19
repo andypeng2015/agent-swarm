@@ -72,9 +72,20 @@ export class ScriptExecutor extends BaseExecutor<
         nextPort: "success",
       };
     } catch (err) {
+      // Populate a structured output payload so the failure surfaces in
+      // get-workflow-run instead of leaving `output: null` and forcing operators
+      // to dig through logs. Mirrors the non-zero-exit path above and the
+      // litmus-gate `mustPass: false` mirror-into-output convention.
+      const message = err instanceof Error ? err.message : String(err);
+      const isTimeout = message.startsWith("Script timed out after");
       return {
         status: "failed",
-        error: `Script execution error: ${err instanceof Error ? err.message : String(err)}`,
+        error: `Script execution error: ${message}`,
+        output: {
+          exitCode: -1,
+          stdout: "",
+          stderr: isTimeout ? message : `Script execution error: ${message}`,
+        } as z.infer<typeof ScriptOutputSchema>,
       };
     }
   }
