@@ -1,6 +1,6 @@
 import type { ColDef } from "ag-grid-community";
-import { Copy, LinkIcon, UserPlus } from "lucide-react";
-import { useCallback, useMemo, useState } from "react";
+import { Copy, LinkIcon, Search, UserPlus } from "lucide-react";
+import { useCallback, useDeferredValue, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { useResolveUnmapped, useUnmapped } from "@/api/hooks/use-users";
 import type { UnmappedIdentity } from "@/api/types";
@@ -8,6 +8,7 @@ import { DataGrid } from "@/components/shared/data-grid";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn, formatSmartTime } from "@/lib/utils";
 import { IdentityBadge } from "../identity-badges";
@@ -25,6 +26,37 @@ const KIND_LABEL: Record<KindFilter, string> = {
   gitlab: "GitLab",
 };
 
+/**
+ * Build a single lower-cased haystack from the fields a triager would actually
+ * search for: external ID, kind, sample event type, and any display name
+ * surfaced via sampleContext or its meta object when present.
+ */
+function buildUnmappedHaystack(row: UnmappedIdentity): string {
+  const parts: string[] = [row.externalId, row.kind, row.sampleEventType ?? ""];
+  const ctx = row.sampleContext;
+  if (ctx && typeof ctx === "object" && !Array.isArray(ctx)) {
+    const rec = ctx as Record<string, unknown>;
+    const displayName = rec.displayName;
+    if (typeof displayName === "string") parts.push(displayName);
+    const meta = rec.meta;
+    if (meta && typeof meta === "object" && !Array.isArray(meta)) {
+      const m = meta as Record<string, unknown>;
+      for (const key of ["displayName", "name", "username", "handle", "login"]) {
+        const v = m[key];
+        if (typeof v === "string") parts.push(v);
+      }
+    }
+  }
+  return parts.join(" ").toLowerCase();
+}
+
+function unmappedMatches(row: UnmappedIdentity, query: string): boolean {
+  const tokens = query.toLowerCase().trim().split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return true;
+  const hay = buildUnmappedHaystack(row);
+  return tokens.every((t) => hay.includes(t));
+}
+
 export function UnmappedTab() {
   const [kind, setKind] = useState<KindFilter>("all");
   const { data, isLoading } = useUnmapped({ kind: kind === "all" ? undefined : kind });
@@ -32,6 +64,19 @@ export function UnmappedTab() {
 
   const [linkTarget, setLinkTarget] = useState<UnmappedIdentity | null>(null);
   const [createTarget, setCreateTarget] = useState<UnmappedIdentity | null>(null);
+
+  // FE-only search across externalId, displayName (meta), kind, and sample
+  // event type. Payload is small (triage queue, typically <100 entries), so
+  // no server-side query param needed.
+  const [query, setQuery] = useState("");
+  const deferredQuery = useDeferredValue(query);
+
+  const filteredData = useMemo(() => {
+    if (!data) return undefined;
+    const q = deferredQuery.trim();
+    if (!q) return data;
+    return data.filter((row) => unmappedMatches(row, q));
+  }, [data, deferredQuery]);
 
   const copyId = useCallback((externalId: string) => {
     navigator.clipboard.writeText(externalId).then(
@@ -173,23 +218,46 @@ export function UnmappedTab() {
     [resolve.isPending, copyId],
   );
 
+  const showEmpty = !isLoading && (data?.length ?? 0) === 0;
+
   return (
     <div className="flex flex-col flex-1 min-h-0 gap-3">
-      <div className="flex items-center gap-2 shrink-0">
-        <span className="text-xs text-muted-foreground mr-1">Filter:</span>
-        {KIND_FILTERS.map((k) => (
-          <Button
-            key={k}
-            size="sm"
-            variant={kind === k ? "default" : "outline"}
-            onClick={() => setKind(k)}
-          >
-            {KIND_LABEL[k]}
-          </Button>
-        ))}
+      {/* Toolbar: search on the left, kind-filter chips on the right. Both
+          stay outside the scrollable region so they remain visible while the
+          table scrolls internally. */}
+      <div className="flex flex-wrap items-center gap-3 shrink-0">
+        <div className="relative flex-1 max-w-md min-w-[200px]">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+          <Input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search unmapped — ID, name, event…"
+            className="pl-8 h-9"
+            disabled={showEmpty}
+          />
+          {query && (
+            <div className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground">
+              {filteredData?.length ?? 0} / {data?.length ?? 0}
+            </div>
+          )}
+        </div>
+
+        <div className="flex items-center gap-1.5 ml-auto">
+          <span className="text-xs text-muted-foreground mr-1">Filter:</span>
+          {KIND_FILTERS.map((k) => (
+            <Button
+              key={k}
+              size="sm"
+              variant={kind === k ? "default" : "outline"}
+              onClick={() => setKind(k)}
+            >
+              {KIND_LABEL[k]}
+            </Button>
+          ))}
+        </div>
       </div>
 
-      {!isLoading && (data?.length ?? 0) === 0 ? (
+      {showEmpty ? (
         <EmptyState
           icon={UserPlus}
           title="No unmapped identities"
@@ -197,10 +265,14 @@ export function UnmappedTab() {
         />
       ) : (
         <DataGrid
-          rowData={data}
+          rowData={filteredData}
           columnDefs={columnDefs}
           loading={isLoading}
-          emptyMessage="No unmapped identities for this filter."
+          emptyMessage={
+            query.trim()
+              ? "No unmapped identities match this search."
+              : "No unmapped identities for this filter."
+          }
         />
       )}
 
