@@ -172,7 +172,8 @@ export default function PeoplePage() {
   const { data: unmapped } = useUnmapped();
   const unmappedCount = unmapped?.length ?? 0;
 
-  // Search — persisted in URL ?q= for reload survival.
+  // Search — persisted in URL ?q= for reload survival. Scoped to the People
+  // tab only; Unmapped tab owns its own search input.
   const [query, setQuery] = useState(() => searchParams.get("q") ?? "");
   const deferredQuery = useDeferredValue(query);
 
@@ -205,7 +206,7 @@ export default function PeoplePage() {
     <div className="flex flex-col flex-1 min-h-0 gap-4">
       <PageHeader
         title="People"
-        description="Operator surface for human users — identities, budgets, status, merge tool, and unmapped triage."
+        description="Manage the humans who interact with this swarm — link their Slack, GitHub, Linear and GitLab accounts, set per-user budgets, and triage requests from accounts we haven't matched yet."
         action={
           <div className="flex items-center gap-2">
             <Button variant="outline" size="sm" onClick={() => setMergeOpen(true)}>
@@ -229,51 +230,59 @@ export default function PeoplePage() {
         }}
         className="flex flex-col flex-1 min-h-0"
       >
-        <TabsList className="shrink-0">
-          <TabsTrigger value="people">
-            <Users className="h-3.5 w-3.5 mr-1.5" />
-            People ({users?.length ?? 0})
-          </TabsTrigger>
-          <TabsTrigger value="unmapped">
-            <Inbox className="h-3.5 w-3.5 mr-1.5" />
-            Unmapped
-            {unmappedCount > 0 && (
-              <Badge
-                variant="outline"
-                size="tag"
-                className="ml-1.5 border-status-warning/30 bg-status-warning/10 text-status-warning-strong"
-              >
-                {unmappedCount}
-              </Badge>
-            )}
-          </TabsTrigger>
-        </TabsList>
+        {/* Toolbar: People-tab search on the LEFT, tabs on the RIGHT in the
+            same row. Search only renders while the People tab is active —
+            the Unmapped tab owns its own search input. */}
+        <div className="flex items-center gap-3 shrink-0">
+          {tab === "people" ? (
+            <div className="relative flex-1 max-w-md">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+              <Input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search people, emails, aliases, identities…"
+                className="pl-8 h-9"
+              />
+              {query && (
+                <div className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground">
+                  {filteredUsers?.length ?? 0} / {users?.length ?? 0}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="flex-1" />
+          )}
 
-        <TabsContent value="people" className="flex-1 min-h-0 mt-4 flex flex-col gap-3">
-          <div className="relative max-w-md">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-            <Input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search people, emails, aliases, identities…"
-              className="pl-8 h-9"
-            />
-            {query && (
-              <div className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground">
-                {filteredUsers?.length ?? 0} / {users?.length ?? 0}
-              </div>
-            )}
-          </div>
-          <div className="flex-1 min-h-0">
-            <PeopleTable
-              users={filteredUsers}
-              isLoading={isLoading}
-              onRowClick={(id) => navigate(`/people/${id}`)}
-            />
-          </div>
+          <TabsList className="shrink-0">
+            <TabsTrigger value="people">
+              <Users className="h-3.5 w-3.5 mr-1.5" />
+              People ({users?.length ?? 0})
+            </TabsTrigger>
+            <TabsTrigger value="unmapped">
+              <Inbox className="h-3.5 w-3.5 mr-1.5" />
+              Unmapped
+              {unmappedCount > 0 && (
+                <Badge
+                  variant="outline"
+                  size="tag"
+                  className="ml-1.5 border-status-warning/30 bg-status-warning/10 text-status-warning-strong"
+                >
+                  {unmappedCount}
+                </Badge>
+              )}
+            </TabsTrigger>
+          </TabsList>
+        </div>
+
+        <TabsContent value="people" className="flex-1 min-h-0 flex flex-col">
+          <PeopleTable
+            users={filteredUsers}
+            isLoading={isLoading}
+            onRowClick={(id) => navigate(`/people/${id}`)}
+          />
         </TabsContent>
 
-        <TabsContent value="unmapped" className="flex-1 min-h-0 mt-4">
+        <TabsContent value="unmapped" className="flex-1 min-h-0 flex flex-col">
           <UnmappedTab />
         </TabsContent>
       </Tabs>
