@@ -122,6 +122,10 @@ function createCompilerHost(
     return files.get(normalized) ?? ts.sys.readFile(fileName);
   };
 
+  // Resolve external packages (e.g. "zod") from the project root rather than
+  // the virtual path "/virtual/..." so TypeScript can find real node_modules.
+  const projectBase = new URL("../../index.ts", import.meta.url).pathname;
+
   host.resolveModuleNames = (moduleNames, containingFile) =>
     moduleNames.map((moduleName) => {
       if (moduleName === "./user-script") {
@@ -133,7 +137,9 @@ function createCompilerHost(
       if (moduleName === "stdlib") {
         return { resolvedFileName: STDLIB_FILE, extension: ts.Extension.Dts };
       }
-      return ts.resolveModuleName(moduleName, containingFile, options, host).resolvedModule;
+      // For external packages, resolve from project root so node_modules is found
+      const base = containingFile.startsWith("/virtual/") ? projectBase : containingFile;
+      return ts.resolveModuleName(moduleName, base, options, host).resolvedModule;
     });
 
   // In compiled binary mode, TypeScript's lib .d.ts files live alongside
