@@ -5,6 +5,7 @@ import {
   CircleSlash,
   type LucideIcon,
   Mail,
+  Pencil,
   ShieldCheck,
   ShieldOff,
   UserMinus,
@@ -93,6 +94,7 @@ const EVENT_ICONS: Record<IdentityEventType, LucideIcon> = {
   token_revoked: ShieldOff,
   budget_changed: CircleDollarSign,
   status_changed: CircleCheck,
+  profile_changed: Pencil,
 };
 
 const EVENT_TONE: Record<IdentityEventType, string> = {
@@ -106,6 +108,7 @@ const EVENT_TONE: Record<IdentityEventType, string> = {
   token_revoked: "text-status-error-strong",
   budget_changed: "text-status-active-strong",
   status_changed: "text-status-paused-strong",
+  profile_changed: "text-muted-foreground",
 };
 
 export function EventIcon({ eventType }: { eventType: string }) {

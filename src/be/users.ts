@@ -275,7 +275,8 @@ export function recordIdentityEvent(
     | "token_minted"
     | "token_revoked"
     | "budget_changed"
-    | "status_changed",
+    | "status_changed"
+    | "profile_changed",
   actor: IdentityActor,
   before: unknown | null,
   after: unknown | null,

@@ -240,6 +240,63 @@ describe("PATCH /api/users/:id", () => {
     });
     expect(r.status).toBe(404);
   });
+
+  test("profile_changed events fire for name / role / notes / timezone / preferredChannel edits", async () => {
+    const u = createUser({
+      name: "Old",
+      email: "old@x.com",
+      role: "viewer",
+      notes: "before",
+      preferredChannel: "slack",
+      timezone: "UTC",
+    });
+
+    const r = await authedFetch(`/api/users/${u.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        name: "New",
+        role: "admin",
+        notes: "after",
+        timezone: "America/New_York",
+        preferredChannel: "email",
+      }),
+    });
+    expect(r.status).toBe(200);
+
+    const events = getDb()
+      .prepare<{ eventType: string; afterJson: string | null }, string>(
+        "SELECT eventType, afterJson FROM user_identity_events WHERE userId = ? AND eventType = 'profile_changed' ORDER BY rowid",
+      )
+      .all(u.id);
+    const fields = events
+      .map((e) => (e.afterJson ? Object.keys(JSON.parse(e.afterJson))[0] : null))
+      .filter((f): f is string => !!f);
+    expect(fields).toContain("name");
+    expect(fields).toContain("role");
+    expect(fields).toContain("notes");
+    expect(fields).toContain("timezone");
+    expect(fields).toContain("preferredChannel");
+  });
+
+  test("profile_changed does NOT fire when value is unchanged", async () => {
+    const u = createUser({ name: "Same", role: "admin" });
+    const r = await authedFetch(`/api/users/${u.id}`, {
+      method: "PATCH",
+      // role unchanged, only emit no events for it; status doesn't change here either
+      body: JSON.stringify({ role: "admin", name: "Renamed" }),
+    });
+    expect(r.status).toBe(200);
+    const events = getDb()
+      .prepare<{ afterJson: string | null }, string>(
+        "SELECT afterJson FROM user_identity_events WHERE userId = ? AND eventType = 'profile_changed'",
+      )
+      .all(u.id);
+    const fields = events
+      .map((e) => (e.afterJson ? Object.keys(JSON.parse(e.afterJson))[0] : null))
+      .filter((f): f is string => !!f);
+    expect(fields).toContain("name");
+    expect(fields).not.toContain("role");
+  });
 });
 
 describe("identity link/unlink", () => {

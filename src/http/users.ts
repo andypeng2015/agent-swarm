@@ -647,6 +647,33 @@ export async function handleUsers(
         }
       }
 
+      // Profile-field diffs — emit one `profile_changed` event per field that
+      // changed value. Status / budget / aliases / identities already emit
+      // their own dedicated events above; skip them here to avoid double-emit.
+      const PROFILE_FIELDS = [
+        "name",
+        "email",
+        "role",
+        "timezone",
+        "preferredChannel",
+        "notes",
+        "metadata",
+      ] as const;
+      for (const field of PROFILE_FIELDS) {
+        if (parsed.body[field] === undefined) continue;
+        const beforeVal = (before as unknown as Record<string, unknown>)[field] ?? null;
+        const afterVal = parsed.body[field] ?? null;
+        // Cheap deep-equal via JSON — fields are scalar strings or object/null.
+        if (JSON.stringify(beforeVal) === JSON.stringify(afterVal)) continue;
+        recordIdentityEvent(
+          parsed.params.id,
+          "profile_changed",
+          actor,
+          { [field]: beforeVal },
+          { [field]: afterVal },
+        );
+      }
+
       // Identities diff — complete-list semantics. linkIdentity / unlinkIdentity
       // already emit the right event each.
       if (identities !== undefined) {

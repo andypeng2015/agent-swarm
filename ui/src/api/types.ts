@@ -240,7 +240,8 @@ export type IdentityEventType =
   | "token_minted"
   | "token_revoked"
   | "budget_changed"
-  | "status_changed";
+  | "status_changed"
+  | "profile_changed";
 
 /**
  * Server-decoded identity event (`src/be/users.ts: rowToEvent`). The

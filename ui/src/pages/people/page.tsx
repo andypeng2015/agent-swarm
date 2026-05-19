@@ -1,21 +1,43 @@
 import type { ColDef } from "ag-grid-community";
-import { GitMerge, Inbox, UserPlus, Users } from "lucide-react";
-import { useMemo, useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { GitMerge, Inbox, Search, UserPlus, Users } from "lucide-react";
+import { useDeferredValue, useEffect, useMemo, useState } from "react";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { useUnmapped, useUsers } from "@/api/hooks/use-users";
 import type { User } from "@/api/types";
 import { DataGrid } from "@/components/shared/data-grid";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/ui/page-header";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { formatSmartTime } from "@/lib/utils";
+import { formatRelative } from "@/lib/relative-time";
 import { IdentityBadgeList } from "./identity-badges";
 import { MergeModal } from "./merge-modal";
 import { NewUserDialog } from "./new-user-dialog";
 import { UnmappedTab } from "./unmapped/unmapped-tab";
-import { BudgetBadge, EventIcon, UserStatusPill } from "./user-status";
+import { BudgetBadge, UserStatusPill } from "./user-status";
+
+/**
+ * Tokenized substring match — every whitespace-separated query token must
+ * appear (case-insensitive) somewhere in the haystack. Cheap, no fuzzy deps.
+ */
+function tokenMatch(haystack: string, query: string): boolean {
+  const tokens = query.toLowerCase().trim().split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return true;
+  const hay = haystack.toLowerCase();
+  return tokens.every((t) => hay.includes(t));
+}
+
+function buildHaystack(u: User): string {
+  return [
+    u.name,
+    u.email ?? "",
+    u.role ?? "",
+    ...(u.emailAliases ?? []),
+    ...(u.identities ?? []).flatMap((i) => [i.kind, i.externalId]),
+  ].join(" ");
+}
 
 function PeopleTable({
   users,
@@ -60,6 +82,17 @@ function PeopleTable({
         },
       },
       {
+        field: "role",
+        headerName: "Role",
+        width: 160,
+        cellRenderer: (params: { data: User | undefined }) => {
+          if (!params.data) return null;
+          const role = params.data.role?.trim();
+          if (!role) return <span className="text-muted-foreground/60">—</span>;
+          return <span className="text-sm capitalize">{role}</span>;
+        },
+      },
+      {
         field: "identities",
         headerName: "Identities",
         flex: 1.4,
@@ -97,35 +130,16 @@ function PeopleTable({
         },
       },
       {
-        headerName: "Recent activity",
-        flex: 1.2,
-        minWidth: 220,
-        cellRenderer: (params: { data: User | undefined }) => {
-          if (!params.data) return null;
-          const events = (params.data.recentEvents ?? []).slice(0, 2);
-          if (events.length === 0)
-            return <span className="text-xs italic text-muted-foreground/50">No events</span>;
-          return (
-            <div className="flex flex-col py-1 leading-tight gap-0.5">
-              {events.map((e) => (
-                <div key={e.id} className="flex items-center gap-1.5 text-[11px]">
-                  <EventIcon eventType={e.eventType} />
-                  <span className="font-mono uppercase text-[9px] text-muted-foreground">
-                    {e.eventType.replaceAll("_", " ")}
-                  </span>
-                  <span className="text-muted-foreground">{formatSmartTime(e.createdAt)}</span>
-                </div>
-              ))}
-            </div>
-          );
-        },
-      },
-      {
         field: "lastUpdatedAt",
         headerName: "Last update",
         width: 140,
         cellRenderer: (params: { value: string }) => (
-          <span className="text-xs text-muted-foreground">{formatSmartTime(params.value)}</span>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="text-xs text-muted-foreground">{formatRelative(params.value)}</span>
+            </TooltipTrigger>
+            <TooltipContent className="font-mono text-[10px]">{params.value}</TooltipContent>
+          </Tooltip>
         ),
       },
     ],
@@ -148,6 +162,7 @@ function PeopleTable({
 export default function PeoplePage() {
   const navigate = useNavigate();
   const location = useLocation();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   // Tabs are URL-driven so deep-linking works (/people, /people/unmapped).
   const initialTab = location.pathname.includes("/unmapped") ? "unmapped" : "people";
@@ -156,6 +171,32 @@ export default function PeoplePage() {
   const { data: users, isLoading } = useUsers();
   const { data: unmapped } = useUnmapped();
   const unmappedCount = unmapped?.length ?? 0;
+
+  // Search — persisted in URL ?q= for reload survival.
+  const [query, setQuery] = useState(() => searchParams.get("q") ?? "");
+  const deferredQuery = useDeferredValue(query);
+
+  // Mirror local state into the URL (?q=…). Reads the current params at call
+  // time via the setter (functional form) so we don't need `searchParams` in
+  // the dep array — that would re-trigger the effect on every URL change.
+  useEffect(() => {
+    setSearchParams(
+      (current) => {
+        const next = new URLSearchParams(current);
+        if (query.trim()) next.set("q", query);
+        else next.delete("q");
+        return next;
+      },
+      { replace: true },
+    );
+  }, [query, setSearchParams]);
+
+  const filteredUsers = useMemo(() => {
+    if (!users) return undefined;
+    const q = deferredQuery.trim();
+    if (!q) return users;
+    return users.filter((u) => tokenMatch(buildHaystack(u), q));
+  }, [users, deferredQuery]);
 
   const [newUserOpen, setNewUserOpen] = useState(false);
   const [mergeOpen, setMergeOpen] = useState(false);
@@ -208,12 +249,28 @@ export default function PeoplePage() {
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="people" className="flex-1 min-h-0 mt-4">
-          <PeopleTable
-            users={users}
-            isLoading={isLoading}
-            onRowClick={(id) => navigate(`/people/${id}`)}
-          />
+        <TabsContent value="people" className="flex-1 min-h-0 mt-4 flex flex-col gap-3">
+          <div className="relative max-w-md">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+            <Input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search people, emails, aliases, identities…"
+              className="pl-8 h-9"
+            />
+            {query && (
+              <div className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground">
+                {filteredUsers?.length ?? 0} / {users?.length ?? 0}
+              </div>
+            )}
+          </div>
+          <div className="flex-1 min-h-0">
+            <PeopleTable
+              users={filteredUsers}
+              isLoading={isLoading}
+              onRowClick={(id) => navigate(`/people/${id}`)}
+            />
+          </div>
         </TabsContent>
 
         <TabsContent value="unmapped" className="flex-1 min-h-0 mt-4">

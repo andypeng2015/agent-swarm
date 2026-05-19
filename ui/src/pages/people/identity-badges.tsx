@@ -2,53 +2,15 @@ import type { UserIdentity } from "@/api/types";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import { getIntegrationLabel, IntegrationIcon } from "./integration-icons";
 
 /**
- * Per-kind color token + label for identity-source badges. Uses semantic
- * status/action tokens (no raw Tailwind palette literals — would fail the
- * `check:tokens` lint gate).
+ * Chip-style identity badge — used in places where a dense table would be
+ * overkill (merge modal "moving X identities" preview, unmapped triage rows).
+ *
+ * For the People detail page's primary identity surface use `IdentitiesTable`
+ * (./identities-table.tsx) instead; that's the canonical operator view.
  */
-const KIND_STYLES: Record<string, { label: string; classes: string }> = {
-  slack: {
-    label: "Slack",
-    classes: "border-status-info/30 bg-status-info/10 text-status-info-strong",
-  },
-  linear: {
-    label: "Linear",
-    classes:
-      "border-action-delegate-to-agent/30 bg-action-delegate-to-agent/10 text-action-delegate-to-agent",
-  },
-  github: {
-    label: "GitHub",
-    classes: "border-status-neutral/30 bg-status-neutral/10 text-foreground",
-  },
-  gitlab: {
-    label: "GitLab",
-    classes: "border-status-warning/30 bg-status-warning/10 text-status-warning-strong",
-  },
-  jira: {
-    label: "Jira",
-    classes: "border-status-paused/30 bg-status-paused/10 text-status-paused-strong",
-  },
-  agentmail: {
-    label: "AgentMail",
-    classes: "border-status-success/30 bg-status-success/10 text-status-success-strong",
-  },
-  custom: {
-    label: "Custom",
-    classes: "border-action-script/30 bg-action-script/10 text-action-script",
-  },
-};
-
-function getKindStyle(kind: string) {
-  return (
-    KIND_STYLES[kind] ?? {
-      label: kind,
-      classes: "border-border bg-muted text-foreground",
-    }
-  );
-}
-
 export function IdentityBadge({
   identity,
   showId = false,
@@ -56,20 +18,29 @@ export function IdentityBadge({
   identity: UserIdentity;
   showId?: boolean;
 }) {
-  const style = getKindStyle(identity.kind);
-  // Show truncated externalId, full on hover.
+  const label = getIntegrationLabel(identity.kind);
   const idTrunc =
-    identity.externalId.length > 12 ? `${identity.externalId.slice(0, 10)}…` : identity.externalId;
-  const display = showId ? `${style.label}: ${idTrunc}` : style.label;
+    identity.externalId.length > 14 ? `${identity.externalId.slice(0, 12)}…` : identity.externalId;
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <Badge variant="outline" size="tag" className={cn("font-mono normal-case", style.classes)}>
-          {display}
+        <Badge
+          variant="outline"
+          className={cn(
+            "gap-1.5 normal-case font-medium text-[10px] px-1.5 py-0 h-5 leading-none items-center",
+          )}
+        >
+          <IntegrationIcon kind={identity.kind} className="h-3 w-3 text-foreground/70" />
+          <span>{label}</span>
+          {showId && (
+            <span className="font-mono text-muted-foreground border-l border-border/60 pl-1.5">
+              {idTrunc}
+            </span>
+          )}
         </Badge>
       </TooltipTrigger>
       <TooltipContent className="font-mono text-xs">
-        {style.label} · {identity.externalId}
+        {label} · {identity.externalId}
       </TooltipContent>
     </Tooltip>
   );

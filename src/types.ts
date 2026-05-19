@@ -255,6 +255,7 @@ export const IdentityEventTypeSchema = z.enum([
   "token_revoked",
   "budget_changed",
   "status_changed",
+  "profile_changed",
 ]);
 export type IdentityEventType = z.infer<typeof IdentityEventTypeSchema>;
 
