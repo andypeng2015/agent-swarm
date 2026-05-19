@@ -238,7 +238,7 @@ export function UnmappedTab() {
           add new identity kinds (mirrors the user-picker pattern from
           merge-modal.tsx). Toolbar stays outside the scrollable region so it
           remains visible while the table scrolls internally. */}
-      <div className="flex items-center gap-2 shrink-0">
+      <div className="flex flex-nowrap items-center gap-2 shrink-0">
         <div className="relative flex-1 min-w-0">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
           <Input
@@ -262,7 +262,7 @@ export function UnmappedTab() {
               size="sm"
               role="combobox"
               aria-expanded={filterOpen}
-              className="h-9 w-[180px] justify-between font-normal"
+              className="h-9 w-[180px] shrink-0 justify-between font-normal"
             >
               <span className="flex items-center gap-1.5 min-w-0">
                 {kind === "all" ? (

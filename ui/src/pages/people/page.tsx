@@ -99,7 +99,7 @@ function PeopleTable({
         minWidth: 220,
         cellRenderer: (params: { data: User | undefined }) => {
           if (!params.data) return null;
-          return <IdentityBadgeList identities={params.data.identities} maxVisible={3} />;
+          return <IdentityBadgeList identities={params.data.identities} maxVisible={2} />;
         },
       },
       {
