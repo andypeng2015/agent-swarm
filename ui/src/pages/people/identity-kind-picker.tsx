@@ -1,5 +1,5 @@
 import { Check, TriangleAlert } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   Command,
   CommandEmpty,
@@ -77,6 +77,9 @@ export function IdentityKindPicker({
 }: IdentityKindPickerProps) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
+  // Set when a CommandItem is chosen, so the close handler below doesn't
+  // re-commit the (now stale) search text over the just-picked value.
+  const justPickedRef = useRef(false);
 
   const isCustom = value !== "" && !isPresetKind(value);
   const customLabel = isCustom ? value : "Other";
@@ -85,9 +88,29 @@ export function IdentityKindPicker({
   const iconSize = size === "row" ? "h-3.5 w-3.5" : "h-4 w-4";
 
   function pick(k: string) {
+    justPickedRef.current = true;
     onChange(k);
     setOpen(false);
     setSearch("");
+  }
+
+  /**
+   * Commit a typed-but-unselected custom kind when the popover closes.
+   * Without this, an operator who types "jira" and clicks away (instead of
+   * selecting the `Use "jira"` item) silently submits with the default kind.
+   */
+  function handleOpenChange(next: boolean) {
+    if (disabled) return;
+    if (!next) {
+      if (justPickedRef.current) {
+        justPickedRef.current = false;
+      } else {
+        const normalized = search.trim().toLowerCase();
+        if (normalized) onChange(normalized);
+      }
+      setSearch("");
+    }
+    setOpen(next);
   }
 
   return (
@@ -118,7 +141,7 @@ export function IdentityKindPicker({
 
       <span className="mx-0.5 h-4 w-px bg-border" aria-hidden />
 
-      <Popover open={open} onOpenChange={(o) => !disabled && setOpen(o)}>
+      <Popover open={open} onOpenChange={handleOpenChange}>
         <PopoverTrigger asChild>
           <button
             type="button"
