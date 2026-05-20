@@ -3,3 +3,6 @@ out/
 package-lock.json
 bun.lock
 .remotion/
+public/swarm-demo.mp4
+public/audio/swarm-demo-vo.mp3
+public/audio/cool-chill-beat-loop.mp3

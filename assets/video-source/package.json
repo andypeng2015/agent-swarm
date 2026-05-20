@@ -6,7 +6,8 @@
     "start": "remotion studio",
     "build:daily-evolution": "remotion render src/index.ts DailyEvolution out/daily-evolution.mp4",
     "build:slack-to-pr": "remotion render src/index.ts SlackToPR out/slack-to-pr.mp4",
-    "build:all": "npm run build:daily-evolution && npm run build:slack-to-pr"
+    "build:swarm-demo": "remotion render src/index.ts SwarmDemo out/swarm-demo.mp4",
+    "build:all": "npm run build:daily-evolution && npm run build:slack-to-pr && npm run build:swarm-demo"
   },
   "dependencies": {
     "@remotion/cli": "^4.0.0",
