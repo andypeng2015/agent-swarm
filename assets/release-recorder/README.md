@@ -104,3 +104,20 @@ assets/release-recorder/
 4. **Edit** — open a Claude Code session with the `video-use` skill, point it at `raw/` + `storyboard.json` for VO lines
 5. **Brand wrap** — `ReleaseShell` Remotion composition adds title card, lower-thirds, outro *(Picateclas)*
 6. **Publish** — `gh release upload vX.Y.Z final.mp4`
+
+---
+
+## Sharing outputs — binary files
+
+**Never pipe `.webm` or `.mp4` files through `agent-fs write`.** The `agent-fs`
+CLI accepts text only; binary data is UTF-8-mangled on write (non-ASCII bytes
+become `ef bf bd` replacement chars) and the resulting file is unplayable —
+ffmpeg rejects it with "EBML header parsing failed".
+
+Instead, share binary outputs by:
+
+- **Slack**: `slack-upload-file` (binary-safe, inline playback in Slack clients)
+- **GitHub release**: `gh release upload vX.Y.Z final.mp4`
+
+If you need to park a clip somewhere for a short-lived review link, upload to
+Slack and share the Slack permalink — do not route it through agent-fs.
