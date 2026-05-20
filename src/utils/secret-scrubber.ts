@@ -155,7 +155,7 @@ function snapshotEnv(): string {
   return parts.join("|");
 }
 
-function isSensitiveKey(key: string): boolean {
+export function isSensitiveKey(key: string): boolean {
   if (NON_SECRET_EXCEPTIONS.has(key)) return false;
   if (SENSITIVE_KEY_EXACT.has(key)) return true;
   for (const suffix of SENSITIVE_KEY_SUFFIXES) {
@@ -230,6 +230,27 @@ export function scrubSecrets(text: string | null | undefined): string {
   }
 
   return out;
+}
+
+export function scrubObject<T>(value: T, seen = new WeakSet<object>()): T {
+  if (value === null || value === undefined) return value;
+  if (typeof value === "string") return scrubSecrets(value) as T;
+  if (typeof value !== "object") return value;
+
+  if (seen.has(value)) {
+    return "[Circular]" as T;
+  }
+  seen.add(value);
+
+  if (Array.isArray(value)) {
+    return value.map((item) => scrubObject(item, seen)) as T;
+  }
+
+  const out: Record<string, unknown> = {};
+  for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+    out[key] = scrubObject(child, seen);
+  }
+  return out as T;
 }
 
 /**

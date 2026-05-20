@@ -516,6 +516,34 @@ describe("ScriptExecutor", () => {
     const valid = ScriptOutputSchema.safeParse({ exitCode: 0, stdout: "hi", stderr: "" });
     expect(valid.success).toBe(true);
   });
+
+  test("keeps raw {exitCode, stdout, stderr} when stdout is not valid JSON", async () => {
+    const result = await executor.run(
+      input({ runtime: "bash", script: "echo 'not-json {at all'" }, {}),
+    );
+    expect(result.status).toBe("success");
+    const out = result.output as { exitCode: number; stdout: string; stderr: string } & {
+      parsed?: unknown;
+    };
+    expect(out.exitCode).toBe(0);
+    expect(out.stdout).toBe("not-json {at all");
+    expect(out.stderr).toBe("");
+    // No parsed key merged in — only the raw three fields are present.
+    expect(Object.keys(out).sort()).toEqual(["exitCode", "stderr", "stdout"]);
+  });
+
+  test("populates structured output on timeout instead of leaving it null", async () => {
+    const result = await executor.run(
+      input({ runtime: "bash", script: "sleep 5", timeout: 1000 }, {}),
+    );
+    expect(result.status).toBe("failed");
+    expect(result.error).toContain("Script timed out after 1000ms");
+    const out = result.output as { exitCode: number; stdout: string; stderr: string };
+    expect(out).toBeDefined();
+    expect(out.exitCode).toBe(-1);
+    expect(out.stdout).toBe("");
+    expect(out.stderr).toContain("Script timed out after 1000ms");
+  });
 });
 
 // ─── VCS Executor ────────────────────────────────────────────
@@ -706,7 +734,7 @@ describe("ValidateExecutor", () => {
 // ─── Registry Wiring ─────────────────────────────────────────
 
 describe("createExecutorRegistry", () => {
-  test("registers all 10 executors (7 instant + 3 async)", () => {
+  test("registers all 11 executors (8 instant + 3 async)", () => {
     const registry = createExecutorRegistry(mockDeps);
     const types = registry.types();
 
@@ -715,12 +743,13 @@ describe("createExecutorRegistry", () => {
     expect(types).toContain("notify");
     expect(types).toContain("raw-llm");
     expect(types).toContain("script");
+    expect(types).toContain("swarm-script");
     expect(types).toContain("vcs");
     expect(types).toContain("validate");
     expect(types).toContain("agent-task");
     expect(types).toContain("human-in-the-loop");
     expect(types).toContain("wait");
-    expect(types).toHaveLength(10);
+    expect(types).toHaveLength(11);
   });
 
   test("instant executors have mode instant, async executors have mode async", () => {
@@ -731,6 +760,7 @@ describe("createExecutorRegistry", () => {
       "notify",
       "raw-llm",
       "script",
+      "swarm-script",
       "vcs",
       "validate",
     ];

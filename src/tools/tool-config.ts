@@ -154,6 +154,13 @@ export const DEFERRED_TOOLS = new Set([
   "kv-incr",
   "kv-list",
 
+  // Reusable scripts (5)
+  "script-search",
+  "script-run",
+  "script-upsert",
+  "script-delete",
+  "script-query-types",
+
   // Other (3)
   "cancel-task",
   "inject-learning",

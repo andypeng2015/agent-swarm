@@ -33,6 +33,24 @@ The API server (`src/http.ts`, `src/server.ts`, `src/tools/`, `src/http/`) is th
 
 The swarm API key MUST be read via `getApiKey()` from `src/utils/api-key.ts` — never `process.env.API_KEY` / `process.env.AGENT_SWARM_API_KEY` directly. Precedence: `AGENT_SWARM_API_KEY` > `API_KEY`. Enforced by `scripts/check-api-key-boundary.sh` (CI).
 
+<important if="you are modifying scripts-runtime code (src/scripts-runtime/*, src/be/scripts/*, src/tools/script-*.ts, src/http/scripts.ts)">
+
+Architecture: API server owns the `scripts` + `script_versions` tables. Workers + the runtime invoke via HTTP. The runtime evaluates user-supplied TS in a `Bun.spawn` subprocess wrapped in `ulimit -v 524288 -t 60 -u 32 -f 65536 -n 64`, 30s AbortController, 1 MB stdout cap.
+
+Config injection: agent identity + bearer + mcpBaseUrl flow as a JSON `SwarmConfigPayload` over the subprocess **stdin** — NOT env vars. Bearer is wrapped in `Redacted<string>` inside the script; user code never unwraps. `process.env` carries only Node/Bun defaults. Loader reads the bearer via `getApiKey()` from `src/utils/api-key.ts` (never raw env).
+
+FS modes: `'none'` = per-run tmpdir (v1 only); `'workspace-rw'` returns 501 in v1 (worker dispatch is v2).
+
+SDK surface: derived from MCP tool registry at build time via `scripts/bundle-script-types.ts`. Curated allowlist in `src/scripts-runtime/sdk-allowlist.ts`.
+
+Typecheck: `script_upsert` runs `tsc --noEmit` against the generated `.d.ts`; rejects on diagnostics. Inline `script_run` skips typecheck (scratch hot path).
+
+Boundaries: `src/scripts-runtime/` is on both `check-db-boundary.sh` (no `src/be/db` imports) and `check-api-key-boundary.sh` (must use `getApiKey()`) allowlists.
+
+Tests: `bun test src/tests/scripts-*.test.ts`. Sandbox + timeout + abort + stdin-config + env-hygiene paths are the highest-risk surfaces — keep coverage tight.
+
+</important>
+
 <important if="you need to run commands to build, test, lint, start the server, or generate code">
 
 ## Commands
@@ -66,6 +84,41 @@ Use Bun, not Node/npm/pnpm/vite:
 - `Bun.file()` for file I/O (not `node:fs`)
 - `Bun.$` for shell (not execa)
 - Bun auto-loads `.env` — don't use dotenv
+
+</important>
+
+<important if="you are searching the codebase for code by intent, a symbol/identifier, or how something works">
+
+## Code Search
+
+Use `semble search` to find code by describing what it does or naming a symbol/identifier, instead of grep:
+
+```bash
+semble search "authentication flow" ./my-project
+semble search "save_pretrained" ./my-project
+semble search "save model to disk" ./my-project --top-k 10
+```
+
+Use `semble find-related` to discover code similar to a known location (pass `file_path` and `line` from a prior search result):
+
+```bash
+semble find-related src/auth.py 42 ./my-project
+```
+
+`path` defaults to the current directory when omitted; git URLs are accepted.
+
+If `semble` is not on `$PATH`, use `uvx --from "semble[mcp]" semble` in its place.
+
+If the `semble` MCP server is enabled, prefer its `search` / `find_related` tools over the CLI.
+
+To keep search output out of the main context, offload it to the `semble-search` subagent (`.claude/agents/semble-search.md`) via the `Task` tool — it runs the search/find-related loop and returns only the relevant findings.
+
+### Workflow
+
+1. Start with `semble search` to find relevant chunks.
+2. Inspect full files only when the returned chunk is not enough context.
+3. Optionally use `semble find-related` with a promising result's `file_path` and `line` to discover related implementations.
+4. Use grep only when you need exhaustive literal matches or quick confirmation of an exact string.
 
 </important>
 
@@ -107,7 +160,7 @@ On every version bump: run `bun run docs:openapi` and commit the regenerated fil
 
 <important if="you are creating or modifying workflows, or using the create-workflow tool">
 
-Workflows are DAGs of nodes connected via `next`. Common gotcha: upstream outputs are **not** available unless you declare an `inputs` mapping. Full reference — cross-node data, structured output, interpolation, agent-task config fields: see [runbooks/workflows.md](./runbooks/workflows.md).
+Workflows are DAGs of nodes connected via `next`. Common gotcha: upstream outputs are **not** available unless you declare an `inputs` mapping. The reusable scripts catalog is available through `swarm-script` nodes; keep it distinct from the existing inline `script` runner. Full reference — cross-node data, structured output, interpolation, agent-task config fields, `script` vs `swarm-script`: see [runbooks/workflows.md](./runbooks/workflows.md).
 
 </important>
 

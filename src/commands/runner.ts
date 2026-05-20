@@ -368,7 +368,17 @@ const SWARM_TOOL_LABELS: Record<string, string | null> = {
   "inject-learning": "🧠 Storing learning",
   "memory-search": "🧠 Searching memory",
   "memory-get": "🧠 Retrieving memory",
+  "memory-delete": "🧠 Deleting memory",
   "update-profile": "🪪 Updating profile",
+  // Users
+  "manage-user": "👤 Managing user",
+  "resolve-user": "👤 Resolving user",
+  // Key-value store
+  "kv-get": "🔑 Reading KV value",
+  "kv-set": "🔑 Setting KV value",
+  "kv-list": "🔑 Listing KV keys",
+  "kv-delete": "🔑 Deleting KV value",
+  "kv-incr": "🔑 Incrementing KV value",
   // Slack
   "slack-post": "💬 Posting to Slack",
   "slack-start-thread": "💬 Starting Slack thread",
@@ -388,20 +398,37 @@ const SWARM_TOOL_LABELS: Record<string, string | null> = {
   "get-workflow": "⚙️ Checking workflow",
   "list-workflows": "⚙️ Listing workflows",
   "create-workflow": "⚙️ Creating workflow",
+  "update-workflow": "⚙️ Updating workflow",
+  "delete-workflow": "⚙️ Deleting workflow",
+  "patch-workflow": "⚙️ Patching workflow",
+  "patch-workflow-node": "⚙️ Patching workflow node",
+  "get-workflow-run": "⚙️ Checking workflow run",
+  "list-workflow-runs": "⚙️ Listing workflow runs",
+  "cancel-workflow-run": "⚙️ Cancelling workflow run",
+  "retry-workflow-run": "⚙️ Retrying workflow run",
   // Skills
   "skill-search": "🔎 Searching skills",
   "skill-install": "📦 Installing skill",
   "skill-install-remote": "📦 Installing remote skill",
   "skill-get": "📦 Getting skill details",
   "skill-list": "📦 Listing skills",
+  "skill-create": "📦 Creating skill",
+  "skill-update": "📦 Updating skill",
+  "skill-delete": "📦 Deleting skill",
+  "skill-publish": "📦 Publishing skill",
+  "skill-uninstall": "📦 Uninstalling skill",
+  "skill-sync-remote": "📦 Syncing remote skills",
   // Config
   "get-config": "⚙️ Reading config",
   "set-config": "⚙️ Setting config",
   "list-config": "⚙️ Listing config",
+  "delete-config": "⚙️ Deleting config",
   // Schedules
   "create-schedule": "📅 Creating schedule",
   "list-schedules": "📅 Listing schedules",
   "run-schedule-now": "📅 Running schedule",
+  "update-schedule": "📅 Updating schedule",
+  "delete-schedule": "📅 Deleting schedule",
   // Context
   "context-diff": "📜 Viewing context diff",
   "context-history": "📜 Viewing context history",
@@ -414,12 +441,42 @@ const SWARM_TOOL_LABELS: Record<string, string | null> = {
   "list-services": "🔌 Listing services",
   "unregister-service": "🔌 Unregistering service",
   "update-service-status": "🔌 Updating service status",
+  // Reusable scripts
+  "script-search": "📜 Searching scripts",
+  "script-run": "📜 Running script",
+  "script-upsert": "📜 Saving script",
+  "script-delete": "📜 Deleting script",
+  "script-query-types": "📜 Reading script types",
 };
 
-/** Convert kebab-case to sentence case: "get-task-details" → "Get task details" */
+/** Words that keep specific casing when humanizing tool names. */
+const TOOL_NAME_ACRONYMS: Record<string, string> = {
+  mcp: "MCP",
+  kv: "KV",
+  api: "API",
+  url: "URL",
+  id: "ID",
+};
+
+/**
+ * Convert kebab/snake-case to sentence case, preserving known acronyms.
+ * "get-task-details" → "Get task details"; "mcp-server-create" → "MCP server create".
+ */
 export function humanizeToolName(name: string): string {
   if (!name) return name;
-  return name.charAt(0).toUpperCase() + name.slice(1).replaceAll("-", " ");
+  const words = name
+    .replaceAll("_", " ")
+    .replaceAll("-", " ")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((w) => TOOL_NAME_ACRONYMS[w.toLowerCase()] ?? w);
+  const first = words[0];
+  if (!first) return name;
+  const head = TOOL_NAME_ACRONYMS[first.toLowerCase()]
+    ? first
+    : first.charAt(0).toUpperCase() + first.slice(1);
+  return [head, ...words.slice(1)].join(" ");
 }
 
 /**
@@ -489,15 +546,13 @@ export function toolCallToProgress(toolName: string, args: unknown): string | nu
       }
 
       // Pi-mono exposes tools from the built-in swarm MCP endpoint as bare
-      // names ("store-progress", "send-task", ...), not as mcp__ names.
+      // names ("store-progress", "send-task", "script-run", ...), not as mcp__ names.
       // Treat those names as agent-swarm tools so activity stays readable.
-      if (toolName.includes("-")) {
-        const label = SWARM_TOOL_LABELS[toolName];
-        if (label === null) return null;
-        if (label) return label;
-      }
+      const label = SWARM_TOOL_LABELS[toolName];
+      if (label === null) return null;
+      if (label) return label;
 
-      return `🔧 ${toolName}`;
+      return `🔧 ${humanizeToolName(toolName)}`;
     }
   }
 }
@@ -1922,6 +1977,47 @@ function providerEventAttributes(event: ProviderEvent): Attributes {
   }
 }
 
+/**
+ * Entry shape for the `activeToolSpans` map maintained by `runWithSession`.
+ * Exported for unit tests that exercise `implicitCloseActiveToolSpans`.
+ */
+export type ActiveToolSpanEntry = {
+  span: SwarmSpan;
+  startedAt: number;
+};
+
+/**
+ * Closes any still-open tool spans (both `worker.tool` and `worker.mcp.tool`)
+ * in `activeToolSpans` at the assistant-message boundary, tagging them with
+ * `agentswarm.tool.implicit_close=true` and removing them from the map.
+ *
+ * The Claude SDK adapter doesn't emit per-tool completion events for any
+ * tool kind, MCP or harness-side — so the assistant-message boundary serves
+ * as an implicit `tool_end` for everything. Spans closed here are still
+ * successful (code 1, OK); the boundary is just a signal that the prior
+ * tool turn is done.
+ *
+ * Returns the number of spans closed (handy for tests / metrics).
+ */
+export function implicitCloseActiveToolSpans(
+  activeToolSpans: Map<string, ActiveToolSpanEntry>,
+  now: number = Date.now(),
+): number {
+  let closed = 0;
+  for (const [toolCallId, active] of activeToolSpans) {
+    active.span.setAttributes({
+      "agentswarm.tool.duration_ms": now - active.startedAt,
+      "agentswarm.tool.implicit_close": true,
+      "agentswarm.tool.call_id": toolCallId,
+    });
+    active.span.setStatus({ code: 1 });
+    active.span.end();
+    activeToolSpans.delete(toolCallId);
+    closed++;
+  }
+  return closed;
+}
+
 async function spawnProviderProcess(
   adapter: ReturnType<typeof createProviderAdapter>,
   opts: {
@@ -2160,6 +2256,18 @@ async function spawnProviderProcess(
             sessionId: event.sessionId,
           });
           break;
+        case "message": {
+          // Assistant-message boundary acts as an implicit tool_end for ALL
+          // still-open tool spans (both `worker.tool` and `worker.mcp.tool`).
+          // The Claude SDK adapter doesn't emit per-tool completion events for
+          // any tool kind, so without this their spans would only close at
+          // session shutdown via `closeActiveToolSpans` and report wall-clock
+          // duration from tool_start to session end.
+          if (event.role === "assistant") {
+            implicitCloseActiveToolSpans(activeToolSpans);
+          }
+          break;
+        }
         case "tool_start": {
           const tool = classifyTool(event.toolName, event.args);
           const toolSpan = startSpan(tool.kind === "mcp" ? "worker.mcp.tool" : "worker.tool", {
@@ -2624,15 +2732,35 @@ async function checkCompletedProcesses(
           credentialInfo &&
           /rate.?limit|hit your limit|usage[ _-]?limit|too many requests/i.test(failureReason)
         ) {
-          // Try to extract reset time from the error message (e.g. "resets 3pm (UTC)")
-          const parsedResetTime = parseRateLimitResetTime(failureReason);
-          const defaultCooldownMs = 5 * 60 * 1000;
-          const rateLimitedUntil =
-            parsedResetTime ?? new Date(Date.now() + defaultCooldownMs).toISOString();
-          if (parsedResetTime) {
+          // Three-tier reset-time resolver (most to least precise):
+          // Tier 1: structured rate_limit_event from Claude CLI (resetsAt epoch sec)
+          // Tier 2: regex on the error message (e.g. "resets 3pm (UTC)")
+          // Tier 3: 5-min hard fallback — only when both structured and regex fail
+          // Tiers 1 & 2 are clamped to [now+60s, now+6h] at their source.
+          const clampResetTime = (isoString: string): string => {
+            const nowMs = Date.now();
+            const minMs = nowMs + 60_000;
+            const maxMs = nowMs + 6 * 60 * 60 * 1000;
+            const candidateMs = new Date(isoString).getTime();
+            return new Date(Math.min(Math.max(candidateMs, minMs), maxMs)).toISOString();
+          };
+
+          let rateLimitedUntil: string;
+          if (result.rateLimitResetAt) {
+            rateLimitedUntil = clampResetTime(result.rateLimitResetAt);
             console.log(
-              `[credentials] Parsed rate limit reset time from error: ${parsedResetTime}`,
+              `[credentials] Rate limit reset from rate_limit_event: ${rateLimitedUntil}`,
             );
+          } else {
+            const parsedResetTime = parseRateLimitResetTime(failureReason);
+            if (parsedResetTime) {
+              rateLimitedUntil = clampResetTime(parsedResetTime);
+              console.log(
+                `[credentials] Parsed rate limit reset time from error: ${rateLimitedUntil}`,
+              );
+            } else {
+              rateLimitedUntil = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+            }
           }
           reportKeyRateLimit(
             apiConfig.apiUrl,
