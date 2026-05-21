@@ -1,26 +1,46 @@
-// Mirrors the ui tokens: shadcn Zinc (dark) + amber primary.
-// Colors converted from oklch() at render time via CSS-compatible hex/rgba.
-// Source of truth: ui/src/styles/globals.css
+// Brand tokens — derived from desplega-ai/agent-swarm-landing (verified 2026-05-21).
+// Source of truth: assets/video-source/BRAND.md
+//
+// Canonical brand: amber-700 primary, zinc neutral scale, Space Grotesk + Space Mono.
+// Slash-prefixed eyebrows: font-mono 11px tracking-[0.14em] uppercase text-amber-700.
 export const theme = {
-  // Background / foreground
-  bg: "#09090b",              // oklch(0.141 0.005 285.823)
-  card: "#18181b",            // oklch(0.21 0.006 285.885) — card/muted
-  fg: "#fafafa",              // oklch(0.985 0 0)
-  muted: "#a1a1aa",           // oklch(0.705 0.015 286.067) — zinc-400
-  mutedDim: "#52525b",        // zinc-600
-  border: "rgba(255,255,255,0.10)",
+  // Hero background (zinc-950) — dark scene background matching landing hero
+  bg: "#09090b",
+  // Light card background — used for card interiors in light sections
+  cardLight: "#ffffff",
+  card: "rgba(255,255,255,0.08)",
+  fg: "#ffffff",
+  // Zinc neutral scale
+  zinc50: "#fafafa",
+  zinc100: "#f4f4f5",
+  zinc200: "#e4e4e7",
+  zinc400: "#a1a1aa",
+  zinc500: "#71717a",
+  zinc700: "#3f3f46",
+  zinc800: "#27272a",
+  zinc900: "#18181b",
+  zinc950: "#09090b",
+  muted: "rgba(255,255,255,0.65)",
+  mutedDim: "rgba(255,255,255,0.30)",
+  border: "#e4e4e7",            // zinc-200
+  borderDark: "rgba(255,255,255,0.10)",
   borderStrong: "rgba(255,255,255,0.18)",
 
-  // Brand accent — amber (matches ui primary in dark mode)
-  accent: "#f2a93b",          // oklch(0.769 0.188 70.08)
-  accentDim: "#7a4d12",
-  accentFg: "#1a1409",        // oklch(0.205 0.022 47.604)
+  // Brand accent — amber-700 (Tailwind #b45309)
+  accent: "#b45309",            // amber-700
+  accentMid: "#f59e0b",         // amber-500
+  accentLight: "#fbbf24",       // amber-400
+  accentFg: "#ffffff",
+  accentDim: "rgba(180,83,9,0.12)",
+
+  // Gradient-text — matches .gradient-text in globals.css
+  gradientText: "linear-gradient(135deg, #b45309, #f59e0b, #b45309)",
 
   // Semantic
   success: "#4ade80",
   danger: "#f87171",
 
-  // Typography (loaded via @remotion/google-fonts)
+  // Typography — Space Grotesk (display) + Space Mono (eyebrows/code)
   sans: "'Space Grotesk', system-ui, -apple-system, sans-serif",
   mono: "'Space Mono', ui-monospace, 'SF Mono', Menlo, monospace",
 };

@@ -1,93 +1,118 @@
 import { interpolate, useCurrentFrame } from "remotion";
+import type { CursorEvent, CursorTrack } from "../../cursor-track";
 
-// Cursor waypoints: {frame, x, y} in 1920×1080 space.
-// Video (1280×578) is displayed at 1920×867 centered in 1080 → y offset = 106.5px.
-// Mapping: x_out = x_src * 1.5,  y_out = y_src * 1.5 + 106.5
+// ---------------------------------------------------------------------------
+// Cursor component — replays real recorder events from cursor-track.json.
 //
-// Timeline in SwarmDemo output frames (demo section starts at frame 90):
-//   90  → tasks list: hovering on task row
-//   160 → still on row (about to click)
-//   200 → task detail: moves toward breadcrumb / Back to Tasks link
-//   280 → in_progress: moves toward status badge
-//   360 → progress: moves toward progress text area
-//   480 → progress ticking: stays near progress area
-//   555 → completed: moves toward output section
-//   670 → back to list: moves toward task row
-const WAYPOINTS: Array<{ frame: number; x: number; y: number }> = [
-  { frame: 90,  x: 965,  y: 406 }, // task row in list
-  { frame: 160, x: 990,  y: 406 }, // slight shift before click
-  { frame: 210, x: 340,  y: 238 }, // Back to Tasks link
-  { frame: 285, x: 693,  y: 252 }, // status badge area
-  { frame: 365, x: 628,  y: 436 }, // progress text (scanning)
-  { frame: 480, x: 628,  y: 460 }, // progress ticking (issues found)
-  { frame: 558, x: 700,  y: 530 }, // completed output section
-  { frame: 672, x: 965,  y: 406 }, // back to list — task row
-  { frame: 765, x: 965,  y: 406 }, // hold at end of demo section
-];
+// The recorder emits CursorTrack alongside each beat clip, capturing real
+// element coordinates via `agent-browser get box` + `agent-browser mouse move`.
+// This component reads those events and replays them frame-accurately.
+//
+// Timing contract:
+//   - frame 0 in this component = demoStartFrame in the output video
+//   - recordingDurationMs tells us the total span of the cursor events
+//   - For each frame f: recordingTimeMs = (f / demoFrameCount) * recordingDurationMs
+//   - Then we interpolate cursor position from the two nearest events
+// ---------------------------------------------------------------------------
+
+interface CursorProps {
+  /** The cursor track loaded from cursor-track.json. */
+  track: CursorTrack;
+  /** Total frames in the demo section (e.g. 675 for a 22.5s demo at 30fps). */
+  demoFrameCount: number;
+  /** Demo section start frame in the OUTPUT video (used for fade in/out). */
+  demoStartFrame?: number;
+}
 
 function easeOutCubic(t: number): number {
   return 1 - (1 - t) ** 3;
 }
 
-function interpolateCursor(frame: number): { x: number; y: number } {
-  if (frame <= WAYPOINTS[0].frame) return { x: WAYPOINTS[0].x, y: WAYPOINTS[0].y };
-  if (frame >= WAYPOINTS[WAYPOINTS.length - 1].frame) {
-    const last = WAYPOINTS[WAYPOINTS.length - 1];
-    return { x: last.x, y: last.y };
-  }
-  for (let i = 0; i < WAYPOINTS.length - 1; i++) {
-    const a = WAYPOINTS[i];
-    const b = WAYPOINTS[i + 1];
-    if (frame >= a.frame && frame <= b.frame) {
-      const t = (frame - a.frame) / (b.frame - a.frame);
-      const eased = easeOutCubic(t);
+/** Find the cursor position at a given recording timestamp via linear interp with cubic easing. */
+function cursorAtMs(events: CursorEvent[], ms: number): { x: number; y: number } {
+  if (events.length === 0) return { x: 960, y: 540 };
+  if (ms <= events[0].tsMs) return { x: events[0].x, y: events[0].y };
+  const last = events[events.length - 1];
+  if (ms >= last.tsMs) return { x: last.x, y: last.y };
+
+  for (let i = 0; i < events.length - 1; i++) {
+    const a = events[i];
+    const b = events[i + 1];
+    if (ms >= a.tsMs && ms <= b.tsMs) {
+      const span = b.tsMs - a.tsMs;
+      const t = span > 0 ? (ms - a.tsMs) / span : 1;
+      const eased = easeOutCubic(Math.max(0, Math.min(1, t)));
       return {
         x: a.x + (b.x - a.x) * eased,
         y: a.y + (b.y - a.y) * eased,
       };
     }
   }
-  return { x: WAYPOINTS[0].x, y: WAYPOINTS[0].y };
+  return { x: last.x, y: last.y };
 }
 
-interface CursorProps {
-  // demoStartFrame: the output frame where the demo section begins (90)
-  demoStartFrame?: number;
+/** True if a click event is nearby (within ±4 frames at 30fps = ±133ms). */
+function nearClick(events: CursorEvent[], ms: number): boolean {
+  const windowMs = 133;
+  return events.some((e) => e.action === "click" && Math.abs(e.tsMs - ms) <= windowMs);
 }
 
-export const Cursor: React.FC<CursorProps> = ({ demoStartFrame = 90 }) => {
-  const frame = useCurrentFrame();
-  const { x, y } = interpolateCursor(frame);
+export const Cursor: React.FC<CursorProps> = ({
+  track,
+  demoFrameCount,
+  demoStartFrame = 90,
+}) => {
+  const frame = useCurrentFrame(); // 0-based within demo sequence
 
-  // Click pulse: brief amber ring when cursor "clicks" (at waypoint boundaries)
-  const clickFrames = WAYPOINTS.map((w) => w.frame);
-  const nearestClick = clickFrames.reduce((prev, curr) =>
-    Math.abs(curr - frame) < Math.abs(prev - frame) ? curr : prev
-  );
-  const distToClick = Math.abs(frame - nearestClick);
-  const clickPulse = distToClick < 8 ? interpolate(distToClick, [0, 8], [1, 0]) : 0;
+  const fps = 30;
+  const recordingMs = (frame / demoFrameCount) * track.durationMs;
+  const { x, y } = cursorAtMs(track.events, recordingMs);
+  const isNearClick = nearClick(track.events, recordingMs);
 
-  // Fade in at demo start, fade out at demo end
+  // Scale cursor coords from recording viewport to 1920×1080 output
+  const scaleX = 1920 / track.viewport.width;
+  const scaleY = 1080 / track.viewport.height;
+  const cx = x * scaleX;
+  const cy = y * scaleY;
+
+  // Fade in at start of demo, fade out at end
   const opacity = interpolate(
     frame,
-    [demoStartFrame, demoStartFrame + 10, 755, 765],
+    [0, fps * 0.5, demoFrameCount - fps * 0.5, demoFrameCount],
     [0, 1, 1, 0],
     { extrapolateLeft: "clamp", extrapolateRight: "clamp" }
   );
+
+  // Click pulse — lime-green ring that expands on click events
+  const clickPulseProgress = isNearClick
+    ? interpolate(
+        track.events.find(
+          (e) =>
+            e.action === "click" &&
+            Math.abs(e.tsMs - recordingMs) <=
+              133
+        )?.tsMs ?? recordingMs,
+        [recordingMs - 133, recordingMs + 133],
+        [0, 1],
+        { extrapolateLeft: "clamp", extrapolateRight: "clamp" }
+      )
+    : 0;
+  const pulseOpacity = isNearClick ? interpolate(clickPulseProgress, [0, 0.4, 1], [0, 0.9, 0]) : 0;
+  const pulseScale = 1 + clickPulseProgress * 0.6;
 
   return (
     <div
       style={{
         position: "absolute",
-        left: x - 8,
-        top: y - 4,
+        left: cx - 8,
+        top: cy - 4,
         pointerEvents: "none",
         opacity,
         zIndex: 100,
       }}
     >
-      {/* Click pulse ring */}
-      {clickPulse > 0 && (
+      {/* Click pulse ring — amber-500 */}
+      {isNearClick && (
         <div
           style={{
             position: "absolute",
@@ -96,20 +121,20 @@ export const Cursor: React.FC<CursorProps> = ({ demoStartFrame = 90 }) => {
             width: 48,
             height: 48,
             borderRadius: "50%",
-            border: "2px solid #f2a93b",
-            opacity: clickPulse * 0.7,
-            transform: `scale(${1 + (1 - clickPulse) * 0.5})`,
+            border: "2px solid #f59e0b",
+            opacity: pulseOpacity * 0.8,
+            transform: `scale(${pulseScale})`,
           }}
         />
       )}
-      {/* Arrow cursor SVG */}
+      {/* OS-style arrow cursor */}
       <svg
         width={24}
         height={28}
         viewBox="0 0 24 28"
         fill="none"
         xmlns="http://www.w3.org/2000/svg"
-        style={{ filter: "drop-shadow(0 1px 3px rgba(0,0,0,0.8))" }}
+        style={{ filter: "drop-shadow(0 1px 4px rgba(0,0,0,0.6))" }}
       >
         <path
           d="M2 2L2 22L7.5 16.5L11 24L14 22.5L10.5 15L18 15L2 2Z"

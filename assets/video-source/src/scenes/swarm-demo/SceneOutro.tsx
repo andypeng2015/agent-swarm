@@ -1,15 +1,18 @@
-import { AbsoluteFill, interpolate, useCurrentFrame } from "remotion";
+import { AbsoluteFill, Img, interpolate, staticFile, useCurrentFrame } from "remotion";
 import { theme } from "../../theme";
 
 // 765-900 frames (25.5-30s): outro title card.
-// VO "agent-swarm — by Desplega" lands around frame 765-780.
+// Brand: zinc-950 bg, amber-700 primary, Space Grotesk wordmark + Desplega isotipo.
+// Pattern: slash-prefixed eyebrow in Space Mono amber-700.
 export const SceneOutro: React.FC = () => {
   const frame = useCurrentFrame(); // relative within sequence (0-134)
 
   const fadeIn = interpolate(frame, [0, 18], [0, 1], { extrapolateRight: "clamp" });
-  const logoY = interpolate(frame, [0, 18], [16, 0], { extrapolateRight: "clamp" });
-  const linkOpacity = interpolate(frame, [22, 40], [0, 1], { extrapolateRight: "clamp" });
-  const tagOpacity = interpolate(frame, [35, 55], [0, 1], { extrapolateRight: "clamp" });
+  const logoY = interpolate(frame, [0, 18], [14, 0], { extrapolateRight: "clamp" });
+  const eyebrowOpacity = interpolate(frame, [16, 32], [0, 1], { extrapolateRight: "clamp" });
+  const linkOpacity = interpolate(frame, [24, 42], [0, 1], { extrapolateRight: "clamp" });
+  const tagOpacity = interpolate(frame, [38, 56], [0, 1], { extrapolateRight: "clamp" });
+  const logoOpacity = interpolate(frame, [12, 30], [0, 1], { extrapolateRight: "clamp" });
 
   return (
     <AbsoluteFill
@@ -19,71 +22,97 @@ export const SceneOutro: React.FC = () => {
         alignItems: "center",
       }}
     >
-      {/* Horizontal amber accent line */}
+      {/* Amber accent line */}
       <div
         style={{
           position: "absolute",
           top: "50%",
           left: "50%",
           transform: "translate(-50%, -50%)",
-          width: interpolate(frame, [0, 24], [0, 280], { extrapolateRight: "clamp" }),
+          width: interpolate(frame, [0, 24], [0, 240], { extrapolateRight: "clamp" }),
           height: 1,
-          backgroundColor: theme.accent,
-          opacity: 0.5,
-          marginTop: -70,
+          background: theme.gradientText,
+          opacity: 0.30,
+          marginTop: -92,
         }}
       />
 
       <div style={{ textAlign: "center", opacity: fadeIn, transform: `translateY(${logoY}px)` }}>
-        {/* agent-swarm wordmark */}
+        {/* Slash-prefixed eyebrow — amber-700 Space Mono */}
         <div
           style={{
             fontFamily: theme.mono,
-            fontSize: 80,
-            fontWeight: 700,
-            color: theme.fg,
-            letterSpacing: -2,
-            lineHeight: 1,
+            fontSize: 11,
+            fontWeight: 400,
+            color: theme.accent,
+            letterSpacing: "0.14em",
+            textTransform: "uppercase",
+            marginBottom: 20,
+            opacity: eyebrowOpacity,
           }}
         >
-          <span style={{ color: theme.accent }}>agent</span>
-          <span style={{ color: theme.muted }}>-</span>
-          <span>swarm</span>
+          / open source
         </div>
 
-        {/* desplega.ai */}
+        {/* "Agent Swarm" wordmark — Space Grotesk 600 */}
         <div
           style={{
             fontFamily: theme.sans,
-            fontSize: 20,
+            fontSize: 76,
+            fontWeight: 600,
+            color: theme.fg,
+            letterSpacing: "-0.04em",
+            lineHeight: 1,
+          }}
+        >
+          Agent Swarm
+        </div>
+
+        {/* agent-swarm.dev */}
+        <div
+          style={{
+            fontFamily: theme.mono,
+            fontSize: 17,
             fontWeight: 400,
-            color: theme.muted,
-            letterSpacing: 2,
-            marginTop: 24,
+            color: "rgba(255,255,255,0.40)",
+            letterSpacing: "0.04em",
+            marginTop: 22,
             opacity: linkOpacity,
           }}
         >
-          desplega.ai
+          agent-swarm.dev
         </div>
 
-        {/* Open source pill */}
+        {/* desplega.ai sub-label */}
         <div
           style={{
-            display: "inline-block",
-            marginTop: 20,
-            padding: "5px 16px",
-            borderRadius: 100,
-            border: `1px solid ${theme.border}`,
             fontFamily: theme.mono,
-            fontSize: 13,
-            color: theme.mutedDim,
-            letterSpacing: 1.5,
-            textTransform: "uppercase" as const,
+            fontSize: 11,
+            fontWeight: 400,
+            color: "rgba(255,255,255,0.25)",
+            letterSpacing: "0.10em",
+            textTransform: "uppercase",
+            marginTop: 10,
             opacity: tagOpacity,
           }}
         >
-          Open source
+          by desplega.ai
         </div>
+      </div>
+
+      {/* Desplega isotipo — bottom-right corner */}
+      <div
+        style={{
+          position: "absolute",
+          bottom: 48,
+          right: 64,
+          opacity: logoOpacity * 0.45,
+        }}
+      >
+        <Img
+          src={staticFile("brand/desplega-iso.svg")}
+          style={{ width: 26, height: 26, objectFit: "contain" }}
+        />
       </div>
     </AbsoluteFill>
   );
