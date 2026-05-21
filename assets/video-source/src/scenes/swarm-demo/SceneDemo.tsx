@@ -1,9 +1,9 @@
 import { AbsoluteFill, Easing, Video, interpolate, staticFile, useCurrentFrame } from "remotion";
 import { theme } from "../../theme";
-import { Cursor } from "./Cursor";
+// Cursor import retired in v6 — DOM cursor baked into recording
 import type { CursorEvent, CursorTrack } from "../../cursor-track";
 
-const DEMO_FRAME_COUNT = 675; // 22.5s @ 30fps
+const DEMO_FRAME_COUNT = 1296; // 43.2s @ 30fps
 const FPS = 30;
 
 // Mac-style browser window — floats on the dark composition bg.
@@ -109,7 +109,7 @@ export const SceneDemo: React.FC<SceneDemoProps> = ({ cursorTrack }) => {
   const frame = useCurrentFrame();
 
   const fadeIn  = interpolate(frame, [0, 12],  [0, 1], { extrapolateRight: "clamp" });
-  const fadeOut = interpolate(frame, [660, 675], [1, 0], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
+  const fadeOut = interpolate(frame, [1281, 1296], [1, 0], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
   const opacity = Math.min(fadeIn, fadeOut);
 
   const { scale: zoomScale, originX: zoomOriginX, originY: zoomOriginY } = computeZoom(
@@ -244,13 +244,7 @@ export const SceneDemo: React.FC<SceneDemoProps> = ({ cursorTrack }) => {
               src={staticFile("swarm-demo.mp4")}
               style={{ width: "100%", height: "100%", objectFit: "cover" }}
             />
-            <Cursor
-              track={cursorTrack}
-              demoFrameCount={DEMO_FRAME_COUNT}
-              demoStartFrame={90}
-              containerW={CONTENT_W}
-              containerH={CONTENT_H}
-            />
+            {/* Cursor overlay retired in v6 — cursor is now baked into the recording via DOM injection (record-e2e-v6.mjs) */}
           </div>
         </div>
       </div>
@@ -267,10 +261,10 @@ export const SceneDemo: React.FC<SceneDemoProps> = ({ cursorTrack }) => {
 // ---------------------------------------------------------------------------
 
 const LOWER_THIRDS: Array<{ start: number; end: number; text: string }> = [
-  { start: 30,  end: 130, text: "People tab — humans as first-class users" },
-  { start: 160, end: 270, text: "Real identities, not just agent IDs"      },
-  { start: 310, end: 420, text: "Linked identities across every system"    },
-  { start: 460, end: 575, text: "Full activity timeline"                   },
+  { start: 21  , end: 206 , text: "People tab — humans as first-class users" },
+  { start: 248 , end: 421 , text: "Real identities, not just agent IDs" },
+  { start: 734 , end: 951 , text: "Linked identities across every system" },
+  { start: 993 , end: 1275, text: "Full activity timeline" },
 ];
 
 function LowerThird({ frame }: { frame: number }) {

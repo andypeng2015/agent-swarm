@@ -28,7 +28,7 @@ export const Root: React.FC = () => {
       <Composition
         id="SwarmDemo"
         component={SwarmDemo}
-        durationInFrames={900}
+        durationInFrames={1521}
         fps={30}
         width={1920}
         height={1080}

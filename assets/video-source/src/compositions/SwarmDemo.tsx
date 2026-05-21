@@ -36,11 +36,11 @@ export const SwarmDemo: React.FC = () => {
         <SceneIntro />
       </Sequence>
 
-      <Sequence from={90} durationInFrames={675}>
+      <Sequence from={90} durationInFrames={1296}>
         <SceneDemo cursorTrack={cursorTrack} />
       </Sequence>
 
-      <Sequence from={765} durationInFrames={135}>
+      <Sequence from={1386} durationInFrames={135}>
         <SceneOutro />
       </Sequence>
     </AbsoluteFill>
