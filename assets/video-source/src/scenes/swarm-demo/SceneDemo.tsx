@@ -41,34 +41,18 @@ export const SceneDemo: React.FC<SceneDemoProps> = ({ cursorTrack }) => {
           justifyContent: "center",
         }}
       >
-        {/* Bezel */}
+        {/* Bezel — fills full composition frame, contains (no crop) the 1920×1080 recording */}
         <div
           style={{
             position: "relative",
-            borderRadius: 12,
-            overflow: "hidden",
+            width: "100%",
+            height: "100%",
             boxShadow: "0 0 0 1px rgba(255,255,255,0.06), 0 32px 80px rgba(0,0,0,0.8)",
-            width: 1920,
-            height: 1080,
           }}
         >
-          {/* Amber accent bar at top */}
-          <div
-            style={{
-              position: "absolute",
-              top: 0,
-              left: 0,
-              right: 0,
-              height: 2,
-              background: `linear-gradient(90deg, transparent, ${theme.accent}, transparent)`,
-              zIndex: 10,
-              opacity: 0.5,
-            }}
-          />
-
           <Video
             src={staticFile("swarm-demo.mp4")}
-            style={{ width: "100%", height: "100%", objectFit: "cover" }}
+            style={{ width: "100%", height: "100%", objectFit: "contain" }}
           />
 
           {/* Cursor overlay — uses real recorder coordinates */}
@@ -88,12 +72,12 @@ export const SceneDemo: React.FC<SceneDemoProps> = ({ cursorTrack }) => {
 
 // Timing: cursor arrives ~9 frames (~300ms) before the click frame.
 // Lower-third fires ~3 frames (~100ms) AFTER the event renders.
-// These timings are calibrated to the sample-cursor-track.json fixture.
+// These timings are calibrated to the People-tab recording.
 const LOWER_THIRDS: Array<{ start: number; end: number; text: string }> = [
-  { start: 33,  end: 100, text: "Task queue"        },
-  { start: 130, end: 200, text: "Agent picks it up" },
-  { start: 280, end: 370, text: "Working…"          },
-  { start: 460, end: 560, text: "Review complete"   },
+  { start: 30,  end: 120, text: "People tab"              },
+  { start: 150, end: 260, text: "Humans as first-class users" },
+  { start: 300, end: 420, text: "Linked identities"       },
+  { start: 460, end: 570, text: "Activity timeline"       },
 ];
 
 function LowerThird({ frame }: { frame: number }) {

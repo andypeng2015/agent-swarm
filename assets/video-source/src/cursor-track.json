@@ -1,0 +1,65 @@
+{
+  "version": "1",
+  "durationMs": 33437,
+  "viewport": {
+    "width": 1920,
+    "height": 1080
+  },
+  "theme": "light",
+  "events": [
+    {
+      "tsMs": 0,
+      "x": 960,
+      "y": 540,
+      "action": "move"
+    },
+    {
+      "tsMs": 5691,
+      "x": 960,
+      "y": 194,
+      "action": "hover"
+    },
+    {
+      "tsMs": 8888,
+      "x": 960,
+      "y": 346,
+      "action": "hover"
+    },
+    {
+      "tsMs": 9648,
+      "x": 960,
+      "y": 421,
+      "action": "hover"
+    },
+    {
+      "tsMs": 10422,
+      "x": 960,
+      "y": 497,
+      "action": "hover"
+    },
+    {
+      "tsMs": 16098,
+      "x": 672,
+      "y": 238,
+      "action": "hover"
+    },
+    {
+      "tsMs": 19470,
+      "x": 1574,
+      "y": 410,
+      "action": "hover"
+    },
+    {
+      "tsMs": 23596,
+      "x": 864,
+      "y": 540,
+      "action": "hover"
+    },
+    {
+      "tsMs": 24483,
+      "x": 864,
+      "y": 626,
+      "action": "hover"
+    }
+  ]
+}

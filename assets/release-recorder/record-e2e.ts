@@ -100,7 +100,7 @@ async function hover(selector: string, label?: string): Promise<{ x: number; y: 
 async function clickEl(selector: string, label?: string): Promise<void> {
   await moveTo(selector, label);
   await sleep(300); // cursor approach pause — timing is visible on screen
-  await $`agent-browser mouse click`;
+  await $`agent-browser mouse down`; await $`agent-browser mouse up`;
   cursorEvents.push({
     tsMs: Date.now() - recordingStartTs,
     x: cursorEvents[cursorEvents.length - 1]?.x ?? 960,
@@ -229,9 +229,9 @@ for (const sig of ["SIGINT", "SIGTERM"] as NodeJS.Signals[]) {
 // ---------------------------------------------------------------------------
 
 console.log(`🔴 Starting recording → ${RAW_OUT}`);
-// Pass viewport dimensions to agent-browser record start.
-// Default: 1920×1080. Override via --width / --height CLI flags.
-await $`agent-browser record start ${RAW_OUT} ${UI} --width ${WIDTH} --height ${HEIGHT}`;
+// Set viewport first, then start recording. The `set viewport` command persists across navigations.
+await $`agent-browser set viewport ${WIDTH} ${HEIGHT}`;
+await $`agent-browser record start ${RAW_OUT} ${UI}`;
 recording = true;
 recordingStartTs = Date.now();
 cursorEvents.push({ tsMs: 0, x: WIDTH / 2, y: HEIGHT / 2, action: "move" });
@@ -250,12 +250,15 @@ const jsInject = [
 await $`agent-browser eval ${jsInject}`;
 await sleep(300);
 
-// Force light mode (shadcn/next-themes stores preference in localStorage)
+// Force light mode.
+// The UI's use-theme.ts hook reads from localStorage key "agent-swarm-mode" (NOT "theme").
+// Default is "dark" — must set explicitly + remove the dark CSS class before first paint.
+// Also set OS-level media preference to light so CSS @media (prefers-color-scheme) is light.
 if (THEME === "light") {
+  await $`agent-browser set media light`;
   const lightModeJs = [
-    `localStorage.setItem('theme', 'light')`,
+    `localStorage.setItem('agent-swarm-mode', 'light')`,
     `document.documentElement.classList.remove('dark')`,
-    `document.documentElement.classList.add('light')`,
     `document.documentElement.style.colorScheme = 'light'`,
   ].join(";");
   await $`agent-browser eval ${lightModeJs}`;
@@ -263,144 +266,120 @@ if (THEME === "light") {
 }
 
 // ---------------------------------------------------------------------------
-// Scene 1: Tasks list — cursor hovers over a task row
+// Scene 1: Navigate to /people — landing on the People tab
 // ---------------------------------------------------------------------------
 
 const t0 = Date.now();
-console.log("📸 Scene 1: Tasks list");
-await $`agent-browser open ${UI}/tasks`;
-await sleep(1200);
+console.log("📸 Scene 1: Navigate to People tab");
+await $`agent-browser open ${UI}/people`;
+await sleep(2000);
 
-// Hover over the first task row — use agent-browser get box on the row selector
+// Ensure light mode is applied after React hydrates (the hook reads localStorage on mount)
+if (THEME === "light") {
+  const lightModeReapply = [
+    `localStorage.setItem('agent-swarm-mode', 'light')`,
+    `document.documentElement.classList.remove('dark')`,
+    `document.documentElement.style.colorScheme = 'light'`,
+  ].join(";");
+  await $`agent-browser eval ${lightModeReapply}`;
+  await sleep(500);
+}
+
+// Cursor moves toward the People page header
+await $`agent-browser mouse move ${Math.round(WIDTH * 0.5)} ${Math.round(HEIGHT * 0.18)}`;
+cursorEvents.push({ tsMs: Date.now() - recordingStartTs, x: Math.round(WIDTH * 0.5), y: Math.round(HEIGHT * 0.18), action: "hover" });
+await linger(2500);
+console.log(`  ✓ ${((Date.now() - t0) / 1000).toFixed(1)}s`);
+
+// ---------------------------------------------------------------------------
+// Scene 2: Browse the People list — cursor scans rows
+// ---------------------------------------------------------------------------
+
+console.log("📸 Scene 2: People list — scan rows");
+// Cursor moves down the list scanning rows
+for (let i = 0; i < 3; i++) {
+  const py = Math.round(HEIGHT * (0.32 + i * 0.07));
+  await $`agent-browser mouse move ${Math.round(WIDTH * 0.5)} ${py}`;
+  cursorEvents.push({ tsMs: Date.now() - recordingStartTs, x: Math.round(WIDTH * 0.5), y: py, action: "hover" });
+  await sleep(600);
+}
+await linger(2000);
+console.log(`  ✓ ${((Date.now() - t0) / 1000).toFixed(1)}s`);
+
+// ---------------------------------------------------------------------------
+// Scene 3: Click the first person row to open their detail
+// ---------------------------------------------------------------------------
+
+console.log("📸 Scene 3: Click person → detail page");
 try {
-  await hover("[data-testid='task-row']:first-child, .task-row:first-child, tr:first-child", "task row");
+  // Try clicking first row of the people table
+  await clickEl("[data-rowindex='0'] .ag-cell:first-child, .ag-row-first .ag-cell:first-child", "first person row");
+  await sleep(1800);
 } catch {
-  // Fallback: move to center of the task list area
-  await $`agent-browser mouse move ${Math.round(WIDTH * 0.5)} ${Math.round(HEIGHT * 0.4)}`;
-  cursorEvents.push({ tsMs: Date.now() - recordingStartTs, x: Math.round(WIDTH * 0.5), y: Math.round(HEIGHT * 0.4), action: "hover" });
+  // Navigate to the demo user's detail page directly
+  await $`agent-browser open ${UI}/people/${demoUserId}`;
+  await sleep(1800);
+}
+// Cursor moves toward the person's profile heading
+await $`agent-browser mouse move ${Math.round(WIDTH * 0.35)} ${Math.round(HEIGHT * 0.22)}`;
+cursorEvents.push({ tsMs: Date.now() - recordingStartTs, x: Math.round(WIDTH * 0.35), y: Math.round(HEIGHT * 0.22), action: "hover" });
+await linger(2500);
+console.log(`  ✓ ${((Date.now() - t0) / 1000).toFixed(1)}s`);
+
+// ---------------------------------------------------------------------------
+// Scene 4: Person detail — hover over identities section
+// ---------------------------------------------------------------------------
+
+console.log("📸 Scene 4: Person detail — linked identities");
+// Cursor moves toward the identities section in the rail
+try {
+  await hover("[data-testid='identities-section'], [class*='identit']", "identities section");
+} catch {
+  await $`agent-browser mouse move ${Math.round(WIDTH * 0.82)} ${Math.round(HEIGHT * 0.38)}`;
+  cursorEvents.push({ tsMs: Date.now() - recordingStartTs, x: Math.round(WIDTH * 0.82), y: Math.round(HEIGHT * 0.38), action: "hover" });
 }
 await linger(3000);
 console.log(`  ✓ ${((Date.now() - t0) / 1000).toFixed(1)}s`);
 
 // ---------------------------------------------------------------------------
-// Scene 2: Task detail — navigate, cursor moves toward task title
+// Scene 5: Activity timeline — cursor scans events
 // ---------------------------------------------------------------------------
 
-console.log("📸 Scene 2: Task detail — pending");
-await $`agent-browser open ${UI}/tasks/${taskId}`;
-await sleep(1500);
-
-// Cursor moves toward the task status badge (real position)
+console.log("📸 Scene 5: Activity timeline");
 try {
-  await hover("[data-testid='task-status'], .task-status, [class*='status']", "status badge");
+  await hover("[data-testid='events-table'], [class*='event'], .ag-row", "activity timeline");
 } catch {
-  await $`agent-browser mouse move ${Math.round(WIDTH * 0.35)} ${Math.round(HEIGHT * 0.25)}`;
-  cursorEvents.push({ tsMs: Date.now() - recordingStartTs, x: Math.round(WIDTH * 0.35), y: Math.round(HEIGHT * 0.25), action: "hover" });
-}
-await linger(2500);
-console.log(`  ✓ ${((Date.now() - t0) / 1000).toFixed(1)}s`);
-
-// ---------------------------------------------------------------------------
-// Scene 3: pending → in_progress
-// ---------------------------------------------------------------------------
-
-console.log("📸 Scene 3: in_progress — agent claimed");
-dbRun(db, "UPDATE agent_tasks SET status='in_progress', lastUpdatedAt=? WHERE id=?", new Date().toISOString(), taskId);
-await invalidateTask(taskId);
-
-// Cursor moves toward the IN PROGRESS badge after it appears (~100ms delay)
-await sleep(150); // wait for event to render on screen
-try {
-  await hover("[data-testid='task-status'], .task-status, [class*='status']", "IN PROGRESS badge");
-} catch {
-  await $`agent-browser mouse move ${Math.round(WIDTH * 0.35)} ${Math.round(HEIGHT * 0.27)}`;
-  cursorEvents.push({ tsMs: Date.now() - recordingStartTs, x: Math.round(WIDTH * 0.35), y: Math.round(HEIGHT * 0.27), action: "hover" });
-}
-await linger(2500);
-console.log(`  ✓ ${((Date.now() - t0) / 1000).toFixed(1)}s`);
-
-// ---------------------------------------------------------------------------
-// Scene 4: Progress updates — cursor near progress text
-// ---------------------------------------------------------------------------
-
-const progressUpdates = [
-  "🔍 Scanning PR diff for authentication changes...",
-  "⚠️  Found 2 potential issues — checking token expiry and CSRF headers",
-  "✅ Review complete — writing final report",
-];
-
-for (const [idx, msg] of progressUpdates.entries()) {
-  console.log(`📸 Scene 4.${idx + 1}: progress update`);
-  dbRun(db, "UPDATE agent_tasks SET progress=?, lastUpdatedAt=? WHERE id=?", msg, new Date().toISOString(), taskId);
-  await invalidateTask(taskId);
-  await sleep(150); // let the progress text render
-  // Cursor drifts toward the progress text area after it updates
-  try {
-    await hover("[data-testid='task-progress'], .task-progress, [class*='progress']", "progress text");
-  } catch {
-    const py = Math.round(HEIGHT * (0.38 + idx * 0.02));
-    await $`agent-browser mouse move ${Math.round(WIDTH * 0.36)} ${py}`;
-    cursorEvents.push({ tsMs: Date.now() - recordingStartTs, x: Math.round(WIDTH * 0.36), y: py, action: "hover" });
+  // Cursor drifts toward the main body (events table area)
+  for (let i = 0; i < 2; i++) {
+    const py = Math.round(HEIGHT * (0.5 + i * 0.08));
+    await $`agent-browser mouse move ${Math.round(WIDTH * 0.45)} ${py}`;
+    cursorEvents.push({ tsMs: Date.now() - recordingStartTs, x: Math.round(WIDTH * 0.45), y: py, action: "hover" });
+    await sleep(700);
   }
-  await linger(2200);
-  console.log(`  ✓ ${((Date.now() - t0) / 1000).toFixed(1)}s`);
 }
-
-// ---------------------------------------------------------------------------
-// Scene 5: Task completes — cursor moves toward output section
-// ---------------------------------------------------------------------------
-
-console.log("📸 Scene 5: completed with output");
-const output = [
-  "Security review of PR #513 (release-recorder pipeline):",
-  "",
-  "RESULT: ✅ APPROVED — 2 low-severity findings:",
-  "  1. Token expiry not validated on WebM upload endpoint",
-  "     → Non-critical: local dev tool, no external auth gate needed",
-  "  2. Missing CSRF header on /api/tasks POST",
-  "     → Mitigated by mandatory Bearer token requirement",
-  "",
-  "No blocking issues. Safe to merge.",
-].join("\n");
-
-dbRun(
-  db,
-  `UPDATE agent_tasks SET status='completed', output=?, progress=NULL, finishedAt=?, lastUpdatedAt=? WHERE id=?`,
-  output, new Date().toISOString(), new Date().toISOString(), taskId,
-);
-await invalidateTask(taskId);
-await sleep(150); // let COMPLETED state render
-// Cursor moves toward the output section AFTER it appears
-try {
-  await hover("[data-testid='task-output'], .task-output, [class*='output']", "output section");
-} catch {
-  await $`agent-browser mouse move ${Math.round(WIDTH * 0.36)} ${Math.round(HEIGHT * 0.5)}`;
-  cursorEvents.push({ tsMs: Date.now() - recordingStartTs, x: Math.round(WIDTH * 0.36), y: Math.round(HEIGHT * 0.5), action: "hover" });
-}
-await linger(4500);
+await linger(3500);
 console.log(`  ✓ ${((Date.now() - t0) / 1000).toFixed(1)}s`);
 
 // ---------------------------------------------------------------------------
-// Scene 6: Back to tasks list — cursor clicks the back link
+// Scene 6: Back to People list — cursor hovers sidebar "People" link
 // ---------------------------------------------------------------------------
 
-console.log("📸 Scene 6: back to tasks list");
+console.log("📸 Scene 6: Back to People list via sidebar");
 try {
-  // Move to back link 300ms before clicking (timing is intentional)
-  await moveTo("[data-testid='back-link'], a[href='/tasks'], [class*='back']", "back to tasks link");
+  await moveTo("a[href='/people'], nav a[href='/people']", "People sidebar link");
   await sleep(300);
-  await $`agent-browser mouse click`;
+  await $`agent-browser mouse down`; await $`agent-browser mouse up`;
   cursorEvents.push({
     tsMs: Date.now() - recordingStartTs,
-    x: cursorEvents[cursorEvents.length - 1]?.x ?? Math.round(WIDTH * 0.14),
-    y: cursorEvents[cursorEvents.length - 1]?.y ?? Math.round(HEIGHT * 0.22),
+    x: cursorEvents[cursorEvents.length - 1]?.x ?? Math.round(WIDTH * 0.10),
+    y: cursorEvents[cursorEvents.length - 1]?.y ?? Math.round(HEIGHT * 0.35),
     action: "click",
   });
 } catch {
-  await $`agent-browser open ${UI}/tasks`;
+  await $`agent-browser open ${UI}/people`;
 }
 await sleep(1000);
-await linger(2500);
+await linger(2000);
 console.log(`  total: ${((Date.now() - t0) / 1000).toFixed(1)}s`);
 
 // ---------------------------------------------------------------------------
