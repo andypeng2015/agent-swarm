@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { z } from "zod";
-import { getRootTaskChain, getTaskById, listRecentSessions } from "../be/db";
+import { countSessions, getRootTaskChain, getTaskById, listRecentSessions } from "../be/db";
 import { route } from "./route-def";
 import { json, jsonError } from "./utils";
 
@@ -81,7 +81,19 @@ export async function handleSessions(
       parsed.query.fields === "full"
         ? listRecentSessions(baseOpts)
         : listRecentSessions({ ...baseOpts, slim: true });
-    json(res, { sessions });
+    // Filter-aware total: same `source`/`q`/`requestedByUserId` WHERE as the
+    // list query, so the UI pager reflects the filtered result set.
+    const total = countSessions({
+      source: sources,
+      q: parsed.query.q,
+      requestedByUserId: parsed.query.requestedByUserId,
+    });
+    json(res, {
+      sessions,
+      total,
+      limit: parsed.query.limit ?? 25,
+      offset: parsed.query.offset ?? 0,
+    });
     return true;
   }
 

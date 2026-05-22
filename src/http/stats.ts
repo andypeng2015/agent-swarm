@@ -7,6 +7,7 @@ import {
   getConcurrentContext,
   getLogsByAgentId,
   getScheduledTasks,
+  getSwarmMetrics,
   getTaskStats,
 } from "../be/db";
 import type { AgentLog } from "../types";
@@ -38,6 +39,19 @@ const getStats = route({
   tags: ["Stats"],
   responses: {
     200: { description: "Agent and task statistics" },
+  },
+});
+
+const getMetrics = route({
+  method: "get",
+  path: "/api/metrics",
+  pattern: ["api", "metrics"],
+  summary: "Lightweight swarm-wide counts",
+  description:
+    "Single JSON object of cheap `COUNT(*)` metrics — tasks (by status), agents (by status), workflows (total + enabled), pages, active sessions, skills. Use this instead of fetching full list payloads just to count. Powers UI footers/sidebars and MCP context.",
+  tags: ["Stats"],
+  responses: {
+    200: { description: "Swarm metrics counts" },
   },
 });
 
@@ -133,6 +147,11 @@ export async function handleStats(
     };
 
     json(res, stats);
+    return true;
+  }
+
+  if (getMetrics.match(req.method, pathSegments)) {
+    json(res, getSwarmMetrics());
     return true;
   }
 

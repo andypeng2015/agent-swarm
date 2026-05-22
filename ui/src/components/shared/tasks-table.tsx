@@ -474,6 +474,13 @@ export interface TasksTableProps {
    * scrolling page so it sizes to its content.
    */
   domLayout?: "normal" | "autoHeight";
+  /**
+   * AG Grid's built-in client-side pager. Defaults to `true`. Set `false` when
+   * the parent already does server-side offset pagination (e.g. the Tasks
+   * page) — otherwise the two pagers stack and AG Grid silently caps the view
+   * at whatever the server returned for the current page.
+   */
+  pagination?: boolean;
 }
 
 export function TasksTable({
@@ -484,6 +491,7 @@ export function TasksTable({
   columns,
   emptyMessage = "No tasks found",
   domLayout,
+  pagination,
 }: TasksTableProps) {
   // Build a `userId → User` lookup for the "Requested by" column. We skip the
   // network call entirely on swarms that don't support the column — the
@@ -636,6 +644,7 @@ export function TasksTable({
       loading={loading}
       emptyMessage={emptyMessage}
       domLayout={domLayout}
+      pagination={pagination}
     />
   );
 }

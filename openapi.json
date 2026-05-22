@@ -8996,6 +8996,25 @@
         }
       }
     },
+    "/api/metrics": {
+      "get": {
+        "summary": "Lightweight swarm-wide counts",
+        "description": "Single JSON object of cheap `COUNT(*)` metrics — tasks (by status), agents (by status), workflows (total + enabled), pages, active sessions, skills. Use this instead of fetching full list payloads just to count. Powers UI footers/sidebars and MCP context.",
+        "tags": [
+          "Stats"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Swarm metrics counts"
+          }
+        }
+      }
+    },
     "/api/services": {
       "get": {
         "summary": "List all registered services",

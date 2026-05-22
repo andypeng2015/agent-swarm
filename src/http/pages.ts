@@ -1,6 +1,8 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { z } from "zod";
 import {
+  countAllPages,
+  countPagesByAgent,
   createPage,
   deletePage,
   getPage,
@@ -436,16 +438,23 @@ export async function handlePages(
     // List responses default to slim (no `body`); `?fields=full` restores it.
     const full = parsed.query.fields === "full";
     let pages: Array<Page | PageSummary>;
+    let total: number;
     if (parsed.query.agentId) {
       pages = full
         ? listPagesByAgent(parsed.query.agentId, limit, offset)
         : listPagesByAgent(parsed.query.agentId, limit, offset, { slim: true });
+      total = countPagesByAgent(parsed.query.agentId);
     } else {
       pages = full ? listAllPages(limit, offset) : listAllPages(limit, offset, { slim: true });
+      total = countAllPages();
     }
     json(res, {
       pages: pages.map(withShareUrls),
-      total: pages.length,
+      // Filter-aware total (real row count, not the current page's length) so
+      // the UI pager reflects all pages, not just what this request returned.
+      total,
+      limit,
+      offset,
     });
     return true;
   }

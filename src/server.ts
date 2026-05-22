@@ -9,6 +9,7 @@ import { registerCreateChannelTool } from "./tools/create-channel";
 import { registerCreatePageTool } from "./tools/create-page";
 import { registerDbQueryTool } from "./tools/db-query";
 import { registerDeleteChannelTool } from "./tools/delete-channel";
+import { registerGetMetricsTool } from "./tools/get-metrics";
 import { registerGetSwarmTool } from "./tools/get-swarm";
 import { registerGetTaskDetailsTool } from "./tools/get-task-details";
 import { registerGetTasksTool } from "./tools/get-tasks";
@@ -177,6 +178,7 @@ export function createServer() {
   registerPollTaskTool(server);
   registerGetSwarmTool(server);
   registerGetTasksTool(server);
+  registerGetMetricsTool(server);
   registerSendTaskTool(server);
   registerGetTaskDetailsTool(server);
   registerStoreProgressTool(server);
