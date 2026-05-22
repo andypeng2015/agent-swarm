@@ -9,6 +9,8 @@ import {
   computeActivityScores,
   MAX_NODE_HEIGHT,
   MAX_NODE_WIDTH,
+  MIN_NODE_HEIGHT,
+  MIN_NODE_WIDTH,
   nodeSizeFromScore,
 } from "@/api/hooks/use-agent-activity";
 import { EmptyState } from "@/components/shared/empty-state";
@@ -58,9 +60,18 @@ function buildLayout(rows: AgentActivityRow[]): LayoutResult {
 
   const scores = computeActivityScores(rows);
 
-  // Sized node descriptors keyed by agent id.
+  // Sized node descriptors keyed by agent id. The lead is pinned to the
+  // baseline (min) size so its box stays dimensionally consistent with the
+  // worker nodes — the lead naturally scores highest on 24h activity and would
+  // otherwise balloon to the max size. Visual emphasis comes from the crown
+  // icon + accent handle, not an oversized box. Keeping it at the min size
+  // also keeps the dagre layout (which reads these same dimensions) correct.
   const sized = new Map<string, { width: number; height: number; row: AgentActivityRow }>();
   for (const r of rows) {
+    if (r === lead) {
+      sized.set(r.agent.id, { width: MIN_NODE_WIDTH, height: MIN_NODE_HEIGHT, row: r });
+      continue;
+    }
     const score = scores.get(r.agent.id) ?? 0;
     sized.set(r.agent.id, { ...nodeSizeFromScore(score), row: r });
   }
