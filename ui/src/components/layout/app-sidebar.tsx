@@ -1,5 +1,4 @@
 import {
-  Activity,
   BarChart3,
   BookOpen,
   Brain,
@@ -18,8 +17,10 @@ import {
 } from "lucide-react";
 import { useRef, useState } from "react";
 import { NavLink, useLocation } from "react-router-dom";
+import { useDashboardCosts } from "@/api/hooks/use-costs";
 import { useFeatureGate } from "@/api/hooks/use-feature-gate";
 import { useMetrics } from "@/api/hooks/use-metrics";
+import { useUsers } from "@/api/hooks/use-users";
 import type { UserRole } from "@/api/types";
 import { useStatusContext } from "@/app/status-context";
 import { UserSwitcher } from "@/components/identity/user-switcher";
@@ -33,11 +34,12 @@ import {
   SidebarGroupContent,
   SidebarHeader,
   SidebarMenu,
+  SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarRail,
 } from "@/components/ui/sidebar";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { formatCost } from "@/lib/cost-format";
 import { cn, formatCompactNumber } from "@/lib/utils";
 import { SwarmSwitcher } from "./swarm-switcher";
 
@@ -148,6 +150,12 @@ const FLYOUT_CLOSE_DELAY = 120;
 interface FooterNavItemProps {
   item: FooterItem;
   isActive: boolean;
+  /**
+   * Optional right-aligned count rendered as a `SidebarMenuBadge`. Only set
+   * when the live-counts feature (API ≥1.82) is enabled and the value is
+   * resolved; `undefined` means render no badge.
+   */
+  badge?: string;
 }
 
 /**
@@ -156,7 +164,7 @@ interface FooterNavItemProps {
  * right of the sidebar; the trigger itself remains a NavLink so a click still
  * navigates. Items without a flyout render a plain link.
  */
-function FooterNavItem({ item, isActive }: FooterNavItemProps) {
+function FooterNavItem({ item, isActive, badge }: FooterNavItemProps) {
   const [open, setOpen] = useState(false);
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -181,12 +189,22 @@ function FooterNavItem({ item, isActive }: FooterNavItemProps) {
     </SidebarMenuButton>
   );
 
+  // Right-aligned live count — auto-hidden in icon-collapsed mode by the
+  // primitive's own `group-data-[collapsible=icon]:hidden`.
+  const badgeEl = badge != null ? <SidebarMenuBadge>{badge}</SidebarMenuBadge> : null;
+
   if (!item.flyout) {
-    return <SidebarMenuItem>{link}</SidebarMenuItem>;
+    return (
+      <SidebarMenuItem>
+        {link}
+        {badgeEl}
+      </SidebarMenuItem>
+    );
   }
 
   return (
     <SidebarMenuItem>
+      {badgeEl}
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverAnchor asChild>
           <div
@@ -235,98 +253,6 @@ function FooterNavItem({ item, isActive }: FooterNavItemProps) {
   );
 }
 
-/** A single at-a-glance metric: icon + label + value. */
-interface IndicatorSpec {
-  /** Stable key + tooltip identity. */
-  key: string;
-  icon: typeof Activity;
-  label: string;
-  value: string;
-}
-
-/**
- * Compact at-a-glance metrics strip rendered just below the sidebar header.
- *
- * Reads `GET /api/metrics` via `useMetrics()`. The hook returns `null` for any
- * non-2xx (older API servers predate the route) and `undefined` while the
- * first fetch is in flight — in both cases this component renders nothing, so
- * the sidebar looks exactly as it did before.
- *
- * Only metrics the endpoint actually returns are shown: running tasks
- * (`tasks.by_status.in_progress`) and total agents (`agents.total`). The
- * endpoint exposes no cost/usage figure, so a daily-usage indicator is
- * deliberately omitted rather than fabricated from another source.
- *
- * Expanded: icon + label + right-aligned value. Icon-collapsed: just the
- * icons, each with a tooltip carrying "<label>: <value>" — mirroring how the
- * nav items handle collapsed mode.
- */
-function SidebarIndicators() {
-  const { data: metrics } = useMetrics();
-  if (!metrics) return null;
-
-  const indicators: IndicatorSpec[] = [];
-
-  const runningTasks = metrics.tasks?.by_status?.in_progress;
-  if (typeof runningTasks === "number") {
-    indicators.push({
-      key: "running-tasks",
-      icon: Activity,
-      label: "Running",
-      value: formatCompactNumber(runningTasks),
-    });
-  }
-
-  const totalAgents = metrics.agents?.total;
-  if (typeof totalAgents === "number") {
-    indicators.push({
-      key: "total-agents",
-      icon: Contact,
-      label: "Agents",
-      value: formatCompactNumber(totalAgents),
-    });
-  }
-
-  if (indicators.length === 0) return null;
-
-  return (
-    <SidebarGroup className="py-2 group-data-[collapsible=icon]:px-0">
-      <SidebarGroupContent>
-        {/* Expanded: labeled rows. Hidden in icon-collapsed mode. */}
-        <div className="flex flex-col gap-1 group-data-[collapsible=icon]:hidden">
-          {indicators.map((ind) => (
-            <div
-              key={ind.key}
-              className="flex items-center gap-2 rounded-md px-2 py-1 text-xs text-sidebar-foreground/70"
-            >
-              <ind.icon className="size-3.5 shrink-0 text-sidebar-foreground/50" />
-              <span className="truncate">{ind.label}</span>
-              <span className="ml-auto font-medium tabular-nums text-sidebar-foreground">
-                {ind.value}
-              </span>
-            </div>
-          ))}
-        </div>
-        {/* Icon-collapsed: icons only, value surfaced via tooltip. */}
-        <div className="hidden flex-col items-center gap-1 group-data-[collapsible=icon]:flex">
-          {indicators.map((ind) => (
-            <Tooltip key={ind.key}>
-              <TooltipTrigger asChild>
-                <div className="flex items-center justify-center rounded-md p-1.5 text-sidebar-foreground/60">
-                  <ind.icon className="size-4" />
-                </div>
-              </TooltipTrigger>
-              <TooltipContent side="right">
-                {ind.label}: {ind.value}
-              </TooltipContent>
-            </Tooltip>
-          ))}
-        </div>
-      </SidebarGroupContent>
-    </SidebarGroup>
-  );
-}
-
 export function AppSidebar() {
   const location = useLocation();
   const { data: status } = useStatusContext();
@@ -336,9 +262,37 @@ export function AppSidebar() {
     "1.76.0": useFeatureGate("1.76.0"), // Sessions
     "1.79.0": useFeatureGate("1.79.0"), // Pages
     "1.80.0": useFeatureGate("1.80.0"), // People
+    "1.82.0": useFeatureGate("1.82.0"), // Live nav-item counts
   };
   const isGated = (item: NavItem) =>
     !!item.gate && gates[item.gate.minVersion]?.supported === false;
+
+  // Live counts surfaced as right-aligned badges on existing nav items.
+  // Gated entirely on API ≥1.82 — the backing queries don't even fire on
+  // older servers, and `badges` stays empty so nav items render unchanged.
+  const countsEnabled = gates["1.82.0"].supported;
+  const { data: metrics } = useMetrics({ enabled: countsEnabled });
+  const { data: dashboardCosts } = useDashboardCosts({ enabled: countsEnabled });
+  const { data: users } = useUsers();
+
+  // Map of `nav path -> resolved badge string`. An entry is present only when
+  // the value is loaded and worth showing; absence means "no badge".
+  const badges: Record<string, string> = {};
+  if (countsEnabled) {
+    const runningTasks = metrics?.tasks?.by_status?.in_progress;
+    // Show running tasks only when there's at least one — skip a "0" chip.
+    if (typeof runningTasks === "number" && runningTasks > 0) {
+      badges["/tasks"] = formatCompactNumber(runningTasks);
+    }
+    if (Array.isArray(users)) {
+      badges["/people"] = formatCompactNumber(users.length);
+    }
+    const costToday = dashboardCosts?.costToday;
+    if (typeof costToday === "number") {
+      badges["/usage"] = formatCost(costToday, { precision: "compact" });
+    }
+  }
+
   const identityName = status?.identity.name ?? "Agent Swarm";
   const identityLogo = status?.identity.logo_url ?? "/logo.png";
   const brandColor = status?.identity.brand_color ?? null;
@@ -375,7 +329,6 @@ export function AppSidebar() {
       </SidebarHeader>
 
       <SidebarContent>
-        <SidebarIndicators />
         {navGroups.map((group) => {
           const items = group.items;
           if (items.length === 0) return null;
@@ -399,6 +352,7 @@ export function AppSidebar() {
                             : location.pathname.startsWith(item.path);
                         const gated = isGated(item);
                         if (gated) return null;
+                        const badge = badges[item.path];
                         return (
                           <SidebarMenuItem key={item.path}>
                             <SidebarMenuButton asChild isActive={isActive}>
@@ -407,6 +361,8 @@ export function AppSidebar() {
                                 <span>{item.title}</span>
                               </NavLink>
                             </SidebarMenuButton>
+                            {/* Live count — auto-hidden when icon-collapsed. */}
+                            {badge != null && <SidebarMenuBadge>{badge}</SidebarMenuBadge>}
                           </SidebarMenuItem>
                         );
                       })}
@@ -454,6 +410,7 @@ export function AppSidebar() {
                 key={item.path}
                 item={item}
                 isActive={location.pathname.startsWith(item.path)}
+                badge={badges[item.path]}
               />
             );
           })}
