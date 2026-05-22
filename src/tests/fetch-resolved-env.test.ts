@@ -9,6 +9,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 
 let server: ReturnType<typeof Bun.serve>;
 let testUrl: string;
+const nativeFetch = globalThis.fetch.bind(globalThis);
 
 // Configurable response for the mock server
 let mockResponse: { status: number; body: unknown } = {
@@ -56,7 +57,7 @@ async function fetchResolvedEnv(
     if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
 
     const url = `${apiUrl}/api/config/resolved?agentId=${encodeURIComponent(agentId)}&includeSecrets=true`;
-    const response = await fetch(url, { headers });
+    const response = await nativeFetch(url, { headers });
 
     if (!response.ok) {
       return { ...baseEnv };
