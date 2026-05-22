@@ -1,4 +1,5 @@
 import {
+  Activity,
   BarChart3,
   BookOpen,
   Brain,
@@ -18,6 +19,7 @@ import {
 import { useRef, useState } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import { useFeatureGate } from "@/api/hooks/use-feature-gate";
+import { useMetrics } from "@/api/hooks/use-metrics";
 import type { UserRole } from "@/api/types";
 import { useStatusContext } from "@/app/status-context";
 import { UserSwitcher } from "@/components/identity/user-switcher";
@@ -35,7 +37,8 @@ import {
   SidebarMenuItem,
   SidebarRail,
 } from "@/components/ui/sidebar";
-import { cn } from "@/lib/utils";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { cn, formatCompactNumber } from "@/lib/utils";
 import { SwarmSwitcher } from "./swarm-switcher";
 
 interface NavItem {
@@ -232,6 +235,98 @@ function FooterNavItem({ item, isActive }: FooterNavItemProps) {
   );
 }
 
+/** A single at-a-glance metric: icon + label + value. */
+interface IndicatorSpec {
+  /** Stable key + tooltip identity. */
+  key: string;
+  icon: typeof Activity;
+  label: string;
+  value: string;
+}
+
+/**
+ * Compact at-a-glance metrics strip rendered just below the sidebar header.
+ *
+ * Reads `GET /api/metrics` via `useMetrics()`. The hook returns `null` for any
+ * non-2xx (older API servers predate the route) and `undefined` while the
+ * first fetch is in flight — in both cases this component renders nothing, so
+ * the sidebar looks exactly as it did before.
+ *
+ * Only metrics the endpoint actually returns are shown: running tasks
+ * (`tasks.by_status.in_progress`) and total agents (`agents.total`). The
+ * endpoint exposes no cost/usage figure, so a daily-usage indicator is
+ * deliberately omitted rather than fabricated from another source.
+ *
+ * Expanded: icon + label + right-aligned value. Icon-collapsed: just the
+ * icons, each with a tooltip carrying "<label>: <value>" — mirroring how the
+ * nav items handle collapsed mode.
+ */
+function SidebarIndicators() {
+  const { data: metrics } = useMetrics();
+  if (!metrics) return null;
+
+  const indicators: IndicatorSpec[] = [];
+
+  const runningTasks = metrics.tasks?.by_status?.in_progress;
+  if (typeof runningTasks === "number") {
+    indicators.push({
+      key: "running-tasks",
+      icon: Activity,
+      label: "Running",
+      value: formatCompactNumber(runningTasks),
+    });
+  }
+
+  const totalAgents = metrics.agents?.total;
+  if (typeof totalAgents === "number") {
+    indicators.push({
+      key: "total-agents",
+      icon: Contact,
+      label: "Agents",
+      value: formatCompactNumber(totalAgents),
+    });
+  }
+
+  if (indicators.length === 0) return null;
+
+  return (
+    <SidebarGroup className="py-2 group-data-[collapsible=icon]:px-0">
+      <SidebarGroupContent>
+        {/* Expanded: labeled rows. Hidden in icon-collapsed mode. */}
+        <div className="flex flex-col gap-1 group-data-[collapsible=icon]:hidden">
+          {indicators.map((ind) => (
+            <div
+              key={ind.key}
+              className="flex items-center gap-2 rounded-md px-2 py-1 text-xs text-sidebar-foreground/70"
+            >
+              <ind.icon className="size-3.5 shrink-0 text-sidebar-foreground/50" />
+              <span className="truncate">{ind.label}</span>
+              <span className="ml-auto font-medium tabular-nums text-sidebar-foreground">
+                {ind.value}
+              </span>
+            </div>
+          ))}
+        </div>
+        {/* Icon-collapsed: icons only, value surfaced via tooltip. */}
+        <div className="hidden flex-col items-center gap-1 group-data-[collapsible=icon]:flex">
+          {indicators.map((ind) => (
+            <Tooltip key={ind.key}>
+              <TooltipTrigger asChild>
+                <div className="flex items-center justify-center rounded-md p-1.5 text-sidebar-foreground/60">
+                  <ind.icon className="size-4" />
+                </div>
+              </TooltipTrigger>
+              <TooltipContent side="right">
+                {ind.label}: {ind.value}
+              </TooltipContent>
+            </Tooltip>
+          ))}
+        </div>
+      </SidebarGroupContent>
+    </SidebarGroup>
+  );
+}
+
 export function AppSidebar() {
   const location = useLocation();
   const { data: status } = useStatusContext();
@@ -280,6 +375,7 @@ export function AppSidebar() {
       </SidebarHeader>
 
       <SidebarContent>
+        <SidebarIndicators />
         {navGroups.map((group) => {
           const items = group.items;
           if (items.length === 0) return null;

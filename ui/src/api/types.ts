@@ -1448,3 +1448,18 @@ export interface PagesListResponse {
   pages: PageListItem[];
   total: number;
 }
+
+/**
+ * Lightweight swarm-wide counts from `GET /api/metrics` (API >= the
+ * generic-metrics release). Pure `COUNT(*)` aggregates — no cost/usage data.
+ * Older API servers don't expose this route; the client returns `null` for a
+ * 404 so consumers hide the indicators rather than erroring.
+ */
+export interface SwarmMetrics {
+  tasks: { total: number; by_status: Record<string, number> };
+  agents: { total: number; by_status: Record<string, number> };
+  workflows: { total: number; enabled: number };
+  pages: { total: number };
+  sessions: { active: number };
+  skills: { total: number };
+}
