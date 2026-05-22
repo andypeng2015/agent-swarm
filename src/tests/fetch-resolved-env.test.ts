@@ -11,11 +11,13 @@ let server: ReturnType<typeof Bun.serve>;
 let testUrl: string;
 const nativeFetch = globalThis.fetch.bind(globalThis);
 
-// Configurable response for the mock server
-let mockResponse: { status: number; body: unknown } = {
+type MockResponse = { status: number; body: unknown };
+
+const defaultMockResponse: MockResponse = {
   status: 200,
   body: { configs: [] },
 };
+const mockResponsesByAgentId = new Map<string, MockResponse>();
 
 beforeAll(() => {
   server = Bun.serve({
@@ -24,6 +26,8 @@ beforeAll(() => {
       const url = new URL(req.url);
 
       if (url.pathname === "/api/config/resolved") {
+        const agentId = url.searchParams.get("agentId") ?? "";
+        const mockResponse = mockResponsesByAgentId.get(agentId) ?? defaultMockResponse;
         return new Response(JSON.stringify(mockResponse.body), {
           status: mockResponse.status,
           headers: { "Content-Type": "application/json" },
@@ -94,7 +98,8 @@ describe("fetchResolvedEnv", () => {
   });
 
   test("merges API config over baseEnv", async () => {
-    mockResponse = {
+    const agentId = "agent-merge";
+    mockResponsesByAgentId.set(agentId, {
       status: 200,
       body: {
         configs: [
@@ -102,10 +107,10 @@ describe("fetchResolvedEnv", () => {
           { key: "OVERRIDE_VAR", value: "api-wins" },
         ],
       },
-    };
+    });
 
     const baseEnv = { EXISTING: "keep", OVERRIDE_VAR: "original" };
-    const result = await fetchResolvedEnv(testUrl, "key", "agent-1", baseEnv);
+    const result = await fetchResolvedEnv(testUrl, "key", agentId, baseEnv);
 
     expect(result.EXISTING).toBe("keep");
     expect(result.NEW_VAR).toBe("from-api");
@@ -113,18 +118,20 @@ describe("fetchResolvedEnv", () => {
   });
 
   test("returns baseEnv when API returns empty configs", async () => {
-    mockResponse = { status: 200, body: { configs: [] } };
+    const agentId = "agent-empty";
+    mockResponsesByAgentId.set(agentId, { status: 200, body: { configs: [] } });
 
     const baseEnv = { EXISTING: "value" };
-    const result = await fetchResolvedEnv(testUrl, "key", "agent-1", baseEnv);
+    const result = await fetchResolvedEnv(testUrl, "key", agentId, baseEnv);
     expect(result).toEqual({ EXISTING: "value" });
   });
 
   test("returns baseEnv when API returns non-200", async () => {
-    mockResponse = { status: 500, body: { error: "server error" } };
+    const agentId = "agent-500";
+    mockResponsesByAgentId.set(agentId, { status: 500, body: { error: "server error" } });
 
     const baseEnv = { EXISTING: "value" };
-    const result = await fetchResolvedEnv(testUrl, "key", "agent-1", baseEnv);
+    const result = await fetchResolvedEnv(testUrl, "key", agentId, baseEnv);
     expect(result).toEqual({ EXISTING: "value" });
   });
 
@@ -135,13 +142,14 @@ describe("fetchResolvedEnv", () => {
   });
 
   test("does not mutate the baseEnv object", async () => {
-    mockResponse = {
+    const agentId = "agent-mutation";
+    mockResponsesByAgentId.set(agentId, {
       status: 200,
       body: { configs: [{ key: "NEW_VAR", value: "new" }] },
-    };
+    });
 
     const baseEnv = { EXISTING: "value" };
-    const result = await fetchResolvedEnv(testUrl, "key", "agent-1", baseEnv);
+    const result = await fetchResolvedEnv(testUrl, "key", agentId, baseEnv);
 
     // baseEnv should be untouched
     expect(baseEnv).toEqual({ EXISTING: "value" });
@@ -149,7 +157,8 @@ describe("fetchResolvedEnv", () => {
   });
 
   test("handles multiple configs correctly", async () => {
-    mockResponse = {
+    const agentId = "agent-multiple";
+    mockResponsesByAgentId.set(agentId, {
       status: 200,
       body: {
         configs: [
@@ -158,9 +167,9 @@ describe("fetchResolvedEnv", () => {
           { key: "VAR_C", value: "c" },
         ],
       },
-    };
+    });
 
-    const result = await fetchResolvedEnv(testUrl, "key", "agent-1", {});
+    const result = await fetchResolvedEnv(testUrl, "key", agentId, {});
     expect(result.VAR_A).toBe("a");
     expect(result.VAR_B).toBe("b");
     expect(result.VAR_C).toBe("c");
