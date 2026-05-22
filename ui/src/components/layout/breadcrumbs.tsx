@@ -20,6 +20,7 @@ const routeLabels: Record<string, string> = {
   usage: "Usage",
   budgets: "Budgets",
   memory: "Memory",
+  settings: "Settings",
   config: "Config",
   repos: "Repos",
   templates: "Templates",

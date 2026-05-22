@@ -3,7 +3,7 @@ date: 2026-05-22T00:00:00Z
 topic: "Sidebar Trim & Cleanup — Implementation Plan"
 author: taras
 tags: [plan, ui, navigation, sidebar, ia]
-status: in-progress
+status: completed
 related_brainstorm: thoughts/taras/brainstorms/2026-05-21-sidebar-trim-cleanup.md
 last_updated: 2026-05-22
 last_updated_by: claude (phase-running, phase 6)

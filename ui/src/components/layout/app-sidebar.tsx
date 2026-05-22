@@ -1,4 +1,5 @@
 import {
+  BarChart3,
   BookOpen,
   Brain,
   Cable,
@@ -10,6 +11,7 @@ import {
   Home,
   ListTodo,
   MessageSquare,
+  Settings,
   Users,
   Workflow,
 } from "lucide-react";
@@ -29,7 +31,6 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarRail,
-  SidebarTrigger,
 } from "@/components/ui/sidebar";
 import { SwarmSwitcher } from "./swarm-switcher";
 
@@ -86,6 +87,16 @@ const navGroups: NavGroup[] = [
       { title: "Templates", path: "/templates", icon: FileText },
     ],
   },
+];
+
+/**
+ * Account-area destinations pinned to the sidebar footer (bottom-aligned).
+ * Collapsing the sidebar is handled by clicking the SidebarRail divider —
+ * there is no dedicated trigger button.
+ */
+const footerNav: NavItem[] = [
+  { title: "Settings", path: "/settings", icon: Settings },
+  { title: "Usage", path: "/usage", icon: BarChart3 },
 ];
 
 export function AppSidebar() {
@@ -207,9 +218,20 @@ export function AppSidebar() {
 
       <SidebarFooter className="border-t border-sidebar-border">
         <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarTrigger className="w-full justify-start" />
-          </SidebarMenuItem>
+          {footerNav.map((item) => (
+            <SidebarMenuItem key={item.path}>
+              <SidebarMenuButton
+                asChild
+                isActive={location.pathname.startsWith(item.path)}
+                tooltip={item.title}
+              >
+                <NavLink to={item.path}>
+                  <item.icon className="size-4" />
+                  <span>{item.title}</span>
+                </NavLink>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          ))}
         </SidebarMenu>
       </SidebarFooter>
 

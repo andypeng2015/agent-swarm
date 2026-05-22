@@ -2,6 +2,7 @@ import { lazy } from "react";
 import { createBrowserRouter, Navigate, type RouteObject } from "react-router-dom";
 import { RootLayout } from "@/components/layout/root-layout";
 import { SettingsLayout } from "@/pages/settings/settings-layout";
+import { UsageLayout } from "@/pages/usage/usage-layout";
 import { RouteRedirect } from "./route-redirect";
 
 const DashboardPage = lazy(() => import("@/pages/dashboard/page"));
@@ -17,7 +18,10 @@ const ChatPage = lazy(() => import("@/pages/chat/page"));
 const ServicesPage = lazy(() => import("@/pages/services/page"));
 const SchedulesPage = lazy(() => import("@/pages/schedules/page"));
 const ScheduleDetailPage = lazy(() => import("@/pages/schedules/[id]/page"));
-const UsagePage = lazy(() => import("@/pages/usage/page"));
+const UsageContent = lazy(() =>
+  import("@/pages/usage/usage-content").then((m) => ({ default: m.UsageContent })),
+);
+const BudgetsPage = lazy(() => import("@/pages/budgets/page"));
 const ConfigPage = lazy(() => import("@/pages/config/page"));
 const IntegrationsPage = lazy(() => import("@/pages/integrations/page"));
 const IntegrationDetailPage = lazy(() => import("@/pages/integrations/[id]/page"));
@@ -54,7 +58,7 @@ const NotFoundPage = lazy(() => import("@/pages/not-found/page"));
  */
 const REDIRECTS: Record<string, string> = {
   dashboard: "/",
-  budgets: "/usage?tab=budgets",
+  budgets: "/usage/budgets",
   config: "/settings/config",
   keys: "/settings/api-keys",
   integrations: "/settings/integrations",
@@ -97,7 +101,14 @@ export const router = createBrowserRouter([
       { path: "workflow-runs/:id", element: <WorkflowRunDetailPage /> },
       { path: "approval-requests", element: <ApprovalRequestsPage /> },
       { path: "approval-requests/:id", element: <ApprovalRequestDetailPage /> },
-      { path: "usage", element: <UsagePage /> },
+      {
+        path: "usage",
+        element: <UsageLayout />,
+        children: [
+          { index: true, element: <UsageContent /> },
+          { path: "budgets", element: <BudgetsPage /> },
+        ],
+      },
       {
         path: "settings",
         element: <SettingsLayout />,
