@@ -415,17 +415,17 @@ without pausing (autopilot).
 ### Success Criteria:
 
 #### Automated Verification:
-- [ ] Type-check passes: `cd ui && pnpm exec tsc -b`
-- [ ] Lint passes: `cd ui && pnpm lint`
-- [ ] Build passes: `cd ui && pnpm build`
+- [x] Type-check passes: `cd ui && pnpm exec tsc -b`
+- [x] Lint passes: `cd ui && pnpm lint`
+- [x] Build passes: `cd ui && pnpm build`
 
 #### Automated QA:
 *(Agent drives `http://localhost:5274` with the browser-use skill.)*
-- [ ] `/usage` shows two tabs (Usage, Budgets); Usage tab is active by default.
-- [ ] Clicking the Budgets tab updates the URL to `/usage?tab=budgets` and renders the budgets
+- [x] `/usage` shows two tabs (Usage, Budgets); Usage tab is active by default.
+- [x] Clicking the Budgets tab updates the URL to `/usage?tab=budgets` and renders the budgets
       content (global budget, per-agent budgets, refusals, pricing, audit feed).
-- [ ] Loading `/usage?tab=budgets` directly opens on the Budgets tab.
-- [ ] Both tabs' data loads without console errors.
+- [x] Loading `/usage?tab=budgets` directly opens on the Budgets tab.
+- [x] Both tabs' data loads without console errors.
 
 #### Manual Verification:
 - [ ] Tab content scrolls independently and looks correct (no clipped sections).
