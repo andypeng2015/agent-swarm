@@ -6590,6 +6590,23 @@ export function listAllPages(
 }
 
 /**
+ * Total page count — used to back a filter-aware `total` in the `/api/pages`
+ * pager so the UI shows the real count, not just the current page's length.
+ */
+export function countAllPages(): number {
+  const row = getDb().prepare<{ count: number }, []>("SELECT COUNT(*) AS count FROM pages").get();
+  return row?.count ?? 0;
+}
+
+/** Page count scoped to a single agent — companion to `listPagesByAgent`. */
+export function countPagesByAgent(agentId: string): number {
+  const row = getDb()
+    .prepare<{ count: number }, [string]>("SELECT COUNT(*) AS count FROM pages WHERE agentId = ?")
+    .get(agentId);
+  return row?.count ?? 0;
+}
+
+/**
  * Apply a patch to a page. Does NOT snapshot — caller must invoke
  * `snapshotPage(id, agentId)` BEFORE calling this to preserve pre-update
  * state (mirrors the workflow update pattern at src/http/workflows.ts:483).
@@ -9425,6 +9442,43 @@ export function listRecentSessions(
   });
 }
 
+/**
+ * Filter-aware count of sessions (root tasks) matching the same `source` / `q`
+ * / `requestedByUserId` filters as `listRecentSessions`. Powers a correct
+ * `total` in the `/api/sessions` pager — a session is a root task, so this is
+ * a plain count, no recursive chain walk needed.
+ */
+export function countSessions(
+  opts?: Pick<ListRecentSessionsOpts, "source" | "q" | "requestedByUserId">,
+): number {
+  const sources = opts?.source?.filter((s) => s.length > 0) ?? [];
+  const q = opts?.q?.trim();
+  const requestedByUserId = opts?.requestedByUserId?.trim() || undefined;
+
+  const conditions: string[] = ["parentTaskId IS NULL"];
+  const params: string[] = [];
+
+  if (sources.length > 0) {
+    conditions.push(`source IN (${sources.map(() => "?").join(", ")})`);
+    params.push(...sources);
+  }
+  if (q && q.length > 0) {
+    conditions.push("lower(task) LIKE ?");
+    params.push(`%${q.toLowerCase()}%`);
+  }
+  if (requestedByUserId) {
+    conditions.push("requestedByUserId = ?");
+    params.push(requestedByUserId);
+  }
+
+  const row = getDb()
+    .prepare<{ count: number }, string[]>(
+      `SELECT COUNT(*) AS count FROM agent_tasks WHERE ${conditions.join(" AND ")}`,
+    )
+    .get(...params);
+  return row?.count ?? 0;
+}
+
 // ============================================================================
 // Budgets, daily-spend aggregation, and budget-refusal notifications (Phase 2)
 // ----------------------------------------------------------------------------
@@ -9914,6 +9968,60 @@ export function getInstanceActivity(): {
     agents_online: leads_alive + workers_alive,
     leads_online: leads_alive,
     recent_tasks_count: tasksRow?.count ?? 0,
+  };
+}
+
+export interface SwarmMetrics {
+  tasks: { total: number; by_status: Record<string, number> };
+  agents: { total: number; by_status: Record<string, number> };
+  workflows: { total: number; enabled: number };
+  pages: { total: number };
+  sessions: { active: number };
+  skills: { total: number };
+}
+
+/**
+ * Lightweight swarm-wide counts for UI footers/sidebars and MCP context —
+ * a single object so callers never have to fetch full list payloads just to
+ * count. Pure `COUNT(*)` / `GROUP BY` queries; the `agent_tasks` status
+ * grouping rides the indexes added in migration 069.
+ */
+export function getSwarmMetrics(): SwarmMetrics {
+  const db = getDb();
+
+  const groupCounts = (table: string): { total: number; by_status: Record<string, number> } => {
+    const rows = db
+      .prepare<{ status: string; count: number }, []>(
+        `SELECT status, COUNT(*) AS count FROM ${table} GROUP BY status`,
+      )
+      .all();
+    const by_status: Record<string, number> = {};
+    let total = 0;
+    for (const r of rows) {
+      by_status[r.status] = r.count;
+      total += r.count;
+    }
+    return { total, by_status };
+  };
+
+  const workflowRow = db
+    .prepare<{ total: number; enabled: number }, []>(
+      "SELECT COUNT(*) AS total, SUM(CASE WHEN enabled = 1 THEN 1 ELSE 0 END) AS enabled FROM workflows",
+    )
+    .get();
+  const pagesRow = db.prepare<{ count: number }, []>("SELECT COUNT(*) AS count FROM pages").get();
+  const sessionsRow = db
+    .prepare<{ count: number }, []>("SELECT COUNT(*) AS count FROM active_sessions")
+    .get();
+  const skillsRow = db.prepare<{ count: number }, []>("SELECT COUNT(*) AS count FROM skills").get();
+
+  return {
+    tasks: groupCounts("agent_tasks"),
+    agents: groupCounts("agents"),
+    workflows: { total: workflowRow?.total ?? 0, enabled: workflowRow?.enabled ?? 0 },
+    pages: { total: pagesRow?.count ?? 0 },
+    sessions: { active: sessionsRow?.count ?? 0 },
+    skills: { total: skillsRow?.count ?? 0 },
   };
 }
 

@@ -10,6 +10,7 @@
   - [poll-task](#poll-task)
   - [get-swarm](#get-swarm)
   - [get-tasks](#get-tasks)
+  - [get-metrics](#get-metrics)
   - [send-task](#send-task)
   - [get-task-details](#get-task-details)
   - [store-progress](#store-progress)
@@ -125,17 +126,18 @@ Poll for a new task assignment. Returns immediately if there are offered tasks a
 
 **Get the agent swarm**
 
-Returns a list of agents in the swarm without their tasks.
+Returns a list of agents in the swarm without their tasks. Identity markdown (claudeMd/soulMd/identityMd/toolsMd/heartbeatMd/setupScript) is omitted by default — pass includeFull:true to include it.
 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
 | `a` | `string` | No | - | - |
+| `includeFull` | `boolean` | No | - | Include the six identity-markdown blobs (claudeMd/soulMd/identityMd/toolsMd/heartbeatMd/setupScript). Default false — they are large and rarely needed at the swarm-overview level. |
 
 ### get-tasks
 
 **Get tasks**
 
-Returns a list of tasks in the swarm with various filters. Sorted by priority (desc) then lastUpdatedAt (desc).
+Returns a list of tasks in the swarm with various filters. Sorted by priority (desc) then lastUpdatedAt (desc). Each row carries a `taskPreview` (~300 chars) — enough to pool-triage; pass includeFull:true (or call `get-task-details` by id) for the full `task` text.
 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
@@ -149,6 +151,15 @@ Returns a list of tasks in the swarm with various filters. Sorted by priority (d
 | `scheduleId` | `string` | No | - | Filter by schedule ID to find tasks created by a specific schedule. |
 | `includeHeartbeat` | `boolean` | No | - | Include heartbeat/system tasks in results (excluded by default). |
 | `limit` | `number` | No | - | Max tasks to return (default: 25, max: 100). |
+| `includeFull` | `boolean` | No | - | Return the full `task` text instead of a ~300-char `taskPreview`. Default false. |
+
+### get-metrics
+
+**Get swarm metrics**
+
+Returns lightweight swarm-wide counts in a single object — tasks (total + by status), agents (total + by status), workflows (total + enabled), pages, active sessions, skills. Use this instead of fetching full list payloads just to count things. Pure COUNT queries; cheap.
+
+*No parameters*
 
 ### send-task
 
@@ -221,43 +232,17 @@ Cancel a task that is pending or in progress. Only the lead or task creator can 
 
 **Resolve user identity**
 
-Look up a canonical user profile by an `(kind, externalId)` pair (e.g. `{kind: "slack", externalId: "U_X"}`) OR by email (primary or alias). Returns the user profile or "No user found".
+Look up a canonical user profile by an `(kind, externalId)` pair (e.g. {kind: 'slack', externalId: 'U_X'}) OR by email (primary or alias). Returns the user profile or 'No user found'.
 
-Caller MUST supply either (`kind` + `externalId`) OR `email`. Empty input is rejected by the validator.
-
-| Parameter | Type | Required | Default | Description |
-|-----------|------|----------|---------|-------------|
-| `kind` | `string` | Conditional | - | Identity kind — `slack`, `linear`, `github`, `gitlab`, `jira`, or custom. Required when looking up by external ID. |
-| `externalId` | `string` | Conditional | - | Platform-specific identifier for the given kind (e.g. Slack user ID `U08NR6QD6CS`, Linear user UUID, GitHub login). Required when looking up by external ID. |
-| `email` | `string` | Conditional | - | Email address (primary or alias). Required when not looking up by external ID. |
-
-> **Migration note (2026-05)**: the old field names `slackUserId`, `linearUserId`, `githubUsername`, `gitlabUsername`, and the `name` fuzzy-match parameter were removed. Use `{kind, externalId}` or `email` instead. Old payloads fail Zod validation at runtime — no compatibility shim.
+*No parameters*
 
 ### manage-user
 
 **Manage user profiles**
 
-Create, update, delete, or list user profiles in the user registry. Lead-only.
+Create, update, delete, or list user profiles in the user registry. Identities are managed via an `identities: [{kind, externalId}]` array (declarative — update computes diff). Lead-only.
 
-Identities are managed via a declarative `identities: [{kind, externalId}]` array. On `update`, the array is treated as the full desired set — entries not currently linked are added (emit `identity_added`), and entries currently linked but missing from the array are removed (emit `identity_removed`). Omit the field entirely to leave identities untouched.
-
-| Parameter | Type | Required | Default | Description |
-|-----------|------|----------|---------|-------------|
-| `action` | `create \| update \| delete \| list \| get` | Yes | - | Action to perform |
-| `userId` | `string` | No | - | User ID (required for update/delete/get) |
-| `name` | `string` | No | - | Display name (required for create) |
-| `email` | `string` | No | - | Primary email address |
-| `role` | `string` | No | - | Role (e.g., "founder", "engineer") |
-| `notes` | `string` | No | - | Free-form notes |
-| `identities` | `array<{kind, externalId}>` | No | - | Declarative list of platform identities. On `create` every entry is linked; on `update` the diff is applied. |
-| `emailAliases` | `array<string>` | No | - | Additional email addresses. Diff vs current emits `email_added` / `email_removed` events on update. |
-| `preferredChannel` | `string` | No | - | Preferred contact channel |
-| `timezone` | `string` | No | - | Timezone (e.g., America/New_York) |
-| `dailyBudgetUsd` | `number \| null` | No | - | Daily budget cap in USD. `null` = unlimited. |
-| `status` | `invited \| active \| suspended` | No | `active` | User lifecycle status. |
-| `metadata` | `object \| null` | No | - | Free-form JSON metadata. `null` clears the field. |
-
-> **Migration note (2026-05)**: the old top-level identity fields (`slackUserId`, `linearUserId`, `githubUsername`, `gitlabUsername`) were removed. Pass identities through the `identities` array instead.
+*No parameters*
 
 ### db-query
 
@@ -709,7 +694,7 @@ Update the health status of a registered service. Use this after a service becom
 
 **List Scheduled Tasks**
 
-View all scheduled tasks with optional filters. Use this to discover existing schedules.
+View all scheduled tasks with optional filters. Use this to discover existing schedules. Rows are slim by default — the full `taskTemplate` is replaced with a short `taskTemplatePreview`; pass includeFull:true (or call `get-schedule` by id) for the full template.
 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
@@ -717,6 +702,7 @@ View all scheduled tasks with optional filters. Use this to discover existing sc
 | `name` | `string` | No | - | Filter by name (partial match) |
 | `scheduleType` | `recurring \| one_time` | No | - | Filter by schedule type |
 | `hideCompleted` | `boolean` | No | true | Hide completed one-time schedules (default: true) |
+| `includeFull` | `boolean` | No | - | Return the full `taskTemplate` instead of a short `taskTemplatePreview`. Default false. |
 
 ### create-schedule
 
@@ -871,11 +857,12 @@ Create a new automation workflow. Key concepts: - Nodes are linked via 'next' (s
 
 **List Workflows**
 
-List all automation workflows, optionally filtered by enabled status. Returns new fields: triggers, cooldown, input.
+List all automation workflows, optionally filtered by enabled status. Returns SLIM rows WITHOUT the full `definition` (DAG) — each row carries a `nodeCount` instead. To inspect or patch a workflow's nodes/triggers, call `get-workflow` by id, or pass `includeFull: true` here.
 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
 | `enabled` | `boolean` | No | - | Filter by enabled status (omit to return all) |
+| `includeFull` | `boolean` | No | - | Return the full workflow `definition` + trigger config instead of slim rows. Default false — prefer `get-workflow` to fetch a single workflow in full. |
 
 ### get-workflow
 

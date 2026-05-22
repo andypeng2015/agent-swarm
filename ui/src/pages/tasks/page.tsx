@@ -264,7 +264,8 @@ function CreateTaskDialog({
   );
 }
 
-const PAGE_SIZE = 100;
+const PAGE_SIZE_OPTIONS = [25, 50, 100, 200] as const;
+const DEFAULT_PAGE_SIZE = 100;
 
 export default function TasksPage() {
   const navigate = useNavigate();
@@ -277,6 +278,12 @@ export default function TasksPage() {
   const searchParam = searchParams.get("search") ?? "";
   const includeHeartbeat = searchParams.get("heartbeat") === "true";
   const page = searchParams.has("page") ? Number(searchParams.get("page")) : 0;
+  // Page size is URL-driven so it survives reload / sharing. Falls back to the
+  // default if the param is missing or not one of the allowed options.
+  const pageSizeParam = Number(searchParams.get("pageSize"));
+  const pageSize = (PAGE_SIZE_OPTIONS as readonly number[]).includes(pageSizeParam)
+    ? pageSizeParam
+    : DEFAULT_PAGE_SIZE;
 
   // Single setter that updates one key while preserving others
   const setParam = useCallback(
@@ -290,6 +297,7 @@ export default function TasksPage() {
           schedule: "all",
           search: "",
           page: "0",
+          pageSize: String(DEFAULT_PAGE_SIZE),
         };
         if (value === (defaultValues[key] ?? "")) {
           next.delete(key);
@@ -325,8 +333,8 @@ export default function TasksPage() {
       limit: number;
       offset: number;
     } = {
-      limit: PAGE_SIZE,
-      offset: page * PAGE_SIZE,
+      limit: pageSize,
+      offset: page * pageSize,
     };
     if (statusFilter !== "all") f.status = statusFilter;
     if (agentFilter !== "all") f.agentId = agentFilter;
@@ -334,7 +342,7 @@ export default function TasksPage() {
     if (searchParam) f.search = searchParam;
     if (includeHeartbeat) f.includeHeartbeat = true;
     return f;
-  }, [statusFilter, agentFilter, scheduleFilter, searchParam, includeHeartbeat, page]);
+  }, [statusFilter, agentFilter, scheduleFilter, searchParam, includeHeartbeat, page, pageSize]);
 
   const { data: tasksData, isLoading } = useTasks(filters);
   const createTask = useCreateTask();
@@ -404,7 +412,7 @@ export default function TasksPage() {
   }
 
   const total = tasksData?.total ?? 0;
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const hasActiveFilters =
     statusFilter !== "all" ||
     agentFilter !== "all" ||
@@ -538,16 +546,35 @@ export default function TasksPage() {
         onRowClicked={onRowClicked}
         agentNameById={agentMapRef.current}
         columns={tasksColumns}
+        // This page does server-side offset pagination — disable AG Grid's
+        // own client-side pager so the two don't stack (which capped the view
+        // at the server's page size, e.g. 100 rows).
+        pagination={false}
       />
 
       {/* Server-side pagination controls */}
       <div className="flex items-center justify-between shrink-0 text-sm text-muted-foreground">
         <span>
           {total > 0
-            ? `${page * PAGE_SIZE + 1}–${Math.min((page + 1) * PAGE_SIZE, total)} of ${total}`
+            ? `${page * pageSize + 1}–${Math.min((page + 1) * pageSize, total)} of ${total}`
             : "0 tasks"}
         </span>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs">Rows</span>
+            <Select value={String(pageSize)} onValueChange={(v) => setParam("pageSize", v)}>
+              <SelectTrigger className="h-8 w-[72px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {PAGE_SIZE_OPTIONS.map((size) => (
+                  <SelectItem key={size} value={String(size)}>
+                    {size}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
           <Button
             variant="outline"
             size="icon"

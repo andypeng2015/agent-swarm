@@ -161,9 +161,10 @@ export const DEFERRED_TOOLS = new Set([
   "script-delete",
   "script-query-types",
 
-  // Other (3)
+  // Other (4)
   "cancel-task",
   "inject-learning",
+  "get-metrics",
 ]);
 
 /** All known tool names = CORE_TOOLS ∪ DEFERRED_TOOLS */
