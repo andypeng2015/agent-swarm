@@ -1439,7 +1439,8 @@
                             "type": "string",
                             "enum": [
                               "global",
-                              "agent"
+                              "agent",
+                              "user"
                             ]
                           },
                           "scopeId": {
@@ -1525,7 +1526,8 @@
                             "type": "string",
                             "enum": [
                               "agent",
-                              "global"
+                              "global",
+                              "user"
                             ]
                           },
                           "agentSpendUsd": {
@@ -1547,6 +1549,18 @@
                             ]
                           },
                           "globalBudgetUsd": {
+                            "type": [
+                              "number",
+                              "null"
+                            ]
+                          },
+                          "userSpendUsd": {
+                            "type": [
+                              "number",
+                              "null"
+                            ]
+                          },
+                          "userBudgetUsd": {
                             "type": [
                               "number",
                               "null"
@@ -1599,7 +1613,8 @@
               "type": "string",
               "enum": [
                 "global",
-                "agent"
+                "agent",
+                "user"
               ]
             },
             "required": true,
@@ -1630,7 +1645,8 @@
                       "type": "string",
                       "enum": [
                         "global",
-                        "agent"
+                        "agent",
+                        "user"
                       ]
                     },
                     "scopeId": {
@@ -1679,7 +1695,8 @@
               "type": "string",
               "enum": [
                 "global",
-                "agent"
+                "agent",
+                "user"
               ]
             },
             "required": true,
@@ -1728,7 +1745,8 @@
                       "type": "string",
                       "enum": [
                         "global",
-                        "agent"
+                        "agent",
+                        "user"
                       ]
                     },
                     "scopeId": {
@@ -1777,7 +1795,8 @@
               "type": "string",
               "enum": [
                 "global",
-                "agent"
+                "agent",
+                "user"
               ]
             },
             "required": true,

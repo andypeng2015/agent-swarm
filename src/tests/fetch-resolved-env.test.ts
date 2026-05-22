@@ -8,8 +8,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
  */
 
 let server: ReturnType<typeof Bun.serve>;
-const TEST_PORT = 13099;
-const TEST_URL = `http://localhost:${TEST_PORT}`;
+let testUrl: string;
 
 // Configurable response for the mock server
 let mockResponse: { status: number; body: unknown } = {
@@ -19,7 +18,7 @@ let mockResponse: { status: number; body: unknown } = {
 
 beforeAll(() => {
   server = Bun.serve({
-    port: TEST_PORT,
+    port: 0,
     fetch(req) {
       const url = new URL(req.url);
 
@@ -33,6 +32,7 @@ beforeAll(() => {
       return new Response("Not found", { status: 404 });
     },
   });
+  testUrl = server.url.toString().replace(/\/$/, "");
 });
 
 afterAll(() => {
@@ -88,7 +88,7 @@ describe("fetchResolvedEnv", () => {
 
   test("returns baseEnv when agentId is empty", async () => {
     const baseEnv = { EXISTING: "value" };
-    const result = await fetchResolvedEnv(TEST_URL, "key", "", baseEnv);
+    const result = await fetchResolvedEnv(testUrl, "key", "", baseEnv);
     expect(result).toEqual({ EXISTING: "value" });
   });
 
@@ -104,7 +104,7 @@ describe("fetchResolvedEnv", () => {
     };
 
     const baseEnv = { EXISTING: "keep", OVERRIDE_VAR: "original" };
-    const result = await fetchResolvedEnv(TEST_URL, "key", "agent-1", baseEnv);
+    const result = await fetchResolvedEnv(testUrl, "key", "agent-1", baseEnv);
 
     expect(result.EXISTING).toBe("keep");
     expect(result.NEW_VAR).toBe("from-api");
@@ -115,7 +115,7 @@ describe("fetchResolvedEnv", () => {
     mockResponse = { status: 200, body: { configs: [] } };
 
     const baseEnv = { EXISTING: "value" };
-    const result = await fetchResolvedEnv(TEST_URL, "key", "agent-1", baseEnv);
+    const result = await fetchResolvedEnv(testUrl, "key", "agent-1", baseEnv);
     expect(result).toEqual({ EXISTING: "value" });
   });
 
@@ -123,7 +123,7 @@ describe("fetchResolvedEnv", () => {
     mockResponse = { status: 500, body: { error: "server error" } };
 
     const baseEnv = { EXISTING: "value" };
-    const result = await fetchResolvedEnv(TEST_URL, "key", "agent-1", baseEnv);
+    const result = await fetchResolvedEnv(testUrl, "key", "agent-1", baseEnv);
     expect(result).toEqual({ EXISTING: "value" });
   });
 
@@ -140,7 +140,7 @@ describe("fetchResolvedEnv", () => {
     };
 
     const baseEnv = { EXISTING: "value" };
-    const result = await fetchResolvedEnv(TEST_URL, "key", "agent-1", baseEnv);
+    const result = await fetchResolvedEnv(testUrl, "key", "agent-1", baseEnv);
 
     // baseEnv should be untouched
     expect(baseEnv).toEqual({ EXISTING: "value" });
@@ -159,7 +159,7 @@ describe("fetchResolvedEnv", () => {
       },
     };
 
-    const result = await fetchResolvedEnv(TEST_URL, "key", "agent-1", {});
+    const result = await fetchResolvedEnv(testUrl, "key", "agent-1", {});
     expect(result.VAR_A).toBe("a");
     expect(result.VAR_B).toBe("b");
     expect(result.VAR_C).toBe("c");
