@@ -26,9 +26,11 @@ import {
   completeTask,
   createAgent,
   createTaskExtended,
+  getDb,
   getTaskAttachments,
   initDb,
   startTask,
+  upsertSwarmConfig,
 } from "../be/db";
 import { registerStoreProgressTool } from "../tools/store-progress";
 
@@ -217,6 +219,230 @@ describe("store-progress handler — attachments insert path", () => {
     expect(rows[0].path).toBe("/thoughts/legacy.md");
     expect(rows[0].orgId).toBeUndefined();
     expect(rows[0].driveId).toBeUndefined();
+  });
+
+  describe("agent-fs orgId/driveId auto-resolve from swarm config", () => {
+    // Per-test cleanup so config rows from one case don't leak into the next.
+    function clearSwarmConfig() {
+      getDb().run("DELETE FROM swarm_config");
+    }
+
+    test("missing orgId/driveId fills in from global swarm config", async () => {
+      clearSwarmConfig();
+      upsertSwarmConfig({
+        scope: "global",
+        key: "AGENT_FS_DEFAULT_ORG_ID",
+        value: "global-org",
+      });
+      upsertSwarmConfig({
+        scope: "global",
+        key: "AGENT_FS_DEFAULT_DRIVE_ID",
+        value: "global-drive",
+      });
+
+      const task = createTaskExtended("handler agent-fs auto-resolve global", {
+        agentId,
+        source: "mcp",
+        priority: 50,
+      });
+      startTask(task.id, agentId);
+
+      const tool = buildServer();
+      const result = (await tool.handler(
+        {
+          taskId: task.id,
+          attachments: [
+            {
+              kind: "agent-fs",
+              name: "doc.md",
+              path: "/thoughts/auto.md",
+            },
+          ],
+        },
+        buildMeta(),
+      )) as StoreProgressResult;
+
+      expect(result.structuredContent.success).toBe(true);
+      const rows = getTaskAttachments(task.id);
+      expect(rows.length).toBe(1);
+      expect(rows[0].kind).toBe("agent-fs");
+      expect(rows[0].orgId).toBe("global-org");
+      expect(rows[0].driveId).toBe("global-drive");
+    });
+
+    test("agent-scoped config wins over global (scope precedence)", async () => {
+      clearSwarmConfig();
+      upsertSwarmConfig({
+        scope: "global",
+        key: "AGENT_FS_DEFAULT_ORG_ID",
+        value: "global-org",
+      });
+      upsertSwarmConfig({
+        scope: "global",
+        key: "AGENT_FS_DEFAULT_DRIVE_ID",
+        value: "global-drive",
+      });
+      upsertSwarmConfig({
+        scope: "agent",
+        scopeId: agentId,
+        key: "AGENT_FS_DEFAULT_ORG_ID",
+        value: "agent-org",
+      });
+      upsertSwarmConfig({
+        scope: "agent",
+        scopeId: agentId,
+        key: "AGENT_FS_DEFAULT_DRIVE_ID",
+        value: "agent-drive",
+      });
+
+      const task = createTaskExtended("handler agent-fs auto-resolve agent-scope", {
+        agentId,
+        source: "mcp",
+        priority: 50,
+      });
+      startTask(task.id, agentId);
+
+      const tool = buildServer();
+      const result = (await tool.handler(
+        {
+          taskId: task.id,
+          attachments: [
+            {
+              kind: "agent-fs",
+              name: "scoped.md",
+              path: "/thoughts/scoped.md",
+            },
+          ],
+        },
+        buildMeta(),
+      )) as StoreProgressResult;
+
+      expect(result.structuredContent.success).toBe(true);
+      const rows = getTaskAttachments(task.id);
+      expect(rows.length).toBe(1);
+      expect(rows[0].orgId).toBe("agent-org");
+      expect(rows[0].driveId).toBe("agent-drive");
+    });
+
+    test("missing config + missing row IDs leaves null IDs (no throw, renderer falls back)", async () => {
+      clearSwarmConfig();
+
+      const task = createTaskExtended("handler agent-fs no config no ids", {
+        agentId,
+        source: "mcp",
+        priority: 50,
+      });
+      startTask(task.id, agentId);
+
+      const tool = buildServer();
+      const result = (await tool.handler(
+        {
+          taskId: task.id,
+          attachments: [
+            {
+              kind: "agent-fs",
+              name: "no-ids.md",
+              path: "/thoughts/no-ids.md",
+            },
+          ],
+        },
+        buildMeta(),
+      )) as StoreProgressResult;
+
+      expect(result.structuredContent.success).toBe(true);
+      const rows = getTaskAttachments(task.id);
+      expect(rows.length).toBe(1);
+      expect(rows[0].orgId).toBeUndefined();
+      expect(rows[0].driveId).toBeUndefined();
+    });
+
+    test("per-row IDs always win — config defaults never overwrite explicit values", async () => {
+      clearSwarmConfig();
+      upsertSwarmConfig({
+        scope: "global",
+        key: "AGENT_FS_DEFAULT_ORG_ID",
+        value: "global-org",
+      });
+      upsertSwarmConfig({
+        scope: "global",
+        key: "AGENT_FS_DEFAULT_DRIVE_ID",
+        value: "global-drive",
+      });
+
+      const task = createTaskExtended("handler agent-fs per-row wins", {
+        agentId,
+        source: "mcp",
+        priority: 50,
+      });
+      startTask(task.id, agentId);
+
+      const tool = buildServer();
+      const result = (await tool.handler(
+        {
+          taskId: task.id,
+          attachments: [
+            {
+              kind: "agent-fs",
+              name: "explicit.md",
+              path: "/thoughts/explicit.md",
+              orgId: "row-org",
+              driveId: "row-drive",
+            },
+          ],
+        },
+        buildMeta(),
+      )) as StoreProgressResult;
+
+      expect(result.structuredContent.success).toBe(true);
+      const rows = getTaskAttachments(task.id);
+      expect(rows.length).toBe(1);
+      expect(rows[0].orgId).toBe("row-org");
+      expect(rows[0].driveId).toBe("row-drive");
+    });
+
+    test("partial row IDs — only the missing one is filled from config", async () => {
+      clearSwarmConfig();
+      upsertSwarmConfig({
+        scope: "global",
+        key: "AGENT_FS_DEFAULT_ORG_ID",
+        value: "global-org",
+      });
+      upsertSwarmConfig({
+        scope: "global",
+        key: "AGENT_FS_DEFAULT_DRIVE_ID",
+        value: "global-drive",
+      });
+
+      const task = createTaskExtended("handler agent-fs partial fill", {
+        agentId,
+        source: "mcp",
+        priority: 50,
+      });
+      startTask(task.id, agentId);
+
+      const tool = buildServer();
+      const result = (await tool.handler(
+        {
+          taskId: task.id,
+          attachments: [
+            {
+              kind: "agent-fs",
+              name: "partial.md",
+              path: "/thoughts/partial.md",
+              orgId: "row-org",
+              // driveId omitted on purpose
+            },
+          ],
+        },
+        buildMeta(),
+      )) as StoreProgressResult;
+
+      expect(result.structuredContent.success).toBe(true);
+      const rows = getTaskAttachments(task.id);
+      expect(rows.length).toBe(1);
+      expect(rows[0].orgId).toBe("row-org");
+      expect(rows[0].driveId).toBe("global-drive");
+    });
   });
 
   test("status='completed' on a terminal task still no-ops but attachments append", async () => {
