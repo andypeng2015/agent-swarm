@@ -41,6 +41,7 @@ import { FieldRenderer } from "@/components/integrations/field-renderer";
 import { IntegrationStatusBadge } from "@/components/integrations/integration-status-badge";
 import { JiraOAuthSection } from "@/components/integrations/jira-oauth-section";
 import { LinearOAuthSection } from "@/components/integrations/linear-oauth-section";
+import { RequiredSkillsSection } from "@/components/integrations/required-skills-section";
 import { EmptyState } from "@/components/shared/empty-state";
 import { PageSkeleton } from "@/components/shared/page-skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -476,6 +477,10 @@ function IntegrationDetailInner({
                       />
                     </div>
                   </details>
+                )}
+
+                {def.requiredSkills && def.requiredSkills.length > 0 && (
+                  <RequiredSkillsSection requiredSkills={def.requiredSkills} />
                 )}
               </div>
             )}

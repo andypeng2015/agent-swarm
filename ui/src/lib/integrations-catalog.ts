@@ -47,6 +47,18 @@ export type IntegrationSpecialFlow =
   | "codex-cli"
   | "claude-managed-cli";
 
+/** Which agent role(s) the swarm needs to have a given skill installed on. */
+export type AgentRole = "lead" | "worker";
+
+export interface RequiredSkill {
+  /** Canonical skill name as it appears in the skills registry. */
+  skill: string;
+  /** Roles that need the skill installed for this integration to work end-to-end. */
+  roles: AgentRole[];
+  /** One-liner shown as a tooltip beside the skill, explains why it's needed. */
+  reason?: string;
+}
+
 export interface IntegrationDef {
   /** URL slug (kebab-case). Must be unique. */
   id: string;
@@ -64,6 +76,13 @@ export interface IntegrationDef {
   restartRequired?: boolean;
   /** Custom flow that overrides the generic field form. */
   specialFlow?: IntegrationSpecialFlow;
+  /**
+   * Agent-side skills the integration also needs in order to function
+   * end-to-end. Pure env-var configuration is not always enough — some
+   * integrations depend on procedural knowledge that lives in a skill
+   * installed on a specific agent role (e.g. the lead).
+   */
+  requiredSkills?: RequiredSkill[];
 }
 
 export const INTEGRATIONS: IntegrationDef[] = [
@@ -448,6 +467,14 @@ export const INTEGRATIONS: IntegrationDef[] = [
     docsUrl: "https://docs.agent-swarm.dev/integrations/agentmail",
     disableKey: "AGENTMAIL_DISABLE",
     restartRequired: true,
+    requiredSkills: [
+      {
+        skill: "agentmail-sending",
+        roles: ["lead"],
+        reason:
+          "Needed for agents to send/reply to email via AgentMail (the env keys alone only enable receive).",
+      },
+    ],
     fields: [
       {
         key: "AGENTMAIL_API_KEY",
