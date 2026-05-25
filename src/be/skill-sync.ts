@@ -1,9 +1,9 @@
 /**
  * Filesystem sync for skills.
  *
- * Writes installed skills to ~/.claude/skills/<name>/SKILL.md (and optionally
- * ~/.pi/agent/skills/<name>/SKILL.md) so Claude Code and Pi discover them
- * natively.
+ * Writes installed skills to ~/.claude/skills/<name>/SKILL.md,
+ * ~/.pi/agent/skills/<name>/SKILL.md, and ~/.codex/skills/<name>/SKILL.md
+ * so Claude Code, Pi, and Codex discover them natively.
  *
  * This runs on the API side — workers call it via POST /api/skills/sync-filesystem.
  */
@@ -27,7 +27,7 @@ export interface SkillSyncResult {
  */
 export function syncSkillsToFilesystem(
   agentId: string,
-  harnessType: "claude" | "pi" | "both" = "both",
+  harnessType: "claude" | "pi" | "codex" | "all" = "all",
   homeOverride?: string,
 ): SkillSyncResult {
   const skills = getAgentSkills(agentId);
@@ -37,11 +37,14 @@ export function syncSkillsToFilesystem(
 
   // Directories to write to
   const skillDirs: string[] = [];
-  if (harnessType === "claude" || harnessType === "both") {
+  if (harnessType === "claude" || harnessType === "all") {
     skillDirs.push(join(home, ".claude", "skills"));
   }
-  if (harnessType === "pi" || harnessType === "both") {
+  if (harnessType === "pi" || harnessType === "all") {
     skillDirs.push(join(home, ".pi", "agent", "skills"));
+  }
+  if (harnessType === "codex" || harnessType === "all") {
+    skillDirs.push(join(home, ".codex", "skills"));
   }
 
   // Ensure base dirs exist
