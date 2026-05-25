@@ -1,94 +1,12 @@
 /**
- * Coverage for the runner-side `refreshSkillsIfChanged()` helper.
- *
- * The helper is internal (defined in src/commands/runner.ts) so we re-define
- * a faithful copy here under test — same semantics, exercised against a
- * Bun.serve() stub that mimics the signature + list + sync-filesystem
- * endpoints. The point of the test is to lock down the *contract* of the
- * helper (cheap probe on no-change, full refresh on hash drift, transient
- * 5xx swallowed) rather than to test the production binding line-by-line —
- * the prod call sites are covered by the Manual E2E section of the plan.
+ * Coverage for the worker-side `refreshSkillsIfChanged()` helper. The helper
+ * is exercised against a Bun.serve() stub that mimics the signature + list
+ * + sync-filesystem endpoints. Cases lock down its contract: cheap probe on
+ * no-change, full refresh on hash drift, inactive/disabled filtering,
+ * transient 5xx swallowed.
  */
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-
-type SkillsRefreshContext = {
-  apiUrl: string;
-  swarmUrl: string;
-  apiKey: string;
-  agentId: string;
-  role: string;
-};
-
-type SkillsRefreshResult = {
-  changed: boolean;
-  summary?: { name: string; description: string }[];
-};
-
-async function refreshSkillsIfChanged(
-  ctx: SkillsRefreshContext,
-  lastHashRef: { current: string | null },
-): Promise<SkillsRefreshResult> {
-  const { apiUrl, swarmUrl, apiKey, agentId, role } = ctx;
-  const authHeaders: Record<string, string> = { "X-Agent-ID": agentId };
-  if (apiKey) authHeaders.Authorization = `Bearer ${apiKey}`;
-
-  try {
-    const sigResp = await fetch(`${apiUrl}/api/agents/${agentId}/skills/signature`, {
-      headers: authHeaders,
-    });
-    if (sigResp.ok) {
-      const sig = (await sigResp.json()) as { hash: string };
-      if (lastHashRef.current !== null && sig.hash === lastHashRef.current) {
-        return { changed: false };
-      }
-    } else if (sigResp.status >= 500) {
-      return { changed: false };
-    }
-  } catch {
-    return { changed: false };
-  }
-
-  let summary: { name: string; description: string }[] | undefined;
-  let newHash: string | null = null;
-  try {
-    const skillsResp = await fetch(`${apiUrl}/api/agents/${agentId}/skills`, {
-      headers: authHeaders,
-    });
-    if (skillsResp.ok) {
-      const skillsData = (await skillsResp.json()) as {
-        skills: { name: string; description: string; isActive: boolean; isEnabled: boolean }[];
-        signature?: string;
-      };
-      summary = skillsData.skills
-        .filter((s) => s.isActive && s.isEnabled)
-        .map((s) => ({ name: s.name, description: s.description }));
-      if (typeof skillsData.signature === "string") {
-        newHash = skillsData.signature;
-      }
-    }
-  } catch {
-    // Non-fatal
-  }
-
-  try {
-    const syncHeaders: Record<string, string> = {
-      "Content-Type": "application/json",
-      "X-Agent-ID": agentId,
-    };
-    if (apiKey) syncHeaders.Authorization = `Bearer ${apiKey}`;
-    await fetch(`${swarmUrl}/api/skills/sync-filesystem`, {
-      method: "POST",
-      headers: syncHeaders,
-    });
-  } catch {
-    // Non-fatal
-  }
-
-  if (summary === undefined && newHash === null) return { changed: false };
-  if (newHash !== null) lastHashRef.current = newHash;
-  void role;
-  return { changed: true, summary };
-}
+import { refreshSkillsIfChanged, type SkillsRefreshContext } from "../utils/skills-refresh";
 
 // ── Bun.serve() stub backing fake signature/list/sync endpoints ──────────────
 
