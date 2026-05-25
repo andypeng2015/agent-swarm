@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Agent Swarm API",
-    "version": "1.82.0",
+    "version": "1.83.0",
     "description": "Multi-agent orchestration API for Claude Code, Codex, and Gemini CLI. Enables task distribution, agent communication, and service discovery.\n\nMCP tools are documented separately in [MCP.md](./MCP.md)."
   },
   "servers": [
@@ -836,6 +836,7 @@
                           "env",
                           "file",
                           "side-effect-pending",
+                          "sdk-delegated",
                           null
                         ],
                         "default": null
@@ -6965,10 +6966,17 @@
                     "type": "string"
                   },
                   "cronExpression": {
-                    "type": "string"
+                    "type": [
+                      "string",
+                      "null"
+                    ]
                   },
                   "intervalMs": {
-                    "type": "integer"
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "exclusiveMinimum": 0
                   },
                   "taskTemplate": {
                     "type": "string"
@@ -9832,7 +9840,8 @@
     },
     "/api/tasks/{id}": {
       "get": {
-        "summary": "Get task details with logs",
+        "summary": "Get task details with logs and attachments",
+        "description": "Returns the full `AgentTask` row decorated with `logs` (capped by `logsLimit`) and `attachments` (pointer-based artifacts stored on the task, ordered by `created_at`).",
         "tags": [
           "Tasks"
         ],
@@ -9863,7 +9872,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Task with logs"
+            "description": "Task with logs and attachments"
           },
           "404": {
             "description": "Task not found"

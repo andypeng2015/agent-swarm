@@ -541,8 +541,45 @@ export interface MessagesResponse {
   messages: ChannelMessage[];
 }
 
+/**
+ * Mirrors `TaskAttachmentKindSchema` in `src/types.ts` and the CHECK
+ * constraint on `task_attachments.kind` (migration 072).
+ */
+export type TaskAttachmentKind = "agent-fs" | "url" | "shared-fs" | "page";
+
+/**
+ * Pointer-based artifact attached to a task via `store-progress.attachments`.
+ * Mirrors `TaskAttachmentSchema` in `src/types.ts`.
+ */
+export interface TaskAttachment {
+  id: string;
+  taskId: string;
+  agentId: string | null;
+  name: string;
+  kind: TaskAttachmentKind;
+  url?: string;
+  path?: string;
+  pageId?: string;
+  /** agent-fs only — paired with `driveId` to build a public live-host URL. */
+  orgId?: string;
+  /** agent-fs only — paired with `orgId` to build a public live-host URL. */
+  driveId?: string;
+  mimeType?: string;
+  sizeBytes?: number;
+  sha256?: string;
+  intent?: string;
+  description?: string;
+  isPrimary: boolean;
+  createdAt: string;
+}
+
 export interface TaskWithLogs extends AgentTask {
   logs: AgentLog[];
+  /**
+   * Pointer-based artifacts attached via `store-progress`. Always present
+   * (empty array when none); ordered by `createdAt`.
+   */
+  attachments?: TaskAttachment[];
 }
 
 export type ServiceStatus = "starting" | "healthy" | "unhealthy" | "stopped";

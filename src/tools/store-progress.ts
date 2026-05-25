@@ -8,6 +8,7 @@ import {
   getAgentById,
   getDb,
   getLeadAgent,
+  getResolvedConfig,
   getSessionLogsByTaskId,
   getTaskAttachments,
   getTaskById,
@@ -144,6 +145,66 @@ export const registerStoreProgressTool = (server: McpServer) => {
         let updatedTask = existingTask;
         const isTerminal = ["completed", "failed", "cancelled"].includes(existingTask.status);
 
+        // Attachments — pointer-based, append-only. Insert each row inside
+        // this transaction; the helper dedups by sha256 (when present) or by
+        // (kind, pointer, name), so idempotent re-calls don't fan out
+        // duplicates. Run BEFORE the terminal-status short-circuit: smoke
+        // tests and post-completion artifact uploads target already-completed
+        // tasks, and the schema explicitly documents that attachments "may be
+        // sent on any call (progress or completion) and accumulate across
+        // calls." Status writes still no-op on terminal tasks (see below);
+        // attachment writes don't change task state, so they're safe to
+        // accept on any status.
+        if (attachments && attachments.length > 0) {
+          // Resolve agent-fs default org/drive IDs from swarm config lazily —
+          // only if at least one `agent-fs` row arrives with missing IDs.
+          // Scope precedence is `getResolvedConfig`'s usual repo > agent >
+          // global; we pass the calling agent's id so agent-scoped overrides
+          // win. Per-row IDs always take precedence over the config defaults.
+          // Env-var fallback in `constants.ts` remains the secondary path for
+          // self-hosters who deploy without a config DB.
+          let agentFsDefaults: { orgId?: string; driveId?: string } | null = null;
+          const resolveAgentFsDefaults = (): { orgId?: string; driveId?: string } => {
+            if (agentFsDefaults !== null) return agentFsDefaults;
+            const configs = getResolvedConfig(requestInfo.agentId ?? undefined);
+            const orgId = configs.find((c) => c.key === "AGENT_FS_DEFAULT_ORG_ID")?.value;
+            const driveId = configs.find((c) => c.key === "AGENT_FS_DEFAULT_DRIVE_ID")?.value;
+            agentFsDefaults = {
+              orgId: orgId && orgId.length > 0 ? orgId : undefined,
+              driveId: driveId && driveId.length > 0 ? driveId : undefined,
+            };
+            return agentFsDefaults;
+          };
+
+          for (const a of attachments) {
+            let orgId = a.kind === "agent-fs" ? a.orgId : undefined;
+            let driveId = a.kind === "agent-fs" ? a.driveId : undefined;
+            if (a.kind === "agent-fs" && (!orgId || !driveId)) {
+              const defaults = resolveAgentFsDefaults();
+              orgId = orgId || defaults.orgId;
+              driveId = driveId || defaults.driveId;
+            }
+
+            insertTaskAttachment({
+              taskId,
+              agentId: requestInfo.agentId ?? null,
+              name: a.name,
+              kind: a.kind,
+              url: a.kind === "url" ? a.url : undefined,
+              path: a.kind === "agent-fs" || a.kind === "shared-fs" ? a.path : undefined,
+              pageId: a.kind === "page" ? a.pageId : undefined,
+              orgId,
+              driveId,
+              mimeType: a.mimeType,
+              sizeBytes: a.sizeBytes,
+              sha256: a.sha256,
+              intent: a.intent,
+              description: a.description,
+              isPrimary: a.isPrimary,
+            });
+          }
+        }
+
         // Idempotency guard: short-circuit terminal-status writes (completed/failed)
         // BEFORE any side-effects fire (event emission, memory write, follow-up task,
         // business-use ensure). Without this, a multi-session race causes duplicate
@@ -158,31 +219,6 @@ export const registerStoreProgressTool = (server: McpServer) => {
             task: existingTask,
             wasNoOp: true,
           };
-        }
-
-        // Attachments — pointer-based, append-only. Insert each row inside
-        // this transaction; the helper dedups by sha256 (when present) or by
-        // (kind, pointer, name), so idempotent re-calls don't fan out
-        // duplicates. Intentionally NOT reached on the terminal-status no-op
-        // short-circuit above (per Phase 1 spec).
-        if (attachments && attachments.length > 0 && !isTerminal) {
-          for (const a of attachments) {
-            insertTaskAttachment({
-              taskId,
-              agentId: requestInfo.agentId ?? null,
-              name: a.name,
-              kind: a.kind,
-              url: a.kind === "url" ? a.url : undefined,
-              path: a.kind === "agent-fs" || a.kind === "shared-fs" ? a.path : undefined,
-              pageId: a.kind === "page" ? a.pageId : undefined,
-              mimeType: a.mimeType,
-              sizeBytes: a.sizeBytes,
-              sha256: a.sha256,
-              intent: a.intent,
-              description: a.description,
-              isPrimary: a.isPrimary,
-            });
-          }
         }
 
         // Update progress if provided (with deduplication)
