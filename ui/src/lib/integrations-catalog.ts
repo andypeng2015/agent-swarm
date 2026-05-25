@@ -55,9 +55,9 @@ export type AgentRole = "lead" | "worker";
  *
  * - `'swarm-registry'`: already published in the swarm skills registry
  *   (installable from /settings/skills, resolvable by name in the `skills` DB table).
- * - `'template'`: definition is checked in to `src/be/seed-skills/catalog/` and
- *   seeded on boot by the skills seeder — the direct mirror of the scripts seeder
- *   pattern from PR #519.
+ * - `'template'`: checked in under `templates/skills/<name>/SKILL.md` in the
+ *   agent-swarm repo. Installable via `skill-install-remote` using the
+ *   `templateRepo` + `templatePath` fields on the entry.
  */
 export type SkillSource = "swarm-registry" | "template";
 
@@ -70,6 +70,18 @@ export interface RecommendedSkill {
   roles: AgentRole[];
   /** One-liner shown beside the skill explaining why it's needed. */
   reason?: string;
+  /**
+   * GitHub repo slug (`owner/repo`) hosting the SKILL.md.
+   * Only set when `source === 'template'`.
+   * Passed directly to `skill-install-remote` as `sourceRepo`.
+   */
+  templateRepo?: string;
+  /**
+   * Path inside `templateRepo` that contains `SKILL.md`.
+   * Only set when `source === 'template'`.
+   * Passed directly to `skill-install-remote` as `sourcePath`.
+   */
+  templatePath?: string;
 }
 
 export interface IntegrationDef {
@@ -483,7 +495,9 @@ export const INTEGRATIONS: IntegrationDef[] = [
     recommendedSkills: [
       {
         name: "agentmail-sending",
-        source: "swarm-registry",
+        source: "template",
+        templateRepo: "desplega-ai/agent-swarm",
+        templatePath: "templates/skills/agentmail-sending",
         roles: ["lead"],
         reason:
           "Needed for agents to send/reply to email via AgentMail (the env keys alone only enable receive).",

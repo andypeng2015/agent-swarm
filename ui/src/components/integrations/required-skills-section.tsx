@@ -2,7 +2,7 @@ import { Wrench } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import type { AgentRole, RecommendedSkill, SkillSource } from "@/lib/integrations-catalog";
+import type { AgentRole, RecommendedSkill } from "@/lib/integrations-catalog";
 
 interface RecommendedSkillsSectionProps {
   /** Skills recommended alongside the integration to make it work end-to-end. */
@@ -54,7 +54,7 @@ function RecommendedSkillRow({ recommended }: RecommendedSkillRowProps) {
       <div className="flex min-w-0 flex-col gap-1">
         <div className="flex flex-wrap items-center gap-2">
           <code className="font-mono text-xs text-foreground">{recommended.name}</code>
-          <SourceBadge source={recommended.source} />
+          <SourceBadge skill={recommended} />
           {recommended.roles.map((role) => (
             <Badge key={role} variant="outline" size="tag">
               {role}
@@ -75,11 +75,11 @@ function RecommendedSkillRow({ recommended }: RecommendedSkillRowProps) {
 }
 
 interface SourceBadgeProps {
-  source: SkillSource;
+  skill: RecommendedSkill;
 }
 
-function SourceBadge({ source }: SourceBadgeProps) {
-  if (source === "swarm-registry") {
+function SourceBadge({ skill }: SourceBadgeProps) {
+  if (skill.source === "swarm-registry") {
     return (
       <Tooltip>
         <TooltipTrigger asChild>
@@ -111,7 +111,21 @@ function SourceBadge({ source }: SourceBadgeProps) {
         </Badge>
       </TooltipTrigger>
       <TooltipContent className="max-w-xs">
-        Checked-in skill template seeded from the built-in catalog on swarm boot.
+        {skill.templateRepo && skill.templatePath ? (
+          <>
+            Checked-in skill at{" "}
+            <code className="font-mono">
+              {skill.templateRepo}/{skill.templatePath}/SKILL.md
+            </code>
+            . Install via{" "}
+            <code className="font-mono">
+              skill-install-remote sourceRepo={skill.templateRepo} sourcePath={skill.templatePath}
+            </code>
+            .
+          </>
+        ) : (
+          "Checked-in skill template — installable from the templates catalog."
+        )}
       </TooltipContent>
     </Tooltip>
   );
