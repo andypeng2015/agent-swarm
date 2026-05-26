@@ -82,6 +82,13 @@ export interface RecommendedSkill {
    * Passed directly to `skill-install-remote` as `sourcePath`.
    */
   templatePath?: string;
+  /**
+   * When true, the skill is automatically installed (via `skill-install-remote`)
+   * as part of integration setup — the operator doesn't need to visit
+   * /settings/skills to install it manually.
+   * Only meaningful when `source === 'template'` and `templateRepo` is set.
+   */
+  installOnSetup?: boolean;
 }
 
 export interface IntegrationDef {
@@ -501,6 +508,7 @@ export const INTEGRATIONS: IntegrationDef[] = [
         roles: ["lead"],
         reason:
           "Needed for agents to send/reply to email via AgentMail (the env keys alone only enable receive).",
+        installOnSetup: true,
       },
     ],
     fields: [

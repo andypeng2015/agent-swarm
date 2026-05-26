@@ -1,4 +1,7 @@
-import { Wrench } from "lucide-react";
+import { CheckCircle, Loader2, Wrench } from "lucide-react";
+import { useState } from "react";
+import { toast } from "sonner";
+import { useInstallRemoteSkill } from "@/api/hooks/use-skills";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -17,8 +20,10 @@ interface RecommendedSkillsSectionProps {
  * entry declares its source — 'swarm-registry' for skills already published in
  * the registry, 'template' for skills seeded from the built-in catalog.
  *
- * The "Install on <role>" button is a placeholder — clicking it does nothing.
- * See TODO below for the follow-up that wires the actual install API.
+ * Template skills with `templateRepo` set have a functional "Install on <role>"
+ * button that calls `skill-install-remote` directly from this page. Skills
+ * flagged `installOnSetup: true` are also installed automatically when the
+ * parent integration form is saved for the first time.
  */
 export function RecommendedSkillsSection({ recommendedSkills }: RecommendedSkillsSectionProps) {
   return (
@@ -49,6 +54,26 @@ interface RecommendedSkillRowProps {
 }
 
 function RecommendedSkillRow({ recommended }: RecommendedSkillRowProps) {
+  const installRemote = useInstallRemoteSkill();
+  const [installed, setInstalled] = useState(false);
+
+  async function handleInstall() {
+    if (!recommended.templateRepo) return;
+    try {
+      await installRemote.mutateAsync({
+        sourceRepo: recommended.templateRepo,
+        sourcePath: recommended.templatePath,
+      });
+      setInstalled(true);
+      toast.success(`Skill "${recommended.name}" installed successfully.`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Install failed";
+      toast.error(`Failed to install "${recommended.name}": ${msg}`);
+    }
+  }
+
+  const canInstallRemote = recommended.source === "template" && !!recommended.templateRepo;
+
   return (
     <li className="flex flex-col gap-2 rounded-md border border-border bg-muted/20 p-3 sm:flex-row sm:items-center sm:justify-between">
       <div className="flex min-w-0 flex-col gap-1">
@@ -60,6 +85,23 @@ function RecommendedSkillRow({ recommended }: RecommendedSkillRowProps) {
               {role}
             </Badge>
           ))}
+          {recommended.installOnSetup && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Badge
+                  variant="outline"
+                  size="tag"
+                  className="border-status-active/30 text-status-active-strong cursor-default"
+                >
+                  auto-install
+                </Badge>
+              </TooltipTrigger>
+              <TooltipContent className="max-w-xs">
+                This skill is installed automatically when you save the integration for the first
+                time — no manual step needed.
+              </TooltipContent>
+            </Tooltip>
+          )}
         </div>
         {recommended.reason && (
           <p className="text-xs text-muted-foreground leading-snug">{recommended.reason}</p>
@@ -67,7 +109,15 @@ function RecommendedSkillRow({ recommended }: RecommendedSkillRowProps) {
       </div>
       <div className="flex flex-wrap items-center gap-2 shrink-0">
         {recommended.roles.map((role) => (
-          <InstallOnRoleButton key={role} role={role} skillName={recommended.name} />
+          <InstallOnRoleButton
+            key={role}
+            role={role}
+            skillName={recommended.name}
+            canInstallRemote={canInstallRemote}
+            isLoading={installRemote.isPending}
+            isInstalled={installed}
+            onInstall={handleInstall}
+          />
         ))}
       </div>
     </li>
@@ -134,40 +184,75 @@ function SourceBadge({ skill }: SourceBadgeProps) {
 interface InstallOnRoleButtonProps {
   role: AgentRole;
   skillName: string;
+  canInstallRemote: boolean;
+  isLoading: boolean;
+  isInstalled: boolean;
+  onInstall: () => void;
 }
 
-/**
- * TODO(integrations-ui): wire up real one-click install via
- * `useInstallSkill({ skillId, agentId })` once we settle on a skill-picker
- * UX for "Install on <role>". Until then this button is render-only and
- * the operator installs from /settings/skills.
- *
- * Future work also needs to detect the per-agent-role installation state
- * (call `/api/agents/{id}/skills` for each matching agent) and render a
- * green "Installed on <role>" instead of the install CTA when present.
- */
-function InstallOnRoleButton({ role, skillName }: InstallOnRoleButtonProps) {
+function InstallOnRoleButton({
+  role,
+  skillName,
+  canInstallRemote,
+  isLoading,
+  isInstalled,
+  onInstall,
+}: InstallOnRoleButtonProps) {
+  if (isInstalled) {
+    return (
+      <Badge
+        variant="outline"
+        size="tag"
+        className="border-status-success/30 text-status-success-strong gap-1 px-2 py-1 h-auto"
+      >
+        <CheckCircle className="h-3 w-3" aria-hidden="true" />
+        Installed on {role}
+      </Badge>
+    );
+  }
+
+  if (!canInstallRemote) {
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className="inline-block">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled
+              className="gap-1 pointer-events-none"
+              aria-label={`Install ${skillName} on ${role} — install from /settings/skills`}
+            >
+              <Wrench className="h-3.5 w-3.5" aria-hidden="true" />
+              Install on {role}
+            </Button>
+          </span>
+        </TooltipTrigger>
+        <TooltipContent className="max-w-xs">
+          Install the skill from <code className="font-mono">/settings/skills</code> onto a {role}{" "}
+          agent.
+        </TooltipContent>
+      </Tooltip>
+    );
+  }
+
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <span className="inline-block">
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            disabled
-            className="gap-1 pointer-events-none"
-            aria-label={`Install ${skillName} on ${role} (coming soon)`}
-          >
-            <Wrench className="h-3.5 w-3.5" aria-hidden="true" />
-            Install on {role}
-          </Button>
-        </span>
-      </TooltipTrigger>
-      <TooltipContent className="max-w-xs">
-        Coming soon: one-click install from this page. For now, install the skill from{" "}
-        <code className="font-mono">/settings/skills</code> onto a {role} agent.
-      </TooltipContent>
-    </Tooltip>
+    <Button
+      type="button"
+      size="sm"
+      variant="outline"
+      disabled={isLoading}
+      onClick={onInstall}
+      className="gap-1"
+      aria-label={`Install ${skillName} on ${role}`}
+    >
+      {isLoading ? (
+        <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+      ) : (
+        <Wrench className="h-3.5 w-3.5" aria-hidden="true" />
+      )}
+      Install on {role}
+    </Button>
   );
 }

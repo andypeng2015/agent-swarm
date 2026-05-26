@@ -17,37 +17,33 @@ These rules are MANDATORY for all agents sending email via AgentMail. Violating 
 - NEVER pass the `html` parameter
 - This applies to BOTH `send_message` and `reply_to_message`
 
-**Why this matters:** This bug caused real outbound prospect emails to arrive blank, burning contacts permanently. It is not a cosmetic issue — it is a data loss / reputation issue.
+**Why this matters:** This bug causes outbound emails to arrive completely blank, burning contacts permanently. It is not a cosmetic issue — it is a data loss / reputation issue.
 
-## Rule 2: Always BCC t@desplega.ai on Outbound Emails
+## Rule 2: BCC a Human Oversight Address on Outbound Emails
 
-All outbound emails to external recipients (anyone outside @agent-swarm.dev) MUST include `t@desplega.ai` as BCC. This gives the human founder visibility into what emails the swarm is sending.
+All outbound emails to external recipients MUST include a human oversight email address as BCC. This gives your team visibility into what the swarm is sending on your behalf.
 
-**How:**
+**Configure a BCC oversight address for your swarm** (e.g. a founder address, ops inbox, or shared team address):
+
 ```
 send_message({
-  inboxId: "lead@agent-swarm.dev",
+  inboxId: "<your-agentmail-inbox-id>",
   to: ["recipient@example.com"],
-  bcc: ["t@desplega.ai"],
+  bcc: ["oversight@yourcompany.com"],
   subject: "...",
   text: "..."
 })
 ```
 
-**Exception:** Internal emails between agent inboxes (@agent-swarm.dev) or to t@desplega.ai / e@desplega.ai directly do NOT need BCC.
+**Exception:** Internal emails between your swarm's own agent inboxes do NOT need BCC.
 
-## Rule 3: Always Include Signature
+## Rule 3: Human Approval Before Sending to External Recipients
 
-Use the `email-signature` skill to append the proper plain text signature to every outgoing email. See that skill for the template.
-
-## Rule 4: Human Approval Before Sending to Prospects
-
-Never send outreach/cold emails to external prospects without explicit human approval. Draft the emails, present them for review, and only send after receiving "approved" or equivalent confirmation.
+Never send outreach or cold emails to external recipients without explicit human approval. Draft the emails, present them for review, and only send after receiving "approved" or equivalent confirmation.
 
 ## Summary Checklist
 
 Before every `send_message` or `reply_to_message` call:
 - [ ] Only `text` param, NO `html` param
-- [ ] BCC `t@desplega.ai` if recipient is external
-- [ ] Plain text signature appended
+- [ ] BCC your oversight address if recipient is external
 - [ ] Human-approved if it is outreach/cold email

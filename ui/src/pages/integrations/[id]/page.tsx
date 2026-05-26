@@ -34,6 +34,7 @@ import {
   useEnvPresence,
   useReloadConfig,
 } from "@/api/hooks/use-integrations-meta";
+import { useInstallRemoteSkill } from "@/api/hooks/use-skills";
 import type { SwarmConfig } from "@/api/types";
 import { ClaudeManagedSection } from "@/components/integrations/claude-managed-section";
 import { CodexOAuthSection } from "@/components/integrations/codex-oauth-section";
@@ -209,6 +210,7 @@ function IntegrationDetailInner({
 
   const [state, setState] = useState<DirtyState>(initialState);
   const [confirmResetOpen, setConfirmResetOpen] = useState(false);
+  const installRemoteSkill = useInstallRemoteSkill();
 
   function updateField(key: string, patch: Partial<DirtyField>) {
     setState((prev) => ({
@@ -256,6 +258,30 @@ function IntegrationDetailInner({
     if (!hasDirty) return;
     const saveResult = await upsertBatch.mutateAsync(dirtyEntries);
     if (saveResult.failureCount > 0) return; // upsertBatch already surfaced the error toast
+
+    // Auto-install skills flagged installOnSetup so operators don't need a
+    // separate visit to /settings/skills after configuring the integration.
+    const autoInstallSkills =
+      def.recommendedSkills?.filter(
+        (s) => s.installOnSetup && s.source === "template" && s.templateRepo,
+      ) ?? [];
+    await Promise.allSettled(
+      autoInstallSkills.map((s) =>
+        installRemoteSkill
+          .mutateAsync({ sourceRepo: s.templateRepo!, sourcePath: s.templatePath })
+          .then(() => {
+            toast.success(`Skill "${s.name}" installed automatically.`);
+          })
+          .catch((err: unknown) => {
+            const msg = err instanceof Error ? err.message : "install failed";
+            // Silently skip if already installed; surface other errors.
+            if (!msg.includes("already") && !msg.includes("exist")) {
+              toast.error(`Auto-install of "${s.name}" failed: ${msg}`);
+            }
+          }),
+      ),
+    );
+
     try {
       const reload = await reloadConfig.mutateAsync();
       const summary =
@@ -266,7 +292,7 @@ function IntegrationDetailInner({
     } catch {
       // reload hook surfaces its own error toast
     }
-  }, [hasDirty, dirtyEntries, upsertBatch, reloadConfig]);
+  }, [hasDirty, dirtyEntries, upsertBatch, reloadConfig, def, installRemoteSkill]);
 
   // Cmd/Ctrl+S = Save. We intentionally let it fire even when focus is inside
   // a textarea (private keys, etc.) — users expect cmd+S universally and can
