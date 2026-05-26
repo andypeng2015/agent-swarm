@@ -11,13 +11,34 @@ export interface ErrorSignal {
 }
 
 /**
- * Clamps a candidate reset timestamp (ms) to [now+60s, now+6h].
+ * Maximum cooldown horizon for a rate-limit reset. A weekly OAuth limit resets
+ * up to ~7 days out, so the cap must be at least that or a weekly-limited key
+ * gets re-clamped to a short cooldown and re-handed to a worker every few hours
+ * (the fail-every-6h sawtooth). 7d still guards against absurd far-future
+ * (malformed) values.
+ */
+export const MAX_RATE_LIMIT_RESET_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * Single source of truth for "does this text look like a rate-limit signal?".
+ * Shared by the runner's cooldown gate and {@link parseStderrForErrors} so the
+ * two matchers can't drift. Tolerates a qualifier between "your" and "limit"
+ * (weekly / 5-hour / daily): matches "hit your weekly limit", "hit your 5-hour
+ * limit", "hit your limit", "Claude usage limit reached", "rate limit exceeded",
+ * "429 Too Many Requests"; does not match "No conversation found with session ID".
+ */
+export function isRateLimitMessage(s: string): boolean {
+  return /rate.?limit|hit your[\w\s-]*limit|usage[ _-]?limit|too many requests|\b429\b/i.test(s);
+}
+
+/**
+ * Clamps a candidate reset timestamp (ms) to [now+60s, now+7d].
  * Protects against past timestamps (clock skew) and absurdly far future values (malformed).
  */
 function clampRateLimitResetMs(candidateMs: number): number {
   const nowMs = Date.now();
   const minMs = nowMs + 60_000;
-  const maxMs = nowMs + 6 * 60 * 60 * 1000;
+  const maxMs = nowMs + MAX_RATE_LIMIT_RESET_MS;
   return Math.min(Math.max(candidateMs, minMs), maxMs);
 }
 
@@ -97,6 +118,26 @@ export class SessionErrorTracker {
   }
 
   /**
+   * Process a Codex-style usage-limit error message (from a `{type:"error"}`
+   * or `{type:"turn.failed"}` SDK event). Only stashes when the message
+   * contains the usage-limit signature AND carries a parseable wall-clock
+   * reset time. "Try again later." and workspace-credit branches fall through
+   * to the runner's tier-3 fallback instead.
+   * Last call wins — multiple events per session are deduped to the latest.
+   */
+  processCodexUsageLimitMessage(message: string): void {
+    if (!message) return;
+    if (!/usage limit|hit your usage/i.test(message)) return;
+
+    const iso = parseCodexRateLimitResetTime(message);
+    if (!iso) return;
+
+    const candidateMs = new Date(iso).getTime();
+    if (!Number.isFinite(candidateMs)) return;
+    this.rateLimitResetAtMs = clampRateLimitResetMs(candidateMs);
+  }
+
+  /**
    * Returns the stashed rate limit reset time as an ISO string, or undefined
    * if no rejected rate_limit_event was seen in this session.
    */
@@ -173,7 +214,14 @@ export class SessionErrorTracker {
 
   /** Check if the failure was due to a missing/stale session ID */
   isSessionNotFound(): boolean {
-    return this.errors.some((e) => e.message.includes("No conversation found with session ID"));
+    return this.errors.some((e) => {
+      const message = e.message.toLowerCase();
+      return (
+        message.includes("no conversation found with session id") ||
+        (message.includes("--resume requires a valid session id") &&
+          message.includes("does not match any session title"))
+      );
+    });
   }
 
   getErrors(): ReadonlyArray<ErrorSignal> {
@@ -249,6 +297,76 @@ const MONTH_NAMES: Record<string, number> = {
   dec: 11,
   december: 11,
 };
+
+/**
+ * Parse the reset time embedded in a Codex `UsageLimitReached` error message.
+ * Codex emits one of these formats via chrono's `%-I:%M %p` (same day) or
+ * `%b %-d{th/st/nd/rd}, %Y %-I:%M %p` (different day):
+ *   "Try again at 8:35 PM."
+ *   "or try again at 8:35 PM."
+ *   "Try again at May 26th, 2026 8:35 PM."
+ *   "or try again at May 26th, 2026 8:35 PM."
+ * Wall-clock times are UTC because the agent-swarm Docker worker has TZ=Etc/UTC;
+ * chrono::Local resolves to UTC in that container.
+ */
+export function parseCodexRateLimitResetTime(
+  message: string,
+  now: Date = new Date(),
+): string | undefined {
+  if (!message) return undefined;
+
+  // Different-day format (more specific — try first):
+  // "Month Day{st/nd/rd/th}, Year HH:MM AM/PM"
+  const datedMatch = message.match(
+    /\btry again at\s+([A-Za-z]+)\s+(\d{1,2})(?:st|nd|rd|th)?,\s+(\d{4})\s+(\d{1,2}):(\d{2})\s*(AM|PM|am|pm)\b/i,
+  );
+  if (datedMatch) {
+    const monthIdx = MONTH_NAMES[datedMatch[1]!.toLowerCase()];
+    if (monthIdx !== undefined) {
+      const day = Number.parseInt(datedMatch[2]!, 10);
+      const year = Number.parseInt(datedMatch[3]!, 10);
+      const rawHours = Number.parseInt(datedMatch[4]!, 10);
+      const minutes = Number.parseInt(datedMatch[5]!, 10);
+      const ampm = datedMatch[6]!.toLowerCase();
+      if (rawHours < 1 || rawHours > 12 || minutes < 0 || minutes > 59) return undefined;
+      let hours = rawHours;
+      if (ampm === "pm" && hours !== 12) hours += 12;
+      if (ampm === "am" && hours === 12) hours = 0;
+      const d = new Date(Date.UTC(year, monthIdx, day, hours, minutes, 0));
+      // Round-trip guard: Date.UTC silently normalises out-of-range days (e.g. May 32 → June 1).
+      if (d.getUTCFullYear() !== year || d.getUTCMonth() !== monthIdx || d.getUTCDate() !== day) {
+        return undefined;
+      }
+      return d.toISOString();
+    }
+  }
+
+  // Same-day format: "HH:MM AM/PM"
+  // Anchored on "try again at" so we don't match times elsewhere in the message.
+  const timeMatch = message.match(/\btry again at\s+(\d{1,2}):(\d{2})\s*(AM|PM|am|pm)\b/i);
+  if (timeMatch) {
+    const rawHours = Number.parseInt(timeMatch[1]!, 10);
+    const minutes = Number.parseInt(timeMatch[2]!, 10);
+    const ampm = timeMatch[3]!.toLowerCase();
+    if (rawHours < 1 || rawHours > 12 || minutes < 0 || minutes > 59) return undefined;
+    let hours = rawHours;
+    if (ampm === "pm" && hours !== 12) hours += 12;
+    if (ampm === "am" && hours === 12) hours = 0;
+    const candidate = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), hours, minutes, 0),
+    );
+    // Rollover: if the parsed wall-clock is more than SKEW_MS before "now", assume tomorrow.
+    // At-or-just-before-now candidates (clock skew, second truncation) stay same-day and
+    // flow to clampRateLimitResetMs which applies the now+60s floor.
+    const SKEW_MS = 2 * 60 * 1000;
+    if (candidate.getTime() < now.getTime() - SKEW_MS) {
+      candidate.setUTCDate(candidate.getUTCDate() + 1);
+    }
+    return candidate.toISOString();
+  }
+
+  return undefined;
+}
 
 /**
  * Parse a rate limit error message to extract a reset time, returning an ISO datetime string.
@@ -338,12 +456,7 @@ export function parseStderrForErrors(stderr: string, tracker: SessionErrorTracke
   const lower = stderr.toLowerCase();
   const firstLine = stderr.trim().split("\n")[0] ?? stderr.trim();
 
-  if (
-    lower.includes("rate limit") ||
-    lower.includes("rate_limit") ||
-    lower.includes("429") ||
-    lower.includes("hit your limit")
-  ) {
+  if (isRateLimitMessage(stderr)) {
     tracker.addStderrError(firstLine);
   } else if (
     lower.includes("authentication") ||

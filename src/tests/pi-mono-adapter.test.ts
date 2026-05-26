@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { PiMonoAdapter, resolveModel } from "../providers/pi-mono-adapter";
+import { createPiRuntimeAuth, PiMonoAdapter, resolveModel } from "../providers/pi-mono-adapter";
 
 describe("PiMonoAdapter", () => {
   test("name is 'pi'", () => {
@@ -174,6 +174,26 @@ describe("resolveModel — OpenRouter reroute for anthropic shortnames", () => {
     // Just confirm the default parameter doesn't throw — the actual model
     // resolution depends on the test runner's env.
     expect(() => resolveModel("unknown-model-id")).not.toThrow();
+  });
+});
+
+describe("createPiRuntimeAuth", () => {
+  test("threads resolved OpenRouter key into pi runtime auth without process.env", async () => {
+    const { modelRegistry } = createPiRuntimeAuth({ OPENROUTER_API_KEY: "sk-or-runtime" });
+
+    await expect(modelRegistry.getApiKeyForProvider("openrouter")).resolves.toBe("sk-or-runtime");
+  });
+
+  test("supports all pi env-backed providers", async () => {
+    const { modelRegistry } = createPiRuntimeAuth({
+      ANTHROPIC_API_KEY: "sk-ant-runtime",
+      OPENAI_API_KEY: "sk-openai-runtime",
+      GOOGLE_API_KEY: "sk-google-runtime",
+    });
+
+    await expect(modelRegistry.getApiKeyForProvider("anthropic")).resolves.toBe("sk-ant-runtime");
+    await expect(modelRegistry.getApiKeyForProvider("openai")).resolves.toBe("sk-openai-runtime");
+    await expect(modelRegistry.getApiKeyForProvider("google")).resolves.toBe("sk-google-runtime");
   });
 });
 

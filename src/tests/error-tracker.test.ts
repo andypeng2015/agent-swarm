@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+  parseCodexRateLimitResetTime,
   parseRateLimitResetTime,
   parseStderrForErrors,
   SessionErrorTracker,
@@ -88,6 +89,23 @@ describe("SessionErrorTracker", () => {
     expect(errors).toHaveLength(1);
     expect(errors[0]!.type).toBe("stderr_error");
     expect(errors[0]!.message).toBe("fatal: connection refused");
+  });
+
+  test("detects Claude CLI invalid --resume session errors as stale sessions", () => {
+    const tracker = new SessionErrorTracker();
+    trackErrorFromJson(
+      {
+        type: "result",
+        subtype: "error_during_execution",
+        is_error: true,
+        errors: [
+          'Error during execution: Error: --resume requires a valid session ID or session title when used with --print. Usage: claude -p --resume <session-id|title>. Provided value "ses_19c145de3ffeD9qLlntj8SRO28" is not a UUID and does not match any session title.',
+        ],
+      },
+      tracker,
+    );
+
+    expect(tracker.isSessionNotFound()).toBe(true);
   });
 });
 
@@ -546,5 +564,39 @@ describe("parseRateLimitResetTime", () => {
     expect(parseRateLimitResetTime("retry after 100000 seconds")).toBeUndefined();
     // More than 24 hours in minutes
     expect(parseRateLimitResetTime("wait 2000 minutes")).toBeUndefined();
+  });
+});
+
+describe("Codex/Claude coexistence — single tracker handles both providers", () => {
+  test("processRateLimitEvent (Claude) and processCodexUsageLimitMessage (Codex) both stash into getRateLimitResetAt", () => {
+    // Claude path: processRateLimitEvent
+    const claudeTracker = new SessionErrorTracker();
+    const futureResetsAtSec = Math.floor(Date.now() / 1000) + 3600;
+    claudeTracker.processRateLimitEvent({
+      type: "rate_limit_event",
+      rate_limit_info: { status: "rejected", resetsAt: futureResetsAtSec },
+    });
+    expect(claudeTracker.getRateLimitResetAt()).toBeDefined();
+
+    // Codex path: processCodexUsageLimitMessage
+    const codexTracker = new SessionErrorTracker();
+    codexTracker.processCodexUsageLimitMessage(
+      "You've hit your usage limit. To get more access now, send a request to your admin or try again at 8:35 PM.",
+    );
+    expect(codexTracker.getRateLimitResetAt()).toBeDefined();
+
+    // A tracker that received a Claude event does NOT get cross-contaminated by
+    // an independent Codex call on a different instance.
+    const iso = claudeTracker.getRateLimitResetAt();
+    expect(iso).toBeDefined();
+    const ms = new Date(iso!).getTime();
+    expect(ms).toBeCloseTo(futureResetsAtSec * 1000, -2); // within 100ms tolerance
+  });
+
+  test("parseCodexRateLimitResetTime does not interfere with parseRateLimitResetTime fixtures", () => {
+    // Claude format: "resets 3pm (UTC)" — must NOT be matched by Codex parser
+    expect(parseCodexRateLimitResetTime("resets 3pm (UTC)")).toBeUndefined();
+    // Codex format: "try again at 8:35 PM" — must NOT be matched by Claude parser
+    expect(parseRateLimitResetTime("try again at 8:35 PM.")).toBeUndefined();
   });
 });

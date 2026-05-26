@@ -76,6 +76,14 @@ const DIRECT_MODELS: Record<"claude" | "codex", ModelOption[]> = {
   ],
 };
 
+// Mirrors the any-of credential checks in the harness adapters:
+// `claude-adapter.ts` accepts `CLAUDE_CODE_OAUTH_TOKEN` OR `ANTHROPIC_API_KEY`;
+// `codex-adapter.ts` accepts `OPENAI_API_KEY` OR `CODEX_OAUTH`.
+const DIRECT_HARNESS_ACCEPTED_KEYS: Record<"claude" | "codex", string[]> = {
+  claude: ["ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"],
+  codex: ["OPENAI_API_KEY", "CODEX_OAUTH"],
+};
+
 const SNAPSHOT_ORDER: SnapshotProviderId[] = ["openrouter", "anthropic", "openai"];
 
 const SNAPSHOT_META: Record<
@@ -102,13 +110,25 @@ function hasConfigKey(configs: SwarmConfig[] | undefined, key: string): boolean 
   return Boolean(configs?.some((c) => c.key === key && c.value !== ""));
 }
 
+// Codex OAuth is the only credential whose swarm_config key shape diverges
+// from the env-var name. Storage uses `codex_oauth_0`, `codex_oauth_1`, …
+// per slot (plus the legacy single-slot `codex_oauth`). See
+// `src/providers/codex-oauth/storage.ts`.
+const CODEX_OAUTH_SLOT_RE = /^codex_oauth(_\d+)?$/;
+
+function hasCodexOAuthSlot(configs: SwarmConfig[] | undefined): boolean {
+  return Boolean(configs?.some((c) => CODEX_OAUTH_SLOT_RE.test(c.key) && c.value !== ""));
+}
+
 export function hasRuntimeCredential(
   key: string,
   configs: SwarmConfig[] | undefined,
   envPresence: Record<string, boolean> | undefined,
 ): boolean {
   if (envPresence?.[key]) return true;
-  return hasConfigKey(configs, key);
+  if (hasConfigKey(configs, key)) return true;
+  if (key === "CODEX_OAUTH") return hasCodexOAuthSlot(configs);
+  return false;
 }
 
 export function modelGroupsForHarness(
@@ -119,12 +139,13 @@ export function modelGroupsForHarness(
   if (harness === "claude" || harness === "codex") {
     const models = DIRECT_MODELS[harness];
     const requiredKey = models[0]?.requiredKey ?? "";
+    const acceptedKeys = DIRECT_HARNESS_ACCEPTED_KEYS[harness];
     return [
       {
         provider: models[0]?.provider ?? HARNESS_LABEL[harness],
         models,
         requiredKey,
-        enabled: hasRuntimeCredential(requiredKey, configs, envPresence),
+        enabled: acceptedKeys.some((k) => hasRuntimeCredential(k, configs, envPresence)),
       },
     ];
   }

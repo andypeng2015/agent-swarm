@@ -395,6 +395,10 @@ class ClaudeSession implements ProviderSession {
       this.config.prompt,
     ];
 
+    if (this.config.resumeSessionId) {
+      cmd.push("--resume", this.config.resumeSessionId);
+    }
+
     if (this.config.additionalArgs?.length) {
       cmd.push(...this.config.additionalArgs);
     }
@@ -688,10 +692,11 @@ class ClaudeSession implements ProviderSession {
     // Stale session retry: if process failed because session not found and we used --resume,
     // strip --resume and retry with a fresh session
     if (result.exitCode !== 0 && this.errorTracker.isSessionNotFound()) {
-      const hasResume = (this.config.additionalArgs || []).includes("--resume");
+      const hasResume =
+        !!this.config.resumeSessionId || (this.config.additionalArgs || []).includes("--resume");
       if (hasResume) {
         console.log(
-          `\x1b[33m[${this.config.role}] Session not found for task ${this.config.taskId.slice(0, 8)} — retrying without --resume\x1b[0m`,
+          `\x1b[33m[${this.config.role}] Session resume failed for task ${this.config.taskId.slice(0, 8)} — retrying without --resume\x1b[0m`,
         );
 
         const freshArgs = (this.config.additionalArgs || []).filter((arg, idx, arr) => {

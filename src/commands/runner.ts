@@ -38,7 +38,11 @@ import { getApiKey } from "../utils/api-key.ts";
 import { computeBudgetBackoffMs } from "../utils/budget-backoff.ts";
 import { getContextWindowSize } from "../utils/context-window.ts";
 import { type CredentialSelection, resolveCredentialPools } from "../utils/credentials.ts";
-import { parseRateLimitResetTime } from "../utils/error-tracker.ts";
+import {
+  isRateLimitMessage,
+  MAX_RATE_LIMIT_RESET_MS,
+  parseRateLimitResetTime,
+} from "../utils/error-tracker.ts";
 import { resolveHarnessProvider } from "../utils/harness-provider.ts";
 import { prettyPrintLine, prettyPrintStderr } from "../utils/pretty-print.ts";
 import { scrubSecrets } from "../utils/secret-scrubber.ts";
@@ -53,6 +57,11 @@ import {
   reportCredStatus,
   reportLatestModel,
 } from "./provider-credentials.ts";
+import {
+  type ResumeSessionCandidate,
+  type ResumeSessionResolution,
+  resolveResumeSession,
+} from "./resume-session.ts";
 // Side-effect import: registers runner trigger/resumption templates
 import "./templates.ts";
 
@@ -990,6 +999,8 @@ async function getPausedTasksFromAPI(config: ApiConfig): Promise<
     task: string;
     progress?: string;
     claudeSessionId?: string;
+    provider?: ProviderName;
+    providerMeta?: Record<string, unknown>;
     parentTaskId?: string;
     dir?: string;
     vcsRepo?: string;
@@ -1022,6 +1033,8 @@ async function getPausedTasksFromAPI(config: ApiConfig): Promise<
         task: string;
         progress?: string;
         claudeSessionId?: string;
+        provider?: ProviderName;
+        providerMeta?: Record<string, unknown>;
         parentTaskId?: string;
         dir?: string;
         vcsRepo?: string;
@@ -1424,21 +1437,48 @@ async function saveProviderSessionIdOnActiveSession(
   });
 }
 
-/** Fetch Claude session ID for a task (for --resume) */
-async function fetchProviderSessionId(
+interface ProviderSessionInfo {
+  sessionId: string | null;
+  provider?: ProviderName;
+  providerMeta?: Record<string, unknown>;
+}
+
+/** Fetch provider session metadata for a task (for resume continuity). */
+async function fetchProviderSessionInfo(
   apiUrl: string,
   apiKey: string,
   taskId: string,
-): Promise<string | null> {
+): Promise<ProviderSessionInfo | null> {
   const headers: Record<string, string> = {};
   if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
   try {
     const response = await fetch(`${apiUrl}/api/tasks/${taskId}`, { headers });
     if (!response.ok) return null;
-    const data = (await response.json()) as { claudeSessionId?: string };
-    return data.claudeSessionId || null;
+    const data = (await response.json()) as {
+      claudeSessionId?: string;
+      provider?: ProviderName;
+      providerMeta?: Record<string, unknown>;
+    };
+    return {
+      sessionId: data.claudeSessionId || null,
+      provider: data.provider,
+      providerMeta: data.providerMeta,
+    };
   } catch {
     return null;
+  }
+}
+
+function logResumeResolution(role: string, resolution: ResumeSessionResolution): void {
+  for (const skipped of resolution.skipped) {
+    console.warn(
+      `[${role}] Skipping ${skipped.source} session resume ${skipped.sessionId.slice(0, 8)}: ${skipped.reason}`,
+    );
+  }
+
+  if (resolution.resumeSessionId) {
+    const source = resolution.source === "parent" ? "parent session" : "task's own session";
+    console.log(`[${role}] Resuming ${source} ${resolution.resumeSessionId.slice(0, 8)}`);
   }
 }
 
@@ -2102,6 +2142,7 @@ async function spawnProviderProcess(
     iteration: number;
     taskId?: string;
     model?: string;
+    resumeSessionId?: string;
     harnessProvider: ProviderName;
     cwd?: string;
     vcsRepo?: string;
@@ -2167,6 +2208,7 @@ async function spawnProviderProcess(
     vcsRepo: opts.vcsRepo,
     logFile: opts.logFile,
     additionalArgs: opts.additionalArgs,
+    resumeSessionId: opts.resumeSessionId,
     iteration: opts.iteration,
     env: freshEnv as Record<string, string>,
     // Propagate the selected OAuth slot so the adapter refreshes back to the
@@ -2813,54 +2855,61 @@ async function checkCompletedProcesses(
       if (result.exitCode !== 0 && result.failureReason) {
         failureReason = result.failureReason;
         console.log(`[${role}] Detected error for task ${taskId.slice(0, 8)}: ${failureReason}`);
+      }
 
-        // If rate-limited and we know which key was used, report it.
-        // Codex adapter prefixes failure reasons with `[rate-limit]` /
-        // `[usage-limit]` (see codex-adapter.formatTerminalError); Claude
-        // surfaces "rate limit" / "hit your limit" via SessionErrorTracker.
-        if (
-          credentialInfo &&
-          /rate.?limit|hit your limit|usage[ _-]?limit|too many requests/i.test(failureReason)
-        ) {
-          // Three-tier reset-time resolver (most to least precise):
-          // Tier 1: structured rate_limit_event from Claude CLI (resetsAt epoch sec)
-          // Tier 2: regex on the error message (e.g. "resets 3pm (UTC)")
-          // Tier 3: 5-min hard fallback — only when both structured and regex fail
-          // Tiers 1 & 2 are clamped to [now+60s, now+6h] at their source.
-          const clampResetTime = (isoString: string): string => {
-            const nowMs = Date.now();
-            const minMs = nowMs + 60_000;
-            const maxMs = nowMs + 6 * 60 * 60 * 1000;
-            const candidateMs = new Date(isoString).getTime();
-            return new Date(Math.min(Math.max(candidateMs, minMs), maxMs)).toISOString();
-          };
+      // If rate-limited and we know which key was used, report it.
+      // Codex adapter prefixes failure reasons with `[rate-limit]` /
+      // `[usage-limit]` (see codex-adapter.formatTerminalError); Claude
+      // surfaces "rate limit" / "hit your limit" via SessionErrorTracker.
+      //
+      // The gate must also fire on a bare structured rate_limit_event: a
+      // `status: "rejected"` event sets result.rateLimitResetAt but does NOT
+      // set hasErrors(), so failureReason can be empty even though the key is
+      // exhausted. Gating on rateLimitResetAt != null ensures the structured
+      // event alone still triggers the cooldown.
+      if (
+        credentialInfo &&
+        (result.rateLimitResetAt != null ||
+          (failureReason != null && isRateLimitMessage(failureReason)))
+      ) {
+        // Three-tier reset-time resolver (most to least precise):
+        // Tier 1: structured rate_limit_event from Claude CLI (resetsAt epoch sec)
+        // Tier 2: regex on the error message (e.g. "resets 3pm (UTC)")
+        // Tier 3: 5-min hard fallback — only when both structured and regex fail
+        // Tiers 1 & 2 are clamped to [now+60s, now+7d] (weekly limits reset ~2 days out).
+        const clampResetTime = (isoString: string): string => {
+          const nowMs = Date.now();
+          const minMs = nowMs + 60_000;
+          const maxMs = nowMs + MAX_RATE_LIMIT_RESET_MS;
+          const candidateMs = new Date(isoString).getTime();
+          return new Date(Math.min(Math.max(candidateMs, minMs), maxMs)).toISOString();
+        };
 
-          let rateLimitedUntil: string;
-          if (result.rateLimitResetAt) {
-            rateLimitedUntil = clampResetTime(result.rateLimitResetAt);
+        let rateLimitedUntil: string;
+        if (result.rateLimitResetAt) {
+          rateLimitedUntil = clampResetTime(result.rateLimitResetAt);
+          console.log(`[credentials] Rate limit reset from rate_limit_event: ${rateLimitedUntil}`);
+        } else if (failureReason != null) {
+          const parsedResetTime = parseRateLimitResetTime(failureReason);
+          if (parsedResetTime) {
+            rateLimitedUntil = clampResetTime(parsedResetTime);
             console.log(
-              `[credentials] Rate limit reset from rate_limit_event: ${rateLimitedUntil}`,
+              `[credentials] Parsed rate limit reset time from error: ${rateLimitedUntil}`,
             );
           } else {
-            const parsedResetTime = parseRateLimitResetTime(failureReason);
-            if (parsedResetTime) {
-              rateLimitedUntil = clampResetTime(parsedResetTime);
-              console.log(
-                `[credentials] Parsed rate limit reset time from error: ${rateLimitedUntil}`,
-              );
-            } else {
-              rateLimitedUntil = new Date(Date.now() + 5 * 60 * 1000).toISOString();
-            }
+            rateLimitedUntil = new Date(Date.now() + 5 * 60 * 1000).toISOString();
           }
-          reportKeyRateLimit(
-            apiConfig.apiUrl,
-            apiConfig.apiKey,
-            credentialInfo.keyType,
-            credentialInfo.keySuffix,
-            credentialInfo.keyIndex,
-            rateLimitedUntil,
-          ).catch(() => {});
+        } else {
+          rateLimitedUntil = new Date(Date.now() + 5 * 60 * 1000).toISOString();
         }
+        reportKeyRateLimit(
+          apiConfig.apiUrl,
+          apiConfig.apiKey,
+          credentialInfo.keyType,
+          credentialInfo.keySuffix,
+          credentialInfo.keyIndex,
+          rateLimitedUntil,
+        ).catch(() => {});
       }
       await ensureTaskFinished(
         apiConfig,
@@ -3703,18 +3752,30 @@ export async function runAgent(config: RunnerConfig, opts: RunnerOptions) {
           console.log(`[${role}] Injected relevant memories into resumed task prompt`);
         }
 
-        // Resolve --resume: prefer own session ID, then parent's
-        let resumeAdditionalArgs = opts.additionalArgs || [];
-        if (task.claudeSessionId) {
-          resumeAdditionalArgs = [...resumeAdditionalArgs, "--resume", task.claudeSessionId];
-          console.log(`[${role}] Resuming task's own session ${task.claudeSessionId.slice(0, 8)}`);
-        } else if (task.parentTaskId) {
-          const parentSessionId = await fetchProviderSessionId(apiUrl, apiKey, task.parentTaskId);
-          if (parentSessionId) {
-            resumeAdditionalArgs = [...resumeAdditionalArgs, "--resume", parentSessionId];
-            console.log(`[${role}] Resuming parent session ${parentSessionId.slice(0, 8)}`);
+        // Resolve provider-aware resume: prefer own session, then parent.
+        const resumeCandidates: ResumeSessionCandidate[] = [
+          {
+            source: "task",
+            taskId: task.id,
+            sessionId: task.claudeSessionId,
+            provider: task.provider,
+            providerMeta: task.providerMeta,
+          },
+        ];
+        if (task.parentTaskId) {
+          const parentSession = await fetchProviderSessionInfo(apiUrl, apiKey, task.parentTaskId);
+          if (parentSession?.sessionId) {
+            resumeCandidates.push({
+              source: "parent",
+              taskId: task.parentTaskId,
+              sessionId: parentSession.sessionId,
+              provider: parentSession.provider,
+              providerMeta: parentSession.providerMeta,
+            });
           }
         }
+        const resumeResolution = resolveResumeSession(state.harnessProvider, resumeCandidates);
+        logResumeResolution(role, resumeResolution);
 
         // Spawn Claude process for resumed task
         iteration++;
@@ -3780,7 +3841,8 @@ export async function runAgent(config: RunnerConfig, opts: RunnerOptions) {
               prompt: resumePrompt,
               logFile,
               systemPrompt: resolvedSystemPrompt,
-              additionalArgs: resumeAdditionalArgs,
+              additionalArgs: opts.additionalArgs,
+              resumeSessionId: resumeResolution.resumeSessionId,
               role,
               apiUrl,
               apiKey,
@@ -4045,20 +4107,27 @@ export async function runAgent(config: RunnerConfig, opts: RunnerOptions) {
           }
         }
 
-        // Resolve --resume for child tasks with parentTaskId
-        let effectiveAdditionalArgs = opts.additionalArgs || [];
+        // Resolve provider-aware resume for child tasks with parentTaskId.
+        let resumeSessionId: string | undefined;
         const taskObj = trigger.task as { parentTaskId?: string } | undefined;
         if (taskObj?.parentTaskId) {
-          const parentSessionId = await fetchProviderSessionId(
+          const parentSession = await fetchProviderSessionInfo(
             apiUrl,
             apiKey,
             taskObj.parentTaskId,
           );
-          if (parentSessionId) {
-            effectiveAdditionalArgs = [...effectiveAdditionalArgs, "--resume", parentSessionId];
-            console.log(
-              `[${role}] Child task — resuming parent session ${parentSessionId.slice(0, 8)}`,
-            );
+          if (parentSession?.sessionId) {
+            const resumeResolution = resolveResumeSession(state.harnessProvider, [
+              {
+                source: "parent",
+                taskId: taskObj.parentTaskId,
+                sessionId: parentSession.sessionId,
+                provider: parentSession.provider,
+                providerMeta: parentSession.providerMeta,
+              },
+            ]);
+            logResumeResolution(role, resumeResolution);
+            resumeSessionId = resumeResolution.resumeSessionId;
           } else {
             console.log(`[${role}] Child task — parent session ID not found, starting fresh`);
           }
@@ -4197,7 +4266,8 @@ export async function runAgent(config: RunnerConfig, opts: RunnerOptions) {
               prompt: triggerPrompt,
               logFile,
               systemPrompt: taskSystemPrompt,
-              additionalArgs: effectiveAdditionalArgs,
+              additionalArgs: opts.additionalArgs,
+              resumeSessionId,
               role,
               apiUrl,
               apiKey,

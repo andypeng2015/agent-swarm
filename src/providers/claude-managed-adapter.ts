@@ -642,7 +642,7 @@ class ClaudeManagedSession implements ProviderSession {
       this.emit({
         type: "session_init",
         sessionId: this._sessionId,
-        provider: "claude" as const,
+        provider: "claude-managed",
         providerMeta: { managed: true },
       });
 

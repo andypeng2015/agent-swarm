@@ -17,9 +17,11 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import {
   type AgentSession,
+  AuthStorage,
   createAgentSession,
   DefaultResourceLoader,
   getAgentDir,
+  ModelRegistry,
   SessionManager,
 } from "@earendil-works/pi-coding-agent";
 import { type TSchema, Type } from "typebox";
@@ -178,6 +180,39 @@ const ANTHROPIC_SHORTNAME_OPENROUTER_MIRROR: Record<string, string> = {
 
 function envHasAnthropicCred(env: Record<string, string | undefined>): boolean {
   return !!(env.ANTHROPIC_API_KEY || env.ANTHROPIC_OAUTH_TOKEN);
+}
+
+const PI_RUNTIME_API_KEYS = [
+  ["OPENROUTER_API_KEY", "openrouter"],
+  ["ANTHROPIC_API_KEY", "anthropic"],
+  ["OPENAI_API_KEY", "openai"],
+  ["GOOGLE_API_KEY", "google"],
+] as const;
+
+/**
+ * Build pi-coding-agent auth services from the runner's per-task resolved env.
+ *
+ * The runner intentionally does not copy rotated credential-pool selections
+ * into `process.env` because that would freeze rotation globally. pi-mono runs
+ * in-process, so pass selected keys through pi's runtime auth override instead
+ * of relying on environment lookup.
+ */
+export function createPiRuntimeAuth(env: Record<string, string | undefined> = process.env): {
+  authStorage: AuthStorage;
+  modelRegistry: ModelRegistry;
+} {
+  const authStorage = AuthStorage.create();
+  for (const [envKey, provider] of PI_RUNTIME_API_KEYS) {
+    const apiKey = env[envKey];
+    if (apiKey) {
+      authStorage.setRuntimeApiKey(provider, apiKey);
+    }
+  }
+
+  return {
+    authStorage,
+    modelRegistry: ModelRegistry.create(authStorage),
+  };
 }
 
 /**
@@ -672,8 +707,11 @@ export class PiMonoAdapter implements ProviderAdapter {
       }
     }
 
+    const sessionEnv = config.env ?? process.env;
+
     // 3. Resolve model
-    const model = resolveModel(config.model);
+    const model = resolveModel(config.model, sessionEnv);
+    const { authStorage, modelRegistry } = createPiRuntimeAuth(sessionEnv);
 
     // 4. Create swarm hooks extension
     const swarmExtension = createSwarmHooksExtension({
@@ -698,6 +736,8 @@ export class PiMonoAdapter implements ProviderAdapter {
       model,
       customTools,
       resourceLoader,
+      authStorage,
+      modelRegistry,
     };
 
     // 7. Create the session

@@ -308,6 +308,8 @@ describe("ClaudeManagedAdapter (Phase 3) — session lifecycle", () => {
     expect(sessionInit).toBeDefined();
     if (sessionInit && sessionInit.type === "session_init") {
       expect(sessionInit.sessionId).toBe("sesn_test_123");
+      expect(sessionInit.provider).toBe("claude-managed");
+      expect(sessionInit.providerMeta).toEqual({ managed: true });
     }
 
     // At least one assistant message.
@@ -578,6 +580,8 @@ describe("ClaudeManagedAdapter (Phase 3) — session lifecycle", () => {
     const sessionInit = emitted.find((e) => e.type === "session_init");
     if (sessionInit?.type === "session_init") {
       expect(sessionInit.sessionId).toBe("sesn_resume_xyz");
+      expect(sessionInit.provider).toBe("claude-managed");
+      expect(sessionInit.providerMeta).toEqual({ managed: true });
     }
   });
 
@@ -1252,6 +1256,8 @@ describe("ClaudeManagedAdapter (Phase 6) — full happy-path integration", () =>
     expect(sessionInit?.type).toBe("session_init");
     if (sessionInit?.type === "session_init") {
       expect(sessionInit.sessionId).toBe("sesn_test_123");
+      expect(sessionInit.provider).toBe("claude-managed");
+      expect(sessionInit.providerMeta).toEqual({ managed: true });
     }
 
     const message = emitted.find((e) => e.type === "message");
