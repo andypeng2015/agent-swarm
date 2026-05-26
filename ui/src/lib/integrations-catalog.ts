@@ -218,10 +218,13 @@ export const INTEGRATIONS: IntegrationDef[] = [
     recommendedSkills: [
       {
         name: "kapso-whatsapp",
-        source: "swarm-registry",
+        source: "template",
+        templateRepo: "desplega-ai/agent-swarm",
+        templatePath: "templates/skills/kapso-whatsapp",
         roles: ["lead", "worker"],
         reason:
           "Canonical recipes for WhatsApp beyond plain text send/reply (templates, media, reactions, typing, signature verify, contact resolution). The MCP tools only cover the common text path.",
+        installOnSetup: true,
       },
     ],
     fields: [
@@ -239,7 +242,7 @@ export const INTEGRATIONS: IntegrationDef[] = [
         label: "Phone number ID",
         type: "text",
         required: true,
-        placeholder: "1035039933036854",
+        placeholder: "123456789012345",
         helpText: "WhatsApp Business phone number ID the swarm sends from (from Kapso).",
       },
       {
