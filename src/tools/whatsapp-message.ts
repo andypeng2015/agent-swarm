@@ -21,17 +21,18 @@ export const registerSendWhatsappMessageTool = (server: McpServer) => {
     "send-whatsapp-message",
     {
       title: "Send WhatsApp Message",
+      annotations: { openWorldHint: true },
       description:
         "Send a free-form WhatsApp text via Kapso (within the 24h session window). Thin wrapper over the Kapso Meta-proxy send. For templates/media/reactions use the `kapso-whatsapp` skill. If the recipient is outside the 24h window the call returns a structured error pointing at the template path.",
       inputSchema: z.object({
         phoneNumberId: z
           .string()
           .min(1)
-          .describe("Our Kapso/Meta phone-number ID to send from (e.g. '1035039933036854')."),
+          .describe("The swarm's Kapso/Meta phone-number ID to send from (KAPSO_PHONE_NUMBER_ID)."),
         to: z
           .string()
           .min(1)
-          .describe("Recipient phone in E.164 WITHOUT '+' (e.g. '34679077777')."),
+          .describe("Recipient phone in E.164 WITHOUT '+' (e.g. '15551234567')."),
         body: z.string().min(1).describe("Message text."),
         previewUrl: z
           .boolean()
@@ -51,10 +52,14 @@ export const registerReplyWhatsappMessageTool = (server: McpServer) => {
     "reply-whatsapp-message",
     {
       title: "Reply to WhatsApp Message",
+      annotations: { openWorldHint: true },
       description:
         "Quote-reply a WhatsApp message via Kapso — same as send-whatsapp-message but threads to a specific inbound WAMID via context.message_id. Recipient is inferred from the conversation; pass the original sender's phone as `to`.",
       inputSchema: z.object({
-        phoneNumberId: z.string().min(1).describe("Our Kapso/Meta phone-number ID to send from."),
+        phoneNumberId: z
+          .string()
+          .min(1)
+          .describe("The swarm's Kapso/Meta phone-number ID to send from (KAPSO_PHONE_NUMBER_ID)."),
         to: z.string().min(1).describe("Recipient phone in E.164 WITHOUT '+'."),
         inReplyTo: z
           .string()

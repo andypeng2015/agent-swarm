@@ -30,7 +30,7 @@ export const registerRegisterKapsoNumberTool = (server: McpServer) => {
         phoneNumberId: z
           .string()
           .min(1)
-          .describe("Kapso/Meta phone-number ID to provision (e.g. '1035039933036854')."),
+          .describe("Kapso/Meta phone-number ID to provision (KAPSO_PHONE_NUMBER_ID)."),
         agentId: z
           .string()
           .uuid()
