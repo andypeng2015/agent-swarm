@@ -206,6 +206,52 @@ export const INTEGRATIONS: IntegrationDef[] = [
     ],
   },
 
+  // -------------------------------------------------------- Kapso (WhatsApp)
+  {
+    id: "kapso",
+    name: "Kapso (WhatsApp)",
+    description:
+      "Chat with the swarm over WhatsApp via Kapso — inbound messages become tasks, agents reply in-thread.",
+    category: "comm",
+    iconKey: "message-circle",
+    docsUrl: "https://docs.agent-swarm.dev/integrations/kapso",
+    fields: [
+      {
+        key: "KAPSO_API_KEY",
+        label: "API key",
+        type: "password",
+        required: true,
+        isSecret: true,
+        helpText:
+          "Kapso API key used to send WhatsApp messages (read by the kapso-whatsapp skill). Find it in your Kapso dashboard.",
+      },
+      {
+        key: "KAPSO_PHONE_NUMBER_ID",
+        label: "Phone number ID",
+        type: "text",
+        required: true,
+        placeholder: "1035039933036854",
+        helpText: "WhatsApp Business phone number ID the swarm sends from (from Kapso).",
+      },
+      {
+        key: "KAPSO_WEBHOOK_HMAC_SECRET",
+        label: "Webhook HMAC secret",
+        type: "password",
+        isSecret: true,
+        helpText:
+          "Shared secret Kapso signs inbound webhooks with (sent as the `X-Webhook-Signature` header, raw hex). Reference it from your inbound workflow's webhook trigger to verify deliveries.",
+      },
+      {
+        key: "KAPSO_API_BASE_URL",
+        label: "API base URL",
+        type: "text",
+        advanced: true,
+        placeholder: "https://api.kapso.ai",
+        helpText: "Override the Kapso API base URL. Leave blank to use https://api.kapso.ai.",
+      },
+    ],
+  },
+
   // --------------------------------------------------------------- GitHub
   {
     id: "github",
