@@ -59,6 +59,10 @@ import {
   registerRegisterKapsoNumberTool,
   registerUnregisterKapsoNumberTool,
 } from "./tools/register-kapso-number";
+import {
+  registerReplyWhatsappMessageTool,
+  registerSendWhatsappMessageTool,
+} from "./tools/whatsapp-message";
 // Services capability
 import { registerRegisterServiceTool } from "./tools/register-service";
 // Repo management tools
@@ -232,9 +236,11 @@ export function createServer() {
   // AgentMail integration tool (always registered, self-service inbox mapping)
   registerRegisterAgentmailInboxTool(server);
 
-  // Kapso/WhatsApp integration tools (native inbound provisioning)
+  // Kapso/WhatsApp integration tools (native inbound provisioning + outbound)
   registerRegisterKapsoNumberTool(server);
   registerUnregisterKapsoNumberTool(server);
+  registerSendWhatsappMessageTool(server);
+  registerReplyWhatsappMessageTool(server);
 
   // Task pool capability - task pool operations (create unassigned, claim, release, accept, reject)
   if (hasCapability("task-pool")) {
