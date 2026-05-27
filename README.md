@@ -43,11 +43,13 @@
 
 ## What it does
 
-Agent Swarm runs a team of AI agents that coordinate autonomously. A **lead agent** receives tasks — from Slack, GitHub, GitLab, Linear, Jira, email, or the API — breaks them down, and delegates to **worker agents** running in isolated environments (Docker). Workers execute tasks, ship solutions, and write their learnings back to a shared memory so the whole swarm gets smarter every session.
+Agent Swarm runs a team of AI agents that coordinate autonomously. A **lead agent** receives tasks ( from Slack, GitHub, GitLab, Linear, Jira, email, or the API) breaks them down, and delegates to **worker agents** running in isolated environments (Docker). Workers execute tasks, ship solutions, and write their learnings back to a shared memory so the whole swarm gets smarter every session.
 
-You can run agents for Marketing, Product, UX, Engineering, Support, Operations, HR, Finance — any role you can think of. They coordinate autonomously to get the job done. That's the difference between *AI-first* (bolting AI tools onto an existing org) and *AI-native* (a company whose architecture, decisions, and operations are built around agents from day one). Agent Swarm is the engine for the second one — a shared cloud brain and muscle for your whole company that gets better every day.
+You can run agents for Marketing, Product, UX, Engineering, Support, Operations, HR, Finance, or any role you can think of. A centralized Lead coordinates them, and they share the learnings horizontally. That's the true difference between [*AI First*](https://www.pleasedontdeploy.com/i/197193364/ai-first) and [*AI Native*](https://www.pleasedontdeploy.com/i/197193364/third-the-ai-native-metamorphosis).
 
-Sometimes the blocker is the humans behind the screen. We can help bring your team into the new age of AI agents — contact us at [contact@desplega.sh](mailto:contact@desplega.sh).
+Agent Swarm is the shared cloud brain and muscle that makes your whole company better every day.
+
+Sometimes humans are the blocker. We can help you. Contact us [contact@desplega.sh](mailto:contact@desplega.sh).
 
 Learn more in the [architecture overview](https://docs.agent-swarm.dev/docs/architecture/overview).
 
@@ -91,7 +93,8 @@ flowchart LR
 
 ## Known Use Cases
 
-These aren't hypotheticals — they're how we run our own company on the swarm. Each one is a full playbook: the agents, the tools & skills, and the actual workflows and schedules behind it. **[Browse all playbooks →](https://docs.agent-swarm.dev/docs/playbooks)**
+Use cases that are used daily by ourselves and others.
+Each playbook contains: the agents, the tools & skills, and workflows & schedules behind it. **[Browse all playbooks →](https://docs.agent-swarm.dev/docs/playbooks)**
 
 - **[Feature Development](https://docs.agent-swarm.dev/docs/playbooks/feature-development)** — Integrated with Linear and GitHub to take feature requests from Slack and turn them into pull requests.
 - **[Lead Prospecting](https://docs.agent-swarm.dev/docs/playbooks/lead-prospecting)** — Integrate your prospecting tools with the swarm and let agents handle outreach, scheduling, and follow-up.
@@ -101,7 +104,7 @@ These aren't hypotheticals — they're how we run our own company on the swarm. 
 - **[Code Health & Alert Management](https://docs.agent-swarm.dev/docs/playbooks/code-health-alert-management)** — Datadog, New Relic, Sentry, or any alerting tool can kick off fixes or new proposals. Monitor code health and propose improvements weekly, daily, or hourly.
 - **[Reports from Multiple Sources](https://docs.agent-swarm.dev/docs/playbooks/reports-multiple-sources)** — Integrate your data warehouse to generate tailored reports and answer the key questions your team has, with fresh data. Your BI tool may be a thing of the past.
 - **[Self-Documenting & Release Reports](https://docs.agent-swarm.dev/docs/playbooks/self-documenting-release-reports)** — Update your docs and use frameworks like [Remotion](https://www.remotion.dev/), [qa-use](https://github.com/qa-use/qa-use), and [browser-use](https://github.com/browser-use/browser-use) to generate release videos and rich documentation in seconds, at the cadence you need.
-- **Everything you can think of** — Any of your existing agent providers can become a single node in the swarm. The sky is the limit.
+- Do you have a cool playbook to share? Send us a PR!
 
 > **The patterns that compound.** Five recipes show up in nearly every playbook — they're how the swarm stays reliable as it scales:
 > **[Litmus Tests](https://docs.agent-swarm.dev/docs/playbooks/patterns/litmus-tests)** (LLM-as-judge quality gates) ·
@@ -192,7 +195,7 @@ Missing one? Ask the swarm to build it.
 | **Linear** | Bidirectional ticket sync via OAuth + webhooks | [Guide](https://docs.agent-swarm.dev/docs/guides/linear-integration) |
 | **Jira Cloud** | OAuth 3LO ticket sync — assignee/comment events create tasks; lifecycle posts comments back | [Guide](https://docs.agent-swarm.dev/docs/guides/jira-integration) |
 | **Sentry** | Workers can triage Sentry issues with the `/investigate-sentry-issue` command | [Guide](https://docs.agent-swarm.dev/docs/guides/sentry-integration) |
-| **Devin** | Devin can be a node in your swarm — keep your existing configuration | [Guide](https://devin.ai/) |
+| **Devin** | Devin can be a node in your swarm — keep your existing configuration | [Guide](https://docs.agent-swarm.dev/docs/guides/harness-configuration#supported-providers) |
 
 ## Dashboard
 
