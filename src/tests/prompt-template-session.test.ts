@@ -59,7 +59,7 @@ describe("Session templates — registration", () => {
       "system.agent.role",
       "system.agent.register",
       "system.agent.lead",
-      "system.agent.lead.slack",
+      "system.agent.slack",
       "system.agent.worker",
       "system.agent.worker.slack",
       "system.agent.filesystem",
@@ -154,8 +154,8 @@ describe("Session templates — individual resolution", () => {
     expect(result.text).not.toContain("slack-reply");
   });
 
-  test("system.agent.lead.slack contains Slack tool guidance", () => {
-    const result = resolveTemplate("system.agent.lead.slack", {});
+  test("system.agent.slack contains Slack tool guidance", () => {
+    const result = resolveTemplate("system.agent.slack", {});
     expect(result.text).toContain("Slack Tools");
     expect(result.text).toContain("slack-reply");
     expect(result.text).toContain("slack-read");

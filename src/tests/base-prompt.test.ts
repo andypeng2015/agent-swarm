@@ -581,12 +581,26 @@ describe("getBasePrompt — conditional Slack templates", () => {
     expect(result).toContain("Task Routing");
   });
 
-  test("includes lead Slack tool template when Slack is enabled", async () => {
+  test("includes Slack tool template for lead when Slack is enabled", async () => {
     enableSlackPromptTools();
 
     const result = await getBasePrompt({
       ...minimalArgs,
       role: "lead",
+    });
+
+    expect(result).toContain("#### Slack Tools");
+    expect(result).toContain("slack-reply");
+    expect(result).toContain("slack-read");
+    expect(result).toContain("slack-list-channels");
+  });
+
+  test("includes Slack tool template for worker when Slack is enabled", async () => {
+    enableSlackPromptTools();
+
+    const result = await getBasePrompt({
+      ...minimalArgs,
+      role: "worker",
     });
 
     expect(result).toContain("#### Slack Tools");

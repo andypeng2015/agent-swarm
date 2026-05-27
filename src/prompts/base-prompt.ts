@@ -80,8 +80,8 @@ export const getBasePrompt = async (args: BasePromptArgs): Promise<string> => {
 
   const slackPromptToolsEnabled = areSlackPromptToolsEnabled();
 
-  if (role === "lead" && hasMcp && slackPromptToolsEnabled) {
-    const slackResult = await resolveTemplateAsync("system.agent.lead.slack", {});
+  if (hasMcp && slackPromptToolsEnabled) {
+    const slackResult = await resolveTemplateAsync("system.agent.slack", {});
     prompt += slackResult.text;
   }
 

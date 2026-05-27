@@ -115,7 +115,7 @@ The system reads your \`/workspace/HEARTBEAT.md\` every 30 minutes. If it has co
 });
 
 registerTemplate({
-  eventType: "system.agent.lead.slack",
+  eventType: "system.agent.slack",
   header: "",
   defaultBody: `
 #### Slack Tools
