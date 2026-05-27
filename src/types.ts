@@ -212,6 +212,10 @@ export const AgentTaskSchema = z.object({
   // Provider tracking — which harness provider ran this task
   provider: ProviderNameSchema.optional(),
   providerMeta: z.record(z.string(), z.unknown()).optional(),
+
+  // Aggregated session cost for task list/read models. Undefined means no
+  // session cost rows have been recorded for this task.
+  totalCostUsd: z.number().min(0).optional(),
 });
 
 // ============================================================================
@@ -1328,6 +1332,7 @@ export type AgentTaskSummary = Pick<
   | "lastUpdatedAt"
   | "finishedAt"
   | "peakContextPercent"
+  | "totalCostUsd"
 >;
 
 export const PageVersionSchema = z.object({

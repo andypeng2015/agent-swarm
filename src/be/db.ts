@@ -1012,6 +1012,7 @@ type AgentTaskRow = {
   swarmVersion: string | null;
   provider: string | null;
   providerMeta: string | null;
+  totalCostUsd?: number | null;
 };
 
 function rowToAgentTask(row: AgentTaskRow): AgentTask {
@@ -1075,6 +1076,7 @@ function rowToAgentTask(row: AgentTaskRow): AgentTask {
     swarmVersion: row.swarmVersion ?? undefined,
     provider: (row.provider as ProviderName | null) ?? undefined,
     providerMeta: parseProviderMeta(row.provider as ProviderName | null, row.providerMeta),
+    totalCostUsd: row.totalCostUsd ?? undefined,
   };
 }
 
@@ -1110,6 +1112,7 @@ function rowToAgentTaskSummary(row: AgentTaskRow): AgentTaskSummary {
     lastUpdatedAt: t.lastUpdatedAt,
     finishedAt: t.finishedAt,
     peakContextPercent: t.peakContextPercent,
+    totalCostUsd: t.totalCostUsd,
   };
 }
 
@@ -1504,7 +1507,10 @@ export function getAllTasks(
   const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
   const limit = filters?.limit ?? 25;
   const offset = filters?.offset ?? 0;
-  const query = `SELECT * FROM agent_tasks ${whereClause} ORDER BY lastUpdatedAt DESC, priority DESC LIMIT ${limit} OFFSET ${offset}`;
+  const query = `SELECT agent_tasks.*,
+    (SELECT SUM(totalCostUsd) FROM session_costs WHERE session_costs.taskId = agent_tasks.id) AS totalCostUsd
+    FROM agent_tasks ${whereClause}
+    ORDER BY lastUpdatedAt DESC, priority DESC LIMIT ${limit} OFFSET ${offset}`;
 
   const rows = getDb()
     .prepare<AgentTaskRow, (string | AgentTaskStatus)[]>(query)

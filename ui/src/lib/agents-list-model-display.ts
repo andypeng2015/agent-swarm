@@ -1,3 +1,5 @@
+import { findKnownModel, type ProviderIconKey } from "./agent-runtime-models";
+
 export interface AgentModelDisplay {
   configured: string | null;
   lastUsed: string | null;
@@ -5,9 +7,31 @@ export interface AgentModelDisplay {
   diverged: boolean;
 }
 
+export interface AgentModelPresentation {
+  raw: string;
+  label: string;
+  provider: string | null;
+  providerId: ProviderIconKey | null;
+}
+
 function cleanModel(value: string | null | undefined): string | null {
   const model = value?.trim();
   return model ? model : null;
+}
+
+export function getAgentModelPresentation(
+  value: string | null | undefined,
+): AgentModelPresentation | null {
+  const raw = cleanModel(value);
+  if (!raw) return null;
+
+  const known = findKnownModel(raw);
+  return {
+    raw,
+    label: known?.label ?? raw,
+    provider: known?.provider ?? null,
+    providerId: known?.providerId ?? null,
+  };
 }
 
 export function getAgentModelDisplay(

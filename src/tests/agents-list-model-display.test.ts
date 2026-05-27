@@ -1,5 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { getAgentModelDisplay } from "../../ui/src/lib/agents-list-model-display";
+import {
+  getAgentModelDisplay,
+  getAgentModelPresentation,
+} from "../../ui/src/lib/agents-list-model-display";
 
 describe("agents list model display", () => {
   test("shows configured and last-used models when they diverge", () => {
@@ -29,5 +32,14 @@ describe("agents list model display", () => {
 
     expect(display.primary).toBe("claude-opus-4-7");
     expect(display.diverged).toBe(false);
+  });
+
+  test("presents known provider-prefixed model ids as readable labels", () => {
+    expect(getAgentModelPresentation("openrouter/deepseek/deepseek-v4-flash")).toEqual({
+      raw: "openrouter/deepseek/deepseek-v4-flash",
+      label: "DeepSeek V4 Flash",
+      provider: "OpenRouter",
+      providerId: "openrouter",
+    });
   });
 });

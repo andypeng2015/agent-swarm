@@ -1,5 +1,5 @@
 import type { ColDef, RowClickedEvent } from "ag-grid-community";
-import { Info, Search } from "lucide-react";
+import { Search } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAgents } from "@/api/hooks/use-agents";
@@ -7,9 +7,9 @@ import { useConfigs } from "@/api/hooks/use-config-api";
 import { useFeatureGate } from "@/api/hooks/use-feature-gate";
 import type { AgentStatus, AgentWithTasks } from "@/api/types";
 import { AgentAvatar } from "@/components/shared/agent-avatar";
+import { AgentModelCell } from "@/components/shared/agent-model-cell";
 import { DataGrid } from "@/components/shared/data-grid";
 import { HarnessCell } from "@/components/shared/harness-cell";
-import { ProviderIcon } from "@/components/shared/provider-icon";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/ui/page-header";
@@ -20,9 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { findKnownModel } from "@/lib/agent-runtime-models";
-import { getAgentModelDisplay } from "@/lib/agents-list-model-display";
+import { getAgentModelDisplay, getAgentModelPresentation } from "@/lib/agents-list-model-display";
 import { formatSmartTime } from "@/lib/utils";
 
 export default function AgentsPage() {
@@ -71,7 +69,16 @@ export default function AgentsPage() {
           configuredModelByAgentId.get(agent.id),
           agent.credStatus?.latestModel?.model,
         );
-        return display.primary ?? "";
+        const primary = getAgentModelPresentation(display.primary);
+        return [
+          primary?.label,
+          primary?.raw,
+          primary?.provider,
+          display.configured,
+          display.lastUsed,
+        ]
+          .filter(Boolean)
+          .join(" ");
       },
       cellRenderer: (params: { data: AgentWithTasks | undefined }) => {
         const agent = params.data;
@@ -80,40 +87,7 @@ export default function AgentsPage() {
           configuredModelByAgentId.get(agent.id),
           agent.credStatus?.latestModel?.model,
         );
-        if (!display.primary) return <span className="text-muted-foreground">—</span>;
-        const known = findKnownModel(display.primary);
-        if (!display.diverged) {
-          return (
-            <span className="flex min-w-0 items-center gap-1.5">
-              <ProviderIcon provider={known?.providerId} className="h-3.5 w-3.5 shrink-0" />
-              <span className="truncate font-mono text-xs">{display.primary}</span>
-            </span>
-          );
-        }
-        return (
-          <span className="flex min-w-0 items-center gap-2 text-xs">
-            <ProviderIcon provider={known?.providerId} className="h-3.5 w-3.5 shrink-0" />
-            <span className="min-w-0 truncate">
-              <span className="text-muted-foreground">Configured:</span>{" "}
-              <span className="font-mono text-foreground">{display.configured}</span>
-              <span className="mx-1.5 text-muted-foreground/60">&bull;</span>
-              <span className="text-muted-foreground">Last used:</span>{" "}
-              <span className="font-mono text-muted-foreground">{display.lastUsed}</span>
-            </span>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-status-warning/30 bg-status-warning/10 px-1.5 py-0.5 text-[10px] font-medium leading-none text-status-warning">
-                  <Info className="h-3 w-3" />
-                  pending next task
-                </span>
-              </TooltipTrigger>
-              <TooltipContent side="top" align="end" className="max-w-xs text-xs">
-                Configured model takes effect on next task. Last used reflects the most recent task
-                that ran.
-              </TooltipContent>
-            </Tooltip>
-          </span>
-        );
+        return <AgentModelCell display={display} />;
       },
     };
     return [
