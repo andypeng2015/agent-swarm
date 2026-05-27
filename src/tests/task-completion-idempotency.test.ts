@@ -13,6 +13,7 @@ import {
   initDb,
   startTask,
 } from "../be/db";
+import { createWorkerTaskFollowUp } from "../tasks/worker-follow-up";
 
 const TEST_DB_PATH = "./test-task-completion-idempotency.sqlite";
 
@@ -316,5 +317,93 @@ describe("store-progress idempotency on terminal status (integration via DB laye
 
     const after = getTaskById(task.id);
     expect(after!.output).toBe("manually written");
+  });
+});
+
+interface FollowUpRow {
+  id: string;
+  agentId: string | null;
+  parentTaskId: string | null;
+  taskType: string | null;
+  task: string;
+  slackChannelId: string | null;
+  slackThreadTs: string | null;
+  slackUserId: string | null;
+}
+
+function listFollowUpTasks(parentTaskId: string): FollowUpRow[] {
+  return getDb()
+    .prepare<FollowUpRow, [string]>(
+      `SELECT id, agentId, parentTaskId, taskType, task, slackChannelId, slackThreadTs, slackUserId
+       FROM agent_tasks
+       WHERE parentTaskId = ? AND taskType = 'follow-up'
+       ORDER BY createdAt ASC`,
+    )
+    .all(parentTaskId);
+}
+
+describe("worker task follow-up creation", () => {
+  test("creates lead follow-up for completed worker task", () => {
+    const lead = createAgent({
+      name: "follow-up-lead-1",
+      isLead: true,
+      status: "idle",
+      capabilities: [],
+    });
+    const worker = createAgent({
+      name: "follow-up-worker-1",
+      isLead: false,
+      status: "idle",
+      capabilities: [],
+    });
+    const task = createTaskExtended("Worker task", {
+      agentId: worker.id,
+      slackChannelId: "C123",
+      slackThreadTs: "1700000000.000001",
+      slackUserId: "U123",
+    });
+    startTask(task.id, worker.id);
+
+    const completed = completeTask(task.id, "Worker output");
+    expect(completed).not.toBeNull();
+
+    const followUp = createWorkerTaskFollowUp({
+      task: completed!,
+      status: "completed",
+      output: "Worker output",
+    });
+
+    expect(followUp).not.toBeNull();
+    const rows = listFollowUpTasks(task.id);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.agentId).toBe(lead.id);
+    expect(rows[0]!.parentTaskId).toBe(task.id);
+    expect(rows[0]!.slackChannelId).toBe("C123");
+    expect(rows[0]!.slackThreadTs).toBe("1700000000.000001");
+    expect(rows[0]!.slackUserId).toBe("U123");
+    expect(rows[0]!.task).toContain("Worker output");
+  });
+
+  test("does not create follow-up for lead-owned task", () => {
+    const lead = createAgent({
+      name: "follow-up-lead-2",
+      isLead: true,
+      status: "idle",
+      capabilities: [],
+    });
+    const task = createTaskExtended("Lead task", { agentId: lead.id });
+    startTask(task.id, lead.id);
+
+    const completed = completeTask(task.id, "Lead output");
+    expect(completed).not.toBeNull();
+
+    const followUp = createWorkerTaskFollowUp({
+      task: completed!,
+      status: "completed",
+      output: "Lead output",
+    });
+
+    expect(followUp).toBeNull();
+    expect(listFollowUpTasks(task.id)).toHaveLength(0);
   });
 });

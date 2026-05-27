@@ -48,6 +48,7 @@ import { prettyPrintLine, prettyPrintStderr } from "../utils/pretty-print.ts";
 import { scrubSecrets } from "../utils/secret-scrubber.ts";
 import { refreshSkillsIfChanged } from "../utils/skills-refresh.ts";
 import { detectVcsProvider } from "../vcs/index.ts";
+import { validateJsonSchema } from "../workflows/json-schema-validator.ts";
 import { interpolate } from "../workflows/template.ts";
 import { buildContextPreamble } from "./context-preamble.ts";
 import { awaitCredentials, BootMaxWaitExceededError, EX_CONFIG } from "./credential-wait.ts";
@@ -704,6 +705,56 @@ Extract the structured data from the progress updates above. Return ONLY valid J
   }
 }
 
+async function validateProviderOutputIfNeeded(
+  config: ApiConfig,
+  taskId: string,
+  providerOutput: string,
+): Promise<{ ok: true } | { ok: false; failReason: string }> {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+  if (config.apiKey) {
+    headers.Authorization = `Bearer ${config.apiKey}`;
+  }
+
+  try {
+    const taskRes = await fetch(`${config.apiUrl}/api/tasks/${taskId}`, { headers });
+    if (!taskRes.ok) {
+      return { ok: true };
+    }
+
+    const taskData = (await taskRes.json()) as {
+      outputSchema?: Record<string, unknown>;
+    };
+    if (!taskData.outputSchema || typeof taskData.outputSchema !== "object") {
+      return { ok: true };
+    }
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(providerOutput);
+    } catch {
+      return {
+        ok: false,
+        failReason:
+          "Structured output required by outputSchema but provider output was not valid JSON",
+      };
+    }
+
+    const validationErrors = validateJsonSchema(taskData.outputSchema, parsed);
+    if (validationErrors.length > 0) {
+      return {
+        ok: false,
+        failReason: `Structured output did not match outputSchema: ${validationErrors.join("; ")}`,
+      };
+    }
+  } catch {
+    return { ok: true };
+  }
+
+  return { ok: true };
+}
+
 export async function ensureTaskFinished(
   config: ApiConfig,
   role: string,
@@ -734,12 +785,14 @@ export async function ensureTaskFinished(
   if (status === "failed") {
     body.failureReason = failureReason || `Claude process exited with code ${exitCode}`;
   } else if (providerOutput) {
-    // Provider already supplied structured output (e.g. Devin) — use directly.
-    // NOTE: providerOutput is NOT validated against task.outputSchema here.
-    // Known gap for default-mode Devin; see runbooks/harness-providers.md
-    // ("Per-task outputSchema support"). Schema enforcement only happens on
-    // the MCP path via store-progress.
-    body.output = providerOutput;
+    const validation = await validateProviderOutputIfNeeded(config, taskId, providerOutput);
+    if (validation.ok) {
+      body.output = providerOutput;
+    } else {
+      status = "failed";
+      body.status = "failed";
+      body.failureReason = validation.failReason;
+    }
   } else {
     // Try structured output fallback if the task has an outputSchema
     const adapterType = provider ?? process.env.HARNESS_PROVIDER ?? "claude";

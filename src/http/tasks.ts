@@ -22,6 +22,7 @@ import {
   updateTaskVcs,
 } from "../be/db";
 import { createTaskWithSiblingAwareness } from "../tasks/sibling-awareness";
+import { createWorkerTaskFollowUp } from "../tasks/worker-follow-up";
 import { telemetry } from "../telemetry";
 import {
   type AgentTaskSource,
@@ -635,6 +636,22 @@ export async function handleTasks(
         filter: ({}, ctx) => ctx.deps.length > 0,
         conditions: [{ timeout_ms: 3_600_000 }], // 1 hour: task running time
       });
+
+      try {
+        const followUp = createWorkerTaskFollowUp({
+          task: result.task,
+          status: parsed.body.status,
+          output: parsed.body.output,
+          failureReason: parsed.body.failureReason,
+        });
+        if (followUp) {
+          console.log(
+            `[tasks.finish] Created follow-up task ${followUp.id.slice(0, 8)} for ${parsed.body.status} task ${parsed.params.id.slice(0, 8)}`,
+          );
+        }
+      } catch (err) {
+        console.warn(`[tasks.finish] Failed to create follow-up task: ${err}`);
+      }
     }
 
     json(res, {

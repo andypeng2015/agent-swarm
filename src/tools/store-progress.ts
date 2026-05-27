@@ -3,14 +3,11 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import * as z from "zod";
 import {
   completeTask,
-  createTaskExtended,
   failTask,
   getAgentById,
   getDb,
-  getLeadAgent,
   getResolvedConfig,
   getSessionLogsByTaskId,
-  getTaskAttachments,
   getTaskById,
   insertTaskAttachment,
   updateAgentStatusFromCapacity,
@@ -19,11 +16,9 @@ import {
 import { getEmbeddingProvider, getMemoryStore } from "@/be/memory";
 import { getRetrievalsForTask } from "@/be/memory/raters/retrieval";
 import { runServerRaters } from "@/be/memory/raters/run-server-raters";
-import { resolveTemplate } from "@/prompts/resolver";
+import { createWorkerTaskFollowUp } from "@/tasks/worker-follow-up";
 import { createToolRegistrar } from "@/tools/utils";
-import { AgentTaskSchema, AttachmentInputSchema, type TaskAttachment } from "@/types";
-// Side-effect import: registers task lifecycle templates in the in-memory registry
-import "./templates";
+import { AgentTaskSchema, AttachmentInputSchema } from "@/types";
 import { validateJsonSchema } from "@/workflows/json-schema-validator";
 
 // Phase 11: the `cost` / `costData` field was removed from this tool's input
@@ -32,29 +27,6 @@ import { validateJsonSchema } from "@/workflows/json-schema-validator";
 // calling `store-progress` rarely knew the real numbers and historically
 // echoed the schema example, producing noise rows keyed `mcp-<taskId>-<ts>`
 // that double-counted alongside the harness's authoritative entry.
-
-function attachmentPointer(a: TaskAttachment): string {
-  switch (a.kind) {
-    case "url":
-      return a.url ?? "";
-    case "page":
-      return `page:${a.pageId ?? ""}`;
-    case "agent-fs":
-      return `agent-fs:${a.path ?? ""}`;
-    case "shared-fs":
-      return `shared-fs:${a.path ?? ""}`;
-  }
-}
-
-function formatAttachmentsBlock(attachments: TaskAttachment[]): string {
-  if (attachments.length === 0) return "";
-  const lines = attachments.map((a) => {
-    const tag = a.isPrimary ? "[primary] " : "";
-    const intent = a.intent ? ` (intent: ${a.intent})` : "";
-    return `- ${tag}${a.name} — ${attachmentPointer(a)}${intent}`;
-  });
-  return `\n\nAttachments (${attachments.length}):\n${lines.join("\n")}`;
-}
 
 export const registerStoreProgressTool = (server: McpServer) => {
   createToolRegistrar(server)(
@@ -460,53 +432,16 @@ export const registerStoreProgressTool = (server: McpServer) => {
         !("wasNoOp" in result && result.wasNoOp)
       ) {
         try {
-          const taskAgent = getAgentById(result.task.agentId ?? "");
-          // Only create follow-ups for worker tasks (not lead's own tasks)
-          if (taskAgent && !taskAgent.isLead) {
-            const leadAgent = getLeadAgent();
-            if (leadAgent) {
-              const agentName = taskAgent.name || result.task.agentId?.slice(0, 8) || "Unknown";
-              const taskDesc = result.task.task.slice(0, 200);
-
-              let followUpDescription: string;
-              if (status === "completed") {
-                const attachmentsBlock = formatAttachmentsBlock(getTaskAttachments(taskId));
-                const outputSummary = output
-                  ? `${output.slice(0, 500)}${output.length > 500 ? "..." : ""}${attachmentsBlock}`
-                  : `(no output)${attachmentsBlock}`;
-                const completedResult = resolveTemplate("task.worker.completed", {
-                  agent_name: agentName,
-                  task_desc: taskDesc,
-                  output_summary: outputSummary,
-                  task_id: taskId,
-                });
-                followUpDescription = completedResult.text;
-              } else {
-                const reason = failureReason || "(no reason given)";
-                const failedResult = resolveTemplate("task.worker.failed", {
-                  agent_name: agentName,
-                  task_desc: taskDesc,
-                  failure_reason: reason,
-                  task_id: taskId,
-                });
-                followUpDescription = failedResult.text;
-              }
-
-              // If the original task came from Slack, forward context so lead can reply
-              createTaskExtended(followUpDescription, {
-                agentId: leadAgent.id,
-                source: "system",
-                taskType: "follow-up",
-                parentTaskId: taskId,
-                slackChannelId: result.task.slackChannelId,
-                slackThreadTs: result.task.slackThreadTs,
-                slackUserId: result.task.slackUserId,
-              });
-
-              console.log(
-                `[store-progress] Created follow-up task for lead (${leadAgent.name}) — ${status} task ${taskId.slice(0, 8)} by ${agentName}`,
-              );
-            }
+          const followUp = createWorkerTaskFollowUp({
+            task: result.task,
+            status,
+            output,
+            failureReason,
+          });
+          if (followUp) {
+            console.log(
+              `[store-progress] Created follow-up task ${followUp.id.slice(0, 8)} for ${status} task ${taskId.slice(0, 8)}`,
+            );
           }
         } catch (err) {
           // Non-blocking — follow-up task creation failure should not affect the store-progress response
