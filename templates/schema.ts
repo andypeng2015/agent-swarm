@@ -35,3 +35,27 @@ export interface TemplateResponse {
     heartbeatMd: string;
   };
 }
+
+export type AgentAssetKind = "skill" | "schedule" | "workflow";
+export type AgentAssetCategory = "skills" | "schedules" | "workflows";
+
+export interface AgentAssetConfig {
+  kind: AgentAssetKind;
+  name: string;
+  displayName: string;
+  slug: string;
+  title: string;
+  description: string;
+  version: string;
+  category: AgentAssetCategory;
+  placeholders: string[];
+  runAllSeedersCandidate: boolean;
+  tags: string[];
+}
+
+export interface AgentAssetResponse {
+  config: AgentAssetConfig;
+  body: string;
+}
+
+export const ASSET_CATEGORIES: AgentAssetCategory[] = ["skills", "schedules", "workflows"];
