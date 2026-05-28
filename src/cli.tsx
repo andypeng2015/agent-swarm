@@ -305,8 +305,8 @@ const COMMAND_HELP: Record<
     ].join("\n"),
     examples: [
       `  ${binName} e2b build-template --role worker`,
-      `  ${binName} e2b start-worker --api-url https://swarm.example.com --env-file .env.docker`,
-      `  ${binName} e2b start-stack --workers 2 --env-file .env.docker`,
+      `  ${binName} e2b start-worker --api-url https://swarm.example.com --api-key "$SWARM_API_KEY"`,
+      `  ${binName} e2b start-stack --workers 2 --api-key "$SWARM_API_KEY"`,
     ].join("\n"),
   },
 };

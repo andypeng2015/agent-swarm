@@ -12,8 +12,6 @@ export const DEFAULT_E2B_TEMPLATE_NAMES = {
   worker: "agent-swarm-worker",
 } as const;
 
-export const DEFAULT_SWARM_API_KEY = "123123";
-
 export const DEFAULT_E2B_FORWARD_KEYS = [
   "AGENT_SWARM_API_KEY",
   "API_KEY",
@@ -49,6 +47,38 @@ export const DEFAULT_E2B_FORWARD_KEYS = [
 
 export type SwarmRole = "api" | "worker";
 
+function decodeDoubleQuotedValue(value: string): string {
+  return value
+    .replace(/\\n/g, "\n")
+    .replace(/\\r/g, "\r")
+    .replace(/\\t/g, "\t")
+    .replace(/\\"/g, '"')
+    .replace(/\\\\/g, "\\");
+}
+
+function parseQuotedValue(value: string, quote: '"' | "'"): string | null {
+  let escaped = false;
+  for (let i = 1; i < value.length; i++) {
+    const char = value[i];
+    if (quote === '"' && escaped) {
+      escaped = false;
+      continue;
+    }
+    if (quote === '"' && char === "\\") {
+      escaped = true;
+      continue;
+    }
+    if (char !== quote) continue;
+
+    const rest = value.slice(i + 1).trim();
+    if (rest && !rest.startsWith("#")) return null;
+
+    const inner = value.slice(1, i);
+    return quote === '"' ? decodeDoubleQuotedValue(inner) : inner;
+  }
+  return null;
+}
+
 export function parseDotenv(source: string): EnvMap {
   const out: EnvMap = {};
 
@@ -67,16 +97,9 @@ export function parseDotenv(source: string): EnvMap {
 
     let value = line.slice(eq + 1).trim();
     const quote = value[0];
-    if ((quote === '"' || quote === "'") && value.endsWith(quote)) {
-      value = value.slice(1, -1);
-      if (quote === '"') {
-        value = value
-          .replace(/\\n/g, "\n")
-          .replace(/\\r/g, "\r")
-          .replace(/\\t/g, "\t")
-          .replace(/\\"/g, '"')
-          .replace(/\\\\/g, "\\");
-      }
+    const quoted = quote === '"' || quote === "'" ? parseQuotedValue(value, quote) : null;
+    if (quoted !== null) {
+      value = quoted;
     } else {
       value = value.replace(/\s+#.*$/, "").trim();
     }
@@ -132,7 +155,13 @@ export function selectEnv(source: NodeJS.ProcessEnv | EnvMap, keys: readonly str
 }
 
 export function resolveSwarmApiKey(env: EnvMap, explicit?: string): string {
-  return explicit || env.AGENT_SWARM_API_KEY || env.API_KEY || getApiKey() || DEFAULT_SWARM_API_KEY;
+  const apiKey = explicit || env.AGENT_SWARM_API_KEY || env.API_KEY || getApiKey();
+  if (!apiKey) {
+    throw new Error(
+      "Missing swarm API key. Pass --api-key or set AGENT_SWARM_API_KEY/API_KEY for E2B sandboxes.",
+    );
+  }
+  return apiKey;
 }
 
 export function redactWithEnv(text: string, env: EnvMap): string {

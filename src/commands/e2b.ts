@@ -1,4 +1,3 @@
-import { tmpdir } from "node:os";
 import { dirname, resolve } from "node:path";
 import {
   buildImageTemplate,
@@ -210,7 +209,13 @@ async function loadRuntimeEnv(
     runtime[key] = secretValue;
   }
 
-  const swarmApiKey = resolveSwarmApiKey(runtime, value(flags, "api-key"));
+  let swarmApiKey: string;
+  try {
+    swarmApiKey = resolveSwarmApiKey(runtime, value(flags, "api-key"));
+  } catch (err) {
+    if (!booleanFlag(flags, "dry-run")) throw err;
+    swarmApiKey = "dry-run-api-key";
+  }
   runtime.API_KEY = swarmApiKey;
   runtime.AGENT_SWARM_API_KEY = swarmApiKey;
   runtime.STARTUP_SCRIPT_STRICT = value(flags, "startup-script-strict", "false");
@@ -330,6 +335,7 @@ async function startRole(
 ): Promise<StartedRole> {
   const controllerEnv = await loadE2BControllerEnv(flags, cwd);
   const runtimeEnv = await loadRuntimeEnv(flags, role, apiUrl);
+  const controllerApiKey = e2bControllerApiKey(controllerEnv);
   const template = roleTemplate(flags, role);
   const timeoutSec = integerFlag(flags, "timeout-sec", 3600);
   const apiBase = value(flags, "e2b-api-base", DEFAULT_E2B_API_BASE);
@@ -353,7 +359,7 @@ async function startRole(
   }
 
   const sandbox = await createSandbox({
-    apiKey: e2bControllerApiKey(controllerEnv),
+    apiKey: controllerApiKey,
     apiBase,
     template,
     timeoutSec,
@@ -361,25 +367,40 @@ async function startRole(
     metadata,
   });
 
-  if (role === "worker" && !runtimeEnv.AGENT_ID) {
-    runtimeEnv.AGENT_ID = value(flags, "agent-id", `e2b-${sandbox.sandboxID}`);
-  }
+  try {
+    if (role === "worker" && !runtimeEnv.AGENT_ID) {
+      runtimeEnv.AGENT_ID = value(flags, "agent-id", `e2b-${sandbox.sandboxID}`);
+    }
 
-  const entrypoint = role === "api" ? "/api-entrypoint.sh" : "/docker-entrypoint.sh";
-  await startDetachedProcess({
-    sandbox,
-    apiKey: e2bControllerApiKey(controllerEnv),
-    env: runtimeEnv,
-    command: entrypoint,
-    role,
-    cwd: role === "api" ? "/app" : "/workspace",
-  });
+    const entrypoint = role === "api" ? "/api-entrypoint.sh" : "/docker-entrypoint.sh";
+    await startDetachedProcess({
+      sandbox,
+      apiKey: controllerApiKey,
+      env: runtimeEnv,
+      command: entrypoint,
+      role,
+      cwd: role === "api" ? "/app" : "/workspace",
+    });
 
-  const url = role === "api" ? sandboxPortUrl(sandbox, port) : undefined;
-  if (role === "api" && !booleanFlag(flags, "no-wait")) {
-    await waitForHttpOk(`${url}/health`, integerFlag(flags, "wait-ms", 90_000));
+    const url = role === "api" ? sandboxPortUrl(sandbox, port) : undefined;
+    if (role === "api" && !booleanFlag(flags, "no-wait")) {
+      await waitForHttpOk(`${url}/health`, integerFlag(flags, "wait-ms", 90_000));
+    }
+    return { role, sandbox, url };
+  } catch (err) {
+    try {
+      await killSandbox(sandbox.sandboxID, controllerApiKey, apiBase);
+    } catch (cleanupErr) {
+      const message = cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr);
+      console.warn(
+        redactWithEnv(
+          `e2b: failed to clean up sandbox ${sandbox.sandboxID} after startup failure: ${message}`,
+          controllerEnv,
+        ),
+      );
+    }
+    throw err;
   }
-  return { role, sandbox, url };
 }
 
 async function buildTemplateCommand(flags: ParsedFlags, cwd: string): Promise<void> {
@@ -426,13 +447,11 @@ async function buildTemplateCommand(flags: ParsedFlags, cwd: string): Promise<vo
     const [key, argValue] = parseKeyValue(raw, "--build-arg");
     buildArgs[key] = argValue;
   }
+  if (Object.keys(buildArgs).length > 0) {
+    throw new Error("E2B template create does not support --build-arg; use --source image instead");
+  }
 
   const controllerEnv = await loadE2BControllerEnv(flags, cwd, { requireApiKey: false });
-  const configPath = value(
-    flags,
-    "config",
-    resolve(tmpdir(), `${templateName.replace(/[^A-Za-z0-9_-]/g, "_")}.e2b.toml`),
-  );
   const result = await buildTemplate({
     role,
     name: templateName,
@@ -441,9 +460,7 @@ async function buildTemplateCommand(flags: ParsedFlags, cwd: string): Promise<vo
     cpuCount: integerFlag(flags, "cpu-count", role === "worker" ? 4 : 2),
     memoryMb: integerFlag(flags, "memory-mb", role === "worker" ? 8192 : 2048),
     noCache: booleanFlag(flags, "no-cache"),
-    buildArgs,
     e2bEnv: controllerEnv,
-    configPath,
     dryRun: booleanFlag(flags, "dry-run"),
   });
 
@@ -594,13 +611,12 @@ Common options:
   --env-file <path>          Load runtime env/secrets for API or worker (repeatable)
   --secret KEY=VALUE         Add/override one runtime secret (repeatable)
   --inherit-env KEY[,KEY]    Forward extra local env vars into the sandbox
-  --api-key <key>            Swarm API key passed to API/worker
+  --api-key <key>            Swarm API key passed to API/worker (required unless env provides one)
   --agent-id <id>            Worker agent ID (default: e2b-<sandbox-id>)
   --timeout-sec <seconds>    Sandbox TTL (default 3600)
   --e2b-api-key-file <path>  Read the E2B controller API key from a file
   --e2b-access-token-file <path>
                              Read E2B CLI access token for publish/unpublish
-  --config <path>            E2B template config path for build-template
   --json                     Print machine-readable output
   --dry-run                  Print/derive planned work without touching E2B
 `);

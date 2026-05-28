@@ -20,6 +20,10 @@ environment values for real secrets so values do not appear in the local process
 list. Template build env set with `setEnvs()` is intentionally not used for
 secrets because E2B captures start commands at template build time.
 
+The swarm API key has no built-in default for E2B dispatch. Pass `--api-key`,
+set `AGENT_SWARM_API_KEY`, or set `API_KEY`; the dispatcher mirrors the resolved
+key to both runtime variable names for API/worker compatibility.
+
 ## Build Templates
 
 Build from the current checkout. This path uses the E2B CLI legacy Dockerfile
@@ -46,9 +50,7 @@ Defaults:
 - Worker template: `agent-swarm-worker`, `Dockerfile.worker`, 4 CPU, 8192 MB.
 
 Override with `--template`, `--api-template`, `--worker-template`,
-`--cpu-count`, `--memory-mb`, `--no-cache`, or `--build-arg KEY=VALUE`.
-By default the E2B CLI config file for builds is written under the OS temp
-directory; pass `--config <path>` if you need a stable template config file.
+`--cpu-count`, `--memory-mb`, or `--no-cache`.
 
 ## Start Sandboxes
 
@@ -57,6 +59,7 @@ Start only a worker against a reachable API:
 ```bash
 bun run src/cli.tsx e2b start-worker \
   --api-url https://your-tunnel-or-api.example.com \
+  --api-key "$SWARM_E2E_API_KEY" \
   --env-file .env.docker
 ```
 
@@ -64,6 +67,7 @@ Start API and one worker in E2B:
 
 ```bash
 bun run src/cli.tsx e2b start-stack \
+  --api-key "$SWARM_E2E_API_KEY" \
   --env-file .env.docker \
   --workers 1
 ```

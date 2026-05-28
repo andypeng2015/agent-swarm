@@ -26,12 +26,18 @@ describe("E2B env helpers", () => {
         QUOTED="hello\\nworld"
         SINGLE='literal value'
         INLINE=value # comment
+        QUOTED_COMMENT="bar" # comment
+        SINGLE_COMMENT='baz' # comment
+        QUOTED_HASH="bar # keep"
       `),
     ).toEqual({
       API_KEY: "abc123",
       QUOTED: "hello\nworld",
       SINGLE: "literal value",
       INLINE: "value",
+      QUOTED_COMMENT: "bar",
+      SINGLE_COMMENT: "baz",
+      QUOTED_HASH: "bar # keep",
     });
   });
 
@@ -42,11 +48,28 @@ describe("E2B env helpers", () => {
   });
 
   test("resolves swarm API key with env-file precedence before process default", () => {
-    expect(resolveSwarmApiKey({ API_KEY: "legacy", AGENT_SWARM_API_KEY: "preferred" })).toBe(
-      "preferred",
-    );
-    expect(resolveSwarmApiKey({ API_KEY: "legacy" }, "explicit")).toBe("explicit");
-    expect(resolveSwarmApiKey({})).toBe("123123");
+    const previousApiKey = process.env.API_KEY;
+    const previousNamespacedKey = process.env.AGENT_SWARM_API_KEY;
+    delete process.env.API_KEY;
+    delete process.env.AGENT_SWARM_API_KEY;
+    try {
+      expect(resolveSwarmApiKey({ API_KEY: "legacy", AGENT_SWARM_API_KEY: "preferred" })).toBe(
+        "preferred",
+      );
+      expect(resolveSwarmApiKey({ API_KEY: "legacy" }, "explicit")).toBe("explicit");
+      expect(() => resolveSwarmApiKey({})).toThrow("Missing swarm API key");
+    } finally {
+      if (previousApiKey === undefined) {
+        delete process.env.API_KEY;
+      } else {
+        process.env.API_KEY = previousApiKey;
+      }
+      if (previousNamespacedKey === undefined) {
+        delete process.env.AGENT_SWARM_API_KEY;
+      } else {
+        process.env.AGENT_SWARM_API_KEY = previousNamespacedKey;
+      }
+    }
   });
 
   test("selectEnv and redactWithEnv keep secrets out of logs", () => {
@@ -106,7 +129,7 @@ describe("E2B dispatch helpers", () => {
     expect(shell).not.toContain("& &&");
   });
 
-  test("buildTemplateArgs keeps local-checkout templates inert and supports build args", () => {
+  test("buildTemplateArgs uses current Dockerfile template create command", () => {
     expect(
       buildTemplateArgs({
         role: "worker",
@@ -116,19 +139,15 @@ describe("E2B dispatch helpers", () => {
         cpuCount: 4,
         memoryMb: 8192,
         noCache: true,
-        buildArgs: { CUSTOM_BUILD: "1" },
         e2bEnv: { E2B_API_KEY: "secret" },
-        configPath: "/tmp/agent-swarm-worker.e2b.toml",
       }),
     ).toEqual([
       "template",
-      "build",
+      "create",
       "-p",
       "/repo",
       "-d",
       "Dockerfile.worker",
-      "-n",
-      "agent-swarm-worker",
       "-c",
       "sleep infinity",
       "--ready-cmd",
@@ -137,11 +156,8 @@ describe("E2B dispatch helpers", () => {
       "4",
       "--memory-mb",
       "8192",
-      "--config",
-      "/tmp/agent-swarm-worker.e2b.toml",
-      "--build-arg",
-      "CUSTOM_BUILD=1",
       "--no-cache",
+      "agent-swarm-worker",
     ]);
   });
 

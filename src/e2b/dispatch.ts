@@ -30,9 +30,7 @@ export type BuildTemplateOptions = {
   cpuCount: number;
   memoryMb: number;
   noCache: boolean;
-  buildArgs: Record<string, string>;
   e2bEnv: EnvMap;
-  configPath?: string;
   dryRun?: boolean;
 };
 
@@ -217,13 +215,11 @@ export async function waitForHttpOk(url: string, timeoutMs: number): Promise<voi
 export function buildTemplateArgs(opts: BuildTemplateOptions): string[] {
   const args = [
     "template",
-    "build",
+    "create",
     "-p",
     opts.cwd,
     "-d",
     opts.dockerfile,
-    "-n",
-    opts.name,
     "-c",
     "sleep infinity",
     "--ready-cmd",
@@ -234,18 +230,11 @@ export function buildTemplateArgs(opts: BuildTemplateOptions): string[] {
     String(opts.memoryMb),
   ];
 
-  if (opts.configPath) {
-    args.push("--config", opts.configPath);
-  }
-
-  for (const [key, value] of Object.entries(opts.buildArgs)) {
-    args.push("--build-arg", `${key}=${value}`);
-  }
-
   if (opts.noCache) {
     args.push("--no-cache");
   }
 
+  args.push(opts.name);
   return args;
 }
 
