@@ -231,7 +231,12 @@ async function loadRuntimeEnv(
   }
   runtime.API_KEY = swarmApiKey;
   runtime.AGENT_SWARM_API_KEY = swarmApiKey;
-  runtime.STARTUP_SCRIPT_STRICT = value(flags, "startup-script-strict", "false");
+  const startupScriptStrict = value(
+    flags,
+    "startup-script-strict",
+    runtime.STARTUP_SCRIPT_STRICT || "",
+  );
+  if (startupScriptStrict) runtime.STARTUP_SCRIPT_STRICT = startupScriptStrict;
 
   if (role === "api") {
     runtime.PORT = value(flags, "port", String(DEFAULT_API_PORT));
