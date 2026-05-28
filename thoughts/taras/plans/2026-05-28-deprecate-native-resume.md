@@ -1,7 +1,7 @@
 ---
 date: 2026-05-28T00:00:00Z
 topic: "Deprecate Native Resume — Use Context Preamble Universally"
-status: draft
+status: in-progress
 autonomy: critical
 ---
 
@@ -106,10 +106,10 @@ The runner stops asking providers to resume. `resolveResumeSession` still runs f
 ### Success Criteria:
 
 #### Automated Verification:
-- [ ] Tests pass: `bun test src/tests/runner-context-preamble.test.ts`
-- [ ] Existing resume-session tests still pass (the function itself is unchanged): `bun test src/tests/resume-session.test.ts`
-- [ ] Typecheck passes: `bun run tsc:check`
-- [ ] Lint passes: `bun run lint`
+- [x] Tests pass: `bun test src/tests/runner-context-preamble.test.ts`
+- [x] Existing resume-session tests still pass (the function itself is unchanged): `bun test src/tests/resume-session.test.ts`
+- [x] Typecheck passes: `bun run tsc:check`
+- [x] Lint passes: `bun run lint`
 
 #### Automated QA:
 - [ ] Local E2E: start API + lead + worker (`bun run pm2-start`), use `slack_send_message` to message `<@U0ALZGQCF96>` in `#swarm-dev-2`, get a worker task running, reply in-thread, confirm via `bun run pm2-logs` that the second turn was spawned with NO `--resume` arg AND that the preamble injection log line fired (`Injected context preamble into resumed follow-up task prompt`).
