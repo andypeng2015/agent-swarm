@@ -11,6 +11,8 @@ environment that cannot run Docker locally.
 - `E2B_ACCESS_TOKEN` for non-interactive template publish/unpublish operations.
 - A public swarm API URL for worker-only dispatch. Use ngrok/Cloudflare Tunnel
   for a local API, or use `start-stack` to launch the API in E2B first.
+- Optional custom E2B endpoints can be supplied with `E2B_DOMAIN`,
+  `E2B_API_URL`, `E2B_SANDBOX_URL`, or `--e2b-api-base`.
 
 The dispatcher sends runtime secrets to E2B via sandbox creation `envVars` and
 redacts token-like response fields from output. Runtime env precedence is
@@ -80,6 +82,8 @@ Useful flags:
 - `--agent-id <id>` overrides the worker ID; otherwise workers use
   `e2b-<sandbox-id>` to avoid collisions.
 - `--timeout-sec <seconds>` sets sandbox TTL; default is `3600`.
+- `--wait-ms <milliseconds>` controls API health and worker registration waits;
+  `--no-wait` starts sandboxes without those post-start checks.
 - `--json` prints CI-friendly output.
 
 Clean up:
@@ -118,9 +122,11 @@ Store `E2B_API_KEY` plus provider credentials as repository secrets, then run:
   run: |
     bun run src/cli.tsx e2b start-worker \
       --api-url "${SWARM_API_URL}" \
+      --api-key "${SWARM_E2E_API_KEY}" \
       --json
   env:
     E2B_API_KEY: ${{ secrets.E2B_API_KEY }}
+    SWARM_E2E_API_KEY: ${{ secrets.SWARM_E2E_API_KEY }}
     ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 ```
 

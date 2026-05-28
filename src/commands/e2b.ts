@@ -10,6 +10,7 @@ import {
   sandboxPortUrl,
   setTemplateVisibility,
   startDetachedProcess,
+  waitForAgentRegistration,
   waitForHttpOk,
 } from "../e2b/dispatch";
 import {
@@ -178,6 +179,14 @@ async function loadE2BControllerEnv(
   if (accessToken) env.E2B_ACCESS_TOKEN = accessToken;
   const domain = process.env.E2B_DOMAIN || loaded.E2B_DOMAIN;
   if (domain) env.E2B_DOMAIN = domain;
+  const apiUrl =
+    value(flags, "e2b-api-base") ||
+    process.env.E2B_API_URL ||
+    loaded.E2B_API_URL ||
+    (domain ? `https://api.${domain}` : "");
+  if (apiUrl) env.E2B_API_URL = apiUrl;
+  const sandboxUrl = process.env.E2B_SANDBOX_URL || loaded.E2B_SANDBOX_URL;
+  if (sandboxUrl) env.E2B_SANDBOX_URL = sandboxUrl;
   return env;
 }
 
@@ -187,6 +196,10 @@ function e2bControllerApiKey(env: EnvMap): string {
     throw new Error("Missing E2B_API_KEY");
   }
   return apiKey;
+}
+
+function e2bApiBase(flags: ParsedFlags, controllerEnv: EnvMap): string {
+  return value(flags, "e2b-api-base") || controllerEnv.E2B_API_URL || DEFAULT_E2B_API_BASE;
 }
 
 async function loadRuntimeEnv(
@@ -338,7 +351,7 @@ async function startRole(
   const controllerApiKey = e2bControllerApiKey(controllerEnv);
   const template = roleTemplate(flags, role);
   const timeoutSec = integerFlag(flags, "timeout-sec", 3600);
-  const apiBase = value(flags, "e2b-api-base", DEFAULT_E2B_API_BASE);
+  const apiBase = e2bApiBase(flags, controllerEnv);
   const dryRun = booleanFlag(flags, "dry-run");
   const port = Number.parseInt(runtimeEnv.PORT || String(DEFAULT_API_PORT), 10);
   const metadata = parseMetadata(flags, role);
@@ -376,6 +389,8 @@ async function startRole(
     await startDetachedProcess({
       sandbox,
       apiKey: controllerApiKey,
+      apiBase,
+      e2bEnv: controllerEnv,
       env: runtimeEnv,
       command: entrypoint,
       role,
@@ -385,6 +400,19 @@ async function startRole(
     const url = role === "api" ? sandboxPortUrl(sandbox, port) : undefined;
     if (role === "api" && !booleanFlag(flags, "no-wait")) {
       await waitForHttpOk(`${url}/health`, integerFlag(flags, "wait-ms", 90_000));
+    }
+    if (role === "worker" && !booleanFlag(flags, "no-wait")) {
+      const agentId = runtimeEnv.AGENT_ID;
+      const swarmApiKey = runtimeEnv.AGENT_SWARM_API_KEY;
+      if (!apiUrl || !agentId || !swarmApiKey) {
+        throw new Error("Worker startup did not resolve API URL, agent ID, or swarm API key");
+      }
+      await waitForAgentRegistration(
+        apiUrl,
+        agentId,
+        swarmApiKey,
+        integerFlag(flags, "wait-ms", 90_000),
+      );
     }
     return { role, sandbox, url };
   } catch (err) {
@@ -545,7 +573,7 @@ async function cleanupStartedRoles(
 
   const controllerEnv = await loadE2BControllerEnv(flags, cwd);
   const controllerApiKey = e2bControllerApiKey(controllerEnv);
-  const apiBase = value(flags, "e2b-api-base", DEFAULT_E2B_API_BASE);
+  const apiBase = e2bApiBase(flags, controllerEnv);
 
   for (const role of [...started].reverse()) {
     try {
@@ -606,7 +634,7 @@ async function killCommand(flags: ParsedFlags, cwd: string): Promise<void> {
   const ids = flags.positionals;
   if (ids.length === 0) throw new Error("kill requires at least one sandbox ID");
   const controllerEnv = await loadE2BControllerEnv(flags, cwd);
-  const apiBase = value(flags, "e2b-api-base", DEFAULT_E2B_API_BASE);
+  const apiBase = e2bApiBase(flags, controllerEnv);
   for (const id of ids) {
     await killSandbox(id, e2bControllerApiKey(controllerEnv), apiBase);
     console.log(`killed ${id}`);
@@ -615,7 +643,7 @@ async function killCommand(flags: ParsedFlags, cwd: string): Promise<void> {
 
 async function listCommand(flags: ParsedFlags, cwd: string): Promise<void> {
   const controllerEnv = await loadE2BControllerEnv(flags, cwd);
-  const apiBase = value(flags, "e2b-api-base", DEFAULT_E2B_API_BASE);
+  const apiBase = e2bApiBase(flags, controllerEnv);
   const sandboxes = await listSandboxes(e2bControllerApiKey(controllerEnv), apiBase);
   if (booleanFlag(flags, "json")) {
     console.log(JSON.stringify(redactObjectWithEnv(sandboxes, controllerEnv), null, 2));

@@ -71,11 +71,21 @@ export type CreateSandboxOptions = {
 export type StartDetachedOptions = {
   sandbox: E2BSandboxInfo;
   apiKey: string;
+  apiBase?: string;
+  e2bEnv?: EnvMap;
   env: EnvMap;
   command: string;
   role: E2BRole;
   user?: string;
   cwd?: string;
+};
+
+type E2BSdkConnectionOptions = {
+  apiKey: string;
+  apiUrl?: string;
+  accessToken?: string;
+  domain?: string;
+  sandboxUrl?: string;
 };
 
 function e2bHeaders(apiKey: string): Record<string, string> {
@@ -89,9 +99,25 @@ export function buildDetachedShell(command: string, logPath: string, pidPath: st
   return [
     "set -e",
     `nohup ${command} >${logPath} 2>&1 </dev/null & pid=$!`,
+    "sleep 2",
+    `if ! kill -0 "$pid" 2>/dev/null; then cat ${logPath} >&2; exit 1; fi`,
     `echo "$pid" > ${pidPath}`,
     'echo "$pid"',
   ].join("; ");
+}
+
+export function e2bSdkConnectionOptions(
+  apiKey: string,
+  env: EnvMap,
+  apiBase?: string,
+): E2BSdkConnectionOptions {
+  const options: E2BSdkConnectionOptions = { apiKey };
+  const resolvedApiUrl = apiBase || env.E2B_API_URL;
+  if (resolvedApiUrl) options.apiUrl = resolvedApiUrl;
+  if (env.E2B_ACCESS_TOKEN) options.accessToken = env.E2B_ACCESS_TOKEN;
+  if (env.E2B_DOMAIN) options.domain = env.E2B_DOMAIN;
+  if (env.E2B_SANDBOX_URL) options.sandboxUrl = env.E2B_SANDBOX_URL;
+  return options;
 }
 
 export function sandboxPortHost(sandbox: E2BSandboxInfo, port: number): string {
@@ -182,7 +208,10 @@ export async function startDetachedProcess(opts: StartDetachedOptions): Promise<
   const shell = buildDetachedShell(opts.command, logPath, pidPath);
 
   const { Sandbox } = await import("e2b");
-  const sandbox = await Sandbox.connect(opts.sandbox.sandboxID, { apiKey: opts.apiKey });
+  const sandbox = await Sandbox.connect(
+    opts.sandbox.sandboxID,
+    e2bSdkConnectionOptions(opts.apiKey, opts.e2bEnv ?? {}, opts.apiBase),
+  );
   const result = await sandbox.commands.run(shell, {
     user: opts.user ?? "root",
     cwd: opts.cwd ?? "/",
@@ -194,6 +223,39 @@ export async function startDetachedProcess(opts: StartDetachedOptions): Promise<
     throw new Error(`E2B start command failed: ${redactWithEnv(result.stderr, opts.env)}`);
   }
   return result.stdout.trim();
+}
+
+export async function waitForAgentRegistration(
+  apiUrl: string,
+  agentId: string,
+  apiKey: string,
+  timeoutMs: number,
+): Promise<void> {
+  const baseUrl = apiUrl.replace(/\/+$/, "");
+  const url = `${baseUrl}/api/agents/${encodeURIComponent(agentId)}`;
+  const started = Date.now();
+  let lastError = "";
+
+  while (Date.now() - started < timeoutMs) {
+    try {
+      const response = await fetch(url, {
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+        },
+      });
+      if (response.ok) return;
+      lastError = `${response.status} ${response.statusText}`;
+    } catch (err) {
+      lastError = err instanceof Error ? err.message : String(err);
+    }
+    await Bun.sleep(1_000);
+  }
+
+  throw new Error(
+    `Timed out waiting for worker ${agentId} to register at ${url}${
+      lastError ? ` (${lastError})` : ""
+    }`,
+  );
 }
 
 export async function waitForHttpOk(url: string, timeoutMs: number): Promise<void> {
@@ -290,7 +352,7 @@ export async function buildImageTemplate(
   const { Template } = await import("e2b");
   const template = Template().fromImage(opts.image).setStartCmd("sleep infinity", "sleep 0");
   const buildInfo = await Template.build(template, opts.name, {
-    apiKey,
+    ...e2bSdkConnectionOptions(apiKey, opts.e2bEnv),
     cpuCount: opts.cpuCount,
     memoryMB: opts.memoryMb,
     skipCache: opts.noCache,

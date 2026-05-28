@@ -5,8 +5,10 @@ import {
   buildTemplateArgs,
   deleteTemplate,
   type E2BSandboxInfo,
+  e2bSdkConnectionOptions,
   sandboxPortHost,
   setTemplateVisibility,
+  waitForAgentRegistration,
 } from "../e2b/dispatch";
 import {
   parseDotenv,
@@ -124,9 +126,58 @@ describe("E2B dispatch helpers", () => {
     const shell = buildDetachedShell("/api-entrypoint.sh", "/tmp/api.log", "/tmp/api.pid");
 
     expect(shell).toContain("nohup /api-entrypoint.sh >/tmp/api.log 2>&1 </dev/null & pid=$!");
+    expect(shell).toContain("sleep 2");
+    expect(shell).toContain('kill -0 "$pid"');
+    expect(shell).toContain("cat /tmp/api.log >&2");
     expect(shell).toContain("pid=$!");
     expect(shell).not.toContain("&;");
     expect(shell).not.toContain("& &&");
+  });
+
+  test("E2B SDK connection options preserve loaded controller endpoints", () => {
+    expect(
+      e2bSdkConnectionOptions(
+        "controller-key",
+        {
+          E2B_ACCESS_TOKEN: "controller-access-token",
+          E2B_DOMAIN: "sandbox.example.com",
+          E2B_SANDBOX_URL: "https://sandbox.sandbox.example.com",
+        },
+        "https://api.sandbox.example.com",
+      ),
+    ).toEqual({
+      apiKey: "controller-key",
+      accessToken: "controller-access-token",
+      domain: "sandbox.example.com",
+      sandboxUrl: "https://sandbox.sandbox.example.com",
+      apiUrl: "https://api.sandbox.example.com",
+    });
+  });
+
+  test("waitForAgentRegistration checks the worker registration endpoint with bearer auth", async () => {
+    const originalFetch = globalThis.fetch;
+    const calls: Array<{ url: string; authorization: string | null }> = [];
+
+    try {
+      globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+        calls.push({
+          url: String(input),
+          authorization: new Headers(init?.headers).get("authorization"),
+        });
+        return new Response("{}", { status: 200 });
+      }) as typeof fetch;
+
+      await waitForAgentRegistration("https://api.example.com/", "worker/id", "swarm-secret", 10);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+
+    expect(calls).toEqual([
+      {
+        url: "https://api.example.com/api/agents/worker%2Fid",
+        authorization: "Bearer swarm-secret",
+      },
+    ]);
   });
 
   test("buildTemplateArgs uses current Dockerfile template create command", () => {
