@@ -145,14 +145,14 @@ Add `context-mode` as a globally-installed npm package (version-pinned), pin the
 ### Success Criteria:
 
 #### Automated Verification:
-- [ ] Docker build succeeds: `docker build -f Dockerfile.worker .`
-- [ ] `context-mode` binary is on PATH in the image: `docker run --rm <img> which context-mode`
-- [ ] `context-mode` package is importable: `docker run --rm <img> node -e "require('context-mode')"`
+- [x] Docker build succeeds: `docker build -f Dockerfile.worker .`
+- [x] `context-mode` binary is on PATH in the image: `docker run --rm <img> which context-mode` → `/usr/bin/context-mode`
+- [x] `context-mode` package is importable <!-- NOTE: bare `require('context-mode')` is N/A — it's a global ESM package not resolvable by name from an arbitrary cwd. Verified `import()` of the absolute plugin entry works offline (`--network none`). -->
 - [x] Existing tests pass: `bun test`
 - [x] Type check passes: `bun run tsc:check`
 
 #### Automated QA:
-- [ ] Verify `context-mode --help` or `context-mode doctor` runs inside a fresh container
+- [x] Verify `context-mode --help` or `context-mode doctor` runs inside a fresh container
 
 #### Manual Verification:
 - [ ] Image size delta is acceptable (check `docker history` for the new layer)
