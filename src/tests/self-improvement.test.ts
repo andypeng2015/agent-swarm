@@ -10,12 +10,12 @@ import {
   initDb,
 } from "../be/db";
 import { SqliteMemoryStore } from "../be/memory/providers/sqlite-store";
-import { getBasePrompt } from "../prompts/base-prompt";
 import {
   isAutomaticOrRecurringTaskCompletion,
   isScheduledTaskCompletion,
   shouldPersistTaskCompletionMemory,
-} from "../tools/store-progress";
+} from "../memory/automatic-task-gate";
+import { getBasePrompt } from "../prompts/base-prompt";
 
 const TEST_DB_PATH = "./test-self-improvement.sqlite";
 

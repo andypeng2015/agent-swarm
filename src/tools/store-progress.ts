@@ -16,6 +16,7 @@ import {
 import { getEmbeddingProvider, getMemoryStore } from "@/be/memory";
 import { getRetrievalsForTask } from "@/be/memory/raters/retrieval";
 import { runServerRaters } from "@/be/memory/raters/run-server-raters";
+import { shouldPersistTaskCompletionMemory } from "@/memory/automatic-task-gate";
 import { createWorkerTaskFollowUp } from "@/tasks/worker-follow-up";
 import { createToolRegistrar } from "@/tools/utils";
 import { AgentTaskSchema, AttachmentInputSchema, isTerminalTaskStatus } from "@/types";
@@ -27,50 +28,6 @@ import { validateJsonSchema } from "@/workflows/json-schema-validator";
 // calling `store-progress` rarely knew the real numbers and historically
 // echoed the schema example, producing noise rows keyed `mcp-<taskId>-<ts>`
 // that double-counted alongside the harness's authoritative entry.
-
-const SCHEDULE_TAG_PREFIX = "schedule:";
-const AUTOMATIC_TASK_TYPES = new Set([
-  "boot-triage",
-  "heartbeat",
-  "heartbeat-checklist",
-  "health-check",
-  "health-probe",
-  "monitor",
-  "monitoring",
-]);
-
-export function isScheduledTaskCompletion(task: { tags?: string[] | null }): boolean {
-  return task.tags?.some((tag) => tag.startsWith(SCHEDULE_TAG_PREFIX)) ?? false;
-}
-
-export function isAutomaticOrRecurringTaskCompletion(task: {
-  source?: string | null;
-  taskType?: string | null;
-  tags?: string[] | null;
-}): boolean {
-  const tags = task.tags ?? [];
-  const taskType = task.taskType?.toLowerCase();
-
-  return (
-    task.source === "schedule" ||
-    task.source === "system" ||
-    tags.includes("scheduled") ||
-    tags.includes("auto-generated") ||
-    tags.some((tag) => tag.startsWith(SCHEDULE_TAG_PREFIX)) ||
-    (taskType !== undefined &&
-      (AUTOMATIC_TASK_TYPES.has(taskType) ||
-        taskType.endsWith("-monitor") ||
-        taskType.endsWith("-digest")))
-  );
-}
-
-export function shouldPersistTaskCompletionMemory(
-  task: { source?: string | null; taskType?: string | null; tags?: string[] | null },
-  persistMemory?: boolean,
-): boolean {
-  if (persistMemory) return true;
-  return !isAutomaticOrRecurringTaskCompletion(task);
-}
 
 export const registerStoreProgressTool = (server: McpServer) => {
   createToolRegistrar(server)(
