@@ -389,6 +389,16 @@ bun run start:http
 
 ---
 
+## Implementation Deviations
+
+Captured during implementation (autopilot, 2026-05-29):
+
+1. **Phase 4 (OpenCode) — absolute path instead of bare name.** The plan assumed `npm install -g context-mode` makes the package importable for OpenCode's in-process plugin. It does not: OpenCode resolves bare plugin names via `import(await Bun.resolve(name, …))`, which does not walk the npm global modules dir. A bare `"context-mode"` entry only resolves if Bun auto-installs from the registry at runtime (fails on network-sandboxed workers — verified with `--network none`). Fix: `opencode-adapter` now pushes the **absolute path** to the global install's built opencode plugin entry (`<npm root -g>/context-mode/build/adapters/opencode/plugin.js`), confirmed to import offline. Override via `CONTEXT_MODE_OPENCODE_PLUGIN_PATH`; skipped gracefully (with a warning) when not found.
+
+2. **Phase 1 (Claude plugin) — left unpinned.** The build-time `git checkout v<version>` in the marketplace clone fails (`git` rejects it with "dubious ownership" and the clone is shallow without tags). The hooks-providing plugin therefore tracks marketplace HEAD; the ctx_* **tools** are served by the version-pinned global CLI, so only the (backward-compatible) hook bundle floats. Accepted as low-risk.
+
+3. **Phase 5 (pi exclusion) — wider than 2 files.** No provider exclusion *set* existed; remote providers are excluded via composite *selection* in `getBasePrompt`. Implemented by threading `provider` through `getBasePrompt`/`runner.ts` and registering a `system.session.worker.pi` composite without the `context_mode` reference.
+
 ## Appendix
 
 - **Research**: `thoughts/taras/research/2026-05-28-context-mode-mcp-setup-across-harnesses.md`
