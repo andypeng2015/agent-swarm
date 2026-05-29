@@ -36,6 +36,7 @@ export function createWorkerTaskFollowUp(args: {
   const { task, status, output, failureReason } = args;
 
   if (task.workflowRunId) return null;
+  if (task.followUpConfig?.disabled === true) return null;
 
   const taskAgent = getAgentById(task.agentId ?? "");
   if (!taskAgent || taskAgent.isLead) return null;
@@ -45,6 +46,16 @@ export function createWorkerTaskFollowUp(args: {
 
   const agentName = taskAgent.name || task.agentId?.slice(0, 8) || "Unknown";
   const taskDesc = task.task.slice(0, 200);
+  const creatorAgent = task.creatorAgentId
+    ? `${task.creatorAgentId}${task.creatorAgentId === leadAgent.id ? " (you)" : ""}`
+    : "<none>";
+  const instructions =
+    status === "completed"
+      ? (task.followUpConfig?.onCompleted ?? "")
+      : (task.followUpConfig?.onFailed ?? "");
+  const followUpInstructions = instructions
+    ? `\nAdditional instructions from the task creator:\n${instructions}\n`
+    : "";
 
   let followUpDescription: string;
   if (status === "completed") {
@@ -55,7 +66,9 @@ export function createWorkerTaskFollowUp(args: {
     const completedResult = resolveTemplate("task.worker.completed", {
       agent_name: agentName,
       task_desc: taskDesc,
+      creator_agent: creatorAgent,
       output_summary: outputSummary,
+      follow_up_instructions: followUpInstructions,
       task_id: task.id,
     });
     followUpDescription = completedResult.text;
@@ -64,7 +77,9 @@ export function createWorkerTaskFollowUp(args: {
     const failedResult = resolveTemplate("task.worker.failed", {
       agent_name: agentName,
       task_desc: taskDesc,
+      creator_agent: creatorAgent,
       failure_reason: reason,
+      follow_up_instructions: followUpInstructions,
       task_id: task.id,
     });
     followUpDescription = failedResult.text;
