@@ -6,6 +6,7 @@ import {
   getTaskAttachments,
   getTaskById,
 } from "../be/db";
+import { repointTrackerSyncBySwarmId } from "../be/db-queries/tracker";
 import { resolveTemplate } from "../prompts/resolver";
 import type { AgentTask, ResumeReason, TaskAttachment } from "../types";
 // Side-effect import: registers task lifecycle templates in the in-memory registry.
@@ -217,6 +218,20 @@ export function createResumeFollowUp(args: {
     priority,
     parentTaskId: parent.id,
   });
+
+  // Repoint Linear / Jira `tracker_sync` rows from the (now terminal) parent
+  // to the resume child. Without this, outbound completion posts for the
+  // resume task can't find their tracker_sync row, and subsequent inbound
+  // webhooks load the terminal parent and create duplicate tasks.
+  //
+  // Safe to call when no tracker_sync rows exist for this parent (no-op).
+  // Covers all providers (Linear AND Jira) and entity types in one call.
+  const repointed = repointTrackerSyncBySwarmId(parent.id, created.id);
+  if (repointed > 0) {
+    console.log(
+      `[ResumeFollowUp] Repointed ${repointed} tracker_sync row(s) from ${parent.id.slice(0, 8)} → ${created.id.slice(0, 8)}`,
+    );
+  }
 
   return { kind: "created", task: created };
 }

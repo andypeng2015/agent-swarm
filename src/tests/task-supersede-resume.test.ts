@@ -15,6 +15,11 @@ import {
   supersedeTask,
   updateAgentStatus,
 } from "../be/db";
+import {
+  createTrackerSync,
+  getTrackerSync,
+  getTrackerSyncByExternalId,
+} from "../be/db-queries/tracker";
 import { buildResumeContextPreamble } from "../commands/context-preamble";
 import { createResumeFollowUp } from "../tasks/worker-follow-up";
 
@@ -243,6 +248,67 @@ describe("Task Supersede + Resume", () => {
       expect(result.task.vcsUrl).toBe("https://github.com/desplega-ai/agent-swarm/pull/594");
       expect(result.task.vcsInstallationId).toBe(999);
       expect(result.task.vcsNodeId).toBe("PR_kwDOQr3Tmc7abcdef");
+    });
+
+    test("Linear-backed parent → tracker_sync row repoints to resume child", () => {
+      // PR #594 review: tracker_sync rows stayed keyed to the (now-terminal)
+      // parent after supersede. Linear outbound completion posts look up by
+      // swarmId, so the resume child's completion never made it back; and
+      // subsequent inbound events found the terminal parent in tracker_sync
+      // and created duplicate tasks.
+      const worker = freshAgent("worker-tracker", {
+        lastActivityAt: new Date().toISOString(),
+      });
+      const parent = createTaskExtended("Parent tracked in Linear", {
+        agentId: worker.id,
+      });
+      startTask(parent.id);
+
+      // Simulate the Linear sync row created when the issue was inbound-claimed.
+      createTrackerSync({
+        provider: "linear",
+        entityType: "task",
+        swarmId: parent.id,
+        externalId: "linear-issue-uuid-12345",
+        externalIdentifier: "ENG-42",
+        externalUrl: "https://linear.app/test/issue/ENG-42",
+      });
+
+      // Sanity: tracker_sync starts pointed at the parent.
+      const before = getTrackerSync("linear", "task", parent.id);
+      expect(before).not.toBeNull();
+
+      const result = createResumeFollowUp({
+        parentId: parent.id,
+        reason: "graceful_shutdown",
+      });
+      if (result.kind !== "created") throw new Error("expected created");
+
+      // After resume creation, tracker_sync should now key on the resume child.
+      const parentLookup = getTrackerSync("linear", "task", parent.id);
+      expect(parentLookup).toBeNull();
+      const childLookup = getTrackerSync("linear", "task", result.task.id);
+      expect(childLookup).not.toBeNull();
+      // External identity stays — only swarmId moved.
+      const byExternal = getTrackerSyncByExternalId("linear", "task", "linear-issue-uuid-12345");
+      expect(byExternal?.swarmId).toBe(result.task.id);
+      expect(byExternal?.externalIdentifier).toBe("ENG-42");
+    });
+
+    test("Parent with no tracker_sync → resume creation is a no-op on tracker_sync", () => {
+      const worker = freshAgent("worker-no-tracker", {
+        lastActivityAt: new Date().toISOString(),
+      });
+      const parent = createTaskExtended("Parent without tracker", { agentId: worker.id });
+      startTask(parent.id);
+
+      const result = createResumeFollowUp({
+        parentId: parent.id,
+        reason: "graceful_shutdown",
+      });
+      // Just assert it doesn't blow up — repoint returns 0 rows and the
+      // resume task still gets created cleanly.
+      expect(result.kind).toBe("created");
     });
 
     test("workflow-step parent → returns workflow-skip (no task created)", () => {
