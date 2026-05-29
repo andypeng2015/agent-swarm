@@ -202,6 +202,12 @@ export function createResumeFollowUp(args: {
     dir: parent.dir,
     vcsRepo: parent.vcsRepo,
     vcsProvider: parent.vcsProvider,
+    // outputSchema MUST carry forward — `store-progress` validates completion
+    // output against `existingTask.outputSchema`, and the runner only injects
+    // structured-output instructions when the task object has a schema.
+    // Without this, a resumed schema'd task can complete with free-form output
+    // and skip validation (silent contract regression).
+    outputSchema: parent.outputSchema,
     // Optionally pass these too — createTaskExtended will skip when already
     // overridden by the parent-id inheritance pass.
     slackChannelId: parent.slackChannelId,

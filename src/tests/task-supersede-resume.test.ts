@@ -175,6 +175,37 @@ describe("Task Supersede + Resume", () => {
       expect(child.priority).toBeGreaterThanOrEqual(parent.priority);
     });
 
+    test("non-workflow parent with outputSchema → schema carries forward to resume child", () => {
+      const worker = freshAgent("worker-6-schema", {
+        lastActivityAt: new Date().toISOString(),
+      });
+      const schema = {
+        type: "object",
+        properties: {
+          status: { type: "string", enum: ["ok", "fail"] },
+          report: { type: "string" },
+        },
+        required: ["status"],
+      };
+      const parent = createTaskExtended("Parent with outputSchema", {
+        agentId: worker.id,
+        outputSchema: schema,
+      });
+      startTask(parent.id);
+
+      const result = createResumeFollowUp({
+        parentId: parent.id,
+        reason: "graceful_shutdown",
+      });
+      expect(result.kind).toBe("created");
+      if (result.kind !== "created") return;
+
+      // outputSchema must be preserved so `store-progress` still validates
+      // completion output and the runner still injects structured-output
+      // instructions (PR #594 review feedback).
+      expect(result.task.outputSchema).toEqual(schema);
+    });
+
     test("workflow-step parent → returns workflow-skip (no task created)", () => {
       const worker = freshAgent("worker-7");
       const parent = createTaskExtended("Workflow-step parent", {
