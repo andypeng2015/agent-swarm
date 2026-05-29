@@ -156,8 +156,23 @@ export function createResumeFollowUp(args: {
   // Routing decision — same DB process so the read-then-create window is
   // small. Acceptable for v1 per the plan (the unassigned-pool fallback
   // covers the race anyway).
+  //
+  // For `graceful_shutdown` specifically, force the unassigned-pool path:
+  // the parent worker is exiting and will call `closeAgent` (→ offline)
+  // moments after the supersede loop. At the moment of this check it
+  // still looks fresh + has capacity (the parent just terminal-
+  // transitioned), so the liveness branch would assign the resume task to
+  // a dying worker — leaving it orphaned in `pending` once the worker
+  // closes. Pool routing lets any live worker claim it.
+  //
+  // Other reasons keep the liveness-aware routing:
+  //   - `crash_recovery`: parent worker is presumed dead → `lastActivityAt`
+  //     is stale or `status === "offline"`, so the existing check already
+  //     rejects it naturally.
+  //   - `context_limits` / `manual_supersede`: the worker is alive and
+  //     can keep handling the resume task on a fresh session.
   let preferredAgentId: string | undefined;
-  if (parent.agentId) {
+  if (parent.agentId && args.reason !== "graceful_shutdown") {
     const candidate = getAgentById(parent.agentId);
     if (candidate && candidate.status !== "offline") {
       const lastActivity = candidate.lastActivityAt ? Date.parse(candidate.lastActivityAt) : 0;

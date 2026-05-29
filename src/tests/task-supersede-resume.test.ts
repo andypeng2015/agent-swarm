@@ -251,7 +251,29 @@ describe("Task Supersede + Resume", () => {
       expect(afterCount).toBe(beforeCount);
     });
 
-    test("routing: fresh worker + capacity → resume pre-assigned to same worker", () => {
+    test("routing: graceful_shutdown ALWAYS goes to pool, even on fresh+capable worker (PR #594 review)", () => {
+      // The worker is exiting moments after this check — keeping the resume on
+      // the same agent would orphan it once `closeAgent` runs. graceful_shutdown
+      // must force the unassigned-pool path regardless of liveness.
+      const worker = freshAgent("worker-fresh-shutdown", {
+        maxTasks: 5,
+        lastActivityAt: new Date().toISOString(),
+      });
+      const parent = createTaskExtended("Routing graceful_shutdown", { agentId: worker.id });
+      startTask(parent.id);
+
+      const result = createResumeFollowUp({
+        parentId: parent.id,
+        reason: "graceful_shutdown",
+      });
+      if (result.kind !== "created") throw new Error("expected created");
+      expect(result.task.agentId).toBeNull();
+      expect(result.task.status).toBe("unassigned");
+    });
+
+    test("routing: fresh worker + capacity (non-shutdown) → resume pre-assigned to same worker", () => {
+      // For context_limits / manual_supersede the worker is alive and can
+      // continue handling the resume on a fresh session.
       const worker = freshAgent("worker-fresh", {
         maxTasks: 5,
         lastActivityAt: new Date().toISOString(),
@@ -261,7 +283,7 @@ describe("Task Supersede + Resume", () => {
 
       const result = createResumeFollowUp({
         parentId: parent.id,
-        reason: "graceful_shutdown",
+        reason: "context_limits",
       });
       if (result.kind !== "created") throw new Error("expected created");
       expect(result.task.agentId).toBe(worker.id);
@@ -278,7 +300,7 @@ describe("Task Supersede + Resume", () => {
 
       const result = createResumeFollowUp({
         parentId: parent.id,
-        reason: "graceful_shutdown",
+        reason: "context_limits",
       });
       if (result.kind !== "created") throw new Error("expected created");
       expect(result.task.agentId).toBeNull();
@@ -297,7 +319,7 @@ describe("Task Supersede + Resume", () => {
 
       const result = createResumeFollowUp({
         parentId: parent.id,
-        reason: "graceful_shutdown",
+        reason: "context_limits",
       });
       if (result.kind !== "created") throw new Error("expected created");
       expect(result.task.agentId).toBeNull();
@@ -314,7 +336,7 @@ describe("Task Supersede + Resume", () => {
 
       const result = createResumeFollowUp({
         parentId: parent.id,
-        reason: "graceful_shutdown",
+        reason: "context_limits",
       });
       if (result.kind !== "created") throw new Error("expected created");
       expect(result.task.agentId).toBeNull();
