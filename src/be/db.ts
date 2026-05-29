@@ -1317,16 +1317,23 @@ export function getChildTasks(parentTaskId: string): AgentTask[] {
 }
 
 /**
- * Returns true if `parentId` has at least one child task whose status is NOT in the
- * terminal set (`completed | failed | cancelled | superseded`). Used by the heartbeat
- * sweep to avoid creating a duplicate "resume" follow-up when one already exists for a
- * supersede-eligible parent (DES-523).
+ * Returns true if `parentId` has at least one non-terminal child task with
+ * `taskType = 'resume'`. Used by the heartbeat sweep as an idempotency guard:
+ * if a prior sweep tick already created a resume follow-up for this parent,
+ * don't create a duplicate.
+ *
+ * **Filters by taskType = 'resume'** specifically. A parent task can also
+ * have ordinary non-terminal delegation children (`send-task` auto-defaults
+ * `parentTaskId` to the caller's current task — see src/tools/send-task.ts).
+ * Treating those as "already resumed" would incorrectly skip the resume
+ * path for a crashed worker that had delegated subtasks (PR #594 review).
  */
-export function hasNonTerminalChildTask(parentId: string): boolean {
+export function hasNonTerminalResumeChild(parentId: string): boolean {
   const row = getDb()
     .prepare(
       `SELECT 1 FROM agent_tasks
        WHERE parentTaskId = ?
+         AND taskType = 'resume'
          AND status NOT IN ('completed', 'failed', 'cancelled', 'superseded')
        LIMIT 1`,
     )

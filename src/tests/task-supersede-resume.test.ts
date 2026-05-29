@@ -566,5 +566,115 @@ describe("Task Supersede + Resume", () => {
       );
       expect(preamble).toBeNull();
     });
+
+    test("cascading resume: walks chain to ORIGINAL task and merges logs across attempts", async () => {
+      // PR #594 review: a resume task being superseded again would have
+      // `buildResumeContextPreamble` reading the immediate parent's synthetic
+      // "Resume interrupted task..." prompt instead of the real description,
+      // and session logs scoped only to that one resume attempt. The fix
+      // walks the parentTaskId chain through taskType="resume" ancestors.
+      const originalId = crypto.randomUUID();
+      const resume1Id = crypto.randomUUID();
+      const originalDescription =
+        "ORIGINAL: implement /api/widgets endpoint with full pagination + validation.";
+      const resume1SyntheticPrompt =
+        "Resume interrupted task.\n\nParent task: ORIGINAL: implement /api/widgets...\n\nReason: graceful_shutdown\n\n[synthetic]";
+
+      // resume2 is what the runner is about to launch. Its `parentTaskId`
+      // is resume1, which is `taskType="resume"`, whose `parentTaskId` is
+      // the original (non-resume).
+      const chainServer = (await import("node:http")).createServer((req, res) => {
+        res.setHeader("Content-Type", "application/json");
+        const url = req.url ?? "";
+        if (url === `/api/tasks/${resume1Id}`) {
+          res.writeHead(200).end(
+            JSON.stringify({
+              id: resume1Id,
+              task: resume1SyntheticPrompt,
+              taskType: "resume",
+              parentTaskId: originalId,
+              attachments: [],
+            }),
+          );
+          return;
+        }
+        if (url === `/api/tasks/${originalId}`) {
+          res.writeHead(200).end(
+            JSON.stringify({
+              id: originalId,
+              task: originalDescription,
+              taskType: undefined,
+              parentTaskId: undefined,
+              attachments: [],
+            }),
+          );
+          return;
+        }
+        if (url?.startsWith(`/api/tasks/${resume1Id}/session-logs`)) {
+          res.writeHead(200).end(
+            JSON.stringify({
+              logs: [
+                {
+                  createdAt: "2026-05-29T12:00:00.000Z",
+                  content: JSON.stringify({
+                    type: "tool_use",
+                    name: "RecentResumeAttempt",
+                    input: { file_path: "/from/resume1" },
+                  }),
+                },
+              ],
+            }),
+          );
+          return;
+        }
+        if (url?.startsWith(`/api/tasks/${originalId}/session-logs`)) {
+          res.writeHead(200).end(
+            JSON.stringify({
+              logs: [
+                {
+                  createdAt: "2026-05-29T10:00:00.000Z",
+                  content: JSON.stringify({
+                    type: "tool_use",
+                    name: "OriginalTaskWork",
+                    input: { file_path: "/from/original" },
+                  }),
+                },
+              ],
+            }),
+          );
+          return;
+        }
+        res.writeHead(404).end(JSON.stringify({ error: "not found" }));
+      });
+      const port = 13100;
+      await new Promise<void>((r) => chainServer.listen(port, () => r()));
+
+      try {
+        // resume2's parentTaskId = resume1.id → walk should reach original.
+        const preamble = await buildResumeContextPreamble(
+          `http://localhost:${port}`,
+          "",
+          resume1Id,
+        );
+        expect(preamble).toBeTruthy();
+        const text = preamble ?? "";
+
+        // The ORIGINAL task description must be in the preamble.
+        expect(text).toContain(originalDescription);
+        // The synthetic "Resume interrupted task" body of the immediate
+        // parent must NOT be the surfaced description.
+        expect(text).not.toContain(resume1SyntheticPrompt);
+        // The original task ID must be the one referenced (not the resume).
+        expect(text).toContain(originalId);
+        // Tool-call summaries from BOTH chain members merged (verify by
+        // presence of both unique names).
+        expect(text).toContain("OriginalTaskWork");
+        expect(text).toContain("RecentResumeAttempt");
+        // Chain-depth notice present (>1 chain length).
+        expect(text).toContain("Resume chain depth: 2");
+      } finally {
+        await new Promise<void>((r) => chainServer.close(() => r()));
+      }
+    });
   });
 });

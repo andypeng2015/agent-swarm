@@ -38,6 +38,7 @@ export interface TaskContextForPreamble {
   output?: string;
   progress?: string;
   status?: string;
+  taskType?: string;
   parentTaskId?: string;
   attachments?: Array<{
     kind: string;
@@ -71,6 +72,7 @@ export async function fetchTaskContextForPreamble(
       output: data.output,
       progress: data.progress,
       status: data.status,
+      taskType: data.taskType,
       parentTaskId: data.parentTaskId,
       attachments: data.attachments,
     };
@@ -286,16 +288,65 @@ function summarizeSessionLogLine(line: SessionLogForPreamble): string | null {
  * Truncation order: session-log summary (oldest first), then artifacts.
  * The task description is never truncated.
  */
+/**
+ * Walk up the parentTaskId chain through `taskType === "resume"` ancestors
+ * to find the original (non-resume) task. Returns the chain in order
+ * [immediateParent, ..., original]. Caps at MAX_RESUME_CHAIN_DEPTH to
+ * defend against cycles or runaway chains.
+ *
+ * PR #594 review: cascading resumes (original → resume1 → resume2) had
+ * `buildResumeContextPreamble` fetching only the immediate parent — whose
+ * `task` text is the synthetic "Resume interrupted task..." prompt rather
+ * than the original work brief. Walking the chain restores the original
+ * description and lets us merge session logs from all resume attempts.
+ */
+const MAX_RESUME_CHAIN_DEPTH = 10;
+
+async function walkResumeChain(
+  apiUrl: string,
+  apiKey: string,
+  immediateParentId: string,
+): Promise<TaskContextForPreamble[]> {
+  const chain: TaskContextForPreamble[] = [];
+  let currentId: string | undefined = immediateParentId;
+  for (let depth = 0; depth < MAX_RESUME_CHAIN_DEPTH && currentId; depth++) {
+    const ctx: TaskContextForPreamble | null = await fetchTaskContextForPreamble(
+      apiUrl,
+      apiKey,
+      currentId,
+    );
+    if (!ctx) break;
+    chain.push(ctx);
+    // Stop once we hit a non-resume ancestor — that's the original work.
+    if (ctx.taskType !== "resume") break;
+    currentId = ctx.parentTaskId;
+  }
+  return chain;
+}
+
 export async function buildResumeContextPreamble(
   apiUrl: string,
   apiKey: string,
   parentTaskId: string,
 ): Promise<string | null> {
-  const parent = await fetchTaskContextForPreamble(apiUrl, apiKey, parentTaskId);
-  if (!parent) return null;
+  const chain = await walkResumeChain(apiUrl, apiKey, parentTaskId);
+  if (chain.length === 0) return null;
+  // Original = last entry (non-resume ancestor, or the deepest reachable
+  // if the chain exceeds the depth cap or hits a fetch failure).
+  const original = chain[chain.length - 1] ?? chain[0];
+  if (!original) return null;
+  // Immediate parent — its attachments are the most recent "in flight" set.
+  const parent = chain[0] ?? original;
 
-  const sessionLogs = await fetchSessionLogsForResume(apiUrl, apiKey, parentTaskId);
-  const recentLogs = sessionLogs.slice(-CONTEXT_PREAMBLE_RESUME_SESSION_LOG_LIMIT);
+  // Fetch session logs from EVERY chain member so a re-superseded resume
+  // still surfaces tool-call history from earlier attempts. Merge, sort by
+  // createdAt ASC, then keep the most recent N.
+  const logsBatches = await Promise.all(
+    chain.map((c) => fetchSessionLogsForResume(apiUrl, apiKey, c.id)),
+  );
+  const merged = logsBatches.flat();
+  merged.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  const recentLogs = merged.slice(-CONTEXT_PREAMBLE_RESUME_SESSION_LOG_LIMIT);
 
   const descBudget = Math.floor(CONTEXT_PREAMBLE_RESUME_MAX_CHARS * 0.4);
   let logsBudget = Math.floor(CONTEXT_PREAMBLE_RESUME_MAX_CHARS * 0.35);
@@ -311,18 +362,25 @@ export async function buildResumeContextPreamble(
     "",
     "**Do not redo work already completed below — extend it.**",
     "",
-    `Original task ID: \`${parent.id}\``,
+    `Original task ID: \`${original.id}\``,
+    chain.length > 1
+      ? `Resume chain depth: ${chain.length} (this is at least the ${
+          chain.length === 2 ? "2nd" : chain.length === 3 ? "3rd" : `${chain.length}th`
+        } resume attempt).`
+      : "",
     "",
     "---",
     "",
     "### Original Task Description",
     "",
-  ].join("\n");
+  ]
+    .filter((s) => s !== "")
+    .join("\n");
 
-  // 40% — full description (never truncated). If somehow longer than the
-  // budget allocation, we still include it in full and absorb the slack
-  // from logs/artifacts.
-  const descSection = parent.task;
+  // 40% — full description (never truncated). Pulled from the ORIGINAL
+  // (non-resume) ancestor so cascading resumes don't read each other's
+  // synthetic "Resume interrupted task..." preamble bodies (PR #594 review).
+  const descSection = original.task;
 
   // 35% — session-log summary (tool-call lines)
   const summaryLines: string[] = [];
@@ -374,7 +432,7 @@ export async function buildResumeContextPreamble(
   sections.push(
     "---",
     "",
-    `To review the full prior session call \`get-task-details\` with taskId \`${parent.id}\`.`,
+    `To review the full prior session call \`get-task-details\` with taskId \`${original.id}\`.`,
     "",
     "---",
     "",

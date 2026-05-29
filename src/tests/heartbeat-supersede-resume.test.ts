@@ -153,6 +153,50 @@ describe("Heartbeat — supersede + resume (DES-523)", () => {
   });
 
   // --------------------------------------------------------------------------
+  // Case A — delegation children must NOT block the resume path
+  // --------------------------------------------------------------------------
+
+  test("Case A: ordinary delegation child does NOT block resume (only taskType=resume children count)", async () => {
+    // PR #594 review: `send-task` auto-defaults `parentTaskId` to the
+    // caller's current task. So a crashed worker that had delegated subtasks
+    // has non-terminal children that are NOT resume tasks. The idempotency
+    // guard must only count taskType=resume children — otherwise the parent
+    // is silently failed and the original work is dropped.
+    const agent = createAgent({ name: "dead-delegator", isLead: false, status: "busy" });
+    const otherAgent = createAgent({ name: "subtask-worker", isLead: false, status: "busy" });
+    const parent = createTaskExtended("Parent that delegated", { agentId: agent.id });
+    startTask(parent.id);
+
+    // A delegated subtask — `taskType` is NOT "resume". `send-task` auto-sets
+    // parentTaskId to the delegator's current task, so this models reality.
+    const delegated = createTaskExtended("Delegated subtask", {
+      parentTaskId: parent.id,
+      agentId: otherAgent.id,
+      taskType: "delegation",
+    });
+    expect(delegated.status).toBe("pending");
+
+    const oldTime = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+    getDb().run("UPDATE agent_tasks SET lastUpdatedAt = ? WHERE id = ?", [oldTime, parent.id]);
+
+    const findings = await codeLevelTriage();
+
+    // Resume path should fire — the delegated child does not count.
+    expect(findings.autoResumedTasks.length).toBe(1);
+    expect(findings.autoResumedTasks[0]!.taskId).toBe(parent.id);
+    expect(findings.autoFailedTasks.length).toBe(0);
+
+    const updatedParent = getTaskById(parent.id);
+    expect(updatedParent?.status).toBe("superseded");
+
+    // Children now: the original delegation + the new resume.
+    const children = getChildTasks(parent.id);
+    expect(children.length).toBe(2);
+    const resumeChild = children.find((c) => c.taskType === "resume");
+    expect(resumeChild).not.toBeUndefined();
+  });
+
+  // --------------------------------------------------------------------------
   // Case B — stale session heartbeat
   // --------------------------------------------------------------------------
 

@@ -17,7 +17,7 @@ import {
   getTaskStats,
   getTasksByStatus,
   getUnassignedPoolTasks,
-  hasNonTerminalChildTask,
+  hasNonTerminalResumeChild,
   releaseStaleMentionProcessing,
   releaseStaleProcessingInbox,
   releaseStaleReviewingTasks,
@@ -254,9 +254,13 @@ function remediateCrashedWorkerTask(
   // but checking here avoids leaving the parent in `superseded` with a dangling
   // dedicated-reason `failTask` no-op chasing it.
   const isWorkflowStep = task.workflowRunStepId != null;
-  // Idempotency: if a non-terminal child task already exists for this parent,
-  // a prior sweep already created a resume — fall back to the legacy fail path.
-  const alreadyResumed = !skipAutoResume && !isWorkflowStep && hasNonTerminalChildTask(task.id);
+  // Idempotency: if a non-terminal `resume` child already exists for this
+  // parent, a prior sweep already created the resume — fall back to the
+  // legacy fail path. We filter on `taskType = 'resume'` specifically (not
+  // any child task) because `send-task` auto-defaults `parentTaskId` to the
+  // caller's current task, so a crashed worker with delegated subtasks
+  // would otherwise be incorrectly skipped (PR #594 review).
+  const alreadyResumed = !skipAutoResume && !isWorkflowStep && hasNonTerminalResumeChild(task.id);
 
   if (isWorkflowStep) {
     const failed = failTask(task.id, "superseded_workflow_task");
