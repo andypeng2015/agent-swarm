@@ -29,6 +29,7 @@ import type {
   ContextSnapshotEventType,
   ContextVersion,
   CooldownConfig,
+  FollowUpConfig,
   InboxItemState,
   InboxItemStatus,
   InboxItemType,
@@ -87,6 +88,7 @@ import type {
   WorkflowSummary,
   WorkflowVersion,
 } from "../types";
+import { FollowUpConfigSchema } from "../types";
 import { deriveProviderFromKeyType } from "../utils/credentials";
 import { scrubSecrets } from "../utils/secret-scrubber";
 import { decryptSecret, encryptSecret, getEncryptionKey, resolveEncryptionKey } from "./crypto";
@@ -993,6 +995,7 @@ type AgentTaskRow = {
   workflowRunId: string | null;
   workflowRunStepId: string | null;
   outputSchema: string | null;
+  followUpConfig: string | null;
   contextKey: string | null;
   createdAt: string;
   lastUpdatedAt: string;
@@ -1016,6 +1019,27 @@ type AgentTaskRow = {
 };
 
 function rowToAgentTask(row: AgentTaskRow): AgentTask {
+  let followUpConfig: FollowUpConfig | undefined;
+  if (row.followUpConfig) {
+    try {
+      const parsed = FollowUpConfigSchema.safeParse(JSON.parse(row.followUpConfig));
+      if (parsed.success) {
+        followUpConfig = parsed.data;
+      } else {
+        console.warn(
+          `[db] Ignoring invalid agent_tasks.followUpConfig for task ${row.id}:`,
+          parsed.error.message,
+        );
+      }
+    } catch (error) {
+      console.warn(
+        `[db] Ignoring malformed agent_tasks.followUpConfig for task ${row.id}:`,
+        error instanceof Error ? error.message : String(error),
+      );
+      followUpConfig = undefined;
+    }
+  }
+
   return {
     id: row.id,
     agentId: row.agentId,
@@ -1057,6 +1081,7 @@ function rowToAgentTask(row: AgentTaskRow): AgentTask {
     workflowRunId: row.workflowRunId ?? undefined,
     workflowRunStepId: row.workflowRunStepId ?? undefined,
     outputSchema: row.outputSchema ? JSON.parse(row.outputSchema) : undefined,
+    followUpConfig,
     contextKey: row.contextKey ?? undefined,
     compactionCount: row.compactionCount ?? undefined,
     peakContextPercent: row.peakContextPercent ?? undefined,
@@ -2641,6 +2666,7 @@ export interface CreateTaskOptions {
    * a schema'd task should be defensive about JSON parsing.
    */
   outputSchema?: Record<string, unknown>;
+  followUpConfig?: FollowUpConfig;
   requestedByUserId?: string;
   contextKey?: string;
 }
@@ -2716,6 +2742,9 @@ export function createTaskExtended(task: string, options?: CreateTaskOptions): A
       if (parent.contextKey && !options.contextKey) {
         options.contextKey = parent.contextKey;
       }
+      if (parent.followUpConfig && !options.followUpConfig) {
+        options.followUpConfig = parent.followUpConfig;
+      }
     }
   }
 
@@ -2741,8 +2770,8 @@ export function createTaskExtended(task: string, options?: CreateTaskOptions): A
         vcsInstallationId, vcsNodeId,
         agentmailInboxId, agentmailMessageId, agentmailThreadId,
         mentionMessageId, mentionChannelId, dir, parentTaskId, model, scheduleId,
-        workflowRunId, workflowRunStepId, outputSchema, requestedByUserId, contextKey, swarmVersion, createdAt, lastUpdatedAt
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`,
+        workflowRunId, workflowRunStepId, outputSchema, followUpConfig, requestedByUserId, contextKey, swarmVersion, createdAt, lastUpdatedAt
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`,
     )
     .get(
       id,
@@ -2781,6 +2810,7 @@ export function createTaskExtended(task: string, options?: CreateTaskOptions): A
       options?.workflowRunId ?? null,
       options?.workflowRunStepId ?? null,
       options?.outputSchema ? JSON.stringify(options.outputSchema) : null,
+      options?.followUpConfig ? JSON.stringify(options.followUpConfig) : null,
       options?.requestedByUserId ?? null,
       options?.contextKey ?? null,
       pkg.version,

@@ -14,7 +14,7 @@ import {
 import { findDuplicateTask } from "@/tools/task-dedup";
 import { ownerCtx, type ToolCtx } from "@/tools/task-tool-ctx";
 import { createToolRegistrar } from "@/tools/utils";
-import { AgentTaskSchema } from "@/types";
+import { AgentTaskSchema, FollowUpConfigSchema } from "@/types";
 
 export const sendTaskInputSchema = z.object({
   agentId: z
@@ -83,6 +83,9 @@ export const sendTaskInputSchema = z.object({
     .describe(
       "ID of the human user who originally requested this task chain. When omitted, inherited from the caller's current task so the attribution flows through multi-hop delegation automatically.",
     ),
+  followUpConfig: FollowUpConfigSchema.optional().describe(
+    "Control the lead follow-up created when this task finishes. When to use `followUpConfig`: set `disabled: true` when you'll wait for this task to complete inline and no follow-up is needed; set `onCompleted` / `onFailed` with specific instructions when you need to follow up effectively on a particular outcome of a long-running flow; for normal one-shot tasks, leave it unset because defaults are fine. It is most valuable for long-running / complex flows.",
+  ),
 });
 
 export const sendTaskOutputSchema = z.object({
@@ -113,6 +116,7 @@ export async function sendTaskHandler(
     slackThreadTs,
     slackUserId,
     requestedByUserId: inputRequestedByUserId,
+    followUpConfig,
   }: SendTaskArgs,
 ): Promise<CallToolResult> {
   if (ctx.kind === "owner" && !ctx.agentId) {
@@ -263,6 +267,7 @@ export async function sendTaskHandler(
         slackChannelId,
         slackThreadTs,
         slackUserId,
+        followUpConfig,
       });
 
       return {
@@ -315,6 +320,7 @@ export async function sendTaskHandler(
         slackChannelId,
         slackThreadTs,
         slackUserId,
+        followUpConfig,
       });
 
       return {
@@ -341,6 +347,7 @@ export async function sendTaskHandler(
       slackChannelId,
       slackThreadTs,
       slackUserId,
+      followUpConfig,
     });
 
     return {
