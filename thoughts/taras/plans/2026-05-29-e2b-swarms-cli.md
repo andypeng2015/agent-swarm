@@ -1,10 +1,10 @@
 ---
 date: 2026-05-29T00:00:00Z
 topic: "E2B Dispatch CLI — Lead Stacks, Swarm Grouping, Lifecycle Control"
-status: in-progress
+status: completed-v1
 autonomy: autopilot
 last_updated: 2026-05-30T00:00:00Z
-last_updated_by: phase-running (Phase 4)
+last_updated_by: implementing (v1 = Phases 1-5; v2 = Phases 6-7 deferred)
 ---
 
 # E2B Dispatch CLI — Lead Stacks, Swarm Grouping, Lifecycle Control: Implementation Plan
@@ -215,9 +215,9 @@ The entrypoint becomes an envd-tracked process so its output reaches E2B's nativ
 ### Success Criteria:
 
 #### Automated Verification:
-- [ ] Type check passes: `bun run tsc:check`
-- [ ] Unit tests pass: `bun test src/tests/e2b-dispatch.test.ts`
-- [ ] Help lists the logs command: `bun run src/cli.tsx e2b swarms logs --help`
+- [x] Type check passes: `bun run tsc:check`
+- [x] Unit tests pass: `bun test src/tests/e2b-dispatch.test.ts`
+- [x] Help lists the logs command: `bun run src/cli.tsx e2b swarms logs --help`
 
 #### Automated QA:
 - [ ] Agent starts a real swarm, then `e2b swarms logs <slug> --role api` shows entrypoint output (API boot lines), and `e2b sandbox logs <api-id>` (native CLI) is no longer empty.

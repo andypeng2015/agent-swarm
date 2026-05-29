@@ -12,12 +12,13 @@ import {
 } from "../commands/e2b";
 import { buildOnboardDashboardUrl } from "../commands/onboard/dashboard-url";
 import {
-  buildDetachedShell,
   buildImageTemplate,
   buildTemplateArgs,
+  buildTrackedShell,
   deleteTemplate,
   type E2BSandboxInfo,
   e2bSdkConnectionOptions,
+  sandboxLogPath,
   sandboxPortHost,
   setTemplateVisibility,
   ttlRemaining,
@@ -201,16 +202,30 @@ describe("E2B dispatch helpers", () => {
     expect(expired.secondsLeft).toBe(0);
   });
 
-  test("buildDetachedShell backgrounds command and captures pid without invalid shell chaining", () => {
-    const shell = buildDetachedShell("/api-entrypoint.sh", "/tmp/api.log", "/tmp/api.pid");
+  test("buildTrackedShell pipes the entrypoint through tee to the log path (Phase 5)", () => {
+    const logPath = sandboxLogPath("api");
+    const shell = buildTrackedShell("/api-entrypoint.sh", logPath);
 
-    expect(shell).toContain("nohup /api-entrypoint.sh >/tmp/api.log 2>&1 </dev/null & pid=$!");
-    expect(shell).toContain("sleep 2");
-    expect(shell).toContain('kill -0 "$pid"');
-    expect(shell).toContain("cat /tmp/api.log >&2");
-    expect(shell).toContain("pid=$!");
-    expect(shell).not.toContain("&;");
-    expect(shell).not.toContain("& &&");
+    // Phase 5: the entrypoint runs as the SDK BACKGROUND command itself (envd
+    // owns/streams it), no longer a detached `nohup … &` grandchild.
+    expect(logPath).toBe("/tmp/agent-swarm-e2b-api.log");
+    expect(shell).toBe(
+      "set -o pipefail; /api-entrypoint.sh 2>&1 | tee /tmp/agent-swarm-e2b-api.log",
+    );
+    // Must tee to the deterministic file so `swarms logs` can read full history.
+    expect(shell).toContain(`tee ${logPath}`);
+    // pipefail makes the pipeline exit reflect the entrypoint (not tee) for the
+    // early-failure poll in startDetachedProcess.
+    expect(shell).toContain("set -o pipefail");
+    // The old detach primitives are gone.
+    expect(shell).not.toContain("nohup");
+    expect(shell).not.toContain("kill -0");
+    expect(shell).not.toContain("sleep 2");
+  });
+
+  test("sandboxLogPath is deterministic per E2B role", () => {
+    expect(sandboxLogPath("api")).toBe("/tmp/agent-swarm-e2b-api.log");
+    expect(sandboxLogPath("worker")).toBe("/tmp/agent-swarm-e2b-worker.log");
   });
 
   test("E2B SDK connection options preserve loaded controller endpoints", () => {

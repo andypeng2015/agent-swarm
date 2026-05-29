@@ -13,6 +13,7 @@ import {
   setSandboxTimeout,
   setTemplateVisibility,
   startDetachedProcess,
+  streamSandboxLog,
   ttlRemaining,
   waitForAgentRegistration,
   waitForHttpOk,
@@ -147,6 +148,9 @@ const BOOLEAN_FLAGS = new Set([
   "non-interactive",
   "no-lead",
   "reveal-key",
+  // `swarms logs --follow` tails live output. Boolean so it never swallows the
+  // next positional/flag (e.g. the slug or `--role`).
+  "follow",
   // `swarms add --add-lead` adds a lead to an existing swarm (in addition to or
   // instead of workers). Boolean so it never swallows the next positional slug.
   "add-lead",
@@ -524,8 +528,15 @@ function parseMetadata(flags: ParsedFlags, tagging: MetadataTagging): Record<str
   if (tagging.swarmRole) metadata.swarmRole = tagging.swarmRole;
   if (tagging.apiPort !== undefined) metadata.apiPort = String(tagging.apiPort);
   if (tagging.agentId) metadata.agentId = tagging.agentId;
+  const reserved = new Set<string>(RESERVED_METADATA_KEYS);
   for (const raw of values(flags, "metadata")) {
     const [key, metadataValue] = parseKeyValue(raw, "--metadata");
+    if (reserved.has(key)) {
+      // The dispatcher owns these keys (grouping/teardown depend on them); a
+      // user override would silently break `kill --all` / the `swarms` family.
+      console.warn(`e2b: ignoring --metadata ${key}=… (reserved by the dispatcher)`);
+      continue;
+    }
     metadata[key] = metadataValue;
   }
   return metadata;
@@ -1710,6 +1721,78 @@ async function pickSwarmSlug(flags: ParsedFlags, cwd: string): Promise<string> {
   return chosen;
 }
 
+/** The E2B `role` (api|worker) a swarm sandbox launched its entrypoint under. */
+function sandboxE2BRole(sandbox: E2BSandboxInfo): "api" | "worker" {
+  // The entrypoint's tee log path keys off the E2B role, not the grouping role:
+  // a lead is grouping-role "lead" but E2B role "worker" (so its log lives at
+  // /tmp/agent-swarm-e2b-worker.log). Map back via the grouping role.
+  return sandboxSwarmRole(sandbox) === "api" ? "api" : "worker";
+}
+
+/**
+ * `e2b swarms logs <slug> [--role api|lead|worker] [--follow]` — stream the
+ * entrypoint log of a swarm's sandbox(es).
+ *
+ * Resolution: filter the swarm's members by `--role` (default: `api`, the most
+ * useful single target — it carries the API boot lines + health). Reading the
+ * deterministic per-role tee'd log path means NO PID bookkeeping is needed.
+ *
+ * Output is UNTRUSTED entrypoint stdout that can embed tokens, so every chunk is
+ * routed through `redactWithEnv` (→ scrubSecrets) at this egress point before it
+ * touches the terminal.
+ */
+async function swarmsLogsCommand(flags: ParsedFlags, cwd: string): Promise<void> {
+  const slug = flags.positionals[1];
+  if (!slug) throw new Error("swarms logs requires a slug: e2b swarms logs <slug>");
+
+  const roleFlag = value(flags, "role") || "api";
+  if (roleFlag !== "api" && roleFlag !== "lead" && roleFlag !== "worker") {
+    throw new Error("--role must be one of api|lead|worker");
+  }
+
+  const { members, controllerEnv, apiBase } = await resolveSwarmGroup(flags, cwd, slug);
+  const targets = members.filter((m) => sandboxSwarmRole(m) === roleFlag);
+  if (targets.length === 0) {
+    throw new Error(`swarm "${slug}" has no ${roleFlag} sandbox`);
+  }
+
+  const follow = booleanFlag(flags, "follow");
+  const tailLines = integerFlag(flags, "tail", 200);
+  const controllerApiKey = e2bControllerApiKey(controllerEnv);
+
+  // Multi-target follow would interleave two live streams ambiguously; restrict
+  // --follow to a single sandbox and point multi-worker users at --role/history.
+  if (follow && targets.length > 1) {
+    throw new Error(
+      `swarm "${slug}" has ${targets.length} ${roleFlag} sandboxes — --follow needs a single target (omit --follow for history, or there is no per-sandbox selector yet)`,
+    );
+  }
+
+  // SIGINT (Ctrl-C) cleanly stops a --follow stream by aborting the tail.
+  const controller = new AbortController();
+  if (follow) {
+    process.once("SIGINT", () => controller.abort());
+  }
+
+  for (const target of targets) {
+    if (targets.length > 1) {
+      console.log(`==> ${roleFlag} ${target.sandboxID} <==`);
+    }
+    await streamSandboxLog({
+      sandboxId: target.sandboxID,
+      role: sandboxE2BRole(target),
+      apiKey: controllerApiKey,
+      apiBase,
+      e2bEnv: controllerEnv,
+      tailLines,
+      follow,
+      signal: follow ? controller.signal : undefined,
+      // Egress scrub: entrypoint output can embed secrets — redact every chunk.
+      onChunk: (chunk) => process.stdout.write(redactWithEnv(chunk, controllerEnv)),
+    });
+  }
+}
+
 async function swarmsCommand(flags: ParsedFlags, cwd: string): Promise<void> {
   const sub = flags.positionals[0];
   switch (sub) {
@@ -1726,8 +1809,11 @@ async function swarmsCommand(flags: ParsedFlags, cwd: string): Promise<void> {
     case "add":
       await swarmsAddCommand(flags, cwd);
       return;
+    case "logs":
+      await swarmsLogsCommand(flags, cwd);
+      return;
     default:
-      throw new Error(`Unknown e2b swarms subcommand: ${sub} (expected list|info|kill|add)`);
+      throw new Error(`Unknown e2b swarms subcommand: ${sub} (expected list|info|kill|add|logs)`);
   }
 }
 
@@ -1744,7 +1830,7 @@ Usage:
   agent-swarm e2b start-worker --api-url <https-url> [--template <name>] [--env-file .env]
   agent-swarm e2b start-stack [--swarm <slug>] [--workers <n>] [--no-lead] [--yes]
   agent-swarm e2b list [--json]
-  agent-swarm e2b swarms list | info <slug> | kill <slug> | add <slug>
+  agent-swarm e2b swarms list | info <slug> | kill <slug> | add <slug> | logs <slug>
   agent-swarm e2b extend <sandbox-id...> --timeout-sec <seconds>
   agent-swarm e2b kill <sandbox-id...> | --all
 
@@ -1795,6 +1881,10 @@ swarms (group by metadata.swarm slug):
   add <slug>                 Add worker(s)/--add-lead to an existing swarm, TTL
                              re-synced to the group's current end. No slug on a
                              TTY → swarm picker. --workers <n> sets the count.
+  logs <slug>                Stream a sandbox's entrypoint log (envd-tracked +
+                             tee'd to file). --role api|lead|worker (default api),
+                             --follow to tail live, --tail <n> history lines
+                             (default 200). Output is scrubbed for secrets.
   --reveal-key               Embed the swarm API key in the dashboard deep-link
                              (printed RAW — the URL is a secret; hidden otherwise)
 
