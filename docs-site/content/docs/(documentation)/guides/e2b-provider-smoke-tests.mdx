@@ -63,7 +63,8 @@ bun run src/cli.tsx e2b publish-template agent-swarm-worker-${GITHUB_SHA}
 
 The image-backed template build uses the E2B SDK `fromImage()` path and does not
 require Docker on the machine that calls E2B. Docker is still needed somewhere
-upstream to build and push the registry image.
+upstream to build and push the registry image. Publishing calls the E2B template
+update API with `E2B_API_KEY`; it does not require a separate E2B credential.
 
 ## Deployed smoke flow
 

@@ -8,7 +8,6 @@ environment that cannot run Docker locally.
 - `e2b` CLI available on `PATH` for local-checkout template builds.
 - `E2B_API_KEY` in the environment, `.env.e2b`, `.env`, or passed with
   `--e2b-api-key-file`.
-- `E2B_ACCESS_TOKEN` for non-interactive template publish/unpublish operations.
 - A public swarm API URL for worker-only dispatch. Use ngrok/Cloudflare Tunnel
   for a local API, or use `start-stack` to launch the API in E2B first.
 - Optional custom E2B endpoints can be supplied with `E2B_DOMAIN`,
@@ -101,8 +100,8 @@ bun run src/cli.tsx e2b publish-template agent-swarm-api-latest
 bun run src/cli.tsx e2b publish-template agent-swarm-worker-latest
 ```
 
-Publishing/unpublishing uses the E2B CLI. In non-interactive CI, provide
-`E2B_ACCESS_TOKEN` in addition to `E2B_API_KEY`.
+Publishing/unpublishing uses the E2B template update API and only requires
+`E2B_API_KEY`.
 
 ## GitHub Actions Shape
 

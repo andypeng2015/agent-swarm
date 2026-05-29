@@ -135,13 +135,11 @@ async function loadE2BControllerEnv(
 ): Promise<EnvMap> {
   const requireApiKey = opts.requireApiKey ?? true;
   if (booleanFlag(flags, "dry-run")) {
-    return { E2B_ACCESS_TOKEN: "dry-run", E2B_API_KEY: "dry-run" };
+    return { E2B_API_KEY: "dry-run" };
   }
 
   const explicit = value(flags, "e2b-api-key");
   const fromFile = value(flags, "e2b-api-key-file");
-  const explicitAccessToken = value(flags, "e2b-access-token");
-  const accessTokenFile = value(flags, "e2b-access-token-file");
   const candidates: string[] = [];
   const commonRoot = await gitCommonRoot(cwd);
 
@@ -163,11 +161,6 @@ async function loadE2BControllerEnv(
   if (fromFile) {
     apiKey = (await Bun.file(absolutePath(fromFile, cwd)).text()).trim();
   }
-  let accessToken =
-    explicitAccessToken || process.env.E2B_ACCESS_TOKEN || loaded.E2B_ACCESS_TOKEN || "";
-  if (accessTokenFile) {
-    accessToken = (await Bun.file(absolutePath(accessTokenFile, cwd)).text()).trim();
-  }
   if (!apiKey && requireApiKey) {
     throw new Error(
       "Missing E2B_API_KEY. Set it in env, pass --e2b-api-key-file, or put it in .env.e2b/.env.",
@@ -176,7 +169,6 @@ async function loadE2BControllerEnv(
 
   const env: EnvMap = {};
   if (apiKey) env.E2B_API_KEY = apiKey;
-  if (accessToken) env.E2B_ACCESS_TOKEN = accessToken;
   const domain = process.env.E2B_DOMAIN || loaded.E2B_DOMAIN;
   if (domain) env.E2B_DOMAIN = domain;
   const apiUrl =
@@ -531,7 +523,7 @@ async function templateVisibilityCommand(
   const names = flags.positionals;
   const action = isPublic ? "publish-template" : "unpublish-template";
   if (names.length === 0) throw new Error(`${action} requires at least one template name`);
-  const controllerEnv = await loadE2BControllerEnv(flags, cwd, { requireApiKey: false });
+  const controllerEnv = await loadE2BControllerEnv(flags, cwd);
 
   for (const name of names) {
     const result = await setTemplateVisibility({
@@ -684,8 +676,6 @@ Common options:
   --agent-id <id>            Worker agent ID (default: e2b-<sandbox-id>)
   --timeout-sec <seconds>    Sandbox TTL (default 3600)
   --e2b-api-key-file <path>  Read the E2B controller API key from a file
-  --e2b-access-token-file <path>
-                             Read E2B CLI access token for publish/unpublish
   --json                     Print machine-readable output
   --dry-run                  Print/derive planned work without touching E2B
 `);

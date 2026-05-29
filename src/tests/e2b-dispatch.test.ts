@@ -161,7 +161,6 @@ describe("E2B dispatch helpers", () => {
       e2bSdkConnectionOptions(
         "controller-key",
         {
-          E2B_ACCESS_TOKEN: "controller-access-token",
           E2B_DOMAIN: "sandbox.example.com",
           E2B_SANDBOX_URL: "https://sandbox.sandbox.example.com",
         },
@@ -169,7 +168,6 @@ describe("E2B dispatch helpers", () => {
       ),
     ).toEqual({
       apiKey: "controller-key",
-      accessToken: "controller-access-token",
       domain: "sandbox.example.com",
       sandboxUrl: "https://sandbox.sandbox.example.com",
       apiUrl: "https://api.sandbox.example.com",
@@ -252,25 +250,62 @@ describe("E2B dispatch helpers", () => {
       setTemplateVisibility({
         name: "agent-swarm-worker-latest",
         public: true,
-        e2bEnv: { E2B_API_KEY: "secret", E2B_ACCESS_TOKEN: "secret" },
+        e2bEnv: { E2B_API_KEY: "secret" },
         dryRun: true,
       }),
     ).resolves.toMatchObject({
       exitCode: 0,
-      stdout: "e2b template publish agent-swarm-worker-latest -y\n",
+      stdout: 'PATCH /v2/templates/agent-swarm-worker-latest {"public":true}\n',
     });
 
     await expect(
       setTemplateVisibility({
         name: "agent-swarm-worker-latest",
         public: false,
-        e2bEnv: { E2B_API_KEY: "secret", E2B_ACCESS_TOKEN: "secret" },
+        e2bEnv: { E2B_API_KEY: "secret" },
         dryRun: true,
       }),
     ).resolves.toMatchObject({
       exitCode: 0,
-      stdout: "e2b template unpublish agent-swarm-worker-latest -y\n",
+      stdout: 'PATCH /v2/templates/agent-swarm-worker-latest {"public":false}\n',
     });
+  });
+
+  test("setTemplateVisibility updates templates through the E2B API key path", async () => {
+    const originalFetch = globalThis.fetch;
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    globalThis.fetch = async (url: string | URL | Request, init?: RequestInit) => {
+      calls.push({ url: String(url), init });
+      return new Response(JSON.stringify({ names: ["workspace/agent-swarm-worker-latest"] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    };
+
+    try {
+      const result = await setTemplateVisibility({
+        name: "agent swarm/worker",
+        public: true,
+        e2bEnv: {
+          E2B_API_KEY: "controller-secret",
+          E2B_API_URL: "https://api.e2b.example",
+        },
+      });
+
+      expect(calls).toHaveLength(1);
+      expect(calls[0]?.url).toBe("https://api.e2b.example/v2/templates/agent%20swarm%2Fworker");
+      expect(calls[0]?.init?.method).toBe("PATCH");
+      expect(calls[0]?.init?.headers).toMatchObject({
+        "Content-Type": "application/json",
+        "X-API-Key": "controller-secret",
+      });
+      expect(calls[0]?.init?.body).toBe(JSON.stringify({ public: true }));
+      expect(result.stdout).toBe(
+        "Set E2B template agent swarm/worker visibility to public (workspace/agent-swarm-worker-latest)\n",
+      );
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 
   test("buildImageTemplate dry-run uses the Dockerless SDK path", async () => {

@@ -83,9 +83,12 @@ export type StartDetachedOptions = {
 type E2BSdkConnectionOptions = {
   apiKey: string;
   apiUrl?: string;
-  accessToken?: string;
   domain?: string;
   sandboxUrl?: string;
+};
+
+type E2BTemplateVisibilityResponse = {
+  names: string[];
 };
 
 function e2bHeaders(apiKey: string): Record<string, string> {
@@ -114,7 +117,6 @@ export function e2bSdkConnectionOptions(
   const options: E2BSdkConnectionOptions = { apiKey };
   const resolvedApiUrl = apiBase || env.E2B_API_URL;
   if (resolvedApiUrl) options.apiUrl = resolvedApiUrl;
-  if (env.E2B_ACCESS_TOKEN) options.accessToken = env.E2B_ACCESS_TOKEN;
   if (env.E2B_DOMAIN) options.domain = env.E2B_DOMAIN;
   if (env.E2B_SANDBOX_URL) options.sandboxUrl = env.E2B_SANDBOX_URL;
   return options;
@@ -394,10 +396,34 @@ export async function deleteTemplate(opts: DeleteTemplateOptions): Promise<E2BCo
 export async function setTemplateVisibility(
   opts: TemplateVisibilityOptions,
 ): Promise<E2BCommandResult> {
-  const action = opts.public ? "publish" : "unpublish";
-  const args = ["template", action, opts.name, "-y"];
+  const path = `/v2/templates/${encodeURIComponent(opts.name)}`;
   if (opts.dryRun) {
-    return { exitCode: 0, stdout: `e2b ${args.join(" ")}\n`, stderr: "" };
+    return {
+      exitCode: 0,
+      stdout: `PATCH ${path} {"public":${opts.public}}\n`,
+      stderr: "",
+    };
   }
-  return runE2BCommand(args, opts.e2bEnv);
+
+  const apiKey = opts.e2bEnv.E2B_API_KEY;
+  if (!apiKey) {
+    throw new Error("Missing E2B_API_KEY");
+  }
+
+  const result = await e2bFetchJson<E2BTemplateVisibilityResponse>(
+    path,
+    apiKey,
+    {
+      method: "PATCH",
+      body: JSON.stringify({ public: opts.public }),
+    },
+    opts.e2bEnv.E2B_API_URL || DEFAULT_E2B_API_BASE,
+  );
+  const names = result.names.length > 0 ? ` (${result.names.join(", ")})` : "";
+  const visibility = opts.public ? "public" : "private";
+  return {
+    exitCode: 0,
+    stdout: `Set E2B template ${opts.name} visibility to ${visibility}${names}\n`,
+    stderr: "",
+  };
 }
