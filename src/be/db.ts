@@ -1173,7 +1173,7 @@ export const taskQueries = {
   setProgress: () =>
     getDb().prepare<AgentTaskRow, [string, string]>(
       `UPDATE agent_tasks SET progress = ?,
-       status = CASE WHEN status IN ('completed', 'failed', 'cancelled') THEN status ELSE 'in_progress' END,
+       status = CASE WHEN status IN ('completed', 'failed', 'cancelled', 'superseded') THEN status ELSE 'in_progress' END,
        lastUpdatedAt = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
        WHERE id = ? RETURNING *`,
     ),
@@ -1244,14 +1244,14 @@ export function startTask(taskId: string): AgentTask | null {
   if (!oldTask) return null;
 
   // Guard: never revive tasks that are already in a terminal state
-  if (["completed", "failed", "cancelled"].includes(oldTask.status)) {
+  if (["completed", "failed", "cancelled", "superseded"].includes(oldTask.status)) {
     return null;
   }
 
   const row = getDb()
     .prepare<AgentTaskRow, [string]>(
       `UPDATE agent_tasks SET status = 'in_progress', lastUpdatedAt = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-       WHERE id = ? AND status NOT IN ('completed', 'failed', 'cancelled') RETURNING *`,
+       WHERE id = ? AND status NOT IN ('completed', 'failed', 'cancelled', 'superseded') RETURNING *`,
     )
     .get(taskId);
   if (row && oldTask) {
@@ -1926,7 +1926,7 @@ export function completeTask(id: string, output?: string): AgentTask | null {
   // Idempotency guard: don't re-complete a task already in a terminal state.
   // Mirrors cancelTask. Prevents duplicate task.completed events, duplicate
   // log entries, and duplicate follow-up tasks when multiple sessions race.
-  if (["completed", "failed", "cancelled"].includes(oldTask.status)) {
+  if (["completed", "failed", "cancelled", "superseded"].includes(oldTask.status)) {
     return null;
   }
 
@@ -1971,7 +1971,7 @@ export function failTask(id: string, reason: string): AgentTask | null {
   // Idempotency guard: don't re-fail a task already in a terminal state.
   // Mirrors cancelTask / completeTask. Prevents duplicate task.failed events
   // and duplicate follow-up tasks when multiple sessions race.
-  if (["completed", "failed", "cancelled"].includes(oldTask.status)) {
+  if (["completed", "failed", "cancelled", "superseded"].includes(oldTask.status)) {
     return null;
   }
 
@@ -2008,7 +2008,7 @@ export function cancelTask(id: string, reason?: string): AgentTask | null {
   if (!oldTask) return null;
 
   // Only cancel tasks that are not already in a terminal state
-  const terminalStatuses = ["completed", "failed", "cancelled"];
+  const terminalStatuses = ["completed", "failed", "cancelled", "superseded"];
   if (terminalStatuses.includes(oldTask.status)) {
     return null;
   }
@@ -2032,6 +2032,69 @@ export function cancelTask(id: string, reason?: string): AgentTask | null {
       import("../workflows/event-bus").then(({ workflowEventBus }) => {
         workflowEventBus.emit("task.cancelled", {
           taskId: id,
+          agentId: row.agentId,
+          workflowRunId: row.workflowRunId,
+          workflowRunStepId: row.workflowRunStepId,
+        });
+      });
+    } catch {}
+  }
+
+  return row ? rowToAgentTask(row) : null;
+}
+
+/**
+ * Supersede a task: mark it as `superseded` (terminal) so a fresh "resume"
+ * follow-up task can pick up where it left off. Used by the graceful-shutdown
+ * path and the `POST /api/tasks/:id/supersede` route. Returns null if the task
+ * is already terminal (mirrors `completeTask` / `cancelTask` idempotency).
+ *
+ * Writes a `task_superseded` agent_log with `{ reason, resumeTaskId }` payload
+ * and emits a `task.superseded` workflow event. The caller is responsible for
+ * creating the resume follow-up (via `createResumeFollowUp`) and passing the
+ * resulting id as `resumeTaskId`.
+ */
+export function supersedeTask(
+  id: string,
+  args: { reason: string; resumeTaskId: string | null },
+): AgentTask | null {
+  const oldTask = getTaskById(id);
+  if (!oldTask) return null;
+
+  // Idempotency guard: don't re-supersede a task already in a terminal state.
+  if (["completed", "failed", "cancelled", "superseded"].includes(oldTask.status)) {
+    return null;
+  }
+
+  const finishedAt = new Date().toISOString();
+  const row = getDb()
+    .prepare<AgentTaskRow, [string, string]>(
+      `UPDATE agent_tasks
+       SET status = 'superseded',
+           finishedAt = ?,
+           lastUpdatedAt = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+       WHERE id = ? AND status NOT IN ('completed', 'failed', 'cancelled', 'superseded')
+       RETURNING *`,
+    )
+    .get(finishedAt, id);
+
+  if (row && oldTask) {
+    try {
+      createLogEntry({
+        eventType: "task_superseded",
+        taskId: id,
+        agentId: row.agentId ?? undefined,
+        oldValue: oldTask.status,
+        newValue: "superseded",
+        metadata: { reason: args.reason, resumeTaskId: args.resumeTaskId },
+      });
+    } catch {}
+    try {
+      import("../workflows/event-bus").then(({ workflowEventBus }) => {
+        workflowEventBus.emit("task.superseded", {
+          taskId: id,
+          reason: args.reason,
+          resumeTaskId: args.resumeTaskId,
           agentId: row.agentId,
           workflowRunId: row.workflowRunId,
           workflowRunStepId: row.workflowRunStepId,

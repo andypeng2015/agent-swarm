@@ -115,7 +115,9 @@ export const registerStoreProgressTool = (server: McpServer) => {
         }
 
         let updatedTask = existingTask;
-        const isTerminal = ["completed", "failed", "cancelled"].includes(existingTask.status);
+        const isTerminal = ["completed", "failed", "cancelled", "superseded"].includes(
+          existingTask.status,
+        );
 
         // Attachments — pointer-based, append-only. Insert each row inside
         // this transaction; the helper dedups by sha256 (when present) or by

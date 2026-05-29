@@ -1,6 +1,10 @@
 import * as z from "zod";
 
 // Task status - includes new unassigned and offered states
+// Terminal statuses: "completed", "failed", "cancelled", "superseded".
+// Terminal-status guards live in src/be/db.ts (startTask, completeTask, failTask,
+// cancelTask, supersedeTask, setProgress CASE clause). Keep them in sync when
+// adding new terminal statuses.
 export const AgentTaskStatusSchema = z.enum([
   "backlog", // Task is in backlog, not yet ready for pool
   "unassigned", // Task pool - no owner yet
@@ -8,10 +12,11 @@ export const AgentTaskStatusSchema = z.enum([
   "reviewing", // Agent is reviewing an offered task
   "pending", // Assigned/accepted, waiting to start
   "in_progress",
-  "paused", // Interrupted by graceful shutdown, can resume
+  "paused", // Interrupted by graceful shutdown (legacy), can resume
   "completed",
   "failed",
   "cancelled", // Task was cancelled by lead or creator
+  "superseded", // Original terminated, replaced by a follow-up "resume" task
 ]);
 
 // ============================================================================
@@ -660,7 +665,17 @@ export const AgentLogEventTypeSchema = z.enum([
   "budget.deleted",
   "pricing.inserted",
   "pricing.deleted",
+  // Graceful pause/resume via follow-up
+  "task_superseded",
 ]);
+
+// Reasons a task can be superseded (terminal) and replaced by a "resume" follow-up.
+export const ResumeReasonSchema = z.enum([
+  "graceful_shutdown", // Worker received SIGTERM / SIGINT
+  "context_limits", // Provider session approaching context-window limits (Phase 6)
+  "manual_supersede", // Operator-triggered (e.g. dashboard button)
+]);
+export type ResumeReason = z.infer<typeof ResumeReasonSchema>;
 
 export const AgentLogSchema = z.object({
   id: z.uuid(),

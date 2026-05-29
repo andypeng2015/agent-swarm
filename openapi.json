@@ -10114,6 +10114,66 @@
         }
       }
     },
+    "/api/tasks/{id}/supersede": {
+      "post": {
+        "summary": "Supersede an in-progress task (terminate + spawn resume follow-up)",
+        "description": "Marks the original task `superseded` (terminal) and creates a fresh `taskType=\"resume\"` follow-up so a worker can pick up the work in a new provider session. Workflow-step tasks (those with `workflowRunStepId`) are carved out: the original is marked `failed` with reason `superseded_workflow_task` and no follow-up is created — the workflow engine's retry/failure policy applies.",
+        "tags": [
+          "Tasks"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "reason": {
+                    "type": "string",
+                    "enum": [
+                      "graceful_shutdown",
+                      "context_limits",
+                      "manual_supersede"
+                    ]
+                  }
+                },
+                "required": [
+                  "reason"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Task superseded (or workflow-failed)"
+          },
+          "400": {
+            "description": "Task not in_progress"
+          },
+          "403": {
+            "description": "Task belongs to another agent"
+          },
+          "404": {
+            "description": "Task not found"
+          }
+        }
+      }
+    },
     "/api/tasks/{id}/vcs": {
       "patch": {
         "summary": "Update VCS (PR/MR) info for a task",

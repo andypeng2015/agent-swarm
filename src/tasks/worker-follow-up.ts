@@ -1,8 +1,25 @@
-import { createTaskExtended, getAgentById, getLeadAgent, getTaskAttachments } from "../be/db";
+import {
+  createTaskExtended,
+  getActiveTaskCount,
+  getAgentById,
+  getLeadAgent,
+  getTaskAttachments,
+  getTaskById,
+} from "../be/db";
 import { resolveTemplate } from "../prompts/resolver";
-import type { AgentTask, TaskAttachment } from "../types";
+import type { AgentTask, ResumeReason, TaskAttachment } from "../types";
 // Side-effect import: registers task lifecycle templates in the in-memory registry.
 import "../tools/templates";
+
+/**
+ * Liveness window (seconds) for considering a worker "online" enough to
+ * pre-assign a resume task. Defaults to 30s; override via env. The worker
+ * heartbeats `lastActivityAt` on its agent row at least once per
+ * provider tool-call / poll tick, so 30s comfortably covers a healthy worker.
+ */
+export const WORKER_LIVENESS_WINDOW_SECONDS = Number(
+  process.env.WORKER_LIVENESS_WINDOW_SECONDS || "30",
+);
 
 function attachmentPointer(a: TaskAttachment): string {
   switch (a.kind) {
@@ -79,4 +96,103 @@ export function createWorkerTaskFollowUp(args: {
     slackThreadTs: task.slackThreadTs,
     slackUserId: task.slackUserId,
   });
+}
+
+/** Result of `createResumeFollowUp`. */
+export type CreateResumeFollowUpResult =
+  | { kind: "created"; task: AgentTask }
+  | { kind: "workflow-skip"; stepId: string }
+  | { kind: "skipped"; reason: "parent_not_found" | "lead_not_found" };
+
+/**
+ * Create a "resume" follow-up task for a parent that is being superseded
+ * (graceful shutdown, context-limit pressure, manual operator action).
+ *
+ * Workflow carve-out: if the parent is a workflow step (`workflowRunStepId`
+ * is set), no follow-up is created. Returns `{ kind: 'workflow-skip', stepId }`
+ * so the caller can `failTask(parent.id, 'superseded_workflow_task')` and let
+ * the workflow engine's retry/failure policy take over.
+ *
+ * Field inheritance is explicit (`model`, `dir`, `vcsRepo`, `vcsProvider`).
+ * Other fields (`slackChannelId`, `slackThreadTs`, `slackUserId`,
+ * `agentmailInboxId`, `agentmailThreadId`, `requestedByUserId`, `contextKey`)
+ * are inherited transitively by `createTaskExtended` via the `parentTaskId`
+ * lookup at `src/be/db.ts:2614-2640`. This was chosen over modifying
+ * `createTaskExtended`'s central inheritance list to avoid regressing other
+ * follow-up flows.
+ *
+ * Routing: the parent's assigned worker (`parent.agentId`) is preferred if
+ * its `lastActivityAt` is within `WORKER_LIVENESS_WINDOW_SECONDS` AND it has
+ * remaining capacity (`getActiveTaskCount < agent.maxTasks`). Otherwise the
+ * resume task goes to the unassigned pool for any worker to pick up.
+ */
+export function createResumeFollowUp(args: {
+  parentId: string;
+  reason: ResumeReason;
+}): CreateResumeFollowUpResult {
+  const parent = getTaskById(args.parentId);
+  if (!parent) return { kind: "skipped", reason: "parent_not_found" };
+
+  // Workflow carve-out — let the engine's retry policy handle recovery.
+  if (parent.workflowRunStepId) {
+    return { kind: "workflow-skip", stepId: parent.workflowRunStepId };
+  }
+
+  // Routing decision — same DB process so the read-then-create window is
+  // small. Acceptable for v1 per the plan (the unassigned-pool fallback
+  // covers the race anyway).
+  let preferredAgentId: string | undefined;
+  if (parent.agentId) {
+    const candidate = getAgentById(parent.agentId);
+    if (candidate && candidate.status !== "offline") {
+      const lastActivity = candidate.lastActivityAt ? Date.parse(candidate.lastActivityAt) : 0;
+      const fresh =
+        Number.isFinite(lastActivity) &&
+        Date.now() - lastActivity < WORKER_LIVENESS_WINDOW_SECONDS * 1000;
+      const activeCount = getActiveTaskCount(candidate.id);
+      const hasCap = activeCount < (candidate.maxTasks ?? 1);
+      if (fresh && hasCap) {
+        preferredAgentId = candidate.id;
+      }
+    }
+  }
+
+  const parentDesc = parent.task.slice(0, 200);
+  const followUpDescription = [
+    "Resume interrupted task.",
+    "",
+    `Parent task: ${parentDesc}`,
+    "",
+    `Reason: ${args.reason}`,
+    "",
+    "The full prior context (description, recent tool calls, artifacts) is",
+    "prepended to this prompt at dispatch time via the resume context preamble.",
+    "Do NOT redo work already completed — extend it.",
+  ].join("\n");
+
+  const priority = Math.min(100, (parent.priority ?? 50) + 10);
+  const tags = ["auto-resume", `reason:${args.reason}`];
+
+  const created = createTaskExtended(followUpDescription, {
+    agentId: preferredAgentId,
+    creatorAgentId: parent.creatorAgentId,
+    source: "system",
+    taskType: "resume",
+    tags,
+    priority,
+    parentTaskId: parent.id,
+    // Explicit inheritance — createTaskExtended does NOT propagate these from
+    // the parent today (see src/be/db.ts:2614-2640).
+    model: parent.model,
+    dir: parent.dir,
+    vcsRepo: parent.vcsRepo,
+    vcsProvider: parent.vcsProvider,
+    // Optionally pass these too — createTaskExtended will skip when already
+    // overridden by the parent-id inheritance pass.
+    slackChannelId: parent.slackChannelId,
+    slackThreadTs: parent.slackThreadTs,
+    slackUserId: parent.slackUserId,
+  });
+
+  return { kind: "created", task: created };
 }
