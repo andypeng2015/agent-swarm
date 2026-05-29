@@ -8,8 +8,10 @@ import {
   killSandbox,
   listSandboxes,
   sandboxPortUrl,
+  setSandboxTimeout,
   setTemplateVisibility,
   startDetachedProcess,
+  ttlRemaining,
   waitForAgentRegistration,
   waitForHttpOk,
 } from "../e2b/dispatch";
@@ -44,7 +46,7 @@ type StartedRole = {
 };
 
 const DEFAULT_API_PORT = 3013;
-const BOOLEAN_FLAGS = new Set(["dry-run", "json", "no-cache", "no-wait"]);
+const BOOLEAN_FLAGS = new Set(["dry-run", "json", "no-cache", "no-wait", "all", "yes"]);
 
 function parseFlags(argv: string[]): ParsedFlags {
   const [command, ...rest] = argv;
@@ -322,9 +324,24 @@ function localDockerfile(role: SwarmRole): string {
   return role === "api" ? "Dockerfile" : "Dockerfile.worker";
 }
 
+function formatDuration(secondsLeft: number): string {
+  if (secondsLeft <= 0) return "expired";
+  const hours = Math.floor(secondsLeft / 3600);
+  const minutes = Math.floor((secondsLeft % 3600) / 60);
+  const parts: string[] = [];
+  if (hours > 0) parts.push(`${hours}h`);
+  // Always show minutes when under an hour, otherwise show them alongside hours.
+  if (minutes > 0 || hours === 0) parts.push(`${minutes}m`);
+  return parts.join(" ");
+}
+
 function printHumanStart(result: StartedRole, env: EnvMap): void {
   console.log(`${result.role} sandbox: ${result.sandbox.sandboxID}`);
   if (result.url) console.log(`${result.role} url: ${result.url}`);
+  const ttl = ttlRemaining(result.sandbox);
+  if (ttl.expiresAt && ttl.secondsLeft !== undefined) {
+    console.log(`${result.role} expires: ${ttl.expiresAt} (in ${formatDuration(ttl.secondsLeft)})`);
+  }
   console.log(
     redactWithEnv(`inspect: e2b sandbox info ${result.sandbox.sandboxID} --format json`, env),
   );
@@ -360,6 +377,7 @@ async function startRole(
       envdAccessToken: "dry-run",
       domain: "e2b.app",
       metadata,
+      expiresAt: new Date(Date.now() + timeoutSec * 1000).toISOString(),
     };
     return {
       role,
@@ -587,6 +605,41 @@ async function cleanupStartedRoles(
   }
 }
 
+async function resyncStackTimeout(
+  flags: ParsedFlags,
+  cwd: string,
+  started: StartedRole[],
+): Promise<void> {
+  if (booleanFlag(flags, "dry-run") || started.length === 0) return;
+
+  const timeoutSec = integerFlag(flags, "timeout-sec", 3600);
+  const controllerEnv = await loadE2BControllerEnv(flags, cwd);
+  const controllerApiKey = e2bControllerApiKey(controllerEnv);
+  const apiBase = e2bApiBase(flags, controllerEnv);
+
+  for (const role of started) {
+    try {
+      await setSandboxTimeout({
+        sandboxId: role.sandbox.sandboxID,
+        apiKey: controllerApiKey,
+        apiBase,
+        e2bEnv: controllerEnv,
+        timeoutMs: timeoutSec * 1000,
+      });
+    } catch (err) {
+      // A re-sync failure is non-fatal — the sandbox is still up with its
+      // original (slightly shorter) TTL. setSandboxTimeout already redacts.
+      const message = err instanceof Error ? err.message : String(err);
+      console.warn(
+        redactWithEnv(
+          `e2b: failed to re-sync TTL for ${role.role} sandbox ${role.sandbox.sandboxID}: ${message}`,
+          controllerEnv,
+        ),
+      );
+    }
+  }
+}
+
 async function startStackCommand(flags: ParsedFlags, cwd: string): Promise<void> {
   const started: StartedRole[] = [];
   const workers: StartedRole[] = [];
@@ -602,6 +655,14 @@ async function startStackCommand(flags: ParsedFlags, cwd: string): Promise<void>
       workers.push(worker);
       started.push(worker);
     }
+
+    // Re-sync the whole stack to a single wall-clock TTL. The API sandbox is
+    // created first, so by the time the last worker is up its remaining TTL is
+    // shorter than the API's. One setSandboxTimeout pass aligns every sandbox
+    // to `timeoutSec` from now (E2B clamps to the tier max as usual). Dry-run
+    // short-circuits — never touches E2B.
+    await resyncStackTimeout(flags, cwd, started);
+
     const runtimeEnv = await loadRuntimeEnv(flags, "api");
 
     if (booleanFlag(flags, "json")) {
@@ -627,13 +688,109 @@ async function startStackCommand(flags: ParsedFlags, cwd: string): Promise<void>
   }
 }
 
-async function killCommand(flags: ParsedFlags, cwd: string): Promise<void> {
+function isInteractiveTty(): boolean {
+  return Boolean(process.stdin.isTTY && process.stdout.isTTY);
+}
+
+/**
+ * Prompt for a yes/no confirmation on an interactive TTY. Returns true when the
+ * operator answers "y"/"yes". In a non-TTY (CI, piped) context there is no one
+ * to ask, so we require an explicit `--yes` to proceed and otherwise refuse.
+ */
+async function confirm(prompt: string, flags: ParsedFlags): Promise<boolean> {
+  if (booleanFlag(flags, "yes")) return true;
+  if (!isInteractiveTty()) return false;
+  process.stdout.write(`${prompt} [y/N] `);
+  for await (const line of console) {
+    const answer = line.trim().toLowerCase();
+    return answer === "y" || answer === "yes";
+  }
+  return false;
+}
+
+async function extendCommand(flags: ParsedFlags, cwd: string): Promise<void> {
   const ids = flags.positionals;
-  if (ids.length === 0) throw new Error("kill requires at least one sandbox ID");
+  if (ids.length === 0) throw new Error("extend requires at least one sandbox ID");
+  const timeoutSec = integerFlag(flags, "timeout-sec", 3600);
+  const dryRun = booleanFlag(flags, "dry-run");
+
+  if (dryRun) {
+    // Short-circuit before any SDK/network work so --dry-run never touches E2B.
+    for (const id of ids) {
+      console.log(`would extend ${id} to ${timeoutSec}s TTL`);
+    }
+    return;
+  }
+
+  const controllerEnv = await loadE2BControllerEnv(flags, cwd);
+  const controllerApiKey = e2bControllerApiKey(controllerEnv);
+  const apiBase = e2bApiBase(flags, controllerEnv);
+
+  let failures = 0;
+  for (const id of ids) {
+    try {
+      const ttl = await setSandboxTimeout({
+        sandboxId: id,
+        apiKey: controllerApiKey,
+        apiBase,
+        e2bEnv: controllerEnv,
+        timeoutMs: timeoutSec * 1000,
+      });
+      if (ttl.expiresAt && ttl.secondsLeft !== undefined) {
+        console.log(
+          `extended ${id} — expires ${ttl.expiresAt} (in ${formatDuration(ttl.secondsLeft)})`,
+        );
+      } else {
+        console.log(`extended ${id}`);
+      }
+    } catch (err) {
+      failures++;
+      // setSandboxTimeout already produces a redacted message.
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(redactWithEnv(`e2b: extend failed: ${message}`, controllerEnv));
+    }
+  }
+  if (failures > 0) {
+    throw new Error(`extend failed for ${failures} of ${ids.length} sandbox(es)`);
+  }
+}
+
+async function killCommand(flags: ParsedFlags, cwd: string): Promise<void> {
   const controllerEnv = await loadE2BControllerEnv(flags, cwd);
   const apiBase = e2bApiBase(flags, controllerEnv);
+  const controllerApiKey = e2bControllerApiKey(controllerEnv);
+
+  let ids = flags.positionals;
+
+  if (booleanFlag(flags, "all")) {
+    // Sweep everything this dispatcher launched. The launcher tag is stamped on
+    // every sandbox by parseMetadata, so this never touches unrelated sandboxes.
+    const sandboxes = await listSandboxes(controllerApiKey, apiBase);
+    ids = sandboxes
+      .filter((sandbox) => sandbox.metadata?.launcher === "agent-swarm-e2b")
+      .map((sandbox) => sandbox.sandboxID);
+    if (ids.length === 0) {
+      console.log("no agent-swarm sandboxes to kill");
+      return;
+    }
+    // Guard against an accidental fleet-wide teardown. A single target is
+    // unambiguous; multiple targets require confirmation (or --yes in CI).
+    if (ids.length > 1) {
+      const ok = await confirm(
+        `Kill ${ids.length} agent-swarm sandboxes (${ids.join(", ")})?`,
+        flags,
+      );
+      if (!ok) {
+        console.log("aborted (pass --yes to skip this prompt)");
+        return;
+      }
+    }
+  }
+
+  if (ids.length === 0) throw new Error("kill requires at least one sandbox ID (or --all)");
+
   for (const id of ids) {
-    await killSandbox(id, e2bControllerApiKey(controllerEnv), apiBase);
+    await killSandbox(id, controllerApiKey, apiBase);
     console.log(`killed ${id}`);
   }
 }
@@ -666,7 +823,8 @@ Usage:
   agent-swarm e2b start-worker --template <template> --api-url <https-url> [--env-file .env]
   agent-swarm e2b start-stack --api-template <template> --worker-template <template> [--workers 1]
   agent-swarm e2b list [--json]
-  agent-swarm e2b kill <sandbox-id...>
+  agent-swarm e2b extend <sandbox-id...> --timeout-sec <seconds>
+  agent-swarm e2b kill <sandbox-id...> | --all
 
 Common options:
   --env-file <path>          Load runtime env/secrets for API or worker (repeatable)
@@ -674,8 +832,23 @@ Common options:
   --inherit-env KEY[,KEY]    Forward extra local env vars into the sandbox
   --api-key <key>            Swarm API key passed to API/worker (required unless env provides one)
   --agent-id <id>            Worker agent ID (default: e2b-<sandbox-id>)
-  --timeout-sec <seconds>    Sandbox TTL (default 3600)
+  --agent-role worker|lead   Role the worker sandbox runs as (default worker)
+  --provider <name>          Harness provider for workers (default claude)
+  --workers <n>              Worker count for start-stack (default 1)
+  --timeout-sec <seconds>    Sandbox TTL (default 3600); for extend, the new TTL from now
+  --no-wait                  Skip waiting for API health / worker registration
   --e2b-api-key-file <path>  Read the E2B controller API key from a file
+
+extend:
+  Extend (or reduce) a live sandbox's TTL. E2B clamps to your tier max, so the
+  printed expiry reflects what was actually applied. --dry-run never contacts E2B.
+
+kill:
+  --all                      Kill every sandbox launched by this dispatcher
+                             (metadata.launcher === agent-swarm-e2b)
+  --yes                      Skip the multi-sandbox confirmation prompt (required in CI)
+
+Global:
   --json                     Print machine-readable output
   --dry-run                  Print/derive planned work without touching E2B
 `);
@@ -713,6 +886,9 @@ export async function runE2BCommand(argv: string[]): Promise<void> {
         return;
       case "list":
         await listCommand(flags, cwd);
+        return;
+      case "extend":
+        await extendCommand(flags, cwd);
         return;
       case "kill":
         await killCommand(flags, cwd);

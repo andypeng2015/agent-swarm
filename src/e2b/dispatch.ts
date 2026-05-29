@@ -14,6 +14,26 @@ export type E2BSandboxInfo = {
   startedAt?: string;
   endAt?: string;
   metadata?: Record<string, string>;
+  // Client-side fallback for the sandbox expiry. The raw `POST /sandboxes`
+  // create response uses E2B's `Sandbox` schema, which (unlike `ListedSandbox`
+  // / `SandboxDetail`) does NOT include `endAt`. We populate this from
+  // `now + timeoutSec*1000` at create time so `ttlRemaining` can report expiry
+  // immediately after a launch without an extra round-trip. `endAt` (when
+  // present, e.g. from `listSandboxes`) is always authoritative over this.
+  expiresAt?: string;
+};
+
+export type TtlRemaining = {
+  expiresAt?: string;
+  secondsLeft?: number;
+};
+
+export type SetSandboxTimeoutOptions = {
+  sandboxId: string;
+  apiKey: string;
+  apiBase?: string;
+  e2bEnv?: EnvMap;
+  timeoutMs: number;
 };
 
 export type E2BCommandResult = {
@@ -184,7 +204,10 @@ export async function e2bFetchJson<T>(
 }
 
 export async function createSandbox(opts: CreateSandboxOptions): Promise<E2BSandboxInfo> {
-  return e2bFetchJson<E2BSandboxInfo>(
+  // Capture the wall-clock create instant BEFORE the request so the client-side
+  // expiry fallback reflects when the TTL countdown begins.
+  const createdAt = Date.now();
+  const sandbox = await e2bFetchJson<E2BSandboxInfo>(
     "/sandboxes",
     opts.apiKey,
     {
@@ -200,6 +223,61 @@ export async function createSandbox(opts: CreateSandboxOptions): Promise<E2BSand
     },
     opts.apiBase,
   );
+  // Pre-flight check (resolved against node_modules/e2b types): the create
+  // response is E2B's `Sandbox` schema, which omits `endAt`. Compute a
+  // client-side expiry fallback so `ttlRemaining` works right after launch.
+  if (!sandbox.endAt && !sandbox.expiresAt) {
+    sandbox.expiresAt = new Date(createdAt + opts.timeoutSec * 1000).toISOString();
+  }
+  return sandbox;
+}
+
+/**
+ * Compute the remaining time-to-live for a sandbox. Prefers the authoritative
+ * `endAt` (present on listed/detail responses); falls back to the client-side
+ * `expiresAt` stamped by `createSandbox`. Returns an empty object when neither
+ * is available (e.g. a dry-run fake sandbox). `secondsLeft` is clamped at 0 so
+ * an already-expired sandbox never reports negative time.
+ */
+export function ttlRemaining(sandbox: E2BSandboxInfo): TtlRemaining {
+  const expiresAt = sandbox.endAt ?? sandbox.expiresAt;
+  if (!expiresAt) return {};
+  const expiryMs = Date.parse(expiresAt);
+  if (Number.isNaN(expiryMs)) return {};
+  const secondsLeft = Math.max(0, Math.round((expiryMs - Date.now()) / 1000));
+  return { expiresAt, secondsLeft };
+}
+
+/**
+ * Extend (or reduce) a live sandbox's TTL via the SDK and read back the actual
+ * `endAt` E2B applied (the server clamps to the tier max, so the requested
+ * timeout is not always honored verbatim). Connecting to a dead/expired sandbox
+ * throws; we translate that into a redacted "not found / already expired"
+ * error so a stale sandbox ID never leaks the controller key into logs.
+ */
+export async function setSandboxTimeout(opts: SetSandboxTimeoutOptions): Promise<TtlRemaining> {
+  const { Sandbox } = await import("e2b");
+  let sandbox: Awaited<ReturnType<typeof Sandbox.connect>>;
+  try {
+    sandbox = await Sandbox.connect(
+      opts.sandboxId,
+      e2bSdkConnectionOptions(opts.apiKey, opts.e2bEnv ?? {}, opts.apiBase),
+    );
+  } catch {
+    // Do not surface the underlying error verbatim — it can embed the
+    // controller API key / connection URL. Emit a fixed redacted message.
+    throw new Error(`sandbox ${opts.sandboxId} not found / already expired`);
+  }
+
+  await sandbox.setTimeout(opts.timeoutMs);
+  // `setTimeout` returns void; re-read the info to learn the clamped expiry.
+  const info = await sandbox.getInfo();
+  const expiresAt = info.endAt instanceof Date ? info.endAt.toISOString() : String(info.endAt);
+  return ttlRemaining({
+    sandboxID: opts.sandboxId,
+    templateID: info.templateId,
+    endAt: expiresAt,
+  });
 }
 
 export async function killSandbox(

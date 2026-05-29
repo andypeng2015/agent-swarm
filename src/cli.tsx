@@ -304,7 +304,9 @@ const COMMAND_HELP: Record<
       "  start-api --template <name>          Start the API in an E2B sandbox",
       "  start-worker --api-url <url>         Start a worker against a public API URL",
       "  start-stack                         Start API plus one or more workers",
-      "  list | kill <sandbox-id...>          Inspect or clean up sandboxes",
+      "  list                                 List dispatcher sandboxes",
+      "  extend <sandbox-id...>               Extend a sandbox TTL (--timeout-sec <s>)",
+      "  kill <sandbox-id...> | --all         Clean up sandboxes (--all sweeps the fleet)",
       "  -h, --help                          Show this help",
     ].join("\n"),
     examples: [

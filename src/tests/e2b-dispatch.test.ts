@@ -8,6 +8,7 @@ import {
   e2bSdkConnectionOptions,
   sandboxPortHost,
   setTemplateVisibility,
+  ttlRemaining,
   waitForAgentRegistration,
 } from "../e2b/dispatch";
 import {
@@ -142,6 +143,50 @@ describe("E2B dispatch helpers", () => {
         E2B_SANDBOX_URL: "https://sandboxes.internal:8443",
       }),
     ).toBe("3013-sbx123.sandboxes.internal:8443");
+  });
+
+  test("ttlRemaining reads authoritative endAt when present", () => {
+    const expiresAt = new Date(Date.now() + 1800 * 1000).toISOString();
+    const sandbox: E2BSandboxInfo = {
+      sandboxID: "sbx123",
+      templateID: "tpl",
+      endAt: expiresAt,
+    };
+
+    const ttl = ttlRemaining(sandbox);
+    expect(ttl.expiresAt).toBe(expiresAt);
+    // ~1800s remaining; allow a small window for wall-clock drift during the test.
+    expect(ttl.secondsLeft).toBeGreaterThan(1790);
+    expect(ttl.secondsLeft).toBeLessThanOrEqual(1800);
+  });
+
+  test("ttlRemaining falls back to client-side expiresAt and prefers endAt over it", () => {
+    const fallback = new Date(Date.now() + 600 * 1000).toISOString();
+    const fallbackOnly: E2BSandboxInfo = {
+      sandboxID: "sbx456",
+      templateID: "tpl",
+      expiresAt: fallback,
+    };
+    const fallbackTtl = ttlRemaining(fallbackOnly);
+    expect(fallbackTtl.expiresAt).toBe(fallback);
+    expect(fallbackTtl.secondsLeft).toBeGreaterThan(590);
+    expect(fallbackTtl.secondsLeft).toBeLessThanOrEqual(600);
+
+    // endAt is authoritative and wins over the client-side fallback.
+    const authoritative = new Date(Date.now() + 3600 * 1000).toISOString();
+    const both = ttlRemaining({ ...fallbackOnly, endAt: authoritative });
+    expect(both.expiresAt).toBe(authoritative);
+    expect(both.secondsLeft).toBeGreaterThan(3590);
+  });
+
+  test("ttlRemaining returns empty for absent endAt/expiresAt and clamps expired to zero", () => {
+    expect(ttlRemaining({ sandboxID: "none", templateID: "tpl" })).toEqual({});
+    const expired = ttlRemaining({
+      sandboxID: "old",
+      templateID: "tpl",
+      endAt: new Date(Date.now() - 60 * 1000).toISOString(),
+    });
+    expect(expired.secondsLeft).toBe(0);
   });
 
   test("buildDetachedShell backgrounds command and captures pid without invalid shell chaining", () => {
