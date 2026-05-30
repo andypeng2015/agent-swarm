@@ -1634,26 +1634,42 @@ export function SessionLogViewer({
   );
 }
 
+// Reasoning block. Same collapsible-card shape as ToolRow (chevron · label ·
+// inline one-line preview, body behind a border-t) so thinking reads as part of
+// the same visual family — just recessed (muted surface, no accent color) to
+// signal it's internal reasoning rather than output.
 function ThinkingRow({ text }: { text: string }) {
   const [open, setOpen] = useState(false);
-  const preview = `${text.slice(0, 180)}${text.length > 180 ? "…" : ""}`;
+  const preview = truncate(text.replace(/\s+/g, " ").trim(), 90);
   return (
-    <div className="rounded-md border border-border/50 border-l-2 border-l-primary/40 bg-muted/20 px-3 py-2">
+    <div className="overflow-hidden rounded-lg border border-border/60 bg-muted/30">
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className="flex w-full cursor-pointer items-center gap-1.5 text-left text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+        className="flex w-full min-w-0 cursor-pointer items-center gap-2 px-2.5 py-1.5 text-left"
       >
-        <ChevronRight className={cn("size-3 shrink-0 transition-transform", open && "rotate-90")} />
-        <Brain className="size-3 shrink-0 text-primary/60" />
-        <span className="italic">Thinking</span>
+        <ChevronRight
+          className={cn(
+            "size-3 shrink-0 text-muted-foreground transition-transform duration-200",
+            open && "rotate-90",
+          )}
+        />
+        <Brain className="size-3 shrink-0 text-muted-foreground" />
+        <span className="shrink-0 text-[12px] font-medium italic text-muted-foreground">
+          Thinking
+        </span>
+        {!open && (
+          <span className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground/80">
+            {preview}
+          </span>
+        )}
       </button>
-      {open ? (
-        <div className="prose-chat prose-session-log mt-1 text-xs text-muted-foreground">
-          <Streamdown>{tidyMarkdown(text)}</Streamdown>
+      {open && (
+        <div className="border-t border-border/60 px-2.5 py-2">
+          <div className="prose-chat prose-session-log text-xs text-muted-foreground">
+            <Streamdown>{tidyMarkdown(text)}</Streamdown>
+          </div>
         </div>
-      ) : (
-        <p className="mt-1 whitespace-pre-wrap text-xs text-muted-foreground">{preview}</p>
       )}
     </div>
   );
