@@ -143,6 +143,11 @@ bun run src/cli.tsx e2b swarms logs my-swarm --role api --follow
   history across all matches.
 - No PID bookkeeping is used: reads key off the deterministic per-role log path,
   so logs survive a fresh CLI process and sandbox reconnects.
+- **First-call race (known quirk):** the *native* `e2b sandbox logs <id>` stream can
+  return header-only (~2 lines) on the very first call right after launch, due to a
+  stream-flush timing race; an immediate re-run returns full history. The tee'd file
+  (`/tmp/agent-swarm-e2b-<role>.log`) is the source of truth and is what `swarms logs`
+  reads, so no history is lost — just re-run if a first native read looks truncated.
 - **Secret hygiene:** entrypoint output is untrusted and can embed tokens, so
   every streamed chunk is routed through `redactWithEnv` (→ `scrubSecrets`)
   before it reaches your terminal.
