@@ -957,9 +957,15 @@ async function startStackCommand(flags: ParsedFlags, cwd: string): Promise<void>
   }
 
   // Echo the resolved slug up front so the operator can group/inspect/extend the
-  // launch via `e2b swarms <cmd> <slug>` even if a later role fails.
+  // launch via `e2b swarms <cmd> <slug>` even if a later role fails. Under --json
+  // STDOUT must carry ONLY the final JSON payload, so route this human echo to
+  // STDERR (still visible to the operator, never pollutes `... --json | jq`).
   const swarmSlug = value(flags, "swarm");
-  console.log(`swarm: ${swarmSlug}`);
+  if (booleanFlag(flags, "json")) {
+    console.error(`swarm: ${swarmSlug}`);
+  } else {
+    console.log(`swarm: ${swarmSlug}`);
+  }
 
   const noLead = booleanFlag(flags, "no-lead");
   const started: StartedRole[] = [];
@@ -1756,6 +1762,21 @@ async function swarmsLogsCommand(flags: ParsedFlags, cwd: string): Promise<void>
     throw new Error(`swarm "${slug}" has no ${roleFlag} sandbox`);
   }
 
+  // Egress redaction set. `controllerEnv` only carries E2B-controller + locally
+  // resolved values, so launch-time secrets supplied via --secret / --env-file /
+  // --inherit-env / a launch-specific --api-key would NOT be redacted unless the
+  // operator re-supplies them here. Resolve runtime env the SAME way the launch
+  // path does (loadRuntimeEnv with API_SPEC handles --env-file/--secret/
+  // --inherit-env/--api-key + scoped flags) so any re-supplied launch secret is
+  // scrubbed. A missing swarm API key must NOT hard-fail `swarms logs` (the start
+  // path tolerates this only under --dry-run), so degrade to controllerEnv-only.
+  let redactionEnv: EnvMap = controllerEnv;
+  try {
+    redactionEnv = { ...controllerEnv, ...(await loadRuntimeEnv(flags, API_SPEC)) };
+  } catch {
+    redactionEnv = controllerEnv;
+  }
+
   const follow = booleanFlag(flags, "follow");
   const tailLines = integerFlag(flags, "tail", 200);
   const controllerApiKey = e2bControllerApiKey(controllerEnv);
@@ -1788,7 +1809,13 @@ async function swarmsLogsCommand(flags: ParsedFlags, cwd: string): Promise<void>
       follow,
       signal: follow ? controller.signal : undefined,
       // Egress scrub: entrypoint output can embed secrets — redact every chunk.
-      onChunk: (chunk) => process.stdout.write(redactWithEnv(chunk, controllerEnv)),
+      // Scrubbed = known token shapes (scrubSecrets) + the controller env + any
+      // launch secrets re-supplied here via --secret/--env-file/--inherit-env/
+      // --api-key (folded into redactionEnv). Residual limitation: an arbitrary
+      // secret known ONLY to a prior launch (never re-supplied, no known shape)
+      // is NOT recoverable here and can stream raw — re-pass it to `swarms logs`
+      // to scrub it, or treat the logs as sensitive.
+      onChunk: (chunk) => process.stdout.write(redactWithEnv(chunk, redactionEnv)),
     });
   }
 }

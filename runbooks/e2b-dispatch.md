@@ -150,7 +150,15 @@ bun run src/cli.tsx e2b swarms logs my-swarm --role api --follow
   reads, so no history is lost — just re-run if a first native read looks truncated.
 - **Secret hygiene:** entrypoint output is untrusted and can embed tokens, so
   every streamed chunk is routed through `redactWithEnv` (→ `scrubSecrets`)
-  before it reaches your terminal.
+  before it reaches your terminal. The redaction set covers: known token shapes
+  (`scrubSecrets`), the controller env, and any launch secrets you re-supply on
+  the `swarms logs` call (`--secret`, `--env-file`, `--inherit-env`, `--api-key`
+  are resolved the same way the launch path does and folded into the redaction
+  env). **Residual limitation:** an arbitrary secret that was only known to a
+  prior launch — never re-supplied here and not matching a known shape — is
+  unrecoverable and may stream raw. To scrub it, re-pass the same
+  `--secret`/`--env-file`/`--api-key` to `swarms logs`, or treat the logs as
+  sensitive.
 
 ## GitHub Actions Shape
 
