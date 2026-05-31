@@ -941,19 +941,48 @@ async function startStackCommand(flags: ParsedFlags, cwd: string): Promise<void>
     );
   }
 
-  // Normalize a provided --swarm into a clean slug so the value is consistent
-  // whether it came from a flag or the wizard. When none is provided we GENERATE
-  // one (`swarm-<short-random>`) so every sandbox of this launch shares a single
-  // grouping slug stamped onto metadata.swarm (read by `e2b swarms`). The slug
-  // lands on `flags` here, BEFORE any startRole call, so all roles inherit it.
+  // Normalize a user-supplied --swarm into a clean slug so the value is
+  // consistent whether it came from a flag or the wizard. We do NOT synthesize
+  // the random fallback here: doing so would mark `swarm` as "set" and make the
+  // wizard skip its Swarm-name step, so a TTY operator without --swarm could
+  // never name the swarm. The `swarm-<short-random>` default is applied AFTER
+  // the wizard (below) — by which point either the operator named it or we fill
+  // it in for the headless / unnamed path.
   const swarmFlag = value(flags, "swarm");
-  setFlagValue(flags, "swarm", swarmFlag ? slugify(swarmFlag) : generateSwarmSlug());
+  if (swarmFlag) {
+    setFlagValue(flags, "swarm", slugify(swarmFlag));
+  }
 
   // Interactive wizard (TTY only). Headless runs (--yes / --non-interactive /
   // --dry-run / non-TTY) skip it entirely and rely on flags + defaults. The
-  // wizard may overwrite the swarm slug if the operator names the swarm.
+  // wizard may set/overwrite the swarm slug if the operator names the swarm.
   if (!isStackHeadless(flags)) {
     await runStackWizard(flags);
+  }
+
+  // Now that the wizard (if any) has run, GENERATE a shared slug when neither
+  // the flag nor the wizard produced one. Every sandbox of this launch then
+  // shares a single grouping slug stamped onto metadata.swarm (read by
+  // `e2b swarms`). This lands on `flags` BEFORE any startRole call so all roles
+  // inherit it.
+  if (!value(flags, "swarm")) {
+    setFlagValue(flags, "swarm", generateSwarmSlug());
+  }
+
+  // A single explicit --agent-id is reused verbatim for every worker in the loop
+  // below, but the API registration path reuses the row for an existing
+  // X-Agent-ID — so N workers would collapse into one agent record and the wait
+  // loop would poll the same agent N times. Reject the shared explicit ID for
+  // multi-worker stacks; the per-sandbox `e2b-<sandboxID>` default (or a
+  // single-worker stack) stays unaffected. `--workers` is resolved here so a
+  // wizard-chosen count is also covered.
+  const explicitWorkerAgentId = value(flags, STACK_WORKER_SPEC.agentIdFlag ?? "agent-id");
+  if (explicitWorkerAgentId && integerFlag(flags, "workers", 1) > 1) {
+    throw new Error(
+      "e2b start-stack: --agent-id cannot be shared across multiple workers " +
+        "(it collapses them into a single agent record). Drop --agent-id to use " +
+        "the per-sandbox default, or run --workers 1.",
+    );
   }
 
   // Echo the resolved slug up front so the operator can group/inspect/extend the
@@ -1467,6 +1496,21 @@ async function swarmsListCommand(flags: ParsedFlags, cwd: string): Promise<void>
   }
 }
 
+/**
+ * Select the sandboxes belonging to a swarm slug that WE launched. Restricting
+ * to the `launcher === "agent-swarm-e2b"` tag (stamped by parseMetadata) matches
+ * the `kill --all` ownership guard: without it, a foreign E2B sandbox using a
+ * generic `metadata.swarm` key with a colliding slug would be pulled into the
+ * group, so `swarms kill/info/logs/add <slug>` could operate on / delete
+ * unrelated sandboxes. Pure (no I/O) so the ownership guarantee is unit-testable.
+ */
+export function swarmGroupMembers(sandboxes: E2BSandboxInfo[], slug: string): E2BSandboxInfo[] {
+  return sandboxes.filter(
+    (sandbox) =>
+      sandbox.metadata?.swarm === slug && sandbox.metadata?.launcher === "agent-swarm-e2b",
+  );
+}
+
 /** Find the sandboxes belonging to a swarm slug (throws if the group is empty). */
 async function resolveSwarmGroup(
   flags: ParsedFlags,
@@ -1476,7 +1520,7 @@ async function resolveSwarmGroup(
   const controllerEnv = await loadE2BControllerEnv(flags, cwd);
   const apiBase = e2bApiBase(flags, controllerEnv);
   const sandboxes = await listSandboxes(e2bControllerApiKey(controllerEnv), apiBase);
-  const members = sandboxes.filter((sandbox) => sandbox.metadata?.swarm === slug);
+  const members = swarmGroupMembers(sandboxes, slug);
   if (members.length === 0) {
     throw new Error(`no swarm found with slug "${slug}" (try: e2b swarms list)`);
   }
@@ -1496,7 +1540,7 @@ async function swarmsInfoCommand(flags: ParsedFlags, cwd: string): Promise<void>
   // the deep-link / authed probe. Source is reported; the value is masked.
   const runtime: EnvMap = selectEnv(process.env, [...DEFAULT_E2B_FORWARD_KEYS]);
   let resolvedKey = "";
-  let keySource = "unresolved";
+  let keySource: string;
   try {
     resolvedKey = resolveSwarmApiKey(runtime, value(flags, "api-key"));
     keySource = swarmApiKeySource(flags, runtime);

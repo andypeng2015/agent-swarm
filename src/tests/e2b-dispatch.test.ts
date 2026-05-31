@@ -9,6 +9,7 @@ import {
   parseFlags,
   resolveIntegrationToggles,
   runE2BCommand,
+  swarmGroupMembers,
 } from "../commands/e2b";
 import { buildOnboardDashboardUrl } from "../commands/onboard/dashboard-url";
 import {
@@ -651,6 +652,56 @@ describe("E2B start-stack topology (Phase 3)", () => {
     expect((payload.workers as unknown[]).length).toBe(2);
   });
 
+  test("rejects a shared explicit --agent-id across multiple workers", async () => {
+    // A single explicit --agent-id reused for N>1 workers would collapse them
+    // into one agent record (the API reuses the row for an existing X-Agent-ID).
+    // The guard must fire before any sandbox is provisioned, even on dry-run.
+    // runE2BCommand swallows the throw into a stderr line + exitCode=1, so assert
+    // on those rather than on a propagated exception.
+    const originalError = console.error;
+    const errLines: string[] = [];
+    console.error = (...args: unknown[]) => {
+      errLines.push(args.map(String).join(" "));
+    };
+    const previousExitCode = process.exitCode;
+    try {
+      await runE2BCommand([
+        "start-stack",
+        "--dry-run",
+        "--yes",
+        "--workers",
+        "2",
+        "--swarm",
+        "test",
+        "--agent-id",
+        "fixed-worker",
+        "--json",
+      ]);
+    } finally {
+      console.error = originalError;
+    }
+    expect(process.exitCode).toBe(1);
+    process.exitCode = previousExitCode ?? 0;
+    expect(errLines.join("\n")).toContain("--agent-id cannot be shared across multiple workers");
+  });
+
+  test("allows an explicit --agent-id for a single-worker stack", async () => {
+    // One worker + explicit ID is unambiguous — no collision, so it must pass.
+    const payload = await runStackJson([
+      "start-stack",
+      "--dry-run",
+      "--yes",
+      "--workers",
+      "1",
+      "--swarm",
+      "test",
+      "--agent-id",
+      "fixed-worker",
+      "--json",
+    ]);
+    expect((payload.workers as unknown[]).length).toBe(1);
+  });
+
   test("integration toggles disable only the unlisted/--no-<x> integrations", () => {
     // Default: all on.
     expect(resolveIntegrationToggles(parseFlags(["start-stack"]))).toEqual({
@@ -833,5 +884,39 @@ describe("E2B swarm grouping + deep-link (Phase 4)", () => {
     expect(url).not.toContain("api_url");
     expect(url).not.toContain("api_key");
     expect(url.startsWith("https://app.agent-swarm.dev?")).toBe(true);
+  });
+
+  test("swarmGroupMembers restricts a named swarm to dispatcher-owned sandboxes", () => {
+    const sandboxes: E2BSandboxInfo[] = [
+      // Ours: matching slug + our launcher tag.
+      {
+        sandboxID: "ours-api",
+        templateID: "tpl",
+        metadata: { swarm: "myswarm", launcher: "agent-swarm-e2b", swarmRole: "api" },
+      },
+      {
+        sandboxID: "ours-worker",
+        templateID: "tpl",
+        metadata: { swarm: "myswarm", launcher: "agent-swarm-e2b", swarmRole: "worker" },
+      },
+      // Foreign: same slug, but NOT launched by us — must be excluded so
+      // `swarms kill/info/logs/add` can never touch it.
+      {
+        sandboxID: "foreign-collision",
+        templateID: "tpl",
+        metadata: { swarm: "myswarm" },
+      },
+      // Ours, but a different swarm — excluded by the slug filter.
+      {
+        sandboxID: "ours-other",
+        templateID: "tpl",
+        metadata: { swarm: "otherswarm", launcher: "agent-swarm-e2b" },
+      },
+    ];
+
+    const members = swarmGroupMembers(sandboxes, "myswarm");
+    expect(members.map((m) => m.sandboxID).sort()).toEqual(["ours-api", "ours-worker"]);
+    // The foreign sandbox with a colliding generic `metadata.swarm` is dropped.
+    expect(members.some((m) => m.sandboxID === "foreign-collision")).toBe(false);
   });
 });
