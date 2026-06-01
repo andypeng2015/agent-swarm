@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
 import { useDeleteSkill, useSkill, useUpdateSkill } from "@/api/hooks";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -126,30 +127,40 @@ export default function SkillDetailPage() {
             <Button variant="outline" size="sm" onClick={handleToggleEnabled}>
               {skill.isEnabled ? "Disable" : "Enable"}
             </Button>
-            <AlertDialog>
-              <AlertDialogTrigger asChild>
-                <Button variant="destructive-outline" size="sm">
-                  <Trash2 className="h-4 w-4 mr-1" /> Delete
-                </Button>
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>Delete skill "{skill.name}"?</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    This will permanently delete this skill and uninstall it from all agents.
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>Cancel</AlertDialogCancel>
-                  <AlertDialogAction onClick={handleDelete}>Delete</AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
+            {!skill.systemDefault && (
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button variant="destructive-outline" size="sm">
+                    <Trash2 className="h-4 w-4 mr-1" /> Delete
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Delete skill "{skill.name}"?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      This will permanently delete this skill and uninstall it from all agents.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction onClick={handleDelete}>Delete</AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            )}
           </>
         }
       />
 
       <p className="text-sm text-muted-foreground shrink-0">{skill.description}</p>
+      {skill.systemDefault && (
+        <Alert className="shrink-0 border-status-info/30 bg-status-info/5">
+          <AlertDescription>
+            This skill is system-managed and re-seeded on each start. Fork it under a new name to
+            customize its content.
+          </AlertDescription>
+        </Alert>
+      )}
 
       <DetailPageBody
         className="flex-1 min-h-0"
@@ -167,9 +178,11 @@ export default function SkillDetailPage() {
                   </Button>
                 </div>
               ) : (
-                <Button variant="outline" size="sm" onClick={() => setEditContent(skill.content)}>
-                  Edit
-                </Button>
+                !skill.systemDefault && (
+                  <Button variant="outline" size="sm" onClick={() => setEditContent(skill.content)}>
+                    Edit
+                  </Button>
+                )
               )}
             </div>
             {editContent !== null ? (
