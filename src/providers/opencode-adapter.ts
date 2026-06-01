@@ -673,6 +673,9 @@ export class OpencodeAdapter implements ProviderAdapter {
     process.env.SWARM_AGENT_ID = config.agentId;
     process.env.SWARM_TASK_ID = config.taskId;
     process.env.SWARM_IS_LEAD = config.role === "lead" ? "true" : "false";
+    // context-mode plugin nudge cadence: fire external-MCP guidance every 3
+    // matching tool calls (default 10 is too sparse for adoption).
+    process.env.CONTEXT_MODE_EXTERNAL_MCP_NUDGE_EVERY = "3";
 
     // Set OPENCODE_CONFIG scoped to the spawn call (save + restore)
     const prevOpencodeConfig = process.env.OPENCODE_CONFIG;

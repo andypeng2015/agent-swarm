@@ -263,8 +263,14 @@ export async function createSessionMcpConfig(
   // hooks. Placed BEFORE mergeMcpConfig so an API-installed server can still
   // override it (unlikely, but safe). Gated by CONTEXT_MODE_DISABLED so builds
   // and deploys without context-mode don't break.
+  //
+  // Server key uses the plugin naming convention (`plugin_context-mode_context-mode`)
+  // so that the resulting tool names (`mcp__plugin_context-mode_context-mode__ctx_*`)
+  // match the names the plugin's hooks reference in guidance text. With the bare
+  // key `context-mode`, the tools would be `mcp__context-mode__ctx_*` — callable,
+  // but invisible to the hook nudges that point agents at the plugin-prefixed name.
   if (process.env.CONTEXT_MODE_DISABLED !== "true") {
-    mergedServers["context-mode"] = { command: "context-mode" };
+    mergedServers["plugin_context-mode_context-mode"] = { command: "context-mode" };
   }
 
   try {
@@ -410,6 +416,9 @@ class ClaudeSession implements ProviderSession {
         ...(sourceEnv.CLAUDE_CODE_OAUTH_TOKEN
           ? { AGENT_SWARM_CLAUDE_OAUTH_TOKEN: sourceEnv.CLAUDE_CODE_OAUTH_TOKEN }
           : {}),
+        // context-mode plugin nudge cadence: fire external-MCP guidance every 3
+        // matching tool calls (default 10 is too sparse for adoption).
+        CONTEXT_MODE_EXTERNAL_MCP_NUDGE_EVERY: "3",
       } as Record<string, string>,
       stdout: "pipe",
       stderr: "pipe",
