@@ -15,7 +15,9 @@ import { initJira, resetJira } from "../jira";
 import { initLinear, resetLinear } from "../linear";
 import { startSlackApp, stopSlackApp } from "../slack";
 import type { AgentStatus } from "../types";
+import { setRequestAuth } from "../utils/request-auth-context";
 import { refreshSecretScrubberCache } from "../utils/secret-scrubber";
+import { resolveHttpRequestAuth } from "./auth";
 import { generateOpenApiSpec, SCALAR_HTML } from "./openapi";
 import { isPublicRoute } from "./route-def";
 import { agentWithCapacity, getPathSegments, parseQueryParams } from "./utils";
@@ -237,22 +239,28 @@ export async function handleCore(
   // API-key authentication (if API_KEY is configured). Routes that opt out via
   // `route({ auth: { apiKey: false } })` — webhooks, OAuth provider callbacks,
   // etc. — are skipped based on the central `routeRegistry`. Unknown paths
-  // fall through to the bearer check (fail-closed).
+  // fall through to the bearer check (fail-closed). Normal API calls may use
+  // either the global swarm key or an active user-bound `aswt_` token.
   if (apiKey) {
     const pathSegments = getPathSegments(req.url || "");
     const isUserMcpRoute = req.url === "/mcp-user";
     // `/mcp-user` runs its own `aswt_`-token auth in `handleMcpUser`; the swarm
     // API key must not gate it.
     if (!isUserMcpRoute && !isPublicRoute(req.method, pathSegments)) {
-      const authHeader = req.headers.authorization;
-      const providedKey = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
+      const auth = resolveHttpRequestAuth(req, apiKey);
 
-      if (providedKey !== apiKey) {
+      if (!auth) {
+        setRequestAuth(req, null);
         res.writeHead(401, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ error: "Unauthorized" }));
         return true;
       }
+      setRequestAuth(req, auth);
+    } else {
+      setRequestAuth(req, null);
     }
+  } else {
+    setRequestAuth(req, null);
   }
 
   // POST /internal/reload-config — re-read swarm_config into process.env and re-init integrations

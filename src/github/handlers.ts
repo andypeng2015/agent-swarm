@@ -533,6 +533,7 @@ export async function handlePullRequest(
     vcsUrl: pr.html_url,
     vcsInstallationId: installation?.id,
     contextKey: buildGithubContextKey(repository.full_name, "pr", pr.number),
+    requestedByUserId,
   });
 
   if (lead) {
@@ -771,6 +772,7 @@ export async function handleIssue(
     vcsUrl: issue.html_url,
     vcsInstallationId: installation?.id,
     contextKey: buildGithubContextKey(repository.full_name, "issue", issue.number),
+    requestedByUserId,
   });
 
   if (lead) {
