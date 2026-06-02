@@ -5556,7 +5556,8 @@
                               "pi",
                               "opencode",
                               "devin",
-                              "gemini"
+                              "gemini",
+                              "acp"
                             ]
                           },
                           "model": {
@@ -5632,7 +5633,8 @@
                 "pi",
                 "opencode",
                 "devin",
-                "gemini"
+                "gemini",
+                "acp"
               ]
             },
             "required": true,
@@ -5692,7 +5694,8 @@
                 "pi",
                 "opencode",
                 "devin",
-                "gemini"
+                "gemini",
+                "acp"
               ]
             },
             "required": true,
@@ -5764,7 +5767,8 @@
                         "pi",
                         "opencode",
                         "devin",
-                        "gemini"
+                        "gemini",
+                        "acp"
                       ]
                     },
                     "model": {
@@ -5840,7 +5844,8 @@
                 "pi",
                 "opencode",
                 "devin",
-                "gemini"
+                "gemini",
+                "acp"
               ]
             },
             "required": true,
@@ -5890,7 +5895,8 @@
                         "pi",
                         "opencode",
                         "devin",
-                        "gemini"
+                        "gemini",
+                        "acp"
                       ]
                     },
                     "model": {
@@ -5963,7 +5969,8 @@
                 "pi",
                 "opencode",
                 "devin",
-                "gemini"
+                "gemini",
+                "acp"
               ]
             },
             "required": true,
@@ -7287,7 +7294,8 @@
                       "pi",
                       "opencode",
                       "devin",
-                      "gemini"
+                      "gemini",
+                      "acp"
                     ]
                   },
                   "createdAt": {
