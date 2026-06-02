@@ -106,6 +106,12 @@ ALTER TABLE pricing ADD COLUMN updated_by TEXT REFERENCES users(id);
 ALTER TABLE inbox_item_state ADD COLUMN created_by TEXT REFERENCES users(id);
 ALTER TABLE inbox_item_state ADD COLUMN updated_by TEXT REFERENCES users(id);
 
+ALTER TABLE metrics ADD COLUMN created_by TEXT REFERENCES users(id);
+ALTER TABLE metrics ADD COLUMN updated_by TEXT REFERENCES users(id);
+
+ALTER TABLE metric_versions ADD COLUMN created_by TEXT REFERENCES users(id);
+ALTER TABLE metric_versions ADD COLUMN updated_by TEXT REFERENCES users(id);
+
 CREATE INDEX IF NOT EXISTS idx_agent_tasks_created_by ON agent_tasks(created_by) WHERE created_by IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_agent_tasks_updated_by ON agent_tasks(updated_by) WHERE updated_by IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_workflows_created_by ON workflows(created_by) WHERE created_by IS NOT NULL;
