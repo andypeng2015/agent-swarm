@@ -236,31 +236,27 @@ export async function handleCore(
     return true;
   }
 
-  // API-key authentication (if API_KEY is configured). Routes that opt out via
+  // API-key authentication. Routes that opt out via
   // `route({ auth: { apiKey: false } })` — webhooks, OAuth provider callbacks,
   // etc. — are skipped based on the central `routeRegistry`. Unknown paths
   // fall through to the bearer check (fail-closed). Normal API calls may use
   // either the global swarm key or an active user-bound `aswt_` token.
-  if (apiKey) {
-    const pathSegments = getPathSegments(req.url || "");
-    const isUserMcpRoute = req.url === "/mcp-user";
-    // `/mcp-user` runs its own `aswt_`-token auth in `handleMcpUser`; the swarm
-    // API key must not gate it.
-    if (!isUserMcpRoute && !isPublicRoute(req.method, pathSegments)) {
-      const auth = resolveHttpRequestAuth(req, apiKey);
-
-      if (!auth) {
-        setRequestAuth(req, null);
-        res.writeHead(401, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ error: "Unauthorized" }));
-        return true;
-      }
-      setRequestAuth(req, auth);
-    } else {
-      setRequestAuth(req, null);
-    }
-  } else {
+  const pathSegments = getPathSegments(req.url || "");
+  const isUserMcpRoute = req.url === "/mcp-user";
+  // `/mcp-user` runs its own `aswt_`-token auth in `handleMcpUser`; the swarm
+  // API key must not gate it.
+  if (isUserMcpRoute || isPublicRoute(req.method, pathSegments)) {
     setRequestAuth(req, null);
+  } else {
+    const auth = resolveHttpRequestAuth(req, apiKey);
+
+    if (!auth) {
+      setRequestAuth(req, null);
+      res.writeHead(401, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Unauthorized" }));
+      return true;
+    }
+    setRequestAuth(req, auth);
   }
 
   // POST /internal/reload-config — re-read swarm_config into process.env and re-init integrations
