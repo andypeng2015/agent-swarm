@@ -2,7 +2,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
 import { getResolvedConfig } from "../be/db";
-import { parseServiceAccountJson } from "../google-drive/app";
+import { parseServiceAccountJson, verifyServiceAccountAuth } from "../google-drive/app";
 import { route } from "./route-def";
 import { json } from "./utils";
 
@@ -104,49 +104,6 @@ function resolveConfigValue(key: string): string | null {
   return null;
 }
 
-/**
- * Attempt to obtain a Google OAuth2 access token using the SA credentials.
- * This validates that the private key can sign a JWT and Google's token
- * endpoint accepts it. Throws on any failure.
- */
-async function testGoogleDriveAuth(raw: string): Promise<void> {
-  const sa = JSON.parse(raw) as {
-    client_email: string;
-    private_key: string;
-    token_uri: string;
-  };
-
-  const header = Buffer.from(JSON.stringify({ alg: "RS256", typ: "JWT" })).toString("base64url");
-  const now = Math.floor(Date.now() / 1000);
-  const payload = Buffer.from(
-    JSON.stringify({
-      iss: sa.client_email,
-      scope: "https://www.googleapis.com/auth/drive",
-      aud: sa.token_uri,
-      iat: now,
-      exp: now + 300,
-    }),
-  ).toString("base64url");
-
-  const { createSign } = await import("node:crypto");
-  const signer = createSign("RSA-SHA256");
-  signer.update(`${header}.${payload}`);
-  const signature = signer.sign(sa.private_key, "base64url");
-
-  const jwt = `${header}.${payload}.${signature}`;
-
-  const resp = await fetch(sa.token_uri, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: `grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion=${jwt}`,
-  });
-
-  if (!resp.ok) {
-    const body = await resp.text();
-    throw new Error(`Token endpoint returned ${resp.status}: ${body}`);
-  }
-}
-
 function resolveMcpBaseUrl(): string {
   const configured = resolveConfigValue("MCP_BASE_URL");
   const fallback = `http://localhost:${process.env.PORT || "3013"}`;
@@ -193,7 +150,7 @@ export function createIntegrationsHandler(deps: TestConnectionDeps = {}) {
       }
 
       try {
-        await testGoogleDriveAuth(raw);
+        await verifyServiceAccountAuth(raw);
         json(res, {
           ok: true,
           clientEmail: result.clientEmail,

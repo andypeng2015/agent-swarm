@@ -1,1 +1,6 @@
-export { initGoogleDrive, isGoogleDriveEnabled, resetGoogleDrive } from "./app";
+export {
+  initGoogleDrive,
+  isGoogleDriveEnabled,
+  resetGoogleDrive,
+  verifyServiceAccountAuth,
+} from "./app";

@@ -75,7 +75,7 @@ export async function reloadGlobalConfigsAndIntegrations(): Promise<ReloadConfig
   if (initJira()) integrations.push("jira");
 
   resetGoogleDrive();
-  if (initGoogleDrive()) integrations.push("google-drive");
+  if (await initGoogleDrive()) integrations.push("google-drive");
 
   await stopSlackApp();
   await startSlackApp();

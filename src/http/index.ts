@@ -437,7 +437,7 @@ httpServer
     initJira();
 
     // Initialize Google Drive integration (if configured)
-    initGoogleDrive();
+    await initGoogleDrive();
 
     // Initialize workflow engine (trigger subscriptions + resume listener)
     initWorkflows();

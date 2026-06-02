@@ -1,7 +1,9 @@
+import { createSign } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 let initialized = false;
+let lastAuthError: string | null = null;
 
 const WELL_KNOWN_ADC_PATHS = [
   join(
@@ -44,9 +46,10 @@ export function isGoogleDriveEnabled(): boolean {
 
 export function resetGoogleDrive(): void {
   initialized = false;
+  lastAuthError = null;
 }
 
-export function initGoogleDrive(): boolean {
+export async function initGoogleDrive(): Promise<boolean> {
   if (initialized) return isGoogleDriveEnabled();
   initialized = true;
 
@@ -70,10 +73,20 @@ export function initGoogleDrive(): boolean {
     return false;
   }
 
-  console.log(
-    `[Google Drive] Integration initialized (SA: ${result.clientEmail}, project: ${result.projectId})`,
-  );
-  return true;
+  try {
+    await verifyServiceAccountAuth(raw);
+    lastAuthError = null;
+    console.log(
+      `[Google Drive] Integration connected (SA: ${result.clientEmail}, project: ${result.projectId})`,
+    );
+    return true;
+  } catch (err) {
+    lastAuthError = err instanceof Error ? err.message : String(err);
+    console.error(
+      `[Google Drive] SA credentials valid but auth failed: ${lastAuthError} (SA: ${result.clientEmail})`,
+    );
+    return false;
+  }
 }
 
 export interface ServiceAccountInfo {
@@ -88,6 +101,48 @@ export interface ServiceAccountError {
 }
 
 export type ServiceAccountResult = ServiceAccountInfo | ServiceAccountError;
+
+/**
+ * Sign a JWT with the SA's private key and exchange it at Google's token
+ * endpoint. Proves the credentials can actually authenticate — not just
+ * that the JSON is structurally valid.
+ */
+export async function verifyServiceAccountAuth(raw: string): Promise<void> {
+  const sa = JSON.parse(raw) as {
+    client_email: string;
+    private_key: string;
+    token_uri: string;
+  };
+
+  const header = Buffer.from(JSON.stringify({ alg: "RS256", typ: "JWT" })).toString("base64url");
+  const now = Math.floor(Date.now() / 1000);
+  const payload = Buffer.from(
+    JSON.stringify({
+      iss: sa.client_email,
+      scope: "https://www.googleapis.com/auth/drive",
+      aud: sa.token_uri,
+      iat: now,
+      exp: now + 300,
+    }),
+  ).toString("base64url");
+
+  const signer = createSign("RSA-SHA256");
+  signer.update(`${header}.${payload}`);
+  const signature = signer.sign(sa.private_key, "base64url");
+
+  const jwt = `${header}.${payload}.${signature}`;
+
+  const resp = await fetch(sa.token_uri, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: `grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion=${jwt}`,
+  });
+
+  if (!resp.ok) {
+    const body = await resp.text();
+    throw new Error(`Token endpoint returned ${resp.status}: ${body}`);
+  }
+}
 
 export function parseServiceAccountJson(raw: string): ServiceAccountResult {
   let parsed: Record<string, unknown>;
