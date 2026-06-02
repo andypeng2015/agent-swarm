@@ -86,6 +86,13 @@ const pollTriggers = route({
 const CHANNEL_ACTIVITY_INTERVAL_MS = 60_000; // Check at most once per 60s
 let lastChannelActivityCheckAt = 0;
 
+function getRequesterPreferences(
+  metadata: Record<string, unknown> | undefined,
+): string | undefined {
+  const preferences = metadata?.preferences;
+  return typeof preferences === "string" && preferences.trim().length > 0 ? preferences : undefined;
+}
+
 // ─── Cursor Commit Endpoint ─────────────────────────────────────────────────
 
 const commitCursorsRoute = route({
@@ -256,6 +263,7 @@ export async function handlePoll(
             const requestedByUser = pendingTask.requestedByUserId
               ? getUserById(pendingTask.requestedByUserId)
               : undefined;
+            const requestedByPreferences = getRequesterPreferences(requestedByUser?.metadata);
 
             return {
               trigger: {
@@ -263,7 +271,12 @@ export async function handlePoll(
                 taskId: pendingTask.id,
                 task: { ...pendingTask, status: "in_progress" },
                 ...(requestedByUser && {
-                  requestedBy: { name: requestedByUser.name, email: requestedByUser.email },
+                  requestedBy: {
+                    name: requestedByUser.name,
+                    email: requestedByUser.email,
+                    role: requestedByUser.role,
+                    preferences: requestedByPreferences,
+                  },
                 }),
               },
             };

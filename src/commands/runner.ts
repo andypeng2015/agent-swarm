@@ -1809,7 +1809,7 @@ interface Trigger {
     text?: string;
   }>;
   cursorUpdates?: Array<{ channelId: string; ts: string }>; // Deferred cursor commits for channel_activity
-  requestedBy?: { name: string; email?: string };
+  requestedBy?: { name: string; email?: string; role?: string; preferences?: string };
   // Phase 4 — budget_refused fields. The server emits this envelope from
   // /api/poll and MCP task-action accept when an admission gate refuses to
   // let the agent claim a task. Worker reads cause + reset/spend/budget for
@@ -1830,6 +1830,22 @@ interface PollOptions {
   pollInterval: number;
   pollTimeout: number;
   since?: string; // Optional: for filtering finished tasks
+}
+
+type RequesterProfile = NonNullable<Trigger["requestedBy"]>;
+
+export function buildRequesterProfilePrompt(requestedBy: RequesterProfile | undefined): string {
+  if (!requestedBy?.role && !requestedBy?.preferences) return "";
+
+  const requester = `${requestedBy.name}${requestedBy.role ? ` (${requestedBy.role})` : ""}`;
+  const preferences = requestedBy.preferences?.trim();
+  const preferencesSection = preferences
+    ? `\nTheir stated preferences for how you should respond and act:\n${preferences}`
+    : "";
+
+  return `## Requester Profile
+This task was requested by ${requester}.${preferencesSection}
+Honor this requester profile in tone, depth, and format where it doesn't conflict with correctness or your operating rules.`;
 }
 
 /** Register agent via HTTP API */
@@ -4485,10 +4501,11 @@ export async function runAgent(config: RunnerConfig, opts: RunnerOptions) {
 
         // Rebuild system prompt with per-task repo context
         const taskBasePrompt = await buildSystemPrompt();
-        const taskSystemPrompt =
-          (additionalSystemPrompt
-            ? `${taskBasePrompt}\n\n${additionalSystemPrompt}`
-            : taskBasePrompt) + cwdWarning;
+        const requesterProfilePrompt = buildRequesterProfilePrompt(trigger.requestedBy);
+        const taskPromptParts = [taskBasePrompt, requesterProfilePrompt, additionalSystemPrompt]
+          .filter((part): part is string => Boolean(part))
+          .join("\n\n");
+        const taskSystemPrompt = taskPromptParts + cwdWarning;
 
         iteration++;
         const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
