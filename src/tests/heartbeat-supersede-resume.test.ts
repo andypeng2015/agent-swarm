@@ -14,12 +14,18 @@ import {
   createTaskExtended,
   getChildTasks,
   getDb,
+  getLogsByTaskId,
   getTaskById,
   initDb,
   insertActiveSession,
   startTask,
 } from "../be/db";
-import { codeLevelTriage } from "../heartbeat/heartbeat";
+import {
+  codeLevelTriage,
+  MAX_RESUME_GENERATIONS,
+  RESUME_BUDGET_EXHAUSTED_REASON,
+} from "../heartbeat/heartbeat";
+import { RESUME_GENERATION_TAG_PREFIX } from "../tasks/worker-follow-up";
 
 const TEST_DB_PATH = "./test-heartbeat-supersede-resume.sqlite";
 
@@ -81,7 +87,44 @@ describe("Heartbeat — supersede + resume (DES-523)", () => {
     expect(resume.taskType).toBe("resume");
     expect(resume.tags).toContain("auto-resume");
     expect(resume.tags).toContain("reason:crash_recovery");
+    expect(resume.tags).toContain(`${RESUME_GENERATION_TAG_PREFIX}1`);
     expect(resume.id).toBe(findings.autoResumedTasks[0]!.resumeTaskId);
+
+    const supersedeLog = getLogsByTaskId(parent.id).find(
+      (log) => log.eventType === "task_superseded",
+    );
+    expect(supersedeLog).toBeTruthy();
+    const metadata = JSON.parse(supersedeLog!.metadata ?? "{}") as { resumeTaskId?: string };
+    expect(metadata.resumeTaskId).toBe(resume.id);
+  });
+
+  test("Case A: crash-recovery resume chain stops at the generation cap", async () => {
+    const agent = createAgent({ name: "dead-resume-worker", isLead: false, status: "busy" });
+    const parent = createTaskExtended("Resume at generation cap", {
+      agentId: agent.id,
+      taskType: "resume",
+      tags: [
+        "auto-resume",
+        "reason:crash_recovery",
+        `${RESUME_GENERATION_TAG_PREFIX}${MAX_RESUME_GENERATIONS}`,
+      ],
+    });
+    startTask(parent.id);
+
+    const oldTime = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+    getDb().run("UPDATE agent_tasks SET lastUpdatedAt = ? WHERE id = ?", [oldTime, parent.id]);
+
+    const findings = await codeLevelTriage();
+
+    expect(findings.autoResumedTasks.length).toBe(0);
+    expect(findings.autoFailedTasks.length).toBe(1);
+    expect(findings.autoFailedTasks[0]!.taskId).toBe(parent.id);
+    expect(findings.autoFailedTasks[0]!.reason).toBe(RESUME_BUDGET_EXHAUSTED_REASON);
+
+    const updatedParent = getTaskById(parent.id);
+    expect(updatedParent?.status).toBe("failed");
+    expect(updatedParent?.failureReason).toBe(RESUME_BUDGET_EXHAUSTED_REASON);
+    expect(getChildTasks(parent.id).length).toBe(0);
   });
 
   // --------------------------------------------------------------------------
