@@ -12,17 +12,32 @@
 export const DEFAULT_APP_URL = "https://app.agent-swarm.dev";
 
 /**
+ * Resolve every explicitly configured app/dashboard URL. Each env var may be
+ * a comma-separated origin list; entries are returned in precedence order with
+ * trailing slashes stripped.
+ *
+ * Precedence: `APP_URL` entries → `DASHBOARD_URL` entries (deprecated alias,
+ * kept for back-compat).
+ */
+export function getConfiguredAppUrls(): string[] {
+  return [process.env.APP_URL, process.env.DASHBOARD_URL]
+    .flatMap((value) => (value ?? "").split(","))
+    .map((value) => value.trim().replace(/\/+$/, ""))
+    .filter(Boolean);
+}
+
+/**
  * Resolve the effective app/dashboard URL — the public origin the user's
  * browser is sent to (post-login redirects, Slack/approval links, page
  * `app_url` share links). Trailing slashes are stripped.
  *
- * Precedence: `APP_URL` → `DASHBOARD_URL` (deprecated alias, kept for
- * back-compat) → {@link DEFAULT_APP_URL}. This is the single source of truth;
- * call sites must not re-read `APP_URL`/`DASHBOARD_URL` directly.
+ * Precedence: first configured `APP_URL` entry → first configured
+ * `DASHBOARD_URL` entry (deprecated alias, kept for back-compat) → fallback.
+ * This is the single source of truth; call sites must not re-read
+ * `APP_URL`/`DASHBOARD_URL` directly.
  */
-export function getAppUrl(): string {
-  const raw = process.env.APP_URL?.trim() || process.env.DASHBOARD_URL?.trim();
-  return (raw || DEFAULT_APP_URL).replace(/\/+$/, "");
+export function getAppUrl(fallback = DEFAULT_APP_URL): string {
+  return (getConfiguredAppUrls()[0] || fallback).replace(/\/+$/, "");
 }
 
 /**
