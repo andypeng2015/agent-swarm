@@ -138,6 +138,92 @@ function bridgeRequestFor(name: string, args: unknown): BridgeRequest {
       return { method: "POST", path: "/api/scripts/search", body };
     case "script_run":
       return { method: "POST", path: "/api/scripts/run", body };
+    case "db_query":
+      return { method: "POST", path: "/api/db-query", body };
+    case "swarm_get":
+      return {
+        method: "GET",
+        path: appendQuery("/api/agents", {
+          fields: body.includeFull ? "full" : "slim",
+        }),
+      };
+    case "agent_info":
+      return { method: "GET", path: "/me" };
+    case "metrics_get":
+      return { method: "GET", path: "/api/metrics" };
+    case "task_poll":
+      return { method: "GET", path: "/api/poll" };
+    case "config_get":
+      return {
+        method: "GET",
+        path: appendQuery("/api/config/resolved", {
+          agentId: body.agentId,
+          repoId: body.repoId,
+          key: body.key,
+          includeSecrets: body.includeSecrets,
+        }),
+      };
+    case "config_list":
+      return {
+        method: "GET",
+        path: appendQuery("/api/config", {
+          scope: body.scope,
+          scopeId: body.scopeId,
+          key: body.key,
+          includeSecrets: body.includeSecrets,
+        }),
+      };
+    case "service_list":
+      return {
+        method: "GET",
+        path: appendQuery("/api/services", {
+          agentId: body.agentId,
+          name: body.name,
+          status: body.status,
+        }),
+      };
+    case "workflow_list":
+      return {
+        method: "GET",
+        path: appendQuery("/api/workflows", {
+          fields: body.includeFull ? "full" : "slim",
+        }),
+      };
+    case "workflow_get": {
+      const id = typeof body.id === "string" ? body.id : undefined;
+      if (!id) throw new Error("workflow_get requires string `id`");
+      return { method: "GET", path: `/api/workflows/${encodeURIComponent(id)}` };
+    }
+    case "workflow_listRuns": {
+      const wfId = typeof body.workflowId === "string" ? body.workflowId : undefined;
+      if (!wfId) throw new Error("workflow_listRuns requires string `workflowId`");
+      return {
+        method: "GET",
+        path: appendQuery(`/api/workflows/${encodeURIComponent(wfId)}/runs`, {
+          status: body.status,
+        }),
+      };
+    }
+    case "workflow_getRun": {
+      const id = typeof body.id === "string" ? body.id : undefined;
+      if (!id) throw new Error("workflow_getRun requires string `id`");
+      return { method: "GET", path: `/api/workflow-runs/${encodeURIComponent(id)}` };
+    }
+    case "prompt_list":
+      return {
+        method: "GET",
+        path: appendQuery("/api/prompt-templates", {
+          eventType: body.eventType,
+          scope: body.scope,
+          scopeId: body.scopeId,
+          isDefault: body.isDefault,
+        }),
+      };
+    case "prompt_get": {
+      const id = typeof body.id === "string" ? body.id : undefined;
+      if (!id) throw new Error("prompt_get requires string `id`");
+      return { method: "GET", path: `/api/prompt-templates/${encodeURIComponent(id)}` };
+    }
     default:
       throw new Error(`Tool '${name}' is not exposed through the scripts SDK bridge`);
   }
