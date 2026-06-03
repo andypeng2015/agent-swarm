@@ -4105,6 +4105,24 @@
                     "minimum": 1,
                     "maximum": 20,
                     "default": 5
+                  },
+                  "scope": {
+                    "type": "string",
+                    "enum": [
+                      "agent",
+                      "swarm",
+                      "all"
+                    ],
+                    "default": "all"
+                  },
+                  "source": {
+                    "type": "string",
+                    "enum": [
+                      "manual",
+                      "file_index",
+                      "session_summary",
+                      "task_completion"
+                    ]
                   }
                 },
                 "required": [
@@ -8152,6 +8170,10 @@
                       "workspace-rw"
                     ],
                     "default": "none"
+                  },
+                  "idempotencyKey": {
+                    "type": "string",
+                    "maxLength": 200
                   }
                 }
               }
@@ -8317,6 +8339,57 @@
           },
           "404": {
             "description": "Script not found"
+          }
+        }
+      }
+    },
+    "/api/mcp-bridge": {
+      "post": {
+        "summary": "Generic MCP tool proxy for the scripts SDK bridge",
+        "tags": [
+          "Scripts"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "tool": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "args": {
+                    "type": "object",
+                    "additionalProperties": {},
+                    "default": {}
+                  }
+                },
+                "required": [
+                  "tool"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result"
+          },
+          "400": {
+            "description": "Invalid tool name or args"
+          },
+          "403": {
+            "description": "Tool not in SDK allowlist"
+          },
+          "404": {
+            "description": "Tool not found"
           }
         }
       }
