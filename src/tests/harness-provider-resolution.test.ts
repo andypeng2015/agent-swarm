@@ -161,6 +161,16 @@ describe("validateConfigValue", () => {
       expect(err).toMatch(/CODEX_CREDITS_EXHAUSTED_COOLDOWN_MS/);
     }
   });
+
+  test("accepts only boolean-like SWARM_USE_CLAUDE_BRIDGE values", () => {
+    for (const value of ["true", "false", "1", "0", " TRUE "]) {
+      expect(validateConfigValue("SWARM_USE_CLAUDE_BRIDGE", value)).toBeNull();
+    }
+    expect(validateConfigValue("SWARM_USE_CLAUDE_BRIDGE", "yes")).toMatch(
+      /SWARM_USE_CLAUDE_BRIDGE/,
+    );
+    expect(validateConfigValue("SWARM_USE_CLAUDE_BRIDGE", true)).toMatch(/SWARM_USE_CLAUDE_BRIDGE/);
+  });
 });
 
 // ─── getResolvedConfig — scope precedence for HARNESS_PROVIDER ───────────────
