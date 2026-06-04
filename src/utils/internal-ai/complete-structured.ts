@@ -91,7 +91,7 @@ async function defaultSpawnClaudeCli(
     (process.env.SWARM_USE_CLAUDE_BRIDGE ?? "").trim().toLowerCase(),
   );
   const claudeBinaryRaw = useClaudeBridge
-    ? "bunx @desplega.ai/claude-bridge"
+    ? "claude-bridge"
     : (process.env.CLAUDE_BINARY ?? "claude").trim();
   const claudeBinaryArgv = (claudeBinaryRaw || "claude").split(/\s+/);
   const cmd = [...claudeBinaryArgv, "-p", "--model", model, "--output-format", "json"];

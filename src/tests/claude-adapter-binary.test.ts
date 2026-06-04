@@ -7,7 +7,7 @@
  *      with `["claude"]` as the default. Same flags follow. Supports
  *      whitespace-separated command strings (e.g. `"bunx @dexh/shannon"`).
  *   2. Claude Bridge routing — SWARM_USE_CLAUDE_BRIDGE=true/1 forces the
- *      `bunx @desplega.ai/claude-bridge` argv prefix and wins over
+ *      installed `claude-bridge` argv prefix and wins over
  *      `CLAUDE_BINARY`.
  *   3. Tmux fail-fast — when the resolved binary string contains "shannon"
  *      or claude-bridge is enabled, createSession throws if `tmux` is not on PATH.
@@ -474,15 +474,14 @@ describe("CLAUDE_BINARY env override", () => {
     expect(spawnedArgs[0][0]).toBe("shannon");
   });
 
-  test("SWARM_USE_CLAUDE_BRIDGE=true routes through bunx @desplega.ai/claude-bridge", async () => {
+  test("SWARM_USE_CLAUDE_BRIDGE=true routes through installed claude-bridge", async () => {
     process.env.SWARM_USE_CLAUDE_BRIDGE = "true";
 
     const adapter = new ClaudeAdapter();
     await adapter.createSession(makeConfig());
 
     const argv = spawnedArgs[0];
-    expect(argv[0]).toBe("bunx");
-    expect(argv[1]).toBe("@desplega.ai/claude-bridge");
+    expect(argv[0]).toBe("claude-bridge");
     expect(argv).toContain("--model");
     expect(argv).toContain("-p");
   });
@@ -494,8 +493,7 @@ describe("CLAUDE_BINARY env override", () => {
     const adapter = new ClaudeAdapter();
     await adapter.createSession(makeConfig());
 
-    expect(spawnedArgs[0][0]).toBe("bunx");
-    expect(spawnedArgs[0][1]).toBe("@desplega.ai/claude-bridge");
+    expect(spawnedArgs[0][0]).toBe("claude-bridge");
   });
 
   test("config.env SWARM_USE_CLAUDE_BRIDGE=true is reloadable and wins over process.env false", async () => {
@@ -511,8 +509,7 @@ describe("CLAUDE_BINARY env override", () => {
       }),
     );
 
-    expect(spawnedArgs[0][0]).toBe("bunx");
-    expect(spawnedArgs[0][1]).toBe("@desplega.ai/claude-bridge");
+    expect(spawnedArgs[0][0]).toBe("claude-bridge");
   });
 
   test("config.env SWARM_USE_CLAUDE_BRIDGE=false disables process.env true", async () => {

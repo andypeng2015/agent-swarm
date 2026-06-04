@@ -27,13 +27,13 @@ Accepted values:
 
 | Value | Behavior |
 |---|---|
-| `true`, `1` | Route the Claude adapter through `bunx @desplega.ai/claude-bridge` |
+| `true`, `1` | Route the Claude adapter through the installed `claude-bridge` binary |
 | `false`, `0`, unset | Use the normal `CLAUDE_BINARY` resolution path, defaulting to `claude` |
 
 When enabled, the swarm spawns:
 
 ```bash
-bunx @desplega.ai/claude-bridge -p "..." --model ... --output-format stream-json ...
+claude-bridge -p "..." --model ... --output-format stream-json ...
 ```
 
 You do not need to set `CLAUDE_BINARY` for claude-bridge. `SWARM_USE_CLAUDE_BRIDGE=true` wins over `CLAUDE_BINARY`.

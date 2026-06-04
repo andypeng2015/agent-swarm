@@ -108,7 +108,7 @@ export function resolveClaudeBinary(
   return candidate || "claude";
 }
 
-const CLAUDE_BRIDGE_BINARY = "bunx @desplega.ai/claude-bridge";
+const CLAUDE_BRIDGE_BINARY = "claude-bridge";
 
 /**
  * Parse a boolean env toggle. Only true/1 enable and false/0 disable; unset
