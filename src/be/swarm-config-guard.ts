@@ -44,9 +44,11 @@ const VALIDATED_KEYS: Record<string, (value: unknown) => string | null> = {
   // Codex credits-exhausted cooldown (ms). Permissive on range here (positive
   // integer) — the worker clamps to [5m, 7d] via resolveCodexCreditsExhaustedCooldownMs.
   CODEX_CREDITS_EXHAUSTED_COOLDOWN_MS: (value) => {
-    const n = Number.parseInt(String(value), 10);
-    if (Number.isFinite(n) && n > 0) return null;
-    return "Invalid CODEX_CREDITS_EXHAUSTED_COOLDOWN_MS (must be a positive integer of milliseconds)";
+    const str = String(value).trim();
+    if (!/^\d+$/.test(str) || Number(str) <= 0) {
+      return "Invalid CODEX_CREDITS_EXHAUSTED_COOLDOWN_MS (must be a positive integer of milliseconds)";
+    }
+    return null;
   },
 };
 
