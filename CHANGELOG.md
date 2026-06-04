@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.92.0] - 2026-06-04
+
+### Added
+- **Harness-agnostic FS→DB profile sync at session end** (#641) — worker and lead sessions now persist identity-file changes back into the database at session end without assuming a specific coding harness.
+- **Scripts runtime exposes the full read-only MCP surface over the SDK + HTTP bridge** (#642) — catalog scripts can now call all read-only swarm MCP methods through the generated SDK, and the HTTP bridge routes those methods consistently for compiled and runtime execution paths.
+
+### Changed
+- **External URL env handling is unified around `PUBLIC_MCP_BASE_URL` + `APP_URL`** (#643) — OAuth callbacks, public page links, and webhook URLs now route through shared helpers, with `PUBLIC_MCP_BASE_URL` preferred for externally reachable API origins and `DASHBOARD_URL` treated as a deprecated alias of `APP_URL`.
+- **Claude runner memory guardrails are stricter in compiled and Docker deployments** (#644) — the runner and worker images now fail earlier on memory-pressure conditions and keep the packaged harness/runtime assets aligned with those guardrails.
+
+### Fixed
+- **Compiled-binary scripts now bundle `zod` reliably** (#645) — `script-upsert` and seeded scripts that import `zod` resolve correctly in compiled-binary mode instead of failing to find the module at runtime.
+- **Compound-insights seed script repopulates all five sections** (#646) — the built-in report script no longer drops sections during generation.
+- **Hook registration nudges skip agents that are already joined** (#647) — workers that are already registered no longer get incorrect “join the swarm” reminders.
+- **`db-query` canonicalizes `sql` input across script and HTTP paths** (#649) — callers using script or bridge execution now resolve the canonical SQL field consistently without shape-specific workarounds.
+
 ## [1.90.0] - 2026-06-03
 
 ### Added

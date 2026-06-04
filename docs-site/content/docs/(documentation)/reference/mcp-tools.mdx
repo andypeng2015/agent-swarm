@@ -811,6 +811,7 @@ Run a named reusable script, OR inline TypeScript source (auto-saved as scratch 
 | `intent` | string | No | Why this script is being run |
 | `scope` | string | No | Optional scope for named script resolution |
 | `fsMode` | string | No | Filesystem mode (`none` only in v1) |
+| `idempotencyKey` | string | No | Auto-persists output to `kv` under `script:executions/{key}`; reruns with the same key overwrite the stored result |
 
 ### script-upsert
 
@@ -840,8 +841,11 @@ Execute a read-only SQL query against the swarm database. Available to all authe
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `sql` | string | Yes | SQL query (read-only only — writes are rejected) |
+| `sql` | string | No | SQL query (read-only only — writes are rejected) |
+| `query` | string | No | Deprecated runtime alias for `sql` |
 | `params` | array | No | Query parameters |
+
+Returns structured output with `success`, `columns`, `rows`, `elapsed`, `total`, and `truncated`.
 
 ### get-oauth-access-token
 

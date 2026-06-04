@@ -227,8 +227,11 @@ Execute a read-only SQL query against the swarm database. Available to all authe
 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
-| `sql` | `string` | Yes | - | SQL query (read-only only — writes are rejected) |
-| `params` | `array` | No | [] | Query parameters |
+| `sql` | `string` | No | - | SQL query (read-only only — writes are rejected). |
+| `query` | `string` | No | - | Deprecated runtime alias for `sql`. |
+| `params` | `array` | No | [] | Query parameters. |
+
+Returns structured output with `success`, `columns`, `rows`, `elapsed`, `total`, and `truncated`.
 
 ### get-oauth-access-token
 
@@ -388,9 +391,13 @@ Dry-run render a prompt template with provided variables. Optionally supply a cu
 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
+| `name` | `string` | No | - | Name of a reusable script to run. |
 | `source` | `string` | No | - | Inline TypeScript source to run. |
 | `args` | `unknown` | No | - | JSON-serializable script arguments. |
 | `intent` | `string` | No | "" | Why this script is being run. |
+| `scope` | `string` | No | - | Optional scope for named script resolution. |
+| `fsMode` | `string` | No | "none" | Filesystem mode. v1 supports `none` only. |
+| `idempotencyKey` | `string` | No | - | When set, output is auto-persisted to kv under script:executions/{key}. Re-running with the same key overwrites. Queryable via kv-get. |
 
 ### script-upsert
 
@@ -1416,4 +1423,3 @@ Delete an MCP server definition. Only the owning agent or lead can delete.
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
 | `id` | `string` | Yes | - | ID of the MCP server to delete |
-
