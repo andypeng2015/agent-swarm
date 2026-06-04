@@ -3418,12 +3418,12 @@ export async function runAgent(config: RunnerConfig, opts: RunnerOptions) {
   // Failures (network, API down, malformed value) fall back to env then "claude"
   // so a swarm_config outage cannot wedge boot.
   let bootProvider: ProviderName;
-  // Codex credits-exhausted cooldown resolved at boot from the same swarm_config
-  // overlay. Falls back to process.env then the default constant on a boot fetch
-  // failure; reconciled live thereafter by `applySwarmConfigDrift`.
-  let bootCooldownMs = resolveCodexCreditsExhaustedCooldownMs(
-    process.env.CODEX_CREDITS_EXHAUSTED_COOLDOWN_MS,
-  );
+  // Codex credits-exhausted cooldown is sourced solely from the global swarm_config
+  // (key `CODEX_CREDITS_EXHAUSTED_COOLDOWN_MS`). Initialize to the default constant
+  // for the case where it is unset, then apply the swarm_config value below; on a
+  // boot-fetch failure it stays at the default. Reconciled live thereafter by
+  // `applySwarmConfigDrift`.
+  let bootCooldownMs = resolveCodexCreditsExhaustedCooldownMs(undefined);
   try {
     const bootEnv = await fetchResolvedEnv(apiUrl, apiKey, agentId);
     bootProvider = bootEnv.resolvedProvider;
@@ -3431,7 +3431,9 @@ export async function runAgent(config: RunnerConfig, opts: RunnerOptions) {
       bootEnv.env.CODEX_CREDITS_EXHAUSTED_COOLDOWN_MS,
     );
   } catch (err) {
-    console.warn(`[runner] fetchResolvedEnv failed at boot, falling back to env: ${err}`);
+    console.warn(
+      `[runner] fetchResolvedEnv failed at boot, falling back to env for provider and the default cooldown: ${err}`,
+    );
     bootProvider = resolveHarnessProvider({}, process.env);
   }
   console.log(`[runner] Resolved HARNESS_PROVIDER: ${bootProvider}`);
