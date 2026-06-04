@@ -1,35 +1,27 @@
-import { mkdir, rm } from "node:fs/promises";
 import { getRunningScriptRuns, getScriptRun, updateScriptRun } from "../be/db";
 import type { ScriptRun } from "../types";
 import { getApiKey } from "../utils/api-key";
+import {
+  localProcessScriptExecutor,
+  type ScriptExecutionHandle,
+  type ScriptExecutor,
+} from "./executor";
 import { scriptRunMaxWallMs } from "./limits";
 
 type ManagedRun = {
-  proc: Bun.Subprocess<"ignore", "ignore", "pipe">;
-  tmpdir: string;
-  startedAtMs: number;
+  execution: ScriptExecutionHandle;
 };
 
 const managed = new Map<string, ManagedRun>();
 let reconcileTimer: ReturnType<typeof setInterval> | null = null;
+let scriptExecutor: ScriptExecutor = localProcessScriptExecutor;
 
 function supervisorDisabled(): boolean {
   return process.env.SCRIPT_RUN_SUPERVISOR_DISABLE === "true";
 }
 
-function harnessPath(): string {
-  return process.env.SCRIPT_WORKFLOW_RUNTIME_DIR
-    ? `${process.env.SCRIPT_WORKFLOW_RUNTIME_DIR}/harness.bundle.js`
-    : new URL("./harness.ts", import.meta.url).pathname;
-}
-
-function isProcessRunning(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
+export function setScriptRunExecutor(executor: ScriptExecutor): void {
+  scriptExecutor = executor;
 }
 
 export async function startScriptRunProcess(
@@ -47,45 +39,16 @@ export async function startScriptRunProcess(
     );
   }
 
-  const tmpdir = `${process.env.TMPDIR ?? "/tmp"}/script-workflow-${run.id}`;
-  await mkdir(tmpdir, { recursive: true });
-  const sourceFile = `${tmpdir}/source.ts`;
-  const argsFile = `${tmpdir}/args.json`;
-  await Bun.write(sourceFile, run.source);
-  await Bun.write(argsFile, JSON.stringify(run.args ?? null));
-
-  const proc = Bun.spawn(["bun", "run", harnessPath()], {
-    cwd: tmpdir,
-    stdin: "ignore",
-    stdout: "ignore",
-    stderr: "pipe",
-    env: {
-      PATH: process.env.PATH ?? "/usr/bin:/bin",
-      HOME: process.env.HOME ?? "/tmp",
-      LANG: process.env.LANG ?? "C.UTF-8",
-      LC_ALL: process.env.LC_ALL ?? "C.UTF-8",
-      TMPDIR: tmpdir,
-      AGENT_SWARM_API_KEY: apiKey,
-      MCP_BASE_URL: baseUrl,
-      SCRIPT_RUN_ID: run.id,
-      SCRIPT_RUN_AGENT_ID: run.agentId,
-      SCRIPT_RUN_TMPDIR: tmpdir,
-      SCRIPT_RUN_SOURCE_FILE: sourceFile,
-      SCRIPT_RUN_ARGS_FILE: argsFile,
-    },
-  });
-
-  const stderrPromise = new Response(proc.stderr).text().catch(() => "");
-  managed.set(run.id, { proc, tmpdir, startedAtMs: Date.now() });
+  const execution = await scriptExecutor.start({ run, baseUrl, apiKey });
+  managed.set(run.id, { execution });
   updateScriptRun(run.id, {
     status: "running",
-    pid: proc.pid,
+    pid: execution.pid,
     lastHeartbeatAt: new Date().toISOString(),
   });
 
-  proc.exited
-    .then(async (exitCode) => {
-      const stderr = await stderrPromise;
+  execution.exited
+    .then(async ({ exitCode, stderr }) => {
       const current = getScriptRun(run.id);
       if (current && current.status === "running") {
         if (exitCode !== 0) {
@@ -106,7 +69,7 @@ export async function startScriptRunProcess(
     })
     .finally(async () => {
       managed.delete(run.id);
-      await rm(tmpdir, { recursive: true, force: true });
+      await execution.cleanup();
     });
 }
 
@@ -114,12 +77,12 @@ export function terminateScriptRunProcess(runId: string): boolean {
   const managedRun = managed.get(runId);
   const run = getScriptRun(runId);
   if (managedRun) {
-    managedRun.proc.kill("SIGTERM");
+    managedRun.execution.terminate("SIGTERM");
     managed.delete(runId);
     return true;
   }
-  if (run?.pid && isProcessRunning(run.pid)) {
-    process.kill(run.pid, "SIGTERM");
+  if (run?.pid && scriptExecutor.isRunning(run.pid)) {
+    scriptExecutor.terminatePid(run.pid, "SIGTERM");
     return true;
   }
   return false;
@@ -145,11 +108,11 @@ export function reconcileScriptRuns(baseUrl: string): void {
   for (const run of getRunningScriptRuns()) {
     if (run.status === "paused") continue;
     const current = managed.get(run.id);
-    if (current && Date.now() - current.startedAtMs > scriptRunMaxWallMs()) {
+    if (current && Date.now() - current.execution.startedAtMs > scriptRunMaxWallMs()) {
       abortScriptRunLimit(run.id, `SCRIPT_RUN_MAX_WALL_MS exceeded (${scriptRunMaxWallMs()})`);
       continue;
     }
-    if (!current && (!run.pid || !isProcessRunning(run.pid))) {
+    if (!current && (!run.pid || !scriptExecutor.isRunning(run.pid))) {
       startScriptRunProcess(run, baseUrl).catch((err) => {
         updateScriptRun(run.id, {
           status: "failed",

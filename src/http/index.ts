@@ -25,6 +25,7 @@ import { startScriptRunSupervisor, stopScriptRunSupervisor } from "../script-wor
 import { startSlackApp, stopSlackApp } from "../slack";
 import { initTelemetry, telemetry } from "../telemetry";
 import { getApiKey } from "../utils/api-key";
+import { getMcpBaseUrl } from "../utils/constants";
 import { scrubSecrets } from "../utils/secret-scrubber";
 import { initWorkflows } from "../workflows";
 import { handleActiveSessions } from "./active-sessions";
@@ -494,7 +495,7 @@ httpServer
     initWorkflows();
 
     // Reconcile durable script workflow subprocesses
-    startScriptRunSupervisor(process.env.MCP_BASE_URL ?? `http://localhost:${port}`);
+    startScriptRunSupervisor(getMcpBaseUrl());
 
     // Start scheduler (if enabled)
     if (hasCapability("scheduling")) {
