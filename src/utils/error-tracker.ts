@@ -28,8 +28,27 @@ export const MAX_RATE_LIMIT_RESET_MS = 7 * 24 * 60 * 60 * 1000;
  * "429 Too Many Requests"; does not match "No conversation found with session ID".
  */
 export function isRateLimitMessage(s: string): boolean {
-  return /rate.?limit|hit your[\w\s-]*limit|usage[ _-]?limit|too many requests|\b429\b/i.test(s);
+  return (
+    /rate.?limit|hit your[\w\s-]*limit|usage[ _-]?limit|too many requests|\b429\b/i.test(s) ||
+    isCodexCreditsExhaustedMessage(s)
+  );
 }
+
+/**
+ * Detects Codex's workspace-credit-exhausted error, which surfaces as:
+ * "Your workspace is out of credits. Ask your workspace owner to refill in order to continue."
+ * This wording does not match the standard rate-limit patterns, so it needs its own predicate.
+ * Kept specific to avoid false positives — "refill" alone is intentionally excluded.
+ */
+export function isCodexCreditsExhaustedMessage(s: string): boolean {
+  return /out of credits|refill in order to continue|workspace owner to refill/i.test(s);
+}
+
+/** Default cooldown applied when a Codex OAuth slot returns a credits-exhausted error.
+ *  The workspace credit cap is weekly, so a 2-hour cooldown is conservative but avoids
+ *  the sawtooth of the 5-minute tier-3 fallback re-handing the dead slot every 5 minutes.
+ */
+export const CODEX_CREDITS_EXHAUSTED_COOLDOWN_MS = 2 * 60 * 60 * 1000; // 2h
 
 /**
  * Clamps a candidate reset timestamp (ms) to [now+60s, now+7d].

@@ -40,6 +40,8 @@ import { getMcpBaseUrl } from "../utils/constants.ts";
 import { getContextWindowSize } from "../utils/context-window.ts";
 import { type CredentialSelection, resolveCredentialPools } from "../utils/credentials.ts";
 import {
+  CODEX_CREDITS_EXHAUSTED_COOLDOWN_MS,
+  isCodexCreditsExhaustedMessage,
   isRateLimitMessage,
   MAX_RATE_LIMIT_RESET_MS,
   parseRateLimitResetTime,
@@ -3208,6 +3210,13 @@ async function checkCompletedProcesses(
             rateLimitedUntil = clampResetTime(parsedResetTime);
             console.log(
               `[credentials] Parsed rate limit reset time from error: ${rateLimitedUntil}`,
+            );
+          } else if (isCodexCreditsExhaustedMessage(failureReason)) {
+            rateLimitedUntil = new Date(
+              Date.now() + CODEX_CREDITS_EXHAUSTED_COOLDOWN_MS,
+            ).toISOString();
+            console.log(
+              `[credentials] Codex credits exhausted — applying 2h cooldown: ${rateLimitedUntil}`,
             );
           } else {
             rateLimitedUntil = new Date(Date.now() + 5 * 60 * 1000).toISOString();

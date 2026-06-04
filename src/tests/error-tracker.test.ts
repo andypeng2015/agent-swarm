@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
+  isCodexCreditsExhaustedMessage,
+  isRateLimitMessage,
   parseCodexRateLimitResetTime,
   parseRateLimitResetTime,
   parseStderrForErrors,
@@ -564,6 +566,67 @@ describe("parseRateLimitResetTime", () => {
     expect(parseRateLimitResetTime("retry after 100000 seconds")).toBeUndefined();
     // More than 24 hours in minutes
     expect(parseRateLimitResetTime("wait 2000 minutes")).toBeUndefined();
+  });
+});
+
+describe("isCodexCreditsExhaustedMessage", () => {
+  const CANONICAL =
+    "Your workspace is out of credits. Ask your workspace owner to refill in order to continue.";
+
+  test("returns true for the canonical credits-exhausted message", () => {
+    expect(isCodexCreditsExhaustedMessage(CANONICAL)).toBe(true);
+  });
+
+  test("matches 'out of credits' fragment", () => {
+    expect(isCodexCreditsExhaustedMessage("Your workspace is out of credits.")).toBe(true);
+  });
+
+  test("matches 'refill in order to continue' fragment", () => {
+    expect(isCodexCreditsExhaustedMessage("Please refill in order to continue.")).toBe(true);
+  });
+
+  test("matches 'workspace owner to refill' fragment", () => {
+    expect(isCodexCreditsExhaustedMessage("Ask your workspace owner to refill credits.")).toBe(
+      true,
+    );
+  });
+
+  test("is case-insensitive", () => {
+    expect(isCodexCreditsExhaustedMessage("OUT OF CREDITS")).toBe(true);
+  });
+
+  test("returns false for unrelated errors", () => {
+    expect(isCodexCreditsExhaustedMessage("No conversation found with session ID abc123")).toBe(
+      false,
+    );
+    expect(isCodexCreditsExhaustedMessage("Authentication failed")).toBe(false);
+    expect(isCodexCreditsExhaustedMessage("Rate limit exceeded")).toBe(false);
+    expect(isCodexCreditsExhaustedMessage("Connection timeout")).toBe(false);
+  });
+
+  test("returns false for bare 'refill' without qualifying context", () => {
+    expect(isCodexCreditsExhaustedMessage("Please refill your coffee")).toBe(false);
+  });
+});
+
+describe("isRateLimitMessage — Codex credits-exhausted integration", () => {
+  const CANONICAL =
+    "Your workspace is out of credits. Ask your workspace owner to refill in order to continue.";
+
+  test("returns true for canonical Codex credits-exhausted message", () => {
+    expect(isRateLimitMessage(CANONICAL)).toBe(true);
+  });
+
+  test("still returns true for standard rate-limit messages", () => {
+    expect(isRateLimitMessage("Rate limit exceeded")).toBe(true);
+    expect(isRateLimitMessage("429 Too Many Requests")).toBe(true);
+    expect(isRateLimitMessage("You've hit your weekly limit")).toBe(true);
+  });
+
+  test("still returns false for unrelated errors", () => {
+    expect(isRateLimitMessage("No conversation found with session ID abc123")).toBe(false);
+    expect(isRateLimitMessage("Authentication failed")).toBe(false);
+    expect(isRateLimitMessage("Server error 500")).toBe(false);
   });
 });
 
