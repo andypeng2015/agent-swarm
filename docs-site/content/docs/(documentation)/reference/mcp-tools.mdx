@@ -550,7 +550,7 @@ Stores an HTML or JSON page in the swarm and returns shareable URLs. Calls are u
 | `body` | string | Yes | Full page body (HTML document or JSON-render spec, per `contentType`) |
 | `contentType` | enum | Yes | `text/html` (renders at `/p/:id`) or `application/json` (rendered by the SPA) |
 | `slug` | string | No | URL slug. Defaults to kebab-cased title. Same slug → updates the existing row |
-| `authMode` | enum | No | `public` (default), `authed` (page-session cookie), or `password` (requires key) |
+| `authMode` | enum | No | `authed` (default, page-session cookie), `public` (explicit opt-in), or `password` (requires key) |
 | `password` | string | No | Plaintext password, hashed before storage. Only meaningful for `authMode='password'` |
 | `description` | string | No | Optional short description, used in listings + OG-tag unfurl |
 | `needsCredentials` | array | No | Declared credential needs for JSON pages (reserved for follow-up) |

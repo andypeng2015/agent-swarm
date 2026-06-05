@@ -4599,7 +4599,8 @@
                       "public",
                       "authed",
                       "password"
-                    ]
+                    ],
+                    "default": "authed"
                   },
                   "password": {
                     "type": "string",
@@ -4618,7 +4619,6 @@
                 "required": [
                   "title",
                   "contentType",
-                  "authMode",
                   "body"
                 ]
               }

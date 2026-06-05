@@ -82,8 +82,8 @@ export const registerCreatePageTool = (server: McpServer) => {
         contentType: PageContentTypeSchema.describe(
           "'text/html' renders directly at /p/:id; 'application/json' is rendered by the SPA.",
         ),
-        authMode: PageAuthModeSchema.default("public").describe(
-          "'public' — no gate; 'authed' — requires page-session cookie; 'password' — requires key.",
+        authMode: PageAuthModeSchema.default("authed").describe(
+          "'authed' — requires page-session cookie (default); 'public' — no gate and must be explicit; 'password' — requires key.",
         ),
         password: z
           .string()

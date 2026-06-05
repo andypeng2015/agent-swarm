@@ -58,7 +58,7 @@ const createPageRoute = route({
     title: z.string().min(1),
     description: z.string().optional(),
     contentType: PageContentTypeSchema,
-    authMode: PageAuthModeSchema,
+    authMode: PageAuthModeSchema.default("authed"),
     password: z.string().min(1).optional(),
     body: z.string(),
     needsCredentials: z.array(z.string()).optional(),
