@@ -103,7 +103,7 @@ Internal refactors that don't change observable behavior don't need a doc update
 
 ## Alt-binary: claude-bridge (subscription-pool variant)
 
-User-facing guide: [docs-site/.../guides/shannon-experimental.mdx](../docs-site/content/docs/(documentation)/guides/shannon-experimental.mdx). Engineering notes below.
+User-facing guide: [docs-site/.../guides/claude-bridge-experimental.mdx](../docs-site/content/docs/(documentation)/guides/claude-bridge-experimental.mdx). Engineering notes below.
 
 [`@desplega.ai/claude-bridge`](https://github.com/desplega-ai/claude-bridge) is a Desplega-owned drop-in front for common `claude -p` automation. It drives interactive `claude` inside `tmux`, sends the prompt through the pane, tails Claude's JSONL transcript, and emits Claude-compatible `text`, `json`, or `stream-json`. It accepts the flags the swarm passes today (`-p`, `--model`, `--verbose`, `--output-format stream-json`, `--permission-mode`, `--append-system-prompt`, `--mcp-config`, `--strict-mcp-config`, `--dangerously-skip-permissions`), so `ClaudeAdapter.buildCommand()` does not branch — only the argv prefix changes.
 
@@ -135,18 +135,23 @@ The published npm package is `@desplega.ai/claude-bridge`; version `0.1.5` is pi
 
 ### Prompt pre-clear
 
-claude-bridge handles first-run blocking prompts itself:
+The adapter runs the same `$HOME/.claude.json` project trust pre-seed for
+bridge mode that it uses for the legacy bridge compatibility path before
+spawning the binary. This is required because bridge mode launches interactive
+Claude Code inside `tmux`; if Claude hits the first-run "is this a project you
+trust?" prompt before the bridge is ready, the pane can exit or hang with no
+useful stderr.
+
+claude-bridge also handles first-run blocking prompts itself after startup:
 
 - edits Claude's global config so `projects[workdir].hasTrustDialogAccepted` and `hasCompletedProjectOnboarding` are set
 - writes `.claude/settings.local.json` with dangerous-mode bypass settings
 - launches `claude` with `--dangerously-skip-permissions`
 - watches `tmux capture-pane` for supported startup prompts and sends `Enter`
 
-Because that behavior lives in claude-bridge, the swarm does **not** run the legacy shannon trust pre-seed when bridge mode is enabled.
+### Deprecated legacy bridge compatibility
 
-### Deprecated shannon compatibility
-
-`CLAUDE_BINARY` remains supported for custom argv prefixes and for existing shannon deployments, but shannon is deprecated. If the configured `CLAUDE_BINARY` contains `"shannon"` (case-insensitive), `createSession` emits a warning pointing at `SWARM_USE_CLAUDE_BRIDGE=true`.
+`CLAUDE_BINARY` remains supported for custom argv prefixes and for existing legacy bridge deployments, but that compatibility path is deprecated. If the configured `CLAUDE_BINARY` matches the legacy bridge binary, `createSession` emits a warning pointing at `SWARM_USE_CLAUDE_BRIDGE=true`.
 
 `CLAUDE_BINARY` still follows the same overlay-then-fallback precedence as before:
 
@@ -159,16 +164,16 @@ The resolved raw string is parsed by `parseClaudeBinary`: trim + whitespace-spli
 | `CLAUDE_BINARY` | Resulting argv prefix |
 |---|---|
 | (unset) or empty | `["claude"]` — default, no behavior change |
-| `shannon` | `["shannon"]` — deprecated global install |
-| `/usr/local/bin/shannon` | `["/usr/local/bin/shannon"]` — deprecated absolute path |
-| `bunx @dexh/shannon` | `["bunx", "@dexh/shannon"]` — deprecated no-install form |
-| `npx -y @dexh/shannon` | `["npx", "-y", "@dexh/shannon"]` — deprecated npm form |
+| legacy bridge binary | deprecated global install |
+| legacy bridge absolute path | deprecated absolute path |
+| legacy bridge package command | deprecated no-install form |
+| legacy bridge npm command | deprecated npm form |
 
-The shannon gates remain unchanged for compatibility: tmux fail-fast plus the legacy `preseedClaudeTrustDialog(cwd, homeDir?)` helper, which writes `$HOME/.claude.json` to set `projects[cwd].hasTrustDialogAccepted = true` and `hasCompletedProjectOnboarding = true`. The helper is idempotent and read-merge-write. Bun's `os.homedir()` caches the real passwd entry and ignores `process.env.HOME` mutations, so the helper defaults to `process.env.HOME ?? homedir()` for testability.
+The legacy compatibility gates remain unchanged: tmux fail-fast plus the shared `preseedClaudeTrustDialog(cwd, homeDir?)` helper, which writes `$HOME/.claude.json` to set `projects[cwd].hasTrustDialogAccepted = true` and `hasCompletedProjectOnboarding = true`. The helper is idempotent and read-merge-write. Bun's `os.homedir()` caches the real passwd entry and ignores `process.env.HOME` mutations, so the helper defaults to `process.env.HOME ?? homedir()` for testability.
 
 ### Auth
 
-Same env vars as the default claude flow: `CLAUDE_CODE_OAUTH_TOKEN` (preferred) or `ANTHROPIC_API_KEY`. The credential check is unchanged.
+Same env vars as the default claude flow: `CLAUDE_CODE_OAUTH_TOKEN` (preferred) or `ANTHROPIC_API_KEY`. The credential check is unchanged. The adapter passes OAuth directly into the bridge process; when bridge mode is enabled with Anthropic local auth instead of OAuth, the adapter adds `--desplega-local-auth` so claude-bridge forwards the local auth env into the tmux-launched Claude process.
 
 ### Not a new `HARNESS_PROVIDER`
 
