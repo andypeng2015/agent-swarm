@@ -7092,7 +7092,7 @@ export function createPage(data: {
   title: string;
   description?: string;
   contentType: PageContentType;
-  authMode: PageAuthMode;
+  authMode?: PageAuthMode;
   passwordHash?: string;
   body: string;
   needsCredentials?: string[];
@@ -7111,7 +7111,7 @@ export function createPage(data: {
       data.title,
       data.description ?? null,
       data.contentType,
-      data.authMode,
+      data.authMode ?? "authed",
       data.passwordHash ?? null,
       data.body,
       data.needsCredentials ? JSON.stringify(data.needsCredentials) : null,
