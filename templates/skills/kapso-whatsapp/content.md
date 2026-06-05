@@ -1,6 +1,6 @@
 # Kapso WhatsApp
 
-Kapso (https://kapso.ai) is the WhatsApp platform vendor we use for the Meta Cloud API. The swarm has one phone number provisioned and either a native inbound handler (PR #560) or a workflow wired to dispatch a task per inbound message.
+Kapso (https://kapso.ai) is a WhatsApp platform vendor for the Meta Cloud API. A swarm can provision one or more phone numbers and use either native inbound handlers or workflows to dispatch a task per inbound message.
 
 ## When to use MCP tools vs this skill's REST recipes
 
@@ -32,7 +32,7 @@ Swarm config keys (resolve with `get-config key:<NAME> includeSecrets:true` — 
 |---|---|
 | `KAPSO_API_BASE_URL` | `https://api.kapso.ai` (host only, no `/platform/v1`) |
 | `KAPSO_API_KEY` | API key (`X-API-Key` header) |
-| `KAPSO_PHONE_NUMBER_ID` | `1035039933036854` — our provisioned number's Meta ID |
+| `KAPSO_PHONE_NUMBER_ID` | Provisioned number's Meta ID |
 | `KAPSO_WEBHOOK_HMAC_SECRET` | Shared HMAC secret. Kapso signs every webhook request with `X-Webhook-Signature: <hex>` |
 
 The Kapso CLI is NOT installed in worker containers. Use direct HTTP or clone the `gokapso/agent-skills` repo for fallback scripts.
@@ -46,7 +46,7 @@ The Meta Cloud API is proxied at `$KAPSO_API_BASE_URL/meta/whatsapp/v24.0/...` (
 
 ## Inbound webhook payload (v2)
 
-The `kapso-whatsapp-inbound-demo` workflow (`a5700897-8f6b-4e1e-9e6b-dcc10e479cb5`) receives `whatsapp.message.*` and `whatsapp.conversation.*` events at `POST https://api.desplega.agent-swarm.dev/api/webhooks/<workflow-id>`.
+Your inbound workflow receives `whatsapp.message.*` and `whatsapp.conversation.*` events at `POST <SWARM_API_BASE_URL>/api/webhooks/<workflow-id>`.
 
 Shape (top-level keys):
 
@@ -72,8 +72,8 @@ Shape (top-level keys):
   "conversation": {
     "id": "bd7e888e-...",
     "phone_number": "34679077777",
-    "phone_number_id": "1035039933036854",
-    "contact_name": "Taras",
+    "phone_number_id": "<phone-number-id>",
+    "contact_name": "Example Contact",
     "status": "active",
     "last_active_at": "...",
     "created_at": "...",
@@ -86,7 +86,7 @@ Shape (top-level keys):
     }
   },
   "is_new_conversation": false,
-  "phone_number_id": "1035039933036854"
+  "phone_number_id": "<phone-number-id>"
 }
 ```
 
@@ -143,7 +143,7 @@ NB: verify the exact proxy path against a real media message — the swarm has o
 
 Two paths in order:
 
-1. By name: `resolve-user name:"<contact_name>"` (fuzzy substring match). Returns the canonical profile if there's one. Useful for known team members (Taras / Eze).
+1. By name: `resolve-user name:"<contact_name>"` (fuzzy substring match). Returns the canonical profile if there's one. Useful for known team members.
 2. If no match — the contact is unknown. Lead can run `manage-user create name:"<contact_name>" notes:"WhatsApp +<phone>"` to register them. Workers should NOT create users autonomously; ask Lead.
 
 Always quote the phone number in `manage-user notes` so future lookups by phone work (until we add a `phone` column to the user registry).
@@ -158,7 +158,7 @@ API_KEY=$(get-config KAPSO_API_KEY)
 
 # List conversations for our number
 curl -s -H "X-API-Key: $API_KEY" \
-  "$API_BASE/platform/v1/whatsapp/conversations?phone_number_id=1035039933036854&status=active" | jq
+  "$API_BASE/platform/v1/whatsapp/conversations?phone_number_id=$KAPSO_PHONE_NUMBER_ID&status=active" | jq
 
 # Get a single conversation
 curl -s -H "X-API-Key: $API_KEY" \
@@ -184,7 +184,7 @@ Per WhatsApp policy, free-form text is only allowed within 24h of the last inbou
 
 ```bash
 TO="34679077777"
-TEXT="Hi Taras 👋"
+TEXT="Hi there"
 
 curl -s -X POST -H "X-API-Key: $API_KEY" -H "Content-Type: application/json" \
   -d "{
@@ -194,7 +194,7 @@ curl -s -X POST -H "X-API-Key: $API_KEY" -H "Content-Type: application/json" \
     \"type\": \"text\",
     \"text\": { \"preview_url\": false, \"body\": \"$TEXT\" }
   }" \
-  "$API_BASE/meta/whatsapp/v24.0/1035039933036854/messages" | jq
+  "$API_BASE/meta/whatsapp/v24.0/$KAPSO_PHONE_NUMBER_ID/messages" | jq
 ```
 
 Returns `{ "messages": [{ "id": "wamid..." }] }` on success. Log the wamid.
@@ -227,7 +227,7 @@ curl -s -X POST -H "X-API-Key: $API_KEY" \
   -F "messaging_product=whatsapp" \
   -F "type=<mime>" \
   -F "file=@/path/to/file.ext;type=<mime>" \
-  "$API_BASE/meta/whatsapp/v24.0/1035039933036854/media"
+  "$API_BASE/meta/whatsapp/v24.0/$KAPSO_PHONE_NUMBER_ID/media"
 # → {"id":"<media-id>"}
 ```
 
@@ -280,7 +280,7 @@ curl -s -X POST -H "X-API-Key: $API_KEY" -H "Content-Type: application/json" \
     "message_id": "<inbound_wamid>",
     "typing_indicator": { "type": "text" }
   }' \
-  "$API_BASE/meta/whatsapp/v24.0/1035039933036854/messages"
+  "$API_BASE/meta/whatsapp/v24.0/$KAPSO_PHONE_NUMBER_ID/messages"
 # → {"success":true}
 ```
 
@@ -297,7 +297,7 @@ curl -s -X POST -H "X-API-Key: $API_KEY" -H "Content-Type: application/json" \
     "type": "reaction",
     "reaction": { "message_id": "<wamid>", "emoji": "👀" }
   }' \
-  "$API_BASE/meta/whatsapp/v24.0/1035039933036854/messages"
+  "$API_BASE/meta/whatsapp/v24.0/$KAPSO_PHONE_NUMBER_ID/messages"
 ```
 
 A user can have only ONE reaction per message — sending a new emoji REPLACES the previous one (no explicit remove needed). Send `"emoji": ""` to clear a reaction entirely.
@@ -317,10 +317,10 @@ curl -s -X POST -H "X-API-Key: $API_KEY" -H "Content-Type: application/json" \
       "language": { "code": "en_US" }
     }
   }' \
-  "$API_BASE/meta/whatsapp/v24.0/1035039933036854/messages"
+  "$API_BASE/meta/whatsapp/v24.0/$KAPSO_PHONE_NUMBER_ID/messages"
 ```
 
-List approved templates first: `GET $API_BASE/platform/v1/whatsapp/templates?phone_number_id=1035039933036854`.
+List approved templates first: `GET $API_BASE/platform/v1/whatsapp/templates?phone_number_id=$KAPSO_PHONE_NUMBER_ID`.
 
 ## Webhook signature verification
 
@@ -337,7 +337,7 @@ echo -n "$RAW_BODY" | openssl dgst -sha256 -hmac "$HMAC_SECRET" -hex | awk '{pri
 
 - Same language as the inbound message (Spanish/English/Catalan — match what they wrote).
 - Brief. WhatsApp is not Slack — 1-3 short messages max.
-- Identify yourself if it's a first interaction in the conversation: "Hi! This is the Desplega agent — Taras wired me up to handle WhatsApp."
+- Identify yourself if it's a first interaction in the conversation: "Hi! This is the agent handling this WhatsApp inbox."
 - Quote-reply (`context.message_id`) when answering a specific question.
 - If you can't help (no skill for the request, out of scope) — say so and either escalate to Lead or ask the human to use Slack instead.
 - Always log the outbound wamid in your task output so it's traceable.
@@ -362,8 +362,7 @@ HMAC verification is enforced (signed mode) on both paths.
 - Outbound status events (`delivered`, `read`) are NOT a customer interaction — skip them. Filter by `message.kapso.direction == "inbound"`.
 - Real inbound messages commonly arrive with `status: "delivered"` (delivered to us). Do NOT skip on status — only `direction` signals inbound vs outbound.
 - Kapso sometimes sends test payloads with `"test": true` and `wamid.TEST_*` ids. Don't reply to test payloads — just complete the task with a note.
-- The provisioned phone number id (`1035039933036854`) is **our** number, not the recipient's. The recipient is in `message.from` / `conversation.phone_number`.
+- The provisioned phone number id is your sender number, not the recipient's. The recipient is in `message.from` / `conversation.phone_number`.
 - The message-list endpoint is `/platform/v1/whatsapp/messages?conversation_id=X` — the conversation-scoped `/conversations/<id>/messages` path 404s.
 - **Wide images shrink — pad them, don't send as document.** `type:image` scales to bubble width; a wide social card becomes a strip. Sending it as `type:document` removes the preview entirely. Fix: pad onto a ~1:1/4:5 canvas and send as `type:image`. See "Sending media".
 - **MCP tools cover text-only.** `send-whatsapp-message` and `reply-whatsapp-message` are deliberately thin — templates / media / reactions / typing / mark-as-read are NOT in the tool surface. For those, use the REST recipes in this skill directly.
-

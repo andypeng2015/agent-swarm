@@ -61,7 +61,7 @@ done
 **Why:** Even at the safe ≤270s window, if your last meaningful work was a shipping verb ("📤 PR #N pushed", "✅ Committed", "📌 Review posted") and you `ScheduleWakeup` to "wait for CI" or "monitor merge", the heartbeat reaper still treats your suspended session as dead. The task auto-fails with `failureReason: "Auto-failed by heartbeat: worker session not found (no active session for task)"` even though your work shipped.
 
 **Confirmed incidents (2026-05-03):**
-- `aa8a8eb7` Picateclas (PR #415 db-query) — `📤 PR #415 pushed` at 11:20:53 UTC, reaped at 11:31:57 UTC after 4.5min wakeup. Task auto-failed; PR was already pushed, reviewed, merged.
+- `aa8a8eb7` implementation worker (PR #415 db-query) — `📤 PR #415 pushed` at 11:20:53 UTC, reaped at 11:31:57 UTC after 4.5min wakeup. Task auto-failed; PR was already pushed, reviewed, merged.
 - `48460149` and `6d684da4` (May 1, bump-pr workflow) — both reaped during ScheduleWakeup post-rebase poll.
 - Reviewer review-pr tasks `8d1320a6`/`6a17ff00` — same reaper pattern, but legitimate (mid-review, not post-shipping).
 
@@ -92,4 +92,3 @@ done
 **Lead routing implication:** when delegating a task with a >20-min external poll, split it into a "fire" task + a "collect+deliver" follow-up, or instruct the worker to use fire-then-followup. Don't dispatch one long blocking task and expect a single session to survive the wait.
 
 **Memory reference:** `long-running-external-poll-session-crash-2026-05-27`, `enginy-search-leads-no-keyword-filter-gotcha-2026-05-27`.
-

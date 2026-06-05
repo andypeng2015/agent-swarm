@@ -42,7 +42,7 @@ Instructions:
    - Agentic coding / AI-powered development
    - E2E testing / browser automation / QA
    - Developer tools / DevOps
-   - Startups / SaaS relevant to Desplega's space
+   - Startups / SaaS relevant to your team's space
 
 3. Format a quick-scan briefing. Organize by source section:
    - **Front Page** (from pages 1-3)
@@ -60,7 +60,7 @@ Instructions:
    • Emdash — Open-source agentic dev environment (https://news.ycombinator.com/item?id=12345) · Feb 24 · 65 pts · 30 comments
      Direct peer to Cursor/Windsurf — agentic-first IDE.
 
-4. If any story is exceptionally relevant to Desplega (E2E testing, browser automation, AI agents), add a "Deep Dive" section with 2-3 sentences.
+4. If any story is exceptionally relevant to your team's focus areas, add a "Deep Dive" section with 2-3 sentences.
 
 5. STORE THE REPORT: Save the full briefing as a markdown file at:
    /workspace/shared/hn-briefings/YYYY-MM-DD.md
@@ -73,7 +73,7 @@ Instructions:
 
 6. SEND EMAIL: Use AgentMail MCP tools to send the report as an email:
    - From inbox: lead@agent-swarm.dev
-   - To: t@desplega.ai AND e@desplega.ai
+   - To: the configured recipient list for this briefing
    - Subject: "HN Briefing — [TODAY'S DATE, e.g. Feb 25, 2026]"
    - Body: Send as HTML email. Format the briefing nicely with:
      - A header: "HN Briefing — [DATE]"
@@ -94,4 +94,4 @@ IMPORTANT:
 - Target 5-20 relevant stories (quality over quantity)
 - You MUST scrape all 5 URLs (3 main pages + new + show) — this is required, but ONE AT A TIME
 - The email is sent from lead@agent-swarm.dev using AgentMail MCP `send_message` tool
-- Recipients: t@desplega.ai AND e@desplega.ai
+- Recipients: use the configured recipient list for this briefing

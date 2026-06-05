@@ -1,6 +1,6 @@
 # desloppify — Code-health scan workflow (swarm edition)
 
-`desloppify` is a multi-language codebase health scanner (peteromallet/desloppify). This skill is the swarm-adapted SKILL.md: it codifies the **install recipe with the tree-sitter pin**, the surface-only **scan → status → next → triage** workflow we run for repos like `agent-swarm`, and the **publish-to-agent-fs** step so humans (Eze) can see the findings.
+`desloppify` is a multi-language codebase health scanner (peteromallet/desloppify). This skill is the swarm-adapted SKILL.md: it codifies the **install recipe with the tree-sitter pin**, the surface-only **scan → status → next → triage** workflow for code-health scans, and the **publish-to-agent-fs** step so humans can see the findings.
 
 > **Default mode for swarm workers: surface-only.** Run Phase 1 + early Phase 2, publish a memo to agent-fs, stop. Do **not** run Phase 3 (queue-grinding refactors) unless the task explicitly asks.
 
@@ -8,7 +8,7 @@
 
 - A task asks you to run desloppify, do a code-health scan, get a health score, or surface debt themes on a repo.
 - A task references `peteromallet/desloppify` or the upstream `docs/SKILL.md`.
-- You need to triage tech debt on a TS / Python / multi-lang repo (agent-swarm, landing, agent-swarm-landing, desplega-ai, etc.).
+- You need to triage tech debt on a TS / Python / multi-lang repo.
 
 If the task is "fix this one bug" or "rename X" → not this skill. Desloppify is for batch debt-surfacing, not point fixes.
 
@@ -160,7 +160,7 @@ sprite exec -s desloppify-scan -- bash -c '
   pipx install "desloppify[full]==0.9.15"
   pipx inject --force desloppify "tree-sitter-language-pack<1.8"
   pipx runpip desloppify show tree-sitter-language-pack | grep Version
-  git clone --depth=1 https://github.com/desplega-ai/<repo>.git /tmp/repo
+  git clone --depth=1 https://github.com/<owner>/<repo>.git /tmp/repo
   cd /tmp/repo
   desloppify scan --path .
   desloppify status
@@ -198,4 +198,3 @@ agent-fs --org 648a5f3c-35c8-4f11-8673-b89de52cd6bd write thoughts/$AGENT_ID/res
 ## Upstream reference
 
 Full Phase 3 / review workflow / plan commands are in the upstream SKILL.md: <https://github.com/peteromallet/desloppify/blob/main/docs/SKILL.md>. Reach for it when you're explicitly asked to grind the queue (rare). Default swarm mode stops after the memo + Slack reply.
-

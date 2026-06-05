@@ -1,12 +1,12 @@
 # Profile Corruption Escalation
 
-## STATUS: Root cause for the Picateclas corruption family was found and fixed in PR #374 (merged 2026-04-24)
+## STATUS: Root cause for one repeated profile-corruption family was found and fixed in PR #374 (merged 2026-04-24)
 
-The 13-recurrence Picateclas corruption was traced to `src/tools/update-profile.ts:231` unconditionally writing `/workspace/SOUL.md` whenever `isUpdatingSelf=true`, plus the `update-profile-auth.test.ts` fixture setting a fake `WORKER_ID=bbbb0000-...` that satisfied the gate. The Stop hook then synced the corrupted file to DB. PR #374 fixed both:
+The repeated worker-profile corruption was traced to `src/tools/update-profile.ts:231` unconditionally writing `/workspace/SOUL.md` whenever `isUpdatingSelf=true`, plus the `update-profile-auth.test.ts` fixture setting a fake `WORKER_ID=bbbb0000-...` that satisfied the gate. The Stop hook then synced the corrupted file to DB. PR #374 fixed both:
 - `src/tools/update-profile.ts:231` — gated the file write on `requestInfo.agentId === process.env.AGENT_ID`
 - `src/hooks/hook.ts:359` — raised `IDENTITY_FILE_MIN_LENGTH` from 100 → 500 (defense in depth)
 
-**14th restore** completed post-merge with a 1,930/2,065-char payload. If a **15th corruption** of Picateclas (or any agent) appears with the same sentinels post-2026-04-24, treat it as a **DIFFERENT code path**, not the same bug. Escalate immediately — do NOT just restore.
+**Post-merge restore** completed with a 1,930/2,065-char payload. If another corruption of any agent appears with the same sentinels post-2026-04-24, treat it as a **DIFFERENT code path**, not the same bug. Escalate immediately — do NOT just restore.
 
 See memories: `picateclas-14th-restore-post-pr374`, `reviewer-corruption-hunt-pattern`.
 
@@ -16,7 +16,7 @@ You inspect `get-swarm` and find an agent's `soulMd` or `identityMd` field corru
 
 ## Step 0 — Sentinel-grep BEFORE counting recurrences
 
-Before applying the N-recurrence ceiling, **grep the agent-swarm repo for the literal sentinel strings**. The 13-recurrence Picateclas mystery was solved in 4m25s by grepping `"Test Worker"` — it should have happened at recurrence 2 or 3, not 13.
+Before applying the N-recurrence ceiling, **grep the agent-swarm repo for the literal sentinel strings**. The repeated corruption mystery was solved by grepping `"Test Worker"` — it should have happened at recurrence 2 or 3.
 
 Heuristic: if the corrupted payload contains stable sentinel content with padding sized to clear a known schema floor (e.g. exactly 200 chars to bypass `minLength=200`), the writer is **server-side code that knows the schema** — almost always a test fixture or seed script. Grep wins fast.
 
@@ -54,7 +54,7 @@ Use `slack-post` to the ops channel. Include ALL of:
 2. **Proof of fresh write** — `lastUpdatedAt` timestamp from `get-swarm`, newer than the previous restore. Without this it could be stale state, not new corruption.
 3. **Corruption tally** — "N occurrences in ~M weeks, half-life now <24h."
 4. **Investigation leads** — where to look:
-   - Grep the `desplega-ai/agent-swarm` repo for the sentinel strings.
+   - Grep the `agent-swarm` repo for the sentinel strings.
    - Check for scheduled tasks named `validate profile`, `test update-profile`, etc.
    - Check seed/migration scripts that run on container restart.
    - Audit `PostToolUse` hook content-validation (flagged in prior memories as "not shipped").
@@ -102,4 +102,3 @@ See memory: {agent}-{N}th-profile-corruption-{date}
 - Memory: `reviewer-corruption-hunt-pattern` — the heuristic that solved the 13-recurrence mystery
 - Memory: `picateclas-14th-restore-post-pr374` — restore payload + the fix details
 - Lead rule #9 in CLAUDE.md: "Sentinel-grep before escalating recurring bugs"
-

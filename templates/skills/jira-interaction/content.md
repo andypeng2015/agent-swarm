@@ -5,12 +5,12 @@ The swarm has Jira OAuth connected but **no inbound sync** (unlike Linear). Ever
 ## TL;DR — minimum knowledge
 
 1. Pull the access token from `oauth_tokens` (provider = `jira`).
-2. Hit `https://api.atlassian.com/ex/jira/<CLOUD_ID>/rest/api/3/...` — *not* `desplega.atlassian.net` directly. 3LO bearer tokens only work via the `api.atlassian.com` proxy.
+2. Hit `https://api.atlassian.com/ex/jira/<CLOUD_ID>/rest/api/3/...` — not your site hostname directly. 3LO bearer tokens only work via the `api.atlassian.com` proxy.
 3. Bodies for descriptions/comments must be in **ADF** (Atlassian Document Format), not plain text or markdown.
 
 ## Known constants (Desplega tenant)
 
-- Site: `desplega.atlassian.net`
+- Site: `<your-site>.atlassian.net`
 - Cloud ID: `0054e739-8d39-4f01-8d6a-431619cae8fc`
 - Default project: `KAN` ("Swarm")
 - Scopes on the stored token: `manage:jira-webhook offline_access read:jira-work read:me write:jira-work`
@@ -33,7 +33,7 @@ SELECT accessToken, expiresAt, scope FROM oauth_tokens WHERE provider = 'jira';
 **Always check `expiresAt` first.** Atlassian access tokens are short-lived (~1h). If expired, do NOT keep retrying — report it. Re-auth path:
 
 ```
-https://api.desplega.agent-swarm.dev/api/trackers/jira/authorize
+<SWARM_API_BASE_URL>/api/trackers/jira/authorize
 ```
 (User may need to remove the app and re-auth.)
 
@@ -106,7 +106,7 @@ curl -s -X POST \
   }'
 ```
 
-Returns `{ id, key, self }` on success (HTTP 201). The `key` (e.g. `KAN-7`) is what humans use; URL is `https://desplega.atlassian.net/browse/<KEY>`.
+Returns `{ id, key, self }` on success (HTTP 201). The `key` (e.g. `KAN-7`) is what humans use; URL is `https://<your-site>.atlassian.net/browse/<KEY>`.
 
 Available issue types in `KAN` (verify per-project): `Epic, Subtask, Task, Story, Feature, Request, Bug`.
 
@@ -204,7 +204,7 @@ If you need rich content, build it in a script — don't try to write deep ADF i
 ## Operational rules
 
 - **Token-expiry first.** Always check `expiresAt`. Don't loop on 401s.
-- **Use the proxy.** All authenticated calls go through `api.atlassian.com/ex/jira/<cloudId>/...`. Hitting `desplega.atlassian.net/rest/api/3/...` with a 3LO bearer token will fail.
+- **Use the proxy.** All authenticated calls go through `api.atlassian.com/ex/jira/<cloudId>/...`. Hitting `<your-site>.atlassian.net/rest/api/3/...` with a 3LO bearer token will fail.
 - **Discover transitions per issue** before transitioning — different projects/workflows have different IDs.
 - **Use `/search/jql`**, not the legacy `/search` (which is deprecated and may be removed).
 - **ADF is mandatory** for `description`, `comment`, and rich text fields. Plain strings will be rejected.
@@ -249,4 +249,3 @@ done
 
 - The MCP tracker tools (`tracker-link-task`, `tracker-sync-status`, etc.) are designed for two-way sync mappings. Jira tracker support exists at the schema level but is not currently wired up to inbound webhooks. Until it is, all Jira interaction must go through this skill.
 - If/when inbound Jira webhooks land, this skill should add a "When to transition" section mirroring the Linear one.
-
