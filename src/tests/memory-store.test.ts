@@ -252,6 +252,52 @@ describe("SqliteMemoryStore", () => {
       expect(health.counts.memoryVec).toBeGreaterThanOrEqual(2);
       expect(health.retrievalMode).toBe("vec");
     });
+
+    test("caps sqlite-vec k below the 4096 ceiling for large indexes", () => {
+      const fillerEmbedding = vector({ 10: 1 });
+      for (let i = 0; i < 4100; i++) {
+        const filler = store.store({
+          agentId: agentB,
+          scope: "agent",
+          name: `large-index-filler-${i}`,
+          content: "not visible to agentA",
+          source: "manual",
+        });
+        store.updateEmbedding(filler.id, fillerEmbedding, "test-model");
+      }
+
+      const agentVisible = store.store({
+        agentId: agentA,
+        scope: "agent",
+        name: "large-index-agent-visible",
+        content: "visible agent memory",
+        source: "manual",
+      });
+      store.updateEmbedding(agentVisible.id, vector({ 11: 1 }), "test-model");
+
+      const swarmVisible = store.store({
+        agentId: agentB,
+        scope: "swarm",
+        name: "large-index-swarm-visible",
+        content: "visible swarm memory",
+        source: "manual",
+      });
+      store.updateEmbedding(swarmVisible.id, vector({ 11: 1 }), "test-model");
+
+      const health = store.getHealth();
+      expect(health.retrievalMode).toBe("vec");
+      expect(health.counts.memoryVec).toBeGreaterThan(4096);
+
+      const query = vector({ 11: 1 });
+      const allResults = store.search(query, agentA, { scope: "all", limit: 10 });
+      const agentResults = store.search(query, agentA, { scope: "agent", limit: 10 });
+      const swarmResults = store.search(query, agentA, { scope: "swarm", limit: 10 });
+
+      expect(allResults.map((r) => r.id)).toContain(agentVisible.id);
+      expect(allResults.map((r) => r.id)).toContain(swarmVisible.id);
+      expect(agentResults.map((r) => r.id)).toContain(agentVisible.id);
+      expect(swarmResults.map((r) => r.id)).toContain(swarmVisible.id);
+    });
   });
 
   describe("memory_vec population", () => {

@@ -14,6 +14,7 @@ import type {
 } from "../types";
 
 const VECTOR_BYTES = EMBEDDING_DIMENSIONS * Float32Array.BYTES_PER_ELEMENT;
+const SQLITE_VEC_MAX_KNN_LIMIT = 4096;
 
 type AgentMemoryRow = {
   id: string;
@@ -366,7 +367,9 @@ export class SqliteMemoryStore implements MemoryStore {
     const { scope, limit, source, isLead, includeExpired } = options;
 
     const embeddingBuffer = serializeEmbedding(queryEmbedding);
-    const knnLimit = Math.max(limit, this.getVecCount());
+    // sqlite-vec rejects KNN searches with k > 4096. Keep the fail-soft
+    // candidate window bounded even when the memory_vec table grows beyond it.
+    const knnLimit = Math.min(Math.max(limit, this.getVecCount()), SQLITE_VEC_MAX_KNN_LIMIT);
 
     const conditions: string[] = ["v.embedding MATCH ?"];
     const params: (Buffer | string | number | null)[] = [embeddingBuffer];
