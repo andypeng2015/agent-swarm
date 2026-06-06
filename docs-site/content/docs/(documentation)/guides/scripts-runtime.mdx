@@ -9,6 +9,12 @@ Swarm scripts are TypeScript modules persisted in the catalog via
 aligned — what passes the typecheck is what actually runs. This page documents
 the full surface so script authors don't have to bisect.
 
+Fresh swarms also ship with an expanded built-in global script catalog. Today
+that includes 18 seeded helpers, including task-onboarding utilities like
+`task-context-gathering` and `smart-recall`, ops audits like
+`schedule-health`, `task-failure-audit`, `compound-insights`, and
+`boot-triage`, and memory-quality reporting via `memory-eval`.
+
 ## What the runtime provides
 
 Scripts run inside a `bun run` subprocess (`src/scripts-runtime/eval-harness.ts`)

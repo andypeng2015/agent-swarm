@@ -6,6 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.92.1] - 2026-06-06
+
+### Added
+- **3-axis memory evaluation seed script** (#677) — a new built-in `memory-eval` script measures carry-forward context, preference recall, and freshness, then publishes markdown + Page reports with historical tracking.
+- **Heartbeat and ops seeded audits** (#672) — new `boot-triage` coverage plus shared report publishing for `schedule-health`, `task-failure-audit`, `compound-insights`, and `ops-catalog-audit` gives heartbeat and digest flows deterministic, reusable data gathering.
+- **Memory health diagnostics endpoint** (#676) — `GET /api/memory/health` now reports vec extension status, row-count parity, retrieval mode, and index-health diagnostics.
+
+### Changed
+- **Pages now default to authed visibility** (#679) — omitting `authMode` on `create_page` or `POST /api/pages` now resolves to `authed`; `public` remains an explicit opt-in.
+- **Seed scripts and runbooks are less Desplega-specific** (#673) — bundled templates, prompts, and runbooks now ship with cleaner external-facing defaults.
+- **Script run inspection got a deeper UI refresh** (#666, #671) — the detail view now uses a full-width waterfall timeline, preserves inline runs, and fixes source highlight/scroll behavior.
+
+### Fixed
+- **Runner and MCP transport leaks are bounded** (#675) — completed-task bookkeeping is cleaned up and 2-hour-idle MCP transports are garbage-collected to stop unbounded growth.
+- **Memory vector population and retrieval diagnostics are repaired** (#676) — sqlite-vec population stays in sync with the memory store, embedding dimensions are unified, and rebuild/health state is surfaced more clearly.
+- **Claude bridge trust preseed is restored at startup** (#678) — bridge-backed sessions once again pre-accept the Claude trust dialog during startup.
+
 ## [1.92.0] - 2026-06-05
 
 ### Added
