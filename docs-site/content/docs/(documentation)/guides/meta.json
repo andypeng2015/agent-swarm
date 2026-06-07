@@ -9,6 +9,7 @@
     "harness-configuration",
     "harness-providers",
     "observability-opentelemetry",
+    "performance-resource-sizing",
     "cost-and-context-computation",
     "scripts-runtime",
     "script-workflow-runs",
