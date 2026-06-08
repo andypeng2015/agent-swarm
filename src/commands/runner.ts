@@ -1472,6 +1472,8 @@ interface RunningTask {
    * provider before it completed, and vice versa).
    */
   hasLocalEnvironment: boolean;
+  /** Harness variant captured on session_init (e.g. "bridge" or "stock") */
+  harnessVariant?: string;
 }
 
 /** Runner state for tracking concurrent tasks */
@@ -1590,6 +1592,8 @@ async function saveProviderSessionId(
   provider?: ProviderName,
   providerMeta?: Record<string, unknown>,
   model?: string,
+  harnessVariant?: string,
+  harnessVariantMeta?: Record<string, unknown>,
 ): Promise<void> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
@@ -1597,10 +1601,42 @@ async function saveProviderSessionId(
   if (provider !== undefined) body.provider = provider;
   if (providerMeta !== undefined) body.providerMeta = providerMeta;
   if (model !== undefined && model !== "") body.model = model;
+  if (harnessVariant !== undefined) body.harnessVariant = harnessVariant;
+  if (harnessVariantMeta !== undefined) body.harnessVariantMeta = harnessVariantMeta;
   await fetch(`${apiUrl}/api/tasks/${taskId}/claude-session`, {
     method: "PUT",
     headers,
     body: JSON.stringify(body),
+  });
+}
+
+async function findBridgeFailureArtifact(cwd: string): Promise<string | undefined> {
+  try {
+    const bridgeDir = `${cwd}/.claude-bridge/runs`;
+    const dir = await Array.fromAsync(
+      new Bun.Glob("*/tmux-pane-final.txt").scan({ cwd: bridgeDir, absolute: true }),
+    );
+    if (dir.length === 0) return undefined;
+    dir.sort();
+    return dir[dir.length - 1];
+  } catch {
+    return undefined;
+  }
+}
+
+async function updateHarnessVariantMeta(
+  apiUrl: string,
+  apiKey: string,
+  taskId: string,
+  claudeSessionId: string,
+  meta: Record<string, unknown>,
+): Promise<void> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
+  await fetch(`${apiUrl}/api/tasks/${taskId}/claude-session`, {
+    method: "PUT",
+    headers,
+    body: JSON.stringify({ claudeSessionId, harnessVariantMeta: meta }),
   });
 }
 
@@ -2676,6 +2712,8 @@ async function spawnProviderProcess(
               event.provider,
               event.providerMeta,
               model,
+              event.harnessVariant,
+              event.harnessVariantMeta,
             ).catch((err) => console.warn(`[runner] Failed to save session ID: ${err}`));
           } else {
             // Pool task: save provider session ID on active session so it can be
@@ -3160,7 +3198,14 @@ async function checkCompletedProcesses(
   }
 
   // Remove completed tasks from the map and ensure they're marked as finished
-  for (const { taskId, result, cursorUpdates, workingDir, credentialInfo } of completedTasks) {
+  for (const {
+    taskId,
+    result,
+    cursorUpdates,
+    workingDir,
+    credentialInfo,
+    harnessProvider,
+  } of completedTasks) {
     state.activeTasks.delete(taskId);
     vcsDetectedTasks.delete(taskId);
     vcsCheckTimestamps.delete(taskId);
@@ -3251,8 +3296,18 @@ async function checkCompletedProcesses(
         result.exitCode,
         failureReason,
         result.output,
-        state.harnessProvider,
+        harnessProvider,
       );
+
+      if (result.exitCode !== 0 && harnessProvider === "claude" && workingDir && result.sessionId) {
+        const artifactPath = await findBridgeFailureArtifact(workingDir);
+        if (artifactPath) {
+          console.log(`[${role}] Bridge failure artifact found: ${artifactPath}`);
+          updateHarnessVariantMeta(apiConfig.apiUrl, apiConfig.apiKey, taskId, result.sessionId, {
+            failureArtifact: artifactPath,
+          }).catch((err) => console.warn(`[runner] Failed to update harness variant meta: ${err}`));
+        }
+      }
 
       ensure({
         id: "worker_process_finished",
