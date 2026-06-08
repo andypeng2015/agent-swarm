@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.92.2] - 2026-06-08
+
+### Added
+- **Performance & resource sizing guide** (#689) — the docs site now includes practical container sizing guidance for heavy workers, leads, light specialists, and Kubernetes/Compose deployments, plus notes on reading CPU and memory metrics correctly.
+
+### Changed
+- **Claude Bridge worker pin refreshed** (#685) — `Dockerfile.worker` and the related environment-variable docs now point at `@desplega.ai/claude-bridge@0.1.7` as the supported bundled bridge binary for `SWARM_USE_CLAUDE_BRIDGE=true`.
+- **Bundled model pricing metadata refreshed** (#687) — the daily models.dev sync updated the built-in pricing data used for cost lookups and budget-related guidance.
+- **Worker harness pins refreshed** (#688) — `Dockerfile.worker` now ships Claude Code `2.1.168`, pi-mono `0.78.1`, Codex CLI / SDK `0.137.0`, and opencode / `@opencode-ai/sdk` `1.16.2`.
+
 ## [1.92.1] - 2026-06-07
 
 ### Added

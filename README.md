@@ -235,7 +235,7 @@ bunx @desplega.ai/agent-swarm <command>
 
 ## Deployment
 
-For production deployments (Docker Compose with multiple workers, systemd for the API, graceful shutdown, integration config), see [DEPLOYMENT.md](./DEPLOYMENT.md) and the [deployment guide](https://docs.agent-swarm.dev/docs/guides/deployment).
+For production deployments (Docker Compose with multiple workers, systemd for the API, graceful shutdown, integration config), see [DEPLOYMENT.md](./DEPLOYMENT.md), the [deployment guide](https://docs.agent-swarm.dev/docs/guides/deployment), and the [performance & resource sizing guide](https://docs.agent-swarm.dev/docs/guides/performance-resource-sizing).
 
 ## Documentation
 
