@@ -1,6 +1,7 @@
 import { mkdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type { ContentBlock } from "@agentclientprotocol/sdk";
+import { writeClaudeMd } from "./claude-md";
 import { writeCodexAgentsMd } from "./codex-agents-md";
 import type { CostData, ProviderSessionConfig } from "./types";
 
@@ -315,10 +316,7 @@ const claudeAgentAcpTargetProfile: AcpTargetProfile = {
     return "claude";
   },
   async writeSystemPromptArtifact(config) {
-    if (!config.systemPrompt) return NOOP_CLEANUP;
-    const targetPath = join(config.cwd, "CLAUDE.md");
-    await Bun.write(targetPath, config.systemPrompt);
-    return NOOP_CLEANUP;
+    return await writeClaudeMd(config.cwd, config.systemPrompt);
   },
 };
 

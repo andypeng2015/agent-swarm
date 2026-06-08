@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -6,6 +6,7 @@ import { checkProviderCredentials } from "../commands/provider-credentials";
 import { createProviderAdapter } from "../providers";
 import { ACPAdapter } from "../providers/acp-adapter";
 import { AcpTargetResolutionError, resolveAcpTarget } from "../providers/acp-targets";
+import { writeClaudeMd } from "../providers/claude-md";
 import type { ProviderEvent, ProviderSessionConfig } from "../providers/types";
 
 const tmpDirs: string[] = [];
@@ -483,7 +484,7 @@ describe("claude-agent-acp target", () => {
     expect(env.HOME).toBe("/home/test");
   });
 
-  test("writeSystemPromptArtifact writes CLAUDE.md in cwd", async () => {
+  test("writeSystemPromptArtifact writes CLAUDE.md with managed block", async () => {
     const cwd = makeTempDir();
     const config = baseConfig({
       cwd,
@@ -495,10 +496,44 @@ describe("claude-agent-acp target", () => {
       },
     });
     const profile = resolveAcpTarget(config);
-    await profile.writeSystemPromptArtifact(config);
+    const handle = await profile.writeSystemPromptArtifact(config);
     const claudeMdPath = join(cwd, "CLAUDE.md");
     expect(existsSync(claudeMdPath)).toBe(true);
-    expect(readFileSync(claudeMdPath, "utf-8")).toBe("You are a helpful assistant.");
+    const content = readFileSync(claudeMdPath, "utf-8");
+    expect(content).toContain("<swarm_system_prompt>");
+    expect(content).toContain("You are a helpful assistant.");
+    expect(content).toContain("</swarm_system_prompt>");
+
+    await handle.cleanup();
+    expect(existsSync(claudeMdPath)).toBe(false);
+  });
+
+  test("writeSystemPromptArtifact preserves existing CLAUDE.md content", async () => {
+    const cwd = makeTempDir();
+    await Bun.write(join(cwd, "CLAUDE.md"), "# Existing Repo Instructions\n\nDo things.");
+    const config = baseConfig({
+      cwd,
+      systemPrompt: "Swarm prompt.",
+      env: {
+        PATH: process.env.PATH ?? "",
+        HOME: process.env.HOME ?? "",
+        ACP_TARGET: "claude-agent-acp",
+      },
+    });
+    const profile = resolveAcpTarget(config);
+    const handle = await profile.writeSystemPromptArtifact(config);
+    const claudeMdPath = join(cwd, "CLAUDE.md");
+    const content = readFileSync(claudeMdPath, "utf-8");
+    expect(content).toContain("Swarm prompt.");
+    expect(content).toContain("# Existing Repo Instructions");
+    expect(content.indexOf("<swarm_system_prompt>")).toBeLessThan(
+      content.indexOf("# Existing Repo Instructions"),
+    );
+
+    await handle.cleanup();
+    const after = readFileSync(claudeMdPath, "utf-8");
+    expect(after).not.toContain("<swarm_system_prompt>");
+    expect(after).toContain("# Existing Repo Instructions");
   });
 
   test("writeSystemPromptArtifact skips when systemPrompt is empty", async () => {
@@ -580,9 +615,109 @@ describe("ACP credential check for claude-agent-acp", () => {
     expect(status.hint).toBeTruthy();
   });
 
-  test("generic ACP target remains sdk-delegated", async () => {
-    const status = await checkProviderCredentials("acp", {});
-    expect(status.ready).toBe(true);
-    expect(status.satisfiedBy).toBe("sdk-delegated");
+  test("custom ACP target requires ACP_COMMAND to be ready", async () => {
+    const notReady = await checkProviderCredentials("acp", {});
+    expect(notReady.ready).toBe(false);
+    expect(notReady.missing).toContain("ACP_COMMAND");
+    expect(notReady.hint).toContain("ACP_COMMAND");
+
+    const ready = await checkProviderCredentials("acp", {
+      ACP_COMMAND: "/usr/local/bin/my-agent",
+    });
+    expect(ready.ready).toBe(true);
+    expect(ready.satisfiedBy).toBe("env");
+  });
+
+  test("unknown ACP_TARGET is rejected at cred check", async () => {
+    const status = await checkProviderCredentials("acp", {
+      ACP_TARGET: "unsupported-target",
+    });
+    expect(status.ready).toBe(false);
+    expect(status.hint).toContain("unsupported-target");
+  });
+});
+
+// ─── writeClaudeMd round-trip ─────────────────────────────────────────────────
+
+describe("writeClaudeMd round-trip", () => {
+  const tmpDir = `/tmp/claude-md-test-${process.pid}`;
+
+  beforeAll(() => {
+    mkdirSync(tmpDir, { recursive: true });
+  });
+
+  afterAll(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  afterEach(async () => {
+    await Bun.$`rm -f ${tmpDir}/*`.quiet().nothrow();
+  });
+
+  test("no-op when systemPrompt is empty", async () => {
+    const handle = await writeClaudeMd(tmpDir, "");
+    expect(existsSync(join(tmpDir, "CLAUDE.md"))).toBe(false);
+    await handle.cleanup();
+    expect(existsSync(join(tmpDir, "CLAUDE.md"))).toBe(false);
+  });
+
+  test("no-op when cwd is falsy", async () => {
+    const handle = await writeClaudeMd(undefined, "test prompt");
+    await handle.cleanup();
+    expect(true).toBe(true);
+  });
+
+  test("creates fresh CLAUDE.md when none exists", async () => {
+    const dir = join(tmpDir, "fresh");
+    mkdirSync(dir, { recursive: true });
+    const claudeMd = join(dir, "CLAUDE.md");
+
+    const handle = await writeClaudeMd(dir, "my prompt");
+    expect(existsSync(claudeMd)).toBe(true);
+    const content = readFileSync(claudeMd, "utf8");
+    expect(content).toContain("<swarm_system_prompt>");
+    expect(content).toContain("my prompt");
+    expect(content).toContain("</swarm_system_prompt>");
+
+    await handle.cleanup();
+    expect(existsSync(claudeMd)).toBe(false);
+  });
+
+  test("prepends block above existing CLAUDE.md content", async () => {
+    const dir = join(tmpDir, "prepend");
+    mkdirSync(dir, { recursive: true });
+    const claudeMd = join(dir, "CLAUDE.md");
+    await Bun.write(claudeMd, "# Project instructions\n\nDo things.");
+
+    const handle = await writeClaudeMd(dir, "swarm prompt");
+    const content = readFileSync(claudeMd, "utf8");
+    expect(content.indexOf("<swarm_system_prompt>")).toBeLessThan(
+      content.indexOf("# Project instructions"),
+    );
+    expect(content).toContain("swarm prompt");
+    expect(content).toContain("# Project instructions");
+
+    await handle.cleanup();
+    const after = readFileSync(claudeMd, "utf8");
+    expect(after).not.toContain("<swarm_system_prompt>");
+    expect(after).toContain("# Project instructions");
+  });
+
+  test("replaces existing managed block in place", async () => {
+    const dir = join(tmpDir, "replace");
+    mkdirSync(dir, { recursive: true });
+    const claudeMd = join(dir, "CLAUDE.md");
+    await Bun.write(claudeMd, "<swarm_system_prompt>\nstale\n</swarm_system_prompt>\n\n# Keep me");
+
+    const handle = await writeClaudeMd(dir, "fresh prompt");
+    const updated = readFileSync(claudeMd, "utf8");
+    expect(updated).toContain("fresh prompt");
+    expect(updated).not.toContain("stale");
+    expect(updated).toContain("# Keep me");
+
+    await handle.cleanup();
+    const after = readFileSync(claudeMd, "utf8");
+    expect(after).not.toContain("<swarm_system_prompt>");
+    expect(after).toContain("# Keep me");
   });
 });

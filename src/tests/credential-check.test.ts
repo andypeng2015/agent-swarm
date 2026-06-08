@@ -370,9 +370,13 @@ describe("checkProviderCredentials dispatcher", () => {
       ).ready,
     ).toBe(true);
 
-    const acpStatus = await checkProviderCredentials("acp", {}, { homeDir: HOME, fs: noFiles });
+    const acpStatus = await checkProviderCredentials(
+      "acp",
+      { ACP_COMMAND: "/usr/local/bin/my-agent" },
+      { homeDir: HOME, fs: noFiles },
+    );
     expect(acpStatus.ready).toBe(true);
-    expect(acpStatus.satisfiedBy).toBe("sdk-delegated");
+    expect(acpStatus.satisfiedBy).toBe("env");
 
     const acpCodexStatus = await checkProviderCredentials(
       "acp",
@@ -461,6 +465,35 @@ describe("checkProviderCredentials dispatcher", () => {
     } finally {
       Object.assign(process.env, originalEnv);
     }
+  });
+
+  test("ACP custom target fails when ACP_COMMAND is not set", async () => {
+    const HOME = "/home/worker";
+    const status = await checkProviderCredentials("acp", {}, { homeDir: HOME, fs: noFiles });
+    expect(status.ready).toBe(false);
+    expect(status.missing).toContain("ACP_COMMAND");
+    expect(status.hint).toContain("ACP_COMMAND");
+
+    const withCommand = await checkProviderCredentials(
+      "acp",
+      { ACP_COMMAND: "/usr/local/bin/my-agent" },
+      { homeDir: HOME, fs: noFiles },
+    );
+    expect(withCommand.ready).toBe(true);
+    expect(withCommand.satisfiedBy).toBe("env");
+  });
+
+  test("ACP unknown target is rejected before session start", async () => {
+    const HOME = "/home/worker";
+    const status = await checkProviderCredentials(
+      "acp",
+      { ACP_TARGET: "not-a-real-target" },
+      { homeDir: HOME, fs: noFiles },
+    );
+    expect(status.ready).toBe(false);
+    expect(status.hint).toContain("not-a-real-target");
+    expect(status.hint).toContain("custom");
+    expect(status.hint).toContain("gemini-cli");
   });
 
   test("throws on unknown provider", async () => {

@@ -118,8 +118,25 @@ function checkAcpCredentials(
     return checkCodexCredentials(env, opts);
   }
 
-  if (target !== "gemini-cli") {
-    return { ready: true, missing: [], satisfiedBy: "sdk-delegated" };
+  if (target === "custom") {
+    const command = env.ACP_COMMAND;
+    if (!command) {
+      return {
+        ready: false,
+        missing: ["ACP_COMMAND"],
+        hint: "ACP target 'custom' requires ACP_COMMAND to be set to the path or command of the ACP-compatible agent binary.",
+      };
+    }
+    return { ready: true, missing: [], satisfiedBy: "env" };
+  }
+
+  const KNOWN_ACP_TARGETS = ["custom", "gemini-cli", "claude-agent-acp", "codex-acp"] as const;
+  if (!(KNOWN_ACP_TARGETS as readonly string[]).includes(target)) {
+    return {
+      ready: false,
+      missing: [],
+      hint: `Unknown ACP_TARGET "${target}". Supported targets: ${KNOWN_ACP_TARGETS.join(", ")}.`,
+    };
   }
 
   if (env.GEMINI_API_KEY) return { ready: true, missing: [], satisfiedBy: "env" };
