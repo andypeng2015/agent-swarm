@@ -61,11 +61,13 @@ function measureImages(currentMode) {
 }
 
 function measureTag(tag) {
+  console.error(`Measuring ${tag}`);
   const uncompressedBytes = Number(
     execFileSync("docker", ["image", "inspect", tag, "--format", "{{.Size}}"], { encoding: "utf8" }).trim(),
   );
+  console.error(`Measuring compressed size for ${tag}`);
   const compressedBytes = Number(
-    execFileSync("bash", ["-o", "pipefail", "-c", `docker save ${shellQuote(tag)} | gzip -n -c | wc -c`], {
+    execFileSync("bash", ["-o", "pipefail", "-c", `docker save ${shellQuote(tag)} | gzip -1 -n -c | wc -c`], {
       encoding: "utf8",
     }).trim(),
   );
@@ -145,7 +147,7 @@ function writeComment(commentFile, measurements) {
       ? `⚠️ ${pingUser} Docker image size bump crossed the configured threshold (${thresholdPercent}% or ${thresholdMb} MB compressed, whichever is larger): ${notable.join("; ")}.\n\n`
       : "";
 
-  const body = `${banner}<!-- agent-swarm-image-size-report -->\n## Docker image size report\n\nComparing PR images against the PR base branch. Compressed size is measured as a deterministic local pull-size estimate using \`docker save <image> | gzip -n -c | wc -c\`; uncompressed size comes from \`docker image inspect .Size\`.\n\n| Image | Metric | Base | PR | Delta | Delta % |\n|---|---|---:|---:|---:|---:|\n${rows
+  const body = `${banner}<!-- agent-swarm-image-size-report -->\n## Docker image size report\n\nComparing PR images against the PR base branch. Compressed size is measured as a deterministic local pull-size estimate using \`docker save <image> | gzip -1 -n -c | wc -c\`; uncompressed size comes from \`docker image inspect .Size\`.\n\n| Image | Metric | Base | PR | Delta | Delta % |\n|---|---|---:|---:|---:|---:|\n${rows
     .map(
       (row) =>
         `| ${row.image} | ${row.metric}${row.notableBump ? " ⚠️" : ""} | ${formatMb(row.baseBytes)} | ${formatMb(row.headBytes)} | ${formatSignedMb(row.deltaBytes)} | ${formatPercent(row.deltaPercent)} |`,
