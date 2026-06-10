@@ -2796,6 +2796,17 @@ async function spawnProviderProcess(
             );
           }
 
+          // Structured session-start log for observability (covers all providers)
+          {
+            const variant = event.harnessVariant ?? "unknown";
+            const version =
+              (event.harnessVariantMeta as Record<string, unknown> | undefined)?.version ??
+              "unknown";
+            console.log(
+              `[${opts.role}] [harness] provider=${event.provider ?? opts.harnessProvider} variant=${variant} version=${version} model=${model || "default"}`,
+            );
+          }
+
           // Buffer session start event
           bufferEvent({
             category: "session",
