@@ -76,7 +76,19 @@ describe("Metrics HTTP API", () => {
     const body = (await res.json()) as { metrics: Metric[]; total: number };
     expect(body.total).toBeGreaterThanOrEqual(1);
     const starter = body.metrics.find((metric) => metric.slug === "swarm-operations-overview");
-    expect(starter?.definition.widgets.map((widget) => widget.viz.type)).toContain("multi-line");
+    expect(starter?.definition.layout?.columns).toBe(3);
+    expect(starter?.definition.widgets.map((widget) => widget.id)).toEqual([
+      "tasks-created-per-day",
+      "usage-by-user",
+      "usage-by-model",
+      "avg-cost-per-task-by-model",
+      "avg-task-time-by-model",
+      "cost-per-minute-by-model",
+      "cost-per-minute-by-agent",
+      "agent-performance",
+      "task-outcomes-by-day",
+      "recent-task-outcomes",
+    ]);
   });
 
   test("create, run, update snapshots prior definition", async () => {
