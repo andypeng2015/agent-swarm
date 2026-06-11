@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.94.0] - 2026-06-11
+
+### Added
+- **Portable model tiers across tasks, schedules, workflows, and UI** (#719) — task authors can now express provider-agnostic intent with `modelTier` (`smol`, `regular`, `smart`, `ultra`), while each worker resolves that tier to a concrete model at claim time based on its harness/provider and local overrides.
+- **Memory rating nudges in retrieval responses** (#724) — `memory-search` and `memory-get` now return task-context-aware `rateHint` guidance so agents can immediately call `memory_rate(...)` on useful or misleading memories.
+- **Non-blocking embeddings on worker boot** (#716) — startup no longer stalls on embeddings-related work, reducing time-to-ready for worker sessions.
+
+### Changed
+- **Claude Bridge pin and worker-image defaults refreshed** (#730, #721, #718, #712) — `Dockerfile.worker` now pins `@desplega.ai/claude-bridge` `0.1.12` and ships Claude Code `2.1.170`, pi-mono `0.79.1`, Codex CLI `0.139.0`, and opencode / `@opencode-ai/sdk` `1.16.2`.
+- **Bundled pricing and model-selector metadata refreshed** (#713, #720, #717) — the built-in pricing registries were resynced and the UI now exposes Claude Fable 5 alongside the updated model catalog.
+
+### Fixed
+- **Slack tools now auto-join public channels on `not_in_channel`** (#710) — `slack-read`, `slack-post`, `slack-reply`, and `slack-start-thread` join public channels and retry once instead of failing outright; private channels now return a clear `/invite` instruction.
+- **Worker runtime failures are easier to diagnose and less noisy** (#723, #715) — skill-sync permission issues are corrected at boot, credential selection is model-aware, session logs include better harness metadata, and task failures now surface the Claude Bridge pane tail for faster debugging.
+
 ## [1.93.0] - 2026-06-10
 
 ### Added
