@@ -309,12 +309,14 @@ function MetricTable({
   loading,
   paginationQueryKey,
   collapsedByDefault = true,
+  className,
 }: {
   rows: Record<string, unknown>[];
   columns?: MetricVizColumn[];
   loading?: boolean;
   paginationQueryKey?: string;
   collapsedByDefault?: boolean;
+  className?: string;
 }) {
   const [expanded, setExpanded] = useState(!collapsedByDefault);
   const columnDefs = useMemo<ColDef<Record<string, unknown>>[]>(
@@ -329,7 +331,7 @@ function MetricTable({
   );
 
   return (
-    <div className="space-y-2">
+    <div className={cn("space-y-2", className)}>
       <div
         className={cn(
           "overflow-hidden rounded-md border",
@@ -365,7 +367,15 @@ function MetricTable({
   );
 }
 
-function MetricChart({ rows, widget }: { rows: Record<string, unknown>[]; widget: MetricWidget }) {
+function MetricChart({
+  rows,
+  widget,
+  height,
+}: {
+  rows: Record<string, unknown>[];
+  widget: MetricWidget;
+  height?: number;
+}) {
   const xKey = widget.viz.x ?? Object.keys(rows[0] ?? {})[0] ?? "x";
   const yKey = widget.viz.y ?? Object.keys(rows[0] ?? {})[1] ?? "y";
   const seriesKeys = widget.viz.series && widget.viz.series.length > 0 ? widget.viz.series : [yKey];
@@ -376,6 +386,7 @@ function MetricChart({ rows, widget }: { rows: Record<string, unknown>[]; widget
         data={rows}
         xKey={xKey}
         keys={seriesKeys}
+        height={height}
         valueFormatter={(value) => formatValue(value, widget.viz.format)}
       />
     );
@@ -386,6 +397,7 @@ function MetricChart({ rows, widget }: { rows: Record<string, unknown>[]; widget
       data={rows}
       indexBy={xKey}
       keys={seriesKeys}
+      height={height}
       valueFormatter={(value) => formatValue(value, widget.viz.format)}
     />
   );
@@ -395,10 +407,12 @@ function WidgetViz({
   widget,
   rows,
   loading,
+  expanded = false,
 }: {
   widget: MetricWidget;
   rows: Record<string, unknown>[];
   loading?: boolean;
+  expanded?: boolean;
 }) {
   if (rows.length === 0) {
     return (
@@ -431,12 +445,13 @@ function WidgetViz({
   ) {
     return (
       <div className="space-y-4">
-        <MetricChart rows={rows} widget={widget} />
+        <MetricChart rows={rows} widget={widget} height={expanded ? 460 : undefined} />
         <MetricTable
           rows={rows}
           columns={widget.viz.columns}
           loading={loading}
           paginationQueryKey={`metric${widget.id}`}
+          collapsedByDefault={!expanded}
         />
       </div>
     );
@@ -448,6 +463,7 @@ function WidgetViz({
       columns={widget.viz.columns}
       loading={loading}
       paginationQueryKey={`metric${widget.id}`}
+      collapsedByDefault={!expanded}
     />
   );
 }
@@ -660,13 +676,13 @@ function MetricEditorDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="w-[90vw] max-w-[90vw]">
+      <DialogContent className="max-h-[92dvh] min-h-[78dvh] w-[calc(100vw-2rem)] max-w-[calc(100vw-2rem)] grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden sm:max-w-[92vw] lg:w-[92vw]">
         <DialogHeader>
           <DialogTitle>{metric ? "Edit dashboard" : "Add dashboard"}</DialogTitle>
           <DialogDescription>{metric?.slug ?? "JSON dashboard definition"}</DialogDescription>
         </DialogHeader>
 
-        <div className="grid gap-4 md:grid-cols-[280px_1fr]">
+        <div className="grid min-h-0 gap-4 md:grid-cols-[280px_1fr]">
           <div className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="metric-title">Dashboard name</Label>
@@ -699,9 +715,9 @@ function MetricEditorDialog({
             )}
           </div>
 
-          <div className="min-h-[60vh] overflow-hidden rounded-md border">
+          <div className="min-h-[55dvh] overflow-hidden rounded-md border md:min-h-0">
             <Editor
-              height="60vh"
+              height="100%"
               defaultLanguage="json"
               value={definitionText}
               onChange={(value) => setDefinitionText(value ?? "")}
@@ -959,20 +975,23 @@ function MetricsDetailPage() {
       open={!!expandedWidget}
       onOpenChange={(open) => !open && updateSearch({ widget: null })}
     >
-      <DialogContent className="w-[90vw] max-w-[90vw]">
+      <DialogContent className="max-h-[92dvh] min-h-[78dvh] w-[calc(100vw-2rem)] max-w-[calc(100vw-2rem)] grid-rows-[auto_minmax(0,1fr)] overflow-hidden sm:max-w-[92vw] lg:w-[92vw]">
         <DialogHeader>
           <DialogTitle>{expandedWidget?.title}</DialogTitle>
           <DialogDescription>
             {expandedWidget?.description ?? expandedWidget?.viz.type}
           </DialogDescription>
         </DialogHeader>
-        {expandedWidget && (
-          <WidgetViz
-            widget={expandedWidget}
-            rows={expandedResult?.rows ?? []}
-            loading={run.isFetching}
-          />
-        )}
+        <div className="min-h-0 overflow-auto pr-1">
+          {expandedWidget && (
+            <WidgetViz
+              widget={expandedWidget}
+              rows={expandedResult?.rows ?? []}
+              loading={run.isFetching}
+              expanded
+            />
+          )}
+        </div>
       </DialogContent>
     </Dialog>
   );
