@@ -165,6 +165,55 @@ export interface RecomputeResult {
   tokens: TokenTotals | null;
 }
 
+export type JudgeKind = "deterministic" | "llm" | "agentic";
+
+export type JudgeStepKind = "reasoning" | "tool" | "check" | "error";
+
+/**
+ * One step of a judge trace. Field usage varies by kind:
+ *   reasoning — text = model reasoning + text of one LLM call; tokens/costUsd = the call's usage
+ *   tool      — tool = tool name; args = input object; output = clipped JSON string
+ *   check     — tool = check name; text = detail; pass = check result
+ *   error     — text = failure message
+ */
+export interface JudgeStep {
+  /** Position in JudgeTrace.steps. Renumbered whenever a step is inserted mid-array. */
+  index: number;
+  kind: JudgeStepKind;
+  text: string | null;
+  tool: string | null;
+  /** Tool-call input object (tool steps only); null otherwise. */
+  args: unknown;
+  /** Clipped JSON string of the tool output (tool steps only); null otherwise. */
+  output: string | null;
+  /** Check result (check steps only); null for every other kind. */
+  pass: boolean | null;
+  startedAt: string;
+  durationMs: number | null;
+  /** The LLM call's usage (reasoning steps only). */
+  tokens: TokenTotals | null;
+  /** Priced usage (reasoning steps only; null when the model is unpriced). */
+  costUsd: number | null;
+}
+
+/** Full trace of one judge execution — streamed live, then persisted on the judgment row. */
+export interface JudgeTrace {
+  judge: JudgeKind;
+  /** Resolved judge model id (OpenRouter id). Null for deterministic. */
+  model: string | null;
+  startedAt: string;
+  /** Null while the judge is still running (live view). */
+  finishedAt: string | null;
+  durationMs: number | null;
+  /** Sum of step costUsd values; null when no step was priced. */
+  costUsd: number | null;
+  /** Summed usage across reasoning steps; null when there were none. */
+  tokens: TokenTotals | null;
+  /** Set when the judge crashed or never submitted a verdict. */
+  error: string | null;
+  steps: JudgeStep[];
+}
+
 export type AttemptStatus = "pending" | "running" | "judging" | "passed" | "failed" | "error";
 
 export type RunStatus = "pending" | "running" | "done" | "failed" | "cancelled";
@@ -199,6 +248,8 @@ export interface AttemptRow {
   error: string | null;
   costUsd: number | null;
   costSource: CostSource | null;
+  /** Aggregate judge LLM cost (harness overhead) — NEVER included in costUsd. */
+  judgeCostUsd: number | null;
   tokens: TokenTotals | null;
   sandbox: SandboxInfo | null;
   timings: PhaseTimings | null;
@@ -210,12 +261,21 @@ export interface AttemptRow {
 export interface JudgmentRow {
   id: string;
   attemptId: string;
+  /** DB CHECK constraint — agentic judgments keep kind "llm" + name "agentic-judge". */
   kind: "llm" | "deterministic";
   name: string;
   pass: boolean;
   score: number | null;
   reasoning: string | null;
   raw: string | null;
+  /** Wall-clock for this judgment (per-check ms for deterministic). Null on old rows. */
+  durationMs: number | null;
+  /** Judge LLM cost for this judgment (harness overhead). Null on old rows / deterministic. */
+  costUsd: number | null;
+  /** Judge token usage; tokens.model carries the judge model id. Null on old rows. */
+  tokens: TokenTotals | null;
+  /** Full trace steps (llm/agentic). Null on old rows / deterministic. */
+  steps: JudgeStep[] | null;
   createdAt: string;
 }
 

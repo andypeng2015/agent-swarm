@@ -1,12 +1,17 @@
 import { type ReactNode, useMemo, useState } from "react";
 import { getTranscript } from "../api.ts";
+import { HarnessIcon } from "../components/HarnessIcon.tsx";
 import { JsonView } from "../components/JsonView.tsx";
 import { Spinner } from "../components/Spinner.tsx";
+import { StatusBadge } from "../components/StatusBadge.tsx";
+import { Tooltip } from "../components/Tooltip.tsx";
 import { usePoll } from "../hooks.ts";
 import {
+  itemsToParsedMessages,
+  normalizeSessionLogs,
   type ParsedMessage,
   type ProviderMetaBlock,
-  parseSessionLogs,
+  type SessionLogRecord,
   type ToolResultBlock,
   type ToolUseBlock,
 } from "../logs-parser/index.ts";
@@ -23,61 +28,140 @@ interface MetaLine {
 type Entry =
   | { kind: "divider"; key: string; iteration: number }
   | { kind: "msg"; key: string; msg: ParsedMessage }
-  | { kind: "metas"; key: string; lines: MetaLine[] };
+  | { kind: "metas"; key: string; lines: MetaLine[] }
+  | { kind: "raw"; key: string; cli: string; content: string; iteration: number };
 
-export default function Transcript(props: { attemptId: string; live?: boolean }): ReactNode {
-  const { data, error } = usePoll(() => getTranscript(props.attemptId), props.live ? 5000 : null, [
-    props.attemptId,
-  ]);
+interface BuiltTranscript {
+  entries: Entry[];
+  messageCount: number;
+  /** Rows that contributed nothing to a parsed message — rendered as raw fallbacks. */
+  unparsedCount: number;
+  resultById: Map<string, ToolResultBlock>;
+  callIds: Set<string>;
+}
 
-  const messages = useMemo(
-    () => (data?.source === "raw-session-logs" && data.rows ? parseSessionLogs(data.rows) : []),
-    [data],
-  );
+/**
+ * Item 15 — render ALL rows. Every source row either contributes to a parsed
+ * message (text/tool/meta blocks) or renders in place as a `.t-raw` fallback;
+ * nothing is silently dropped.
+ */
+function buildTranscript(rows: SessionLogRecord[]): BuiltTranscript {
+  const result = normalizeSessionLogs(rows);
+
+  // Rows that failed JSONL decode render as raw text, not buried meta lines.
+  const rawRecIds = new Set<string>();
+  const items = result.items.filter((item) => {
+    if (item.kind !== "parse_error") return true;
+    rawRecIds.add(item.recId);
+    return false;
+  });
+  const messages = itemsToParsedMessages(items);
+
+  // Coverage: source rows that produced at least one content block.
+  const covered = new Set<string>();
+  for (const item of items) {
+    if (item.kind === "tool_call" && !item.tool) continue;
+    if (item.kind === "tool_result" && !item.result) continue;
+    covered.add(item.recId);
+    for (const id of item.coveredRecIds ?? []) covered.add(id);
+  }
+
+  const messagesByRec = new Map<string, ParsedMessage[]>();
+  for (const msg of messages) {
+    const list = messagesByRec.get(msg.id);
+    if (list) list.push(msg);
+    else messagesByRec.set(msg.id, [msg]);
+  }
 
   // Pair tool results to their calls across ALL messages by tool_use_id.
-  const pairing = useMemo(() => {
-    const resultById = new Map<string, ToolResultBlock>();
-    const callIds = new Set<string>();
-    for (const msg of messages) {
-      for (const block of msg.content) {
-        if (block.type === "tool_result") resultById.set(block.tool_use_id, block);
-        else if (block.type === "tool_use") callIds.add(block.id);
-      }
+  const resultById = new Map<string, ToolResultBlock>();
+  const callIds = new Set<string>();
+  for (const msg of messages) {
+    for (const block of msg.content) {
+      if (block.type === "tool_result") resultById.set(block.tool_use_id, block);
+      else if (block.type === "tool_use") callIds.add(block.id);
     }
-    return { resultById, callIds };
-  }, [messages]);
+  }
 
-  const entries = useMemo<Entry[]>(() => {
-    const out: Entry[] = [];
-    let prevIteration: number | null = null;
-    messages.forEach((msg, i) => {
-      if (prevIteration !== null && msg.iteration !== prevIteration) {
-        out.push({ kind: "divider", key: `div-${i}`, iteration: msg.iteration });
+  // Interleave: messages render at their first source row; uncovered rows
+  // become raw entries in their original position.
+  type SeqNode =
+    | { kind: "msg"; msg: ParsedMessage }
+    | { kind: "raw"; key: string; cli: string; content: string; iteration: number };
+  const sequence: SeqNode[] = [];
+  const emitted = new Set<string>();
+  let unparsedCount = 0;
+  result.ordered.forEach((d, i) => {
+    const rec = d.rec;
+    if (!rawRecIds.has(rec.id)) {
+      const msgs = messagesByRec.get(rec.id);
+      if (msgs && !emitted.has(rec.id)) {
+        emitted.add(rec.id);
+        for (const msg of msgs) sequence.push({ kind: "msg", msg });
+        return;
       }
-      prevIteration = msg.iteration;
-      const metas = msg.content.filter((b): b is ProviderMetaBlock => b.type === "provider_meta");
-      if (metas.length > 0 && metas.length === msg.content.length) {
-        // meta-only message — consecutive ones collapse into one group
-        const lines = metas.map((block, j) => ({ key: `m-${i}-${j}`, block }));
-        const last = out[out.length - 1];
-        if (last && last.kind === "metas") last.lines.push(...lines);
-        else out.push({ kind: "metas", key: `metas-${i}`, lines });
-      } else {
-        out.push({ kind: "msg", key: `msg-${i}`, msg });
-      }
+      if (covered.has(rec.id)) return;
+    }
+    unparsedCount++;
+    sequence.push({
+      kind: "raw",
+      key: `raw-${i}`,
+      cli: rec.cli,
+      content: rec.content,
+      iteration: rec.iteration,
     });
-    return out;
-  }, [messages]);
+  });
+
+  // Iteration dividers + collapsing of consecutive meta-only messages.
+  const entries: Entry[] = [];
+  let prevIteration: number | null = null;
+  sequence.forEach((node, i) => {
+    const iteration = node.kind === "msg" ? node.msg.iteration : node.iteration;
+    const crossed = prevIteration !== null && iteration !== prevIteration;
+    if (crossed) entries.push({ kind: "divider", key: `div-${i}`, iteration });
+    prevIteration = iteration;
+
+    if (node.kind === "raw") {
+      entries.push(node);
+      return;
+    }
+    const msg = node.msg;
+    const metas = msg.content.filter((b): b is ProviderMetaBlock => b.type === "provider_meta");
+    if (metas.length > 0 && metas.length === msg.content.length) {
+      // meta-only message — consecutive ones collapse into one group
+      const lines = metas.map((block, j) => ({ key: `m-${i}-${j}`, block }));
+      const last = entries[entries.length - 1];
+      if (last && last.kind === "metas") last.lines.push(...lines);
+      else entries.push({ kind: "metas", key: `metas-${i}`, lines });
+    } else {
+      entries.push({ kind: "msg", key: `msg-${i}`, msg });
+    }
+  });
+
+  return { entries, messageCount: messages.length, unparsedCount, resultById, callIds };
+}
+
+export default function Transcript(props: { attemptId: string; live?: boolean }): ReactNode {
+  const live = props.live === true;
+  const { data, error } = usePoll(
+    () => getTranscript(props.attemptId, { live }),
+    live ? 5000 : null,
+    [props.attemptId, live],
+  );
+
+  const built = useMemo(
+    () => (data?.source === "raw-session-logs" && data.rows ? buildTranscript(data.rows) : null),
+    [data],
+  );
 
   if (!data) {
     return (
       <div className="transcript">
         {error ? (
-          <div className="t-empty dim">transcript failed to load: {error}</div>
+          <div className="t-empty dim">Transcript failed to load: {error}</div>
         ) : (
           <div className="t-empty">
-            <Spinner label="loading transcript…" />
+            <Spinner label="Loading transcript…" />
           </div>
         )}
       </div>
@@ -87,8 +171,8 @@ export default function Transcript(props: { attemptId: string; live?: boolean })
   if (data.source === null) {
     return (
       <div className="transcript">
-        <div className="t-empty dim">no transcript captured</div>
-        {props.live ? <Footer /> : null}
+        <div className="t-empty dim">No transcript captured</div>
+        {live ? <Footer /> : null}
       </div>
     );
   }
@@ -96,11 +180,12 @@ export default function Transcript(props: { attemptId: string; live?: boolean })
   if (data.source === "transcript") {
     return (
       <div className="transcript">
-        <div className="t-caption">
-          {data.harness ?? "unknown"} · legacy flat transcript (older run)
-        </div>
+        <Caption harness={data.harness} live={false}>
+          <span className="t-caption-sep">·</span>
+          <span>Legacy flat transcript (older run)</span>
+        </Caption>
         <pre className="t-flat">{data.text ?? ""}</pre>
-        {props.live ? <Footer /> : null}
+        {live ? <Footer /> : null}
       </div>
     );
   }
@@ -108,29 +193,71 @@ export default function Transcript(props: { attemptId: string; live?: boolean })
   const rowCount = data.rows?.length ?? 0;
   return (
     <div className="transcript">
-      <div className="t-caption">
-        {data.harness ?? "unknown"} · {rowCount} events · {messages.length} messages
-      </div>
-      {rowCount === 0 ? <div className="t-empty dim">no events yet</div> : null}
-      {entries.map((entry) => {
-        if (entry.kind === "divider") {
-          return (
-            <div className="t-divider" key={entry.key}>
-              — iteration {entry.iteration} —
-            </div>
-          );
+      <Caption harness={data.harness} live={data.live === true}>
+        <span className="t-caption-sep">·</span>
+        <span>{rowCount.toLocaleString()} Events</span>
+        <span className="t-caption-sep">·</span>
+        <span>{(built?.messageCount ?? 0).toLocaleString()} Messages</span>
+        {built && built.unparsedCount > 0 ? (
+          <>
+            <span className="t-caption-sep">·</span>
+            <Tooltip text="Rows the parser could not decode — rendered below as raw text">
+              <span className="t-unparsed">{built.unparsedCount.toLocaleString()} Unparsed</span>
+            </Tooltip>
+          </>
+        ) : null}
+      </Caption>
+      {rowCount === 0 ? <div className="t-empty dim">No events yet</div> : null}
+      {built?.entries.map((entry) => {
+        switch (entry.kind) {
+          case "divider": {
+            return (
+              <div className="t-divider" key={entry.key}>
+                — Iteration {entry.iteration} —
+              </div>
+            );
+          }
+          case "metas": {
+            return <MetaGroup lines={entry.lines} key={entry.key} />;
+          }
+          case "raw": {
+            return <RawRow cli={entry.cli} content={entry.content} key={entry.key} />;
+          }
+          default: {
+            return (
+              <MessageCard
+                msg={entry.msg}
+                resultById={built.resultById}
+                callIds={built.callIds}
+                key={entry.key}
+              />
+            );
+          }
         }
-        if (entry.kind === "metas") return <MetaGroup lines={entry.lines} key={entry.key} />;
-        return (
-          <MessageCard
-            msg={entry.msg}
-            resultById={pairing.resultById}
-            callIds={pairing.callIds}
-            key={entry.key}
-          />
-        );
       })}
-      {props.live ? <Footer /> : null}
+      {live ? <Footer /> : null}
+    </div>
+  );
+}
+
+function Caption(props: {
+  harness: string | null;
+  live: boolean;
+  children?: ReactNode;
+}): ReactNode {
+  return (
+    <div className="t-caption">
+      {props.live ? (
+        <Tooltip text="Streaming from the attempt's sandbox — refreshes every 5s">
+          <span className="t-live pulse">● Live</span>
+        </Tooltip>
+      ) : null}
+      {props.harness ? (
+        <HarnessIcon harness={props.harness} size={13} showLabel />
+      ) : (
+        <span className="dim">Unknown harness</span>
+      )}
+      {props.children}
     </div>
   );
 }
@@ -138,10 +265,12 @@ export default function Transcript(props: { attemptId: string; live?: boolean })
 function Footer(): ReactNode {
   return (
     <div className="t-footer">
-      <Spinner label="streaming…" />
+      <Spinner label="Streaming…" />
     </div>
   );
 }
+
+// ---- per-event-type components (item 15) ----
 
 function MessageCard(props: {
   msg: ParsedMessage;
@@ -157,11 +286,7 @@ function MessageCard(props: {
     switch (block.type) {
       case "text": {
         if (block.text) {
-          rendered.push(
-            <div className="t-text" key={key}>
-              {block.text}
-            </div>,
-          );
+          rendered.push(<TextView text={block.text} key={key} />);
         }
         break;
       }
@@ -188,7 +313,17 @@ function MessageCard(props: {
       }
     }
   }
-  if (rendered.length === 0) return null; // e.g. a message holding only paired tool results
+  if (rendered.length === 0) {
+    const onlyPairedResults = msg.content.every(
+      (b) => b.type === "tool_result" && callIds.has(b.tool_use_id),
+    );
+    if (onlyPairedResults) return null; // those rows render under their tool calls
+    rendered.push(
+      <div className="t-text dim" key="empty">
+        (Empty message)
+      </div>,
+    );
+  }
   return (
     <div className={`t-msg t-${msg.role}`}>
       <div className="t-role">{msg.role}</div>
@@ -197,13 +332,17 @@ function MessageCard(props: {
   );
 }
 
+function TextView(props: { text: string }): ReactNode {
+  return <div className="t-text">{props.text}</div>;
+}
+
 function Thinking(props: { text: string }): ReactNode {
   const collapsible = props.text.length > THINKING_COLLAPSE;
   const [open, setOpen] = useState(!collapsible);
   if (!open) {
     return (
       <button type="button" className="t-toggle" onClick={() => setOpen(true)}>
-        ▸ thinking ({props.text.length} chars)
+        ▸ Thinking ({props.text.length.toLocaleString()} chars)
       </button>
     );
   }
@@ -211,7 +350,7 @@ function Thinking(props: { text: string }): ReactNode {
     <div className="t-thinking-wrap">
       {collapsible ? (
         <button type="button" className="t-toggle" onClick={() => setOpen(false)}>
-          ▾ thinking ({props.text.length} chars)
+          ▾ Thinking ({props.text.length.toLocaleString()} chars)
         </button>
       ) : null}
       <div className="t-thinking">{props.text}</div>
@@ -219,12 +358,25 @@ function Thinking(props: { text: string }): ReactNode {
   );
 }
 
+/** Result state as a shared status glyph (item 8) — ✓ / ✗ / ○ with hover info. */
+function ToolStatus(props: { result: ToolResultBlock | null }): ReactNode {
+  const { result } = props;
+  if (result === null) return <StatusBadge status="pending" tip="No result captured" />;
+  if (result.isError) return <StatusBadge status="failed" tip="Tool returned an error" />;
+  return <StatusBadge status="passed" tip="Tool succeeded" />;
+}
+
 function ToolCard(props: { call: ToolUseBlock; result: ToolResultBlock | null }): ReactNode {
   const { call, result } = props;
   return (
     <div className={`t-tool${result?.isError ? " t-tool-error" : ""}`}>
-      <div className="t-tool-head">⚙ {call.name}</div>
-      <JsonView value={call.input} collapseDepth={1} />
+      <div className="t-tool-head">
+        <span className="t-tool-name">⚙ {call.name}</span>
+        <ToolStatus result={result} />
+      </div>
+      {call.input !== undefined && call.input !== null ? (
+        <JsonView value={call.input} collapseDepth={1} />
+      ) : null}
       {result ? <ResultBody result={result} /> : null}
     </div>
   );
@@ -234,31 +386,54 @@ function OrphanResult(props: { result: ToolResultBlock }): ReactNode {
   return (
     <div className={`t-tool${props.result.isError ? " t-tool-error" : ""}`}>
       <div className="t-tool-head">
-        ⚙ tool result <span className="dim">{props.result.tool_use_id}</span>
+        <span className="t-tool-name">
+          ⚙ Tool Result <span className="dim">{props.result.tool_use_id}</span>
+        </span>
+        <ToolStatus result={props.result} />
       </div>
       <ResultBody result={props.result} />
     </div>
   );
 }
 
+function ClippedText(props: { text: string }): ReactNode {
+  const [full, setFull] = useState(false);
+  const clipped = !full && props.text.length > RESULT_CLIP;
+  return (
+    <>
+      <pre>{clipped ? `${props.text.slice(0, RESULT_CLIP)}…` : props.text}</pre>
+      {clipped ? (
+        <button type="button" className="t-toggle" onClick={() => setFull(true)}>
+          Show All ({props.text.length.toLocaleString()} chars)
+        </button>
+      ) : null}
+    </>
+  );
+}
+
 function ResultBody(props: { result: ToolResultBlock }): ReactNode {
   const { result } = props;
-  const [full, setFull] = useState(false);
-  const clipped = !full && result.content.length > RESULT_CLIP;
   if (!result.content) {
-    return <div className="t-tool-result dim">(empty result)</div>;
+    return <div className="t-tool-result dim">(Empty result)</div>;
   }
   return (
     <div className={`t-tool-result${result.isError ? " error" : ""}`}>
-      <pre>{clipped ? `${result.content.slice(0, RESULT_CLIP)}…` : result.content}</pre>
-      {clipped ? (
-        <button type="button" className="t-toggle" onClick={() => setFull(true)}>
-          show all ({result.content.length} chars)
-        </button>
-      ) : null}
+      <ClippedText text={result.content} />
     </div>
   );
 }
+
+const META_KIND_LABELS: Record<ProviderMetaBlock["kind"], string> = {
+  status: "Status",
+  structured_output: "Structured Output",
+  internal: "Internal",
+  helper: "Helper",
+  lifecycle: "Lifecycle",
+  result: "Result",
+  file_change: "File Change",
+  parse_error: "Parse Error",
+  unknown: "Unknown",
+};
 
 function MetaLineView(props: { block: ProviderMetaBlock }): ReactNode {
   const { block } = props;
@@ -267,7 +442,7 @@ function MetaLineView(props: { block: ProviderMetaBlock }): ReactNode {
   return (
     <div className="t-meta">
       <button type="button" className="t-toggle" onClick={() => setOpen(!open)}>
-        {open ? "▾" : "▸"} · {block.kind}
+        {open ? "▾" : "▸"} · {META_KIND_LABELS[block.kind]}
         {dataType ? `: ${dataType}` : ""}
       </button>
       {open ? <JsonView value={block.data} collapseDepth={1} /> : null}
@@ -281,9 +456,19 @@ function MetaGroup(props: { lines: MetaLine[] }): ReactNode {
   return (
     <div className="t-meta-group">
       <button type="button" className="t-toggle" onClick={() => setOpen(!open)}>
-        {open ? "▾" : "▸"} · {props.lines.length} internal events
+        {open ? "▾" : "▸"} · {props.lines.length} Internal Events
       </button>
       {open ? props.lines.map((l) => <MetaLineView block={l.block} key={l.key} />) : null}
+    </div>
+  );
+}
+
+/** Raw fallback for rows the parser could not decode (item 15 — nothing dropped). */
+function RawRow(props: { cli: string; content: string }): ReactNode {
+  return (
+    <div className="t-raw">
+      <div className="t-raw-head">Unparsed · {props.cli}</div>
+      <ClippedText text={props.content} />
     </div>
   );
 }

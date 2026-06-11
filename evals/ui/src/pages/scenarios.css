@@ -1,4 +1,4 @@
-/* WP-SCENARIOS — scenarios list + detail (spec §8). Shared tokens/classes live in styles.css. */
+/* WP-SCENARIOS2 — scenarios list + detail. Shared tokens/classes live in styles.css. */
 
 .sc-header {
   display: flex;
@@ -15,17 +15,24 @@
 
 .sc-judges {
   display: inline-flex;
-  gap: 4px;
+  align-items: center;
+  gap: 6px;
 }
 
-/* JS clips at 120 chars; ellipsis guards narrow viewports. */
-.sc-desc {
-  display: inline-block;
-  max-width: 480px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  vertical-align: bottom;
+/* judge-kind glyph (llm ✶ / agentic ✶✶) — tooltip carries the label */
+.sc-judge {
+  font-family: var(--font-mono);
+  color: var(--accent);
+  letter-spacing: -0.08em;
+  cursor: default;
+}
+
+/* harness icon + config link inside a single-line table cell */
+.sc-config {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
 }
 
 .sc-error {

@@ -99,7 +99,7 @@ function StringLeaf(props: { value: string; depth: number; collapseDepth: number
     return (
       <span className="jv-parsed">
         <button type="button" className="jv-toggle" onClick={() => setParsed(false)}>
-          raw
+          Raw
         </button>{" "}
         <Node value={inner} depth={depth} collapseDepth={collapseDepth} />
       </span>
@@ -114,12 +114,12 @@ function StringLeaf(props: { value: string; depth: number; collapseDepth: number
       {clipped ? "…" : ""}"
       {clipped ? (
         <button type="button" className="jv-toggle" onClick={() => setFull(true)}>
-          show all ({value.length})
+          Show all ({value.length})
         </button>
       ) : null}
       {inner !== undefined ? (
         <button type="button" className="jv-toggle" onClick={() => setParsed(true)}>
-          parse
+          Parse
         </button>
       ) : null}
     </span>

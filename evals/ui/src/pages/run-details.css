@@ -1,4 +1,11 @@
-/* Run details page (spec §7.1) — page-specific classes only; shared ones live in styles.css. */
+/* Run details page — page-specific classes only; shared ones live in styles.css. */
+
+/* Fixed header (item 17): the meta panel sticks just below the ~43px app header. */
+.rd-top {
+  position: sticky;
+  top: 42px;
+  z-index: 10;
+}
 
 .rd-top .meta-grid {
   margin-top: 10px;
@@ -41,6 +48,19 @@
 
 .rd-body {
   margin-top: 16px;
+}
+
+/* Left and right columns scroll independently below the fixed header (item 17). */
+.rd-body > .scroll-col {
+  --scroll-col-max: calc(100vh - 240px);
+}
+
+/* Tabs stay visible while the right pane scrolls. */
+.rd-right > .tabs {
+  position: sticky;
+  top: 0;
+  z-index: 6;
+  background: var(--panel);
 }
 
 .rd-mono {
@@ -101,6 +121,10 @@
   background: var(--accent);
 }
 
+.rd-dot.neutral {
+  background: var(--text);
+}
+
 /* ---- attempt summary ---- */
 
 .rd-attempt-id {
@@ -108,6 +132,13 @@
   font-size: 10.5px;
   font-weight: 400;
   overflow-wrap: anywhere;
+}
+
+.rd-config-ref {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
 }
 
 .rd-tasks {
@@ -133,37 +164,107 @@
   overflow-y: auto;
 }
 
-/* ---- phase timings ---- */
-
-.rd-timings {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 12px;
-}
-
-.rd-timings td {
-  padding: 2px 6px;
-  border-bottom: 1px solid var(--border);
-}
-
-.rd-timings tr:last-child td {
-  border-bottom: none;
-}
-
-.rd-timings td:last-child {
-  text-align: right;
-  font-family: var(--font-mono);
-  font-size: 11.5px;
-}
-
-.rd-timings tr.sub td:first-child {
-  padding-left: 18px;
-  color: var(--dim);
-}
-
 .rd-not-captured {
   font-size: 12px;
   font-style: italic;
+}
+
+/* ---- timings waterfall (item 7) ---- */
+
+.wf {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px 2px;
+}
+
+.wf-axis {
+  display: flex;
+  justify-content: space-between;
+  margin: 0 72px 4px 132px;
+  padding-bottom: 2px;
+  border-bottom: 1px solid var(--border);
+  color: var(--dim);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+}
+
+.wf-row {
+  display: grid;
+  grid-template-columns: 124px minmax(0, 1fr) 64px;
+  gap: 8px;
+  align-items: center;
+  padding: 1px 0;
+  border-radius: 4px;
+}
+
+.wf-row:hover {
+  background: var(--panel-2);
+}
+
+.wf-row:hover .wf-bar {
+  filter: brightness(1.3);
+}
+
+.wf-label {
+  font-size: 11.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wf-row.sub .wf-label {
+  padding-left: 14px;
+  color: var(--dim);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+}
+
+.wf-row > .tooltip {
+  width: 100%;
+  min-width: 0;
+}
+
+.wf-track {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 14px;
+  background: color-mix(in oklab, var(--border), transparent 55%);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.wf-bar {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  min-width: 3px;
+  border-radius: 2px;
+  transition: filter 0.12s ease;
+}
+
+.wf-row.sub .wf-bar {
+  opacity: 0.55;
+}
+
+.wf-na {
+  color: var(--dim);
+  font-style: italic;
+  font-size: 11px;
+}
+
+.wf-dur {
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--dim);
+  white-space: nowrap;
+}
+
+.wf-foot {
+  margin: 6px 0 0 132px;
+  font-size: 11px;
 }
 
 /* ---- sandbox ---- */
@@ -191,7 +292,12 @@
   font-size: inherit;
 }
 
-/* ---- checks & judgments ---- */
+/* ---- checks & judgments tab ---- */
+
+.rd-checks {
+  display: flex;
+  flex-direction: column;
+}
 
 .rd-judgment {
   border-left: 3px solid var(--dim);
@@ -221,12 +327,21 @@
   font-weight: 600;
 }
 
-.rd-pf.pass {
-  color: var(--green);
+.rd-judgment-kind {
+  color: var(--dim);
+  font-size: 13px;
+  line-height: 1;
+  cursor: default;
 }
 
-.rd-pf.fail {
-  color: var(--red);
+.rd-judgment-spacer {
+  flex: 1;
+}
+
+.rd-judgment-ms {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  white-space: nowrap;
 }
 
 .rd-judgment-reason {
@@ -234,6 +349,14 @@
   white-space: pre-wrap;
   font-size: 12px;
   overflow-wrap: anywhere;
+}
+
+.rd-judgment-trace {
+  margin-top: 8px;
+}
+
+.rd-judgment-raw-toggle {
+  margin-top: 6px;
 }
 
 .rd-judgment-raw {
@@ -249,7 +372,213 @@
   overflow-y: auto;
 }
 
-/* ---- right pane (tabs content) ---- */
+/* ---- judge traces (v3 — step timeline, reasoning prominent) ---- */
+
+.jt {
+  min-width: 0;
+  font-size: 12px;
+}
+
+/* live stream view: each trace is its own card under .rd-checks */
+.jt.jt-card {
+  margin-top: 8px;
+  padding: 8px 10px;
+  background: var(--panel-2);
+  border-left: 3px solid var(--dim);
+  border-radius: 0 6px 6px 0;
+}
+
+.jt.jt-running {
+  border-left-color: var(--accent);
+}
+
+.jt-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  min-width: 0;
+}
+
+.jt-kind {
+  color: var(--dim);
+  font-size: 13px;
+  line-height: 1;
+  cursor: default;
+}
+
+.jt-title {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.jt-spacer {
+  flex: 1;
+}
+
+.jt-badge {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--dim);
+  white-space: nowrap;
+  cursor: default;
+}
+
+.jt-error {
+  margin-top: 6px;
+  padding: 6px 8px;
+  border: 1px solid color-mix(in srgb, var(--red) 40%, transparent);
+  background: color-mix(in srgb, var(--red) 10%, transparent);
+  border-radius: 6px;
+  color: var(--red);
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.jt-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.jt-step {
+  min-width: 0;
+  font-size: 12px;
+}
+
+/* reasoning blocks — PROMINENT (accent border, tinted, full-width text) */
+.jt-step.jt-reasoning {
+  border-left: 3px solid var(--accent);
+  background: color-mix(in oklab, var(--accent), transparent 94%);
+  border-radius: 0 6px 6px 0;
+  padding: 7px 10px;
+}
+
+.jt-reasoning-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 12.5px;
+}
+
+.jt-step-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 5px;
+  flex-wrap: wrap;
+}
+
+.jt-step-meta .cost-badge {
+  font-size: 10.5px;
+}
+
+/* tool call/result pairs — compact cards */
+.jt-step.jt-tool {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 8px;
+  background: var(--panel);
+}
+
+.jt-tool-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.jt-tool-glyph {
+  color: var(--dim);
+  line-height: 1;
+  cursor: default;
+}
+
+.jt-tool-name {
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+
+.jt-tool-head > .tooltip {
+  flex: 1;
+  min-width: 0;
+}
+
+.jt-args {
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--dim);
+}
+
+.jt-output {
+  margin-top: 4px;
+}
+
+.jt-output-body {
+  margin: 4px 0 0;
+  padding: 6px 8px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 11px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+/* deterministic check rows */
+.jt-step.jt-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 1px 0;
+  min-width: 0;
+}
+
+.jt-check-name {
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+
+.jt-check-detail {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--dim);
+}
+
+/* error steps */
+.jt-step.jt-error-step {
+  padding: 6px 8px;
+  border: 1px solid color-mix(in srgb, var(--red) 40%, transparent);
+  background: color-mix(in srgb, var(--red) 10%, transparent);
+  border-radius: 6px;
+  color: var(--red);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.jt-live-row {
+  padding: 4px 0;
+}
+
+/* ---- assets tab ---- */
+
+.rd-kind-glyph {
+  font-size: 13px;
+  line-height: 1;
+  cursor: default;
+}
 
 .rd-asset-actions {
   display: flex;
@@ -260,5 +589,13 @@
 @media (max-width: 900px) {
   .rd-body {
     grid-template-columns: 1fr;
+  }
+
+  .rd-body > .scroll-col {
+    max-height: none;
+  }
+
+  .rd-top {
+    position: static;
   }
 }

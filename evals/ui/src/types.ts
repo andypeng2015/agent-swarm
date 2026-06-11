@@ -40,6 +40,8 @@ export interface TotalsJson {
   passedCells: number;
   totalCells: number;
   totalCostUsd: number | null;
+  /** Judge LLM cost (harness overhead) — kept SEPARATE from totalCostUsd. */
+  judgeCostUsd: number | null;
   totalDurationMs: number | null;
   passedAttempts: number;
   errorAttempts: number;
@@ -97,12 +99,57 @@ export interface AttemptJson {
   error: string | null;
   costUsd: number | null;
   costSource: string | null;
+  /** Aggregate judge LLM cost (harness overhead) — NEVER included in costUsd. */
+  judgeCostUsd: number | null;
   tokens: TokenTotalsJson | null;
   sandbox: SandboxInfoJson | null;
   timings: PhaseTimingsJson | null;
   durationMs: number | null;
   startedAt: string | null;
   finishedAt: string | null;
+}
+
+export type JudgeKindJson = "deterministic" | "llm" | "agentic";
+
+export type JudgeStepKindJson = "reasoning" | "tool" | "check" | "error";
+
+/**
+ * One step of a judge trace (v3 spec §1). Field usage by kind:
+ *   reasoning — text = model reasoning + text; tokens/costUsd = the LLM call's usage
+ *   tool      — tool = tool name; args = input object; output = clipped JSON string
+ *   check     — tool = check name; text = detail; pass = check result
+ *   error     — text = failure message
+ */
+export interface JudgeStepJson {
+  index: number;
+  kind: JudgeStepKindJson;
+  text: string | null;
+  tool: string | null;
+  args: unknown;
+  output: string | null;
+  pass: boolean | null;
+  startedAt: string;
+  durationMs: number | null;
+  tokens: TokenTotalsJson | null;
+  costUsd: number | null;
+}
+
+export interface JudgeTraceJson {
+  judge: JudgeKindJson;
+  model: string | null;
+  startedAt: string;
+  /** Null while the judge is still running (live view). */
+  finishedAt: string | null;
+  durationMs: number | null;
+  costUsd: number | null;
+  tokens: TokenTotalsJson | null;
+  error: string | null;
+  steps: JudgeStepJson[];
+}
+
+export interface JudgeLiveResponse {
+  judging: boolean;
+  traces: JudgeTraceJson[];
 }
 
 export interface JudgmentJson {
@@ -114,6 +161,14 @@ export interface JudgmentJson {
   score: number | null;
   reasoning: string | null;
   raw: string | null;
+  /** Wall-clock for this judgment (per-check ms for deterministic). Null on old rows. */
+  durationMs: number | null;
+  /** Judge LLM cost for this judgment (harness overhead). Null on old rows. */
+  costUsd: number | null;
+  /** Judge token usage; tokens.model carries the judge model id. Null on old rows. */
+  tokens: TokenTotalsJson | null;
+  /** Full trace steps (llm/agentic). Null on old rows / deterministic. */
+  steps: JudgeStepJson[] | null;
   createdAt: string;
 }
 
@@ -159,6 +214,8 @@ export interface TranscriptResponse {
   harness: string | null;
   rows: TranscriptRow[] | null;
   text: string | null;
+  /** True when rows were fetched fresh from the attempt's live sandbox (?live=1). */
+  live?: boolean;
 }
 
 export interface ScenarioJson {

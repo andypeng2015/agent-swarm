@@ -1,4 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { getModels } from "./api.ts";
+import type { ModelJson, ModelsResponse } from "./types.ts";
 
 export interface Route {
   /** "#/runs/a/attempts/b" → ["runs", "a", "attempts", "b"] */
@@ -83,6 +85,79 @@ export function usePoll<T>(
 
   const refresh = useCallback(() => setTick((t) => t + 1), []);
   return { data, error, loading, refresh };
+}
+
+// ---- models.dev catalog (one fetch per session, shared by every ModelChip) ----
+
+let modelsCache: ModelsResponse | null = null;
+let modelsPromise: Promise<ModelsResponse> | null = null;
+
+export interface ModelLookup {
+  models: ModelJson[];
+  defaultJudgeModel: string | null;
+  /** Resolve any observed model-id shape to a catalog entry (null when unknown). */
+  resolve: (id: string | null) => ModelJson | null;
+  /** False while the one-shot fetch is still in flight. */
+  loaded: boolean;
+}
+
+/** Candidate catalog ids for an observed model id (config override, harness output, …). */
+function modelIdCandidates(id: string): string[] {
+  const out = [id];
+  const unprefixed = id.startsWith("openrouter/") ? id.slice("openrouter/".length) : id;
+  if (unprefixed !== id) out.push(unprefixed);
+  const dateless = unprefixed.replace(/-\d{8}$/, ""); // claude-haiku-4-5-20251001 → claude-haiku-4-5
+  if (dateless !== unprefixed) out.push(dateless);
+  const dotted = dateless.replace(/-(\d+)-(\d+)$/, "-$1.$2"); // claude-haiku-4-5 → claude-haiku-4.5
+  if (dotted !== dateless) out.push(dotted);
+  return out;
+}
+
+/** Cached models.dev catalog + resolver. Fetches `/api/models` once per session. */
+export function useModels(): ModelLookup {
+  const [data, setData] = useState<ModelsResponse | null>(modelsCache);
+  useEffect(() => {
+    if (modelsCache !== null) return;
+    let cancelled = false;
+    modelsPromise ??= getModels().then((res) => {
+      modelsCache = res;
+      return res;
+    });
+    modelsPromise
+      .then((res) => {
+        if (!cancelled) setData(res);
+      })
+      .catch(() => {
+        modelsPromise = null; // allow a retry on next mount
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return useMemo<ModelLookup>(() => {
+    const models = data?.models ?? [];
+    const byId = new Map(models.map((m) => [m.id, m]));
+    const resolve = (id: string | null): ModelJson | null => {
+      if (id === null || id.length === 0 || models.length === 0) return null;
+      for (const candidate of modelIdCandidates(id)) {
+        const hit = byId.get(candidate);
+        if (hit) return hit;
+      }
+      // last resort: suffix match ("deepseek-v4-flash" → "deepseek/deepseek-v4-flash")
+      for (const candidate of modelIdCandidates(id)) {
+        const hit = models.find((m) => m.id.endsWith(`/${candidate}`));
+        if (hit) return hit;
+      }
+      return null;
+    };
+    return {
+      models,
+      defaultJudgeModel: data?.defaultJudgeModel ?? null,
+      resolve,
+      loaded: data !== null,
+    };
+  }, [data]);
 }
 
 /** Ticking Date.now() — drives Spinner/Elapsed. */

@@ -110,6 +110,14 @@ export async function lookupModelCost(
 }
 
 /**
+ * Price lookup for judge models (OpenRouter ids, e.g. "deepseek/deepseek-v4-pro").
+ * Delegates to the pi mapping: "openrouter" section + optional "openrouter/" prefix strip.
+ */
+export async function lookupOpenrouterModel(modelId: string): Promise<PricedModel | null> {
+  return lookupModelCost("pi", modelId);
+}
+
+/**
  * USD for a usage block. `inputIncludesCacheRead` handles the codex semantic
  * (OpenAI input_tokens INCLUDE cached tokens → uncachedInput = input - cacheRead);
  * Anthropic/pi/opencode input EXCLUDES cache tokens → use input directly.

@@ -1,16 +1,13 @@
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
-import { createRun, getModels, listConfigs, listScenarios } from "../api.ts";
+import { createRun, listConfigs, listScenarios } from "../api.ts";
 import { fuzzyMatch } from "../components/DataTable.tsx";
-import { fmtTokens } from "../components/format.ts";
+import { fmtPerM, fmtTokens } from "../components/format.ts";
+import { HarnessIcon } from "../components/HarnessIcon.tsx";
+import { ModelChip } from "../components/ModelChip.tsx";
 import { Spinner } from "../components/Spinner.tsx";
 import { InfoTip, Tooltip } from "../components/Tooltip.tsx";
-import { navigate, usePoll } from "../hooks.ts";
+import { navigate, useModels, usePoll } from "../hooks.ts";
 import type { CreateRunBody } from "../types.ts";
-
-function fmtPerM(v: number | null): string {
-  if (v === null || Number.isNaN(v)) return "—";
-  return `$${Number(v.toFixed(4))}`;
-}
 
 function clamp(n: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, Math.round(n)));
@@ -19,7 +16,7 @@ function clamp(n: number, min: number, max: number): number {
 function NewRunForm(props: { onClose: () => void }): ReactNode {
   const scenarios = usePoll(listScenarios, null, []);
   const configs = usePoll(listConfigs, null, []);
-  const models = usePoll(getModels, null, []);
+  const models = useModels();
 
   const [name, setName] = useState("");
   // null = user hasn't touched yet → defaults derive from the fetched lists.
@@ -36,7 +33,7 @@ function NewRunForm(props: { onClose: () => void }): ReactNode {
   const selScenarios = scenarioSel ?? new Set(firstScenario !== undefined ? [firstScenario] : []);
   const selConfigs =
     configSel ?? new Set((configs.data ?? []).filter((c) => c.isDefault).map((c) => c.id));
-  const judge = judgeModel ?? models.data?.defaultJudgeModel ?? "";
+  const judge = judgeModel ?? models.defaultJudgeModel ?? "";
 
   const toggleScenario = (id: string) => {
     const next = new Set(selScenarios);
@@ -52,11 +49,15 @@ function NewRunForm(props: { onClose: () => void }): ReactNode {
   };
 
   const matches = useMemo(() => {
-    const all = models.data?.models ?? [];
     const q = judge.trim();
-    const filtered = q.length > 0 ? all.filter((m) => fuzzyMatch(q, `${m.id} ${m.name}`)) : all;
+    const filtered =
+      q.length > 0
+        ? models.models.filter((m) => fuzzyMatch(q, `${m.id} ${m.name}`))
+        : models.models;
     return filtered.slice(0, 12);
-  }, [models.data, judge]);
+  }, [models.models, judge]);
+
+  const resolvedJudge = models.resolve(judge.trim().length > 0 ? judge.trim() : null);
 
   const canSubmit = selScenarios.size > 0 && selConfigs.size > 0 && !submitting;
 
@@ -87,15 +88,15 @@ function NewRunForm(props: { onClose: () => void }): ReactNode {
     const loadError = scenarios.error ?? configs.error;
     return (
       <div className="new-run-body">
-        <h3 className="dialog-title">new run</h3>
+        <h3 className="dialog-title">New Run</h3>
         {loadError ? (
-          <div className="form-error">failed to load: {loadError}</div>
+          <div className="form-error">Failed to load: {loadError}</div>
         ) : (
-          <Spinner label="loading scenarios + configs…" />
+          <Spinner label="Loading scenarios + configs…" />
         )}
         <div className="dialog-actions">
           <button type="button" className="btn" onClick={props.onClose}>
-            close
+            Close
           </button>
         </div>
       </div>
@@ -110,20 +111,20 @@ function NewRunForm(props: { onClose: () => void }): ReactNode {
         void submit();
       }}
     >
-      <h3 className="dialog-title">new run</h3>
+      <h3 className="dialog-title">New Run</h3>
 
       <div className="form-field">
-        <span className="form-label">name (optional)</span>
+        <span className="form-label">Name (optional)</span>
         <input
           type="text"
           value={name}
-          placeholder="nightly, smoke, …"
+          placeholder="Nightly, smoke, …"
           onChange={(e) => setName(e.target.value)}
         />
       </div>
 
       <div className="form-field">
-        <span className="form-label">scenarios</span>
+        <span className="form-label">Scenarios</span>
         <div className="check-list">
           {scenarios.data.map((s) => (
             <Tooltip key={s.id} text={s.name}>
@@ -141,26 +142,27 @@ function NewRunForm(props: { onClose: () => void }): ReactNode {
       </div>
 
       <div className="form-field">
-        <span className="form-label">configs</span>
+        <span className="form-label">Configs</span>
         <div className="check-list">
           {configs.data.map((c) => (
-            <Tooltip key={c.id} text={`${c.label ?? c.id}${c.model ? ` · ${c.model}` : ""}`}>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={selConfigs.has(c.id)}
-                  onChange={() => toggleConfig(c.id)}
-                />
-                {c.id}
-              </label>
-            </Tooltip>
+            <label key={c.id}>
+              <input
+                type="checkbox"
+                checked={selConfigs.has(c.id)}
+                onChange={() => toggleConfig(c.id)}
+              />
+              <HarnessIcon harness={c.provider} />
+              <Tooltip text={`${c.label ?? c.id}${c.model ? ` · ${c.model}` : ""}`}>
+                <span>{c.id}</span>
+              </Tooltip>
+            </label>
           ))}
         </div>
       </div>
 
       <div className="form-row-2">
         <div className="form-field">
-          <span className="form-label">attempts per cell</span>
+          <span className="form-label">Attempts Per Cell</span>
           <input
             type="number"
             min={1}
@@ -170,7 +172,7 @@ function NewRunForm(props: { onClose: () => void }): ReactNode {
           />
         </div>
         <div className="form-field">
-          <span className="form-label">concurrency</span>
+          <span className="form-label">Concurrency</span>
           <input
             type="number"
             min={1}
@@ -183,7 +185,7 @@ function NewRunForm(props: { onClose: () => void }): ReactNode {
 
       <div className="form-field">
         <span className="form-label">
-          judge model <InfoTip text="bare OpenRouter id; scenario-level judge models still win" />
+          Judge Model <InfoTip text="Bare OpenRouter id; scenario-level judge models still win" />
         </span>
         <div className="model-select">
           <input
@@ -222,16 +224,22 @@ function NewRunForm(props: { onClose: () => void }): ReactNode {
             </div>
           ) : null}
         </div>
+        {resolvedJudge !== null ? (
+          <div className="judge-preview">
+            <span className="dim">Resolves to </span>
+            <ModelChip model={judge.trim()} />
+          </div>
+        ) : null}
       </div>
 
       {error ? <div className="form-error">{error}</div> : null}
 
       <div className="dialog-actions">
         <button type="button" className="btn" onClick={props.onClose}>
-          cancel
+          Cancel
         </button>
         <button type="submit" className="btn btn-primary" disabled={!canSubmit}>
-          {submitting ? "starting…" : "start run"}
+          {submitting ? "Starting…" : "Start Run"}
         </button>
       </div>
     </form>

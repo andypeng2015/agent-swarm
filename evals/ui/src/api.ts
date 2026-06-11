@@ -3,6 +3,7 @@ import type {
   AttemptJson,
   ConfigJson,
   CreateRunBody,
+  JudgeLiveResponse,
   ModelsResponse,
   RunDetail,
   RunListItem,
@@ -60,8 +61,20 @@ export function getAttempt(id: string): Promise<AttemptDetail> {
   return request(`/api/attempts/${encodeURIComponent(id)}`);
 }
 
-export function getTranscript(attemptId: string): Promise<TranscriptResponse> {
-  return request(`/api/attempts/${encodeURIComponent(attemptId)}/transcript`);
+export function getTranscript(
+  attemptId: string,
+  opts?: { live?: boolean },
+): Promise<TranscriptResponse> {
+  const qs = opts?.live ? "?live=1" : "";
+  return request(`/api/attempts/${encodeURIComponent(attemptId)}/transcript${qs}`);
+}
+
+/**
+ * Live judge traces while an attempt is judging. Always 200; unknown/finished
+ * attempts return { judging: false, traces: [] } — use persisted judgments then.
+ */
+export function getJudgeLive(attemptId: string): Promise<JudgeLiveResponse> {
+  return request(`/api/attempts/${encodeURIComponent(attemptId)}/judge-live`);
 }
 
 export function listScenarios(): Promise<ScenarioJson[]> {

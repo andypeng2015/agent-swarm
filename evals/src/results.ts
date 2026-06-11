@@ -25,6 +25,8 @@ export interface RunSummary {
     passedCells: number;
     totalCells: number;
     totalCostUsd: number | null;
+    /** Judge LLM cost (harness overhead) — kept SEPARATE from totalCostUsd. */
+    judgeCostUsd: number | null;
     /** Sum of non-null attempt durationMs. */
     totalDurationMs: number | null;
     passedAttempts: number;
@@ -69,6 +71,7 @@ export function summarizeRun(run: EvalRunRow, attempts: AttemptRow[]): RunSummar
     }
   }
   const costsAll = cells.map((c) => c.totalCostUsd).filter((c): c is number => c !== null);
+  const judgeCosts = attempts.map((a) => a.judgeCostUsd).filter((c): c is number => c !== null);
   const durationsAll = attempts.map((a) => a.durationMs).filter((d): d is number => d !== null);
   const finishedAttempts = attempts.filter((a) => ["passed", "failed", "error"].includes(a.status));
   return {
@@ -80,6 +83,7 @@ export function summarizeRun(run: EvalRunRow, attempts: AttemptRow[]): RunSummar
       passedCells: cells.filter((c) => c.passedAny).length,
       totalCells: cells.length,
       totalCostUsd: costsAll.length ? costsAll.reduce((a, b) => a + b, 0) : null,
+      judgeCostUsd: judgeCosts.length ? judgeCosts.reduce((a, b) => a + b, 0) : null,
       totalDurationMs: durationsAll.length ? durationsAll.reduce((a, b) => a + b, 0) : null,
       passedAttempts: attempts.filter((a) => a.status === "passed").length,
       errorAttempts: attempts.filter((a) => a.status === "error").length,

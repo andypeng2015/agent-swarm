@@ -1,5 +1,6 @@
 import { type ReactNode, useEffect, useState } from "react";
 import { navigate, useHashRoute } from "./hooks.ts";
+import ConfigsPage from "./pages/ConfigsPage.tsx";
 import RunDetailsPage from "./pages/RunDetailsPage.tsx";
 import RunsPage from "./pages/RunsPage.tsx";
 import ScenariosPage from "./pages/ScenariosPage.tsx";
@@ -17,7 +18,7 @@ function ThemeToggle(): ReactNode {
       type="button"
       className="theme-toggle"
       onClick={toggle}
-      title={`switch to ${next} theme`}
+      title={`Switch to the ${next} theme`}
     >
       ◐
     </button>
@@ -44,6 +45,8 @@ export default function App(): ReactNode {
   let page: ReactNode;
   if (parts[0] === "scenarios") {
     page = <ScenariosPage scenarioId={parts[1] ?? null} />;
+  } else if (parts[0] === "configs") {
+    page = <ConfigsPage configId={parts[1] ?? null} />;
   } else if (parts[0] === "runs" && parts[1] && !legacyCell) {
     const attemptId = parts[2] === "attempts" && parts[3] ? parts[3] : null;
     page = <RunDetailsPage runId={parts[1]} attemptId={attemptId} />;
@@ -51,7 +54,8 @@ export default function App(): ReactNode {
     page = <RunsPage />;
   }
 
-  const section = parts[0] === "scenarios" ? "scenarios" : "runs";
+  const section =
+    parts[0] === "scenarios" ? "scenarios" : parts[0] === "configs" ? "configs" : "runs";
 
   return (
     <>
@@ -64,10 +68,13 @@ export default function App(): ReactNode {
         </a>
         <nav className="nav-pills">
           <a className={section === "runs" ? "pill active" : "pill"} href="#/runs">
-            runs
+            Runs
           </a>
           <a className={section === "scenarios" ? "pill active" : "pill"} href="#/scenarios">
-            scenarios
+            Scenarios
+          </a>
+          <a className={section === "configs" ? "pill active" : "pill"} href="#/configs">
+            Configs
           </a>
         </nav>
         <ThemeToggle />

@@ -114,8 +114,7 @@ export function normalizeCodex(ordered: DecodedRecord[]): NormalizedItem[] {
     const item = isRecord(ev.item) ? ev.item : undefined;
     switch (ev.type) {
       case "item.started": {
-        if (!item) break;
-        if (item.type === "command_execution" || item.type === "mcp_tool_call") {
+        if (item && (item.type === "command_execution" || item.type === "mcp_tool_call")) {
           items.push(
             makeItem(d, "tool_call", {
               role: "assistant",
@@ -126,11 +125,17 @@ export function normalizeCodex(ordered: DecodedRecord[]): NormalizedItem[] {
               },
             }),
           );
+        } else {
+          // progress markers (agent_message/reasoning starts) — keep them visible as meta
+          items.push(makeItem(d, "lifecycle", { role: "system", meta: ev }));
         }
         break;
       }
       case "item.completed": {
-        if (!item) break;
+        if (!item) {
+          items.push(makeItem(d, "lifecycle", { role: "system", meta: ev }));
+          break;
+        }
         switch (item.type) {
           case "command_execution":
           case "mcp_tool_call": {
@@ -149,12 +154,15 @@ export function normalizeCodex(ordered: DecodedRecord[]): NormalizedItem[] {
           case "agent_message": {
             if (typeof item.text === "string") {
               items.push(makeItem(d, "text", { role: "assistant", text: item.text }));
+            } else {
+              items.push(makeItem(d, "lifecycle", { role: "system", meta: ev }));
             }
             break;
           }
           case "reasoning": {
             const text = typeof item.text === "string" ? item.text : asString(item.summary);
             if (text) items.push(makeItem(d, "reasoning", { role: "assistant", text }));
+            else items.push(makeItem(d, "lifecycle", { role: "system", meta: ev }));
             break;
           }
           case "file_change": {
@@ -216,11 +224,13 @@ export function normalizeClaudeManaged(ordered: DecodedRecord[]): NormalizedItem
       case "agent.message": {
         const text = resultBlockText(ev.content);
         if (text) items.push(makeItem(d, "text", { role: "assistant", text }));
+        else items.push(makeItem(d, "lifecycle", { role: "system", meta: ev }));
         break;
       }
       case "user.message": {
         const text = resultBlockText(ev.content);
         if (text) items.push(makeItem(d, "text", { role: "user", text }));
+        else items.push(makeItem(d, "lifecycle", { role: "system", meta: ev }));
         break;
       }
       case "agent.tool_use": {
@@ -301,7 +311,7 @@ export function normalizeOpencode(ordered: DecodedRecord[]): NormalizedItem[] {
     }
   }
 
-  const acc = new Map<string, { chunks: string[]; first: DecodedRecord }>();
+  const acc = new Map<string, { chunks: string[]; first: DecodedRecord; recIds: string[] }>();
   const orderedOutput: Array<
     | { kind: "part"; partId: string }
     | { kind: "event"; d: DecodedRecord; event: Record<string, unknown> }
@@ -321,20 +331,23 @@ export function normalizeOpencode(ordered: DecodedRecord[]): NormalizedItem[] {
     if (ev.type === "message.part.delta") {
       const props = isRecord(ev.properties) ? ev.properties : undefined;
       const partId = props?.partID ?? props?.partId;
-      if (!partId) continue;
-      const id = String(partId);
-      if (!acc.has(id)) {
-        acc.set(id, { chunks: [], first: d });
-        orderedOutput.push({ kind: "part", partId: id });
+      if (!partId) {
+        orderedOutput.push({ kind: "event", d, event: { type: "unknown", raw: ev } });
+        continue;
       }
-      acc.get(id)?.chunks.push(String(props?.delta ?? ""));
+      const id = String(partId);
+      const stream = acc.get(id);
+      if (!stream) {
+        acc.set(id, { chunks: [String(props?.delta ?? "")], first: d, recIds: [] });
+        orderedOutput.push({ kind: "part", partId: id });
+      } else {
+        stream.chunks.push(String(props?.delta ?? ""));
+        stream.recIds.push(d.rec.id);
+      }
       continue;
     }
 
-    if (ev.type === "message.part.updated") {
-      continue;
-    }
-
+    // consumed for part typing in the pre-pass; still surfaced as an internal event
     orderedOutput.push({ kind: "event", d, event: ev });
   }
 
@@ -348,6 +361,7 @@ export function normalizeOpencode(ordered: DecodedRecord[]): NormalizedItem[] {
           role: "assistant",
           text: stream.chunks.join(""),
           meta: { partID: output.partId, rawCount: stream.chunks.length },
+          coveredRecIds: stream.recIds,
         }),
       );
       continue;
@@ -409,6 +423,7 @@ function emitOpencodeEvent(
     }
     case "server.heartbeat":
     case "server.connected": {
+      items.push(makeItem(d, "lifecycle", { role: "system", meta: event }));
       break;
     }
     case "file.edited":
@@ -428,12 +443,12 @@ function emitOpencodeEvent(
       const type = asString(event.type) ?? "";
       if (
         type === "message.updated" ||
+        type.startsWith("message.part.") ||
         type.startsWith("session.") ||
-        type.startsWith("file.watcher.")
+        type.startsWith("file.watcher.") ||
+        type.startsWith("server.")
       ) {
         items.push(makeItem(d, "lifecycle", { role: "system", meta: event }));
-      } else if (type.startsWith("server.")) {
-        break;
       } else {
         items.push(makeItem(d, "unknown", { role: "system", raw: event }));
       }

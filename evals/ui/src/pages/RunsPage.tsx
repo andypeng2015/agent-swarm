@@ -1,14 +1,21 @@
 import { type ReactNode, useMemo, useState } from "react";
-import { cancelRun, getModels, getRun, listRuns, resumeRun } from "../api.ts";
-import { type Column, DataTable } from "../components/DataTable.tsx";
+import { cancelRun, getRun, listConfigs, listRuns, resumeRun } from "../api.ts";
+import { type Column, DataTable, MultiSelect } from "../components/DataTable.tsx";
 import { EntityLink } from "../components/EntityLink.tsx";
 import { fmtAgo, fmtCost, fmtDate, fmtDuration } from "../components/format.ts";
+import { HarnessIcon } from "../components/HarnessIcon.tsx";
 import { Matrix } from "../components/Matrix.tsx";
-import { Elapsed, PulseDot, Spinner } from "../components/Spinner.tsx";
-import { CostBadge, StatusBadge } from "../components/StatusBadge.tsx";
+import { ModelChip } from "../components/ModelChip.tsx";
+import { Elapsed, Spinner } from "../components/Spinner.tsx";
+import {
+  CostBadge,
+  StatusBadge,
+  StatusScore,
+  statusGlyphInfo,
+} from "../components/StatusBadge.tsx";
 import { InfoTip } from "../components/Tooltip.tsx";
-import { navigate, usePoll } from "../hooks.ts";
-import type { CellJson, RunListItem } from "../types.ts";
+import { navigate, useModels, usePoll } from "../hooks.ts";
+import type { CellJson, ConfigJson, RunListItem } from "../types.ts";
 import { NewRunDialog } from "./NewRunDialog.tsx";
 import "./runs.css";
 
@@ -20,79 +27,84 @@ function runLabel(item: RunListItem): string {
   return item.run.name ?? item.run.id.replace(/^run-/, "");
 }
 
+/** Best score across the run's cells (item 13); null when no cell has one yet. */
+function bestScoreOf(item: RunListItem): number | null {
+  const scores = item.cells
+    .map((c) => c.bestScore)
+    .filter((v): v is number => v !== null && !Number.isNaN(v));
+  return scores.length > 0 ? Math.max(...scores) : null;
+}
+
+// Exactly five columns (item 11): Run (flexible), Status (+ best score), Scenarios, Cost, Created.
 const RUN_COLUMNS: Column<RunListItem>[] = [
   {
     key: "run",
-    header: "run",
+    header: "Run",
     searchText: (r) => `${r.run.id} ${r.run.name ?? ""}`,
+    titleText: (r) => (r.run.name !== null ? `${r.run.name} · ${r.run.id}` : r.run.id),
     sortValue: (r) => runLabel(r),
     render: (r) => runLabel(r),
   },
   {
     key: "status",
-    header: "status",
-    width: "90px",
-    filterOptions: (rows) => {
-      const opts = distinct(rows.map((r) => r.run.status));
-      if (rows.some((r) => r.active)) opts.push("active");
-      return opts;
-    },
-    filterValue: (r) => (r.active ? [r.run.status, "active"] : [r.run.status]),
+    header: "Status",
+    width: "80px",
     sortValue: (r) => r.run.status,
     render: (r) => (
-      <span className="status-cell">
-        <StatusBadge status={r.run.status} />
-        {r.active && r.run.status !== "running" ? <PulseDot /> : null}
-      </span>
+      <StatusScore
+        status={r.run.status}
+        score={bestScoreOf(r)}
+        tip={r.active ? "Executor active" : undefined}
+      />
     ),
   },
   {
     key: "scenarios",
-    header: "scenarios",
+    header: "Scenarios",
     align: "center",
-    width: "70px",
-    filterOptions: (rows) => distinct(rows.flatMap((r) => r.run.scenarioIds)),
-    filterValue: (r) => r.run.scenarioIds,
+    width: "90px",
     searchText: (r) => r.run.scenarioIds.join(" "),
+    titleText: (r) => r.run.scenarioIds.join(", "),
     sortValue: (r) => r.run.scenarioIds.length,
-    render: (r) => <span title={r.run.scenarioIds.join(", ")}>{r.run.scenarioIds.length}</span>,
-  },
-  {
-    key: "configs",
-    header: "configs",
-    align: "center",
-    width: "60px",
-    filterOptions: (rows) => distinct(rows.flatMap((r) => r.run.configIds)),
-    filterValue: (r) => r.run.configIds,
-    searchText: (r) => r.run.configIds.join(" "),
-    sortValue: (r) => r.run.configIds.length,
-    render: (r) => <span title={r.run.configIds.join(", ")}>{r.run.configIds.length}</span>,
-  },
-  {
-    key: "cells",
-    header: "cells",
-    align: "center",
-    width: "60px",
-    sortValue: (r) => (r.totals.totalCells > 0 ? r.totals.passedCells / r.totals.totalCells : null),
-    render: (r) => `${r.totals.passedCells}/${r.totals.totalCells}`,
+    render: (r) => r.run.scenarioIds.length,
   },
   {
     key: "cost",
-    header: "cost",
+    header: "Cost",
     align: "right",
-    width: "75px",
+    width: "72px",
     sortValue: (r) => r.totals.totalCostUsd,
     render: (r) => fmtCost(r.totals.totalCostUsd),
   },
   {
     key: "created",
-    header: "created",
+    header: "Created",
     align: "right",
-    width: "85px",
+    width: "90px",
+    titleText: (r) => r.run.createdAt,
     sortValue: (r) => r.run.createdAt,
-    render: (r) => <span title={r.run.createdAt}>{fmtAgo(r.run.createdAt)}</span>,
+    render: (r) => fmtAgo(r.run.createdAt),
   },
 ];
+
+/** Glyph + capitalized label for a status filter option (items 2, 8). */
+function statusOptionLabel(option: string): ReactNode {
+  if (option === "active") {
+    return (
+      <>
+        <span className="status-glyph tone-accent">●</span>
+        Active
+      </>
+    );
+  }
+  const info = statusGlyphInfo(option);
+  return (
+    <>
+      <span className={`status-glyph tone-${info.tone}`}>{info.glyph || "⠋"}</span>
+      {info.label}
+    </>
+  );
+}
 
 interface BreakdownRow {
   id: string;
@@ -122,17 +134,29 @@ function aggregateBy(
   });
 }
 
-function breakdownColumns(kind: "scenario" | "config"): Column<BreakdownRow>[] {
+function breakdownColumns(
+  kind: "scenario" | "config",
+  providerOf?: (id: string) => string | null,
+): Column<BreakdownRow>[] {
   return [
     {
       key: "id",
-      header: kind,
+      header: kind === "scenario" ? "Scenario" : "Config",
+      titleText: (r) => r.id,
       sortValue: (r) => r.id,
-      render: (r) => <EntityLink kind={kind} id={r.id} />,
+      render: (r) =>
+        providerOf ? (
+          <span className="config-ref">
+            <HarnessIcon harness={providerOf(r.id)} />
+            <EntityLink kind={kind} id={r.id} />
+          </span>
+        ) : (
+          <EntityLink kind={kind} id={r.id} />
+        ),
     },
     {
       key: "pass",
-      header: "pass",
+      header: "Pass",
       align: "right",
       width: "60px",
       sortValue: (r) => (r.cells > 0 ? r.passed / r.cells : null),
@@ -140,7 +164,7 @@ function breakdownColumns(kind: "scenario" | "config"): Column<BreakdownRow>[] {
     },
     {
       key: "cost",
-      header: "cost",
+      header: "Cost",
       align: "right",
       width: "75px",
       sortValue: (r) => r.costUsd,
@@ -148,7 +172,7 @@ function breakdownColumns(kind: "scenario" | "config"): Column<BreakdownRow>[] {
     },
     {
       key: "duration",
-      header: "avg time",
+      header: "Avg Time",
       align: "right",
       width: "75px",
       sortValue: (r) => r.avgDurationMs,
@@ -158,7 +182,6 @@ function breakdownColumns(kind: "scenario" | "config"): Column<BreakdownRow>[] {
 }
 
 const SCENARIO_COLUMNS = breakdownColumns("scenario");
-const CONFIG_COLUMNS = breakdownColumns("config");
 
 function Meta(props: { label: string; title?: string; children: ReactNode }): ReactNode {
   return (
@@ -172,6 +195,7 @@ function Meta(props: { label: string; title?: string; children: ReactNode }): Re
 function RunDetailPane(props: {
   item: RunListItem;
   defaultJudgeModel: string | null;
+  configs: ConfigJson[] | null;
   onChanged: () => void;
 }): ReactNode {
   const id = props.item.run.id;
@@ -196,7 +220,7 @@ function RunDetailPane(props: {
     );
 
   const act = async (kind: "cancel" | "resume") => {
-    if (kind === "cancel" && !window.confirm("cancel this run?")) return;
+    if (kind === "cancel" && !window.confirm("Cancel this run?")) return;
     setBusy(kind);
     setActionError(null);
     try {
@@ -219,6 +243,13 @@ function RunDetailPane(props: {
     () => aggregateBy(run.configIds, cells, "configId"),
     [run.configIds, cells],
   );
+  const configColumns = useMemo(() => {
+    const configs = props.configs;
+    return breakdownColumns(
+      "config",
+      (cid) => configs?.find((c) => c.id === cid)?.provider ?? null,
+    );
+  }, [props.configs]);
 
   const wallTime = run.finishedAt ? (
     fmtDuration(new Date(run.finishedAt).getTime() - new Date(run.createdAt).getTime())
@@ -237,7 +268,7 @@ function RunDetailPane(props: {
             {run.id}
           </code>
           <StatusBadge status={run.status} />
-          {active ? <Spinner label="executing" /> : null}
+          {active ? <Spinner label="Executing" /> : null}
           <div className="detail-actions">
             {active ? (
               <button
@@ -246,7 +277,7 @@ function RunDetailPane(props: {
                 disabled={busy !== null}
                 onClick={() => void act("cancel")}
               >
-                {busy === "cancel" ? "cancelling…" : "cancel"}
+                {busy === "cancel" ? "Cancelling…" : "Cancel"}
               </button>
             ) : null}
             {canResume ? (
@@ -256,7 +287,7 @@ function RunDetailPane(props: {
                 disabled={busy !== null}
                 onClick={() => void act("resume")}
               >
-                {busy === "resume" ? "resuming…" : "resume"}
+                {busy === "resume" ? "Resuming…" : "Resume"}
               </button>
             ) : null}
             <button
@@ -264,43 +295,43 @@ function RunDetailPane(props: {
               className="btn btn-primary"
               onClick={() => navigate(`#/runs/${run.id}`)}
             >
-              open details →
+              Open Details →
             </button>
           </div>
         </div>
         {actionError ? <div className="form-error">{actionError}</div> : null}
         <div className="meta-grid">
-          <Meta label="created" title={run.createdAt}>
+          <Meta label="Created" title={run.createdAt}>
             {fmtDate(run.createdAt)} <span className="dim">· {fmtAgo(run.createdAt)}</span>
           </Meta>
-          <Meta label="finished" title={run.finishedAt ?? undefined}>
+          <Meta label="Finished" title={run.finishedAt ?? undefined}>
             {fmtDate(run.finishedAt)}
           </Meta>
-          <Meta label="wall time">{wallTime}</Meta>
-          <Meta label="total cost">
+          <Meta label="Wall Time">{wallTime}</Meta>
+          <Meta label="Total Cost">
             <CostBadge costUsd={totals.totalCostUsd} source={null} />{" "}
             {totals.unpricedAttempts > 0 ? (
               <InfoTip text={`${totals.unpricedAttempts} attempt(s) unpriced — not in the total`} />
             ) : null}
           </Meta>
-          <Meta label="attempts">
+          <Meta label="Attempts">
             {totals.finished}/{totals.attempts}{" "}
             <span className="dim">
-              · {totals.passedAttempts} passed · {totals.errorAttempts} err
+              · {totals.passedAttempts} Passed · {totals.errorAttempts} Errors
             </span>
           </Meta>
-          <Meta label={`best@${run.attemptsPerCell}`}>
-            {totals.passedCells}/{totals.totalCells} cells
+          <Meta label={`Best@${run.attemptsPerCell}`}>
+            {totals.passedCells}/{totals.totalCells} Cells
           </Meta>
-          <Meta label="concurrency">{run.concurrency}</Meta>
-          <Meta label="judge model">
-            <code className="chip">{run.judgeModel ?? props.defaultJudgeModel ?? "default"}</code>
-            {run.judgeModel === null ? <span className="dim"> (default)</span> : null}
+          <Meta label="Concurrency">{run.concurrency}</Meta>
+          <Meta label="Judge Model">
+            <ModelChip model={run.judgeModel ?? props.defaultJudgeModel} />
+            {run.judgeModel === null ? <span className="dim"> (Default)</span> : null}
           </Meta>
         </div>
       </div>
       <div className="panel">
-        <h3 className="panel-title">matrix</h3>
+        <h3 className="panel-title">Matrix</h3>
         <div className="matrix-scroll">
           <Matrix
             scenarioIds={run.scenarioIds}
@@ -313,7 +344,7 @@ function RunDetailPane(props: {
       </div>
       <div className="breakdown-grid">
         <div className="panel">
-          <h3 className="panel-title">by scenario</h3>
+          <h3 className="panel-title">By Scenario</h3>
           <DataTable
             rows={scenarioRows}
             columns={SCENARIO_COLUMNS}
@@ -322,10 +353,10 @@ function RunDetailPane(props: {
           />
         </div>
         <div className="panel">
-          <h3 className="panel-title">by config</h3>
+          <h3 className="panel-title">By Config</h3>
           <DataTable
             rows={configRows}
-            columns={CONFIG_COLUMNS}
+            columns={configColumns}
             rowKey={(r) => r.id}
             searchable={false}
           />
@@ -337,11 +368,47 @@ function RunDetailPane(props: {
 
 export default function RunsPage(): ReactNode {
   const runsPoll = usePoll(listRuns, 4000, []);
-  const modelsPoll = usePoll(getModels, null, []);
+  const configsPoll = usePoll(listConfigs, null, []);
+  const models = useModels();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<string[]>([]);
+  const [scenarioFilter, setScenarioFilter] = useState<string[]>([]);
+  const [configFilter, setConfigFilter] = useState<string[]>([]);
 
   const runs = useMemo(() => runsPoll.data ?? [], [runsPoll.data]);
+  const configs = configsPoll.data;
+
+  // Filter options (item 9): status (incl. the synthetic "active"), scenarios, configs.
+  const statusOptions = useMemo(() => {
+    const opts = distinct(runs.map((r) => r.run.status));
+    if (runs.some((r) => r.active)) opts.push("active");
+    return opts;
+  }, [runs]);
+  const scenarioOptions = useMemo(() => distinct(runs.flatMap((r) => r.run.scenarioIds)), [runs]);
+  const configOptions = useMemo(() => distinct(runs.flatMap((r) => r.run.configIds)), [runs]);
+
+  const filteredRuns = useMemo(
+    () =>
+      runs.filter((r) => {
+        if (statusFilter.length > 0) {
+          const values = r.active ? [r.run.status, "active"] : [r.run.status];
+          if (!values.some((v) => statusFilter.includes(v))) return false;
+        }
+        if (
+          scenarioFilter.length > 0 &&
+          !r.run.scenarioIds.some((s) => scenarioFilter.includes(s))
+        ) {
+          return false;
+        }
+        if (configFilter.length > 0 && !r.run.configIds.some((c) => configFilter.includes(c))) {
+          return false;
+        }
+        return true;
+      }),
+    [runs, statusFilter, scenarioFilter, configFilter],
+  );
+
   const newest = useMemo(
     () => [...runs].sort((a, b) => b.run.createdAt.localeCompare(a.run.createdAt))[0] ?? null,
     [runs],
@@ -352,18 +419,18 @@ export default function RunsPage(): ReactNode {
   let body: ReactNode;
   if (runsPoll.data === null) {
     body = runsPoll.error ? (
-      <div className="panel form-error">failed to load runs: {runsPoll.error}</div>
+      <div className="panel form-error">Failed to load runs: {runsPoll.error}</div>
     ) : (
       <div className="panel">
-        <Spinner label="loading runs…" />
+        <Spinner label="Loading runs…" />
       </div>
     );
   } else if (runs.length === 0) {
     body = (
       <div className="panel runs-empty">
-        <p className="dim">no runs yet — pick a scenario × config matrix and start one.</p>
+        <p className="dim">No runs yet — pick a scenario × config matrix and start one.</p>
         <button type="button" className="btn btn-primary" onClick={() => setDialogOpen(true)}>
-          + new run
+          + New Run
         </button>
       </div>
     );
@@ -373,22 +440,53 @@ export default function RunsPage(): ReactNode {
         <section>
           <div className="runs-head">
             <h2 className="runs-title">
-              runs <span className="dim">({runs.length})</span>
+              Runs <span className="dim">({runs.length})</span>
             </h2>
             <button type="button" className="btn btn-primary" onClick={() => setDialogOpen(true)}>
-              + new run
+              + New Run
             </button>
           </div>
           <div className="panel">
+            {/* Row 1: multi-select filters; row 2: the DataTable's full-width search (item 9). */}
+            <div className="runs-filters">
+              <MultiSelect
+                label="Status"
+                options={statusOptions}
+                selected={statusFilter}
+                onChange={setStatusFilter}
+                renderOption={statusOptionLabel}
+              />
+              <MultiSelect
+                label="Scenarios"
+                options={scenarioOptions}
+                selected={scenarioFilter}
+                onChange={setScenarioFilter}
+              />
+              <MultiSelect
+                label="Configs"
+                options={configOptions}
+                selected={configFilter}
+                onChange={setConfigFilter}
+                renderOption={(option) => (
+                  <>
+                    <HarnessIcon
+                      harness={configs?.find((c) => c.id === option)?.provider ?? null}
+                    />
+                    {option}
+                  </>
+                )}
+              />
+            </div>
             <DataTable
-              rows={runs}
+              rows={filteredRuns}
               columns={RUN_COLUMNS}
               rowKey={(r) => r.run.id}
               onRowClick={(r) => setSelectedId(r.run.id)}
               selectedKey={selected?.run.id ?? null}
-              searchPlaceholder="search runs…"
+              toolbarLayout="stacked"
+              searchPlaceholder="Search runs…"
               defaultSort={{ key: "created", dir: "desc" }}
-              maxHeight="calc(100vh - 180px)"
+              maxHeight="calc(100vh - 260px)"
             />
           </div>
         </section>
@@ -396,7 +494,8 @@ export default function RunsPage(): ReactNode {
           <RunDetailPane
             key={selected.run.id}
             item={selected}
-            defaultJudgeModel={modelsPoll.data?.defaultJudgeModel ?? null}
+            defaultJudgeModel={models.defaultJudgeModel}
+            configs={configs}
             onChanged={runsPoll.refresh}
           />
         ) : null}

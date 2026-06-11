@@ -1,7 +1,6 @@
 import type { ReactNode } from "react";
-import { Tooltip } from "./Tooltip.tsx";
 
-/** Backlinking convention: every entity reference is a link (configs render as chips). */
+/** Backlinking convention: every entity reference is a link. */
 export function EntityLink(props: {
   kind: "run" | "scenario" | "attempt" | "config" | "artifact";
   id: string;
@@ -37,9 +36,9 @@ export function EntityLink(props: {
       );
     case "config":
       return (
-        <Tooltip text={id}>
-          <span className="chip">{label}</span>
-        </Tooltip>
+        <a className="entity-link" href={`#/configs/${id}`}>
+          {label}
+        </a>
       );
   }
 }

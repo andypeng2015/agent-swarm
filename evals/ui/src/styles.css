@@ -155,6 +155,12 @@ pre {
   align-items: start;
 }
 
+/* independently scrolling column (item 17) — override --scroll-col-max per page */
+.scroll-col {
+  overflow-y: auto;
+  max-height: var(--scroll-col-max, calc(100vh - 230px));
+}
+
 .panel {
   background: var(--panel);
   border: 1px solid var(--border);
@@ -190,9 +196,26 @@ pre {
   align-items: center;
 }
 
+/* two-row toolbar: row 1 = filters, row 2 = full-width search (item 9) */
+.dt-bar.stacked {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.dt-filters {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
 .dt-search {
   flex: 1;
   min-width: 140px;
+}
+
+.dt-bar.stacked .dt-search {
+  width: 100%;
 }
 
 .dt-scroll {
@@ -203,6 +226,14 @@ table.data {
   width: 100%;
   border-collapse: collapse;
   font-size: 12.5px;
+  table-layout: fixed; /* colgroup widths + single-line ellipsis cells (item 10) */
+}
+
+/* cells never wrap — ellipsis + title reveals the full value (item 10) */
+.dt-cell {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 table.data thead th {
@@ -225,6 +256,7 @@ table.data td {
   padding: 3px 8px;
   border-bottom: 1px solid var(--border);
   vertical-align: top;
+  white-space: nowrap;
 }
 
 table.data tbody tr:hover {
@@ -275,6 +307,117 @@ table.data .align-center {
   text-decoration: none;
   margin: -3px -8px;
   padding: 3px 8px;
+  overflow: hidden;
+}
+
+/* ---- multi-select dropdown filter ---- */
+
+.ms-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel-2);
+  color: var(--dim);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.ms-btn:hover {
+  color: var(--text);
+  border-color: var(--dim);
+}
+
+.ms-btn.active {
+  color: var(--accent);
+  border-color: color-mix(in oklab, var(--accent), transparent 40%);
+  background: color-mix(in oklab, var(--accent), transparent 88%);
+}
+
+.ms-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.ms-count {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--accent), transparent 80%);
+}
+
+.ms-arrow {
+  font-size: 9px;
+  opacity: 0.7;
+}
+
+.ms-menu {
+  position: fixed;
+  z-index: 60;
+  min-width: 160px;
+  max-width: 320px;
+  max-height: 300px;
+  overflow-y: auto;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 35%);
+  display: flex;
+  flex-direction: column;
+}
+
+.ms-option {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 8px;
+  border-radius: 5px;
+  font-size: 12.5px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.ms-option:hover {
+  background: var(--panel-2);
+}
+
+.ms-option input {
+  accent-color: var(--accent);
+  margin: 0;
+}
+
+.ms-option-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ms-clear {
+  margin-top: 4px;
+  border: none;
+  border-top: 1px solid var(--border);
+  background: none;
+  color: var(--accent);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  padding: 5px 8px 3px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.ms-empty {
+  padding: 6px 8px;
+  font-size: 12px;
 }
 
 /* ---- badges / chips ---- */
@@ -287,10 +430,89 @@ table.data .align-center {
   border-radius: 999px;
   font-size: 11px;
   font-family: var(--font-mono);
-  text-transform: lowercase;
   background: color-mix(in oklab, var(--dim), transparent 84%);
   color: var(--text);
   white-space: nowrap;
+}
+
+/* ---- status glyphs (items 2, 8, 13) ---- */
+
+.tone-green {
+  color: var(--green);
+}
+
+.tone-red {
+  color: var(--red);
+}
+
+.tone-accent {
+  color: var(--accent);
+}
+
+.tone-dim {
+  color: var(--dim);
+}
+
+.tone-neutral {
+  color: var(--text);
+}
+
+.status-glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 14px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1;
+  cursor: default;
+}
+
+.status-score {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-mono);
+  white-space: nowrap;
+  cursor: default;
+}
+
+.status-score-num {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- model chip (item 18) ---- */
+
+.model-chip {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border-bottom: 1px dotted var(--dim);
+  cursor: help;
+  font-size: 12.5px;
+}
+
+code.model-chip {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+}
+
+/* ---- harness icon (item 19) ---- */
+
+.harness-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  vertical-align: -2px;
+  color: var(--text);
+}
+
+.harness-icon svg {
+  display: block;
+  flex-shrink: 0;
+  opacity: 0.85;
 }
 
 .badge-green {
@@ -445,8 +667,9 @@ dialog {
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 16px;
-  min-width: 420px;
-  max-width: 640px;
+  min-width: min(420px, calc(100vw - 32px));
+  max-width: min(640px, calc(100vw - 32px));
+  overflow-x: hidden; /* never a horizontal scrollbar (item 6) */
 }
 
 dialog::backdrop {
@@ -519,20 +742,122 @@ dialog::backdrop {
   color: var(--text);
 }
 
-/* ---- tooltip (pure CSS via data-tip) ---- */
+/* ---- pretty view (humanized key/value rendering, item 14) ---- */
 
-.tooltip {
+.pv {
   position: relative;
-  display: inline-flex;
-  align-items: center;
+  font-size: 12.5px;
 }
 
-.tooltip::after {
-  content: attr(data-tip);
+.pv-bar {
   position: absolute;
-  bottom: calc(100% + 6px);
-  left: 50%;
-  transform: translateX(-50%);
+  top: -2px;
+  right: 0;
+  z-index: 2;
+}
+
+.pv-toggle {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 1px 7px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--dim);
+  cursor: pointer;
+}
+
+.pv-toggle:hover {
+  color: var(--text);
+  background: var(--panel-2);
+}
+
+.pv-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.pv-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.pv-row {
+  display: grid;
+  grid-template-columns: minmax(90px, 150px) 1fr;
+  gap: 10px;
+  align-items: baseline;
+}
+
+.pv-key {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pv-val {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.pv-section {
+  margin: 4px 0 2px;
+}
+
+.pv-section-title {
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--dim);
+  margin-bottom: 3px;
+}
+
+.pv-section-body {
+  margin-left: 10px;
+  border-left: 1px solid var(--border);
+  padding-left: 10px;
+}
+
+.pv-chips {
+  display: inline-flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.pv-str {
+  overflow-wrap: anywhere;
+}
+
+.pv-pre {
+  margin: 4px 0 0;
+  padding: 6px 8px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+/* ---- tooltip (portal, position: fixed — escapes every container, item 5) ---- */
+
+.tooltip {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.tip-box {
+  position: fixed;
+  z-index: 70;
   background: var(--panel-2);
   color: var(--text);
   border: 1px solid var(--border);
@@ -544,21 +869,56 @@ dialog::backdrop {
   white-space: pre-line;
   width: max-content;
   max-width: 320px;
-  opacity: 0;
   pointer-events: none;
-  transition: opacity 0.12s;
-  z-index: 30;
+  box-shadow: 0 6px 20px rgb(0 0 0 / 30%);
 }
 
-.tooltip:hover::after,
-.tooltip:focus-within::after {
-  opacity: 1;
+.tip-box.wide {
+  max-width: 420px;
 }
 
 .info-tip {
   color: var(--dim);
   font-size: 11px;
   cursor: help;
+}
+
+/* rich hover-card layout (ModelChip & friends) */
+
+.tip-card {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  white-space: normal;
+}
+
+.tip-card-title {
+  font-weight: 600;
+  font-size: 12px;
+  margin-bottom: 2px;
+}
+
+.tip-card-row {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.tip-card-label {
+  flex: 0 0 76px;
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--dim);
+}
+
+.tip-card-value {
+  font-size: 11.5px;
+  overflow-wrap: anywhere;
+}
+
+.tip-card-value code {
+  font-size: 10.5px;
 }
 
 /* ---- matrix ---- */
@@ -688,10 +1048,6 @@ table.matrix td.matrix-cell.selected {
 @media (prefers-reduced-motion: reduce) {
   .pulse {
     animation: none;
-  }
-
-  .tooltip::after {
-    transition: none;
   }
 }
 

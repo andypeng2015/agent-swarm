@@ -5,6 +5,7 @@ import type {
   AttemptStatus,
   CostSource,
   EvalRunRow,
+  JudgeStep,
   JudgmentRow,
   PhaseTimings,
   RunStatus,
@@ -53,6 +54,7 @@ function rowToAttempt(r: Row): AttemptRow {
     error: (r.error as string) ?? null,
     costUsd: r.cost_usd === null ? null : Number(r.cost_usd),
     costSource: (r.cost_source as CostSource) ?? null,
+    judgeCostUsd: r.judge_cost_usd === null ? null : Number(r.judge_cost_usd),
     tokens: parseJsonColumn<TokenTotals>(r.tokens_json),
     sandbox: parseJsonColumn<SandboxInfo>(r.sandbox_json),
     timings: parseJsonColumn<PhaseTimings>(r.timings_json),
@@ -72,6 +74,10 @@ function rowToJudgment(r: Row): JudgmentRow {
     score: r.score === null ? null : Number(r.score),
     reasoning: (r.reasoning as string) ?? null,
     raw: (r.raw as string) ?? null,
+    durationMs: r.duration_ms === null ? null : Number(r.duration_ms),
+    costUsd: r.cost_usd === null ? null : Number(r.cost_usd),
+    tokens: parseJsonColumn<TokenTotals>(r.tokens_json),
+    steps: parseJsonColumn<JudgeStep[]>(r.steps_json),
     createdAt: r.created_at as string,
   };
 }
@@ -152,6 +158,7 @@ export async function updateAttempt(
     error: string | null;
     costUsd: number | null;
     costSource: CostSource | null;
+    judgeCostUsd: number | null;
     /** Pre-serialized JSON strings — callers JSON.stringify, stored as-is. */
     tokensJson: string | null;
     sandboxJson: string | null;
@@ -174,6 +181,7 @@ export async function updateAttempt(
     error: "error",
     costUsd: "cost_usd",
     costSource: "cost_source",
+    judgeCostUsd: "judge_cost_usd",
     tokensJson: "tokens_json",
     sandboxJson: "sandbox_json",
     timingsJson: "timings_json",
@@ -259,11 +267,17 @@ export async function insertJudgment(
     score?: number | null;
     reasoning?: string | null;
     raw?: string | null;
+    durationMs?: number | null;
+    costUsd?: number | null;
+    /** Pre-serialized JSON strings — callers JSON.stringify, stored as-is. */
+    tokensJson?: string | null;
+    stepsJson?: string | null;
   },
 ): Promise<void> {
   await db.execute({
-    sql: `INSERT INTO judgments (id, attempt_id, kind, name, pass, score, reasoning, raw)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    sql: `INSERT INTO judgments (id, attempt_id, kind, name, pass, score, reasoning, raw,
+          duration_ms, cost_usd, tokens_json, steps_json)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     args: [
       j.id,
       j.attemptId,
@@ -273,6 +287,10 @@ export async function insertJudgment(
       j.score ?? null,
       j.reasoning ?? null,
       j.raw ?? null,
+      j.durationMs ?? null,
+      j.costUsd ?? null,
+      j.tokensJson ?? null,
+      j.stepsJson ?? null,
     ],
   });
 }

@@ -1,27 +1,53 @@
 import type { CheckResult, DeterministicCheck, JudgeContext } from "../types.ts";
+import type { JudgeLiveHandle } from "./live-registry.ts";
+import { finishJudgeTrace, newJudgeTrace } from "./llm.ts";
 
 export interface CheckRunResult extends CheckResult {
   name: string;
+  /** Per-check elapsed wall clock. */
+  durationMs: number;
 }
 
-/** Run all deterministic checks; a thrown check counts as a failure, not a crash. */
+/**
+ * Run all deterministic checks; a thrown check counts as a failure, not a
+ * crash. Each check is timed and pushed into the live trace as it completes.
+ */
 export async function runChecks(
   checks: DeterministicCheck[],
   ctx: JudgeContext,
+  live?: JudgeLiveHandle,
 ): Promise<CheckRunResult[]> {
+  const trace = newJudgeTrace("deterministic", null);
+  live?.attach(trace);
   const results: CheckRunResult[] = [];
   for (const check of checks) {
+    const t0 = Date.now();
+    let res: CheckResult;
     try {
-      const res = await check.fn(ctx);
-      results.push({ name: check.name, ...res });
+      res = await check.fn(ctx);
     } catch (err) {
-      results.push({
-        name: check.name,
+      res = {
         pass: false,
         detail: `check threw: ${err instanceof Error ? err.message : String(err)}`,
-      });
+      };
     }
+    const durationMs = Date.now() - t0;
+    results.push({ name: check.name, ...res, durationMs });
+    trace.steps.push({
+      index: trace.steps.length,
+      kind: "check",
+      text: res.detail ?? null,
+      tool: check.name,
+      args: null,
+      output: null,
+      pass: res.pass,
+      startedAt: new Date(t0).toISOString(),
+      durationMs,
+      tokens: null,
+      costUsd: null,
+    });
   }
+  finishJudgeTrace(trace); // costUsd/tokens stay null — no LLM involved
   return results;
 }
 

@@ -25,10 +25,14 @@
   margin: 0;
 }
 
-.status-cell {
-  display: inline-flex;
+/* row 1 of the left-panel toolbar: multi-select filters (item 9);
+   row 2 is the DataTable's own stacked full-width search */
+.runs-filters {
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 5px;
+  gap: 6px;
+  margin-bottom: 8px;
 }
 
 /* ---- detail pane ---- */
@@ -73,10 +77,29 @@
   margin-top: 0;
 }
 
+/* harness icon + config link, single line (items 10, 19) */
+.config-ref {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  max-width: 100%;
+}
+
 /* ---- new-run dialog ---- */
 
+/*
+ * Item 6 — no horizontal scrollbar, root-cause fixes:
+ * the old CSS tooltip (`.tooltip::after`, opacity 0 but always laid out, width:
+ * max-content) used to stick out past the dialog's content box from the chips near
+ * the right edge, engaging the modal dialog's UA `overflow: auto`. Tooltips are
+ * portal-based now; the rules below remove the remaining fixed-width overflow risks
+ * so `overflow-x` can never engage again.
+ */
+
 .new-run-dialog {
-  width: 560px;
+  /* fixed 560px was wider than small viewports — never exceed the dialog max-width */
+  width: min(560px, calc(100vw - 32px));
 }
 
 .dialog-title {
@@ -105,8 +128,14 @@
 
 .form-row-2 {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  /* minmax(0, 1fr): plain 1fr's min-content floor lets wide inputs blow the row out */
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 12px;
+}
+
+.form-row-2 input {
+  width: 100%;
+  min-width: 0;
 }
 
 .form-error {
@@ -122,6 +151,12 @@
   justify-content: flex-end;
   gap: 8px;
   margin-top: 14px;
+}
+
+/* resolved judge-model preview (item 18) */
+.judge-preview {
+  margin-top: 6px;
+  font-size: 12px;
 }
 
 /* judge-model fuzzy dropdown */
@@ -145,13 +180,15 @@
   border: 1px solid var(--border);
   border-radius: 8px;
   max-height: 280px;
-  overflow: auto;
+  overflow-y: auto;
+  overflow-x: hidden; /* long unbroken model ids must ellipsize, not scroll */
   box-shadow: 0 8px 24px rgb(0 0 0 / 35%);
 }
 
 .model-option {
   display: grid;
-  grid-template-columns: 1fr auto;
+  /* minmax(0, 1fr): unbroken model ids would otherwise widen the track past the menu */
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 0 10px;
   width: 100%;
   text-align: left;
@@ -176,12 +213,18 @@
 
 .model-name {
   font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .model-id {
   grid-column: 1;
   font-family: var(--font-mono);
   font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .model-meta {
@@ -191,4 +234,7 @@
   font-family: var(--font-mono);
   font-size: 11px;
   white-space: nowrap;
+  max-width: 190px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }

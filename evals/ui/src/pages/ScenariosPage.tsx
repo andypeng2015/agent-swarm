@@ -1,48 +1,71 @@
-import type { ReactNode } from "react";
-import { getScenario, listScenarios } from "../api.ts";
+import { type ReactNode, useMemo } from "react";
+import { getScenario, listConfigs, listScenarios } from "../api.ts";
 import { type Column, DataTable } from "../components/DataTable.tsx";
 import { EntityLink } from "../components/EntityLink.tsx";
-import { fmtAgo, fmtDuration, fmtScore } from "../components/format.ts";
-import { JsonView } from "../components/JsonView.tsx";
+import { fmtAgo, fmtDuration } from "../components/format.ts";
+import { HarnessIcon } from "../components/HarnessIcon.tsx";
+import { ModelChip } from "../components/ModelChip.tsx";
+import { PrettyView } from "../components/PrettyView.tsx";
 import { Spinner } from "../components/Spinner.tsx";
-import { CostBadge, StatusBadge } from "../components/StatusBadge.tsx";
+import { CostBadge, StatusScore, statusGlyphInfo } from "../components/StatusBadge.tsx";
 import { InfoTip, Tooltip } from "../components/Tooltip.tsx";
 import { navigate, usePoll } from "../hooks.ts";
 import type { AttemptJson, ScenarioJson } from "../types.ts";
 import "./scenarios.css";
 
-const DESC_CLIP = 120;
+type JudgeKind = "llm" | "agentic";
 
-function judgeNames(s: ScenarioJson): string[] {
-  const names: string[] = [];
-  if (s.outcome.llmJudge) names.push("llm");
-  if (s.outcome.agenticJudge) names.push("agentic");
-  return names;
+// Judge-kind glyphs — keep consistent with the run-details checks tab (llm/agentic ✶).
+const JUDGE_GLYPHS: Record<JudgeKind, { glyph: string; label: string }> = {
+  llm: { glyph: "✶", label: "LLM Judge" },
+  agentic: { glyph: "✶✶", label: "Agentic Judge" },
+};
+
+function judgeKinds(s: ScenarioJson): JudgeKind[] {
+  const kinds: JudgeKind[] = [];
+  if (s.outcome.llmJudge) kinds.push("llm");
+  if (s.outcome.agenticJudge) kinds.push("agentic");
+  return kinds;
+}
+
+function JudgeGlyph(props: { kind: JudgeKind }): ReactNode {
+  const info = JUDGE_GLYPHS[props.kind];
+  return (
+    <Tooltip text={info.label}>
+      <span className="sc-judge" role="img" aria-label={info.label}>
+        {info.glyph}
+      </span>
+    </Tooltip>
+  );
 }
 
 const scenarioColumns: Column<ScenarioJson>[] = [
   {
     key: "id",
-    header: "id",
+    header: "Id",
+    width: "150px",
     searchText: (s) => s.id,
     render: (s) => <EntityLink kind="scenario" id={s.id} />,
   },
   {
     key: "name",
-    header: "name",
+    header: "Name",
     searchText: (s) => s.name,
     render: (s) => s.name,
   },
   {
     key: "tasks",
-    header: "tasks",
+    header: "Tasks",
+    width: "58px",
     align: "right",
     sortValue: (s) => s.tasks.length,
     render: (s) => s.tasks.length,
   },
   {
     key: "checks",
-    header: "checks",
+    header: "Checks",
+    width: "64px",
+    align: "right",
     sortValue: (s) => s.outcome.checks.length,
     render: (s) =>
       s.outcome.checks.length === 0 ? (
@@ -55,17 +78,16 @@ const scenarioColumns: Column<ScenarioJson>[] = [
   },
   {
     key: "judges",
-    header: "judges",
-    sortValue: (s) => judgeNames(s).join(" ") || null,
+    header: "Judges",
+    width: "70px",
+    sortValue: (s) => judgeKinds(s).join(" ") || null,
     render: (s) => {
-      const names = judgeNames(s);
-      if (names.length === 0) return <span className="dim">—</span>;
+      const kinds = judgeKinds(s);
+      if (kinds.length === 0) return <span className="dim">—</span>;
       return (
         <span className="sc-judges">
-          {names.map((n) => (
-            <span key={n} className="chip">
-              {n}
-            </span>
+          {kinds.map((kind) => (
+            <JudgeGlyph key={kind} kind={kind} />
           ))}
         </span>
       );
@@ -73,31 +95,27 @@ const scenarioColumns: Column<ScenarioJson>[] = [
   },
   {
     key: "timeout",
-    header: "timeout",
+    header: "Timeout",
+    width: "76px",
     sortValue: (s) => s.timeoutMs,
     render: (s) => fmtDuration(s.timeoutMs),
   },
   {
     key: "threshold",
-    header: "pass ≥",
+    header: "Pass ≥",
+    width: "62px",
+    align: "right",
     sortValue: (s) => s.outcome.passThreshold,
     render: (s) => s.outcome.passThreshold,
   },
   {
     key: "description",
-    header: "description",
+    header: "Description",
+    width: "32%",
     sortable: false,
     searchText: (s) => s.description ?? "",
-    render: (s) => {
-      if (!s.description) return <span className="dim">—</span>;
-      const clipped =
-        s.description.length > DESC_CLIP ? `${s.description.slice(0, DESC_CLIP)}…` : s.description;
-      return (
-        <Tooltip text={s.description}>
-          <span className="dim sc-desc">{clipped}</span>
-        </Tooltip>
-      );
-    },
+    render: (s) =>
+      s.description ? <span className="dim">{s.description}</span> : <span className="dim">—</span>,
   },
 ];
 
@@ -105,9 +123,9 @@ function ScenarioList(): ReactNode {
   const { data, error, loading } = usePoll(listScenarios, null, []);
   return (
     <div className="panel">
-      <h3 className="panel-title">scenarios{data ? ` · ${data.length}` : ""}</h3>
+      <h3 className="panel-title">Scenarios{data ? ` · ${data.length}` : ""}</h3>
       {error ? <div className="sc-error">{error}</div> : null}
-      {loading && !data ? <Spinner label="loading scenarios…" /> : null}
+      {loading && !data ? <Spinner label="Loading scenarios…" /> : null}
       {data ? (
         <DataTable
           rows={data}
@@ -115,85 +133,107 @@ function ScenarioList(): ReactNode {
           rowKey={(s) => s.id}
           onRowClick={(s) => navigate(`#/scenarios/${s.id}`)}
           defaultSort={{ key: "id", dir: "asc" }}
-          searchPlaceholder="search scenarios…"
-          emptyText="no scenarios registered"
+          searchPlaceholder="Search scenarios…"
+          emptyText="No scenarios registered"
         />
       ) : null}
     </div>
   );
 }
 
-const attemptColumns: Column<AttemptJson>[] = [
-  {
-    key: "started",
-    header: "started",
-    sortValue: (a) => a.startedAt,
-    render: (a) => <span title={a.startedAt ?? undefined}>{fmtAgo(a.startedAt)}</span>,
-  },
-  {
-    key: "run",
-    header: "run",
-    searchText: (a) => a.runId,
-    render: (a) => <EntityLink kind="run" id={a.runId} />,
-  },
-  {
-    key: "config",
-    header: "config",
-    filterOptions: (rows) => [...new Set(rows.map((a) => a.configId))].sort(),
-    filterValue: (a) => a.configId,
-    searchText: (a) => a.configId,
-    render: (a) => <span className="chip">{a.configId}</span>,
-  },
-  {
-    key: "status",
-    header: "status",
-    filterOptions: (rows) => [...new Set(rows.map((a) => a.status))].sort(),
-    filterValue: (a) => a.status,
-    sortValue: (a) => a.status,
-    render: (a) => <StatusBadge status={a.status} />,
-  },
-  {
-    key: "score",
-    header: "score",
-    align: "right",
-    sortValue: (a) => a.score,
-    render: (a) => fmtScore(a.score),
-  },
-  {
-    key: "cost",
-    header: "cost",
-    align: "right",
-    sortValue: (a) => a.costUsd,
-    render: (a) => <CostBadge costUsd={a.costUsd} source={a.costSource} />,
-  },
-  {
-    key: "duration",
-    header: "duration",
-    sortValue: (a) => a.durationMs,
-    render: (a) => fmtDuration(a.durationMs),
-  },
-  {
-    key: "attempt",
-    header: "attempt",
-    sortable: false,
-    render: (a) => <EntityLink kind="attempt" id={a.id} runId={a.runId} label="open →" />,
-  },
-];
-
 function ScenarioDetail(props: { scenarioId: string }): ReactNode {
   const { data, error, loading } = usePoll(() => getScenario(props.scenarioId), null, [
     props.scenarioId,
   ]);
+  const configs = usePoll(listConfigs, null, []);
+  const providerByConfig = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const c of configs.data ?? []) map.set(c.id, c.provider);
+    return map;
+  }, [configs.data]);
+
+  const attemptColumns = useMemo<Column<AttemptJson>[]>(
+    () => [
+      {
+        key: "started",
+        header: "Started",
+        width: "86px",
+        sortValue: (a) => a.startedAt,
+        titleText: (a) => a.startedAt ?? "—",
+        render: (a) => fmtAgo(a.startedAt),
+      },
+      {
+        key: "run",
+        header: "Run",
+        width: "110px",
+        searchText: (a) => a.runId,
+        render: (a) => <EntityLink kind="run" id={a.runId} />,
+      },
+      {
+        key: "config",
+        header: "Config",
+        filterOptions: (rows) => [...new Set(rows.map((a) => a.configId))].sort(),
+        filterValue: (a) => a.configId,
+        filterRender: (option) => (
+          <>
+            <HarnessIcon harness={providerByConfig.get(option) ?? null} />
+            <span>{option}</span>
+          </>
+        ),
+        searchText: (a) => a.configId,
+        render: (a) => (
+          <span className="sc-config">
+            <HarnessIcon harness={providerByConfig.get(a.configId) ?? null} />
+            <EntityLink kind="config" id={a.configId} />
+          </span>
+        ),
+      },
+      {
+        key: "result",
+        header: "Result",
+        width: "84px",
+        filterOptions: (rows) => [...new Set(rows.map((a) => a.status))].sort(),
+        filterValue: (a) => a.status,
+        filterRender: (option) => statusGlyphInfo(option).label,
+        sortValue: (a) => a.score,
+        render: (a) => <StatusScore status={a.status} score={a.score} />,
+      },
+      {
+        key: "cost",
+        header: "Cost",
+        width: "88px",
+        align: "right",
+        sortValue: (a) => a.costUsd,
+        render: (a) => <CostBadge costUsd={a.costUsd} source={a.costSource} />,
+      },
+      {
+        key: "duration",
+        header: "Duration",
+        width: "78px",
+        align: "right",
+        sortValue: (a) => a.durationMs,
+        render: (a) => fmtDuration(a.durationMs),
+      },
+      {
+        key: "attempt",
+        header: "Attempt",
+        width: "78px",
+        sortable: false,
+        render: (a) => <EntityLink kind="attempt" id={a.id} runId={a.runId} label="Open →" />,
+      },
+    ],
+    [providerByConfig],
+  );
 
   if (!data) {
     return (
       <div className="panel">
         <a className="entity-link" href="#/scenarios">
-          ← scenarios
+          ← Scenarios
         </a>
         {loading ? (
           <div className="sc-loading">
-            <Spinner label="loading scenario…" />
+            <Spinner label="Loading scenario…" />
           </div>
         ) : null}
         {error ? <div className="sc-error">{error}</div> : null}
@@ -206,34 +246,42 @@ function ScenarioDetail(props: { scenarioId: string }): ReactNode {
     <>
       <div className="panel sc-header">
         <a className="entity-link" href="#/scenarios">
-          ← scenarios
+          ← Scenarios
         </a>
         <h2 className="sc-title">{scenario.name}</h2>
         <span className="chip">{scenario.id}</span>
-        {judgeNames(scenario).map((n) => (
-          <span key={n} className="chip">
-            {n}
+        {judgeKinds(scenario).length > 0 ? (
+          <span className="sc-judges">
+            {judgeKinds(scenario).map((kind) => (
+              <JudgeGlyph key={kind} kind={kind} />
+            ))}
           </span>
-        ))}
+        ) : null}
         {error ? <span className="sc-error">{error}</span> : null}
       </div>
       <div className="panel">
         <h3 className="panel-title">
-          definition <InfoTip text="checks always include the implicit tasks-completed check" />
+          Definition <InfoTip text="Checks always include the implicit tasks-completed check" />
         </h3>
-        <JsonView value={scenario} collapseDepth={3} />
+        <PrettyView
+          value={scenario}
+          rawLabel="scenario"
+          renderers={{
+            model: (v) => <ModelChip model={typeof v === "string" ? v : null} />,
+          }}
+        />
       </div>
       <div className="panel">
         <h3 className="panel-title">
-          recent attempts{recentAttempts.length > 0 ? ` · ${recentAttempts.length}` : ""}
+          Recent Attempts{recentAttempts.length > 0 ? ` · ${recentAttempts.length}` : ""}
         </h3>
         <DataTable
           rows={recentAttempts}
           columns={attemptColumns}
           rowKey={(a) => a.id}
           defaultSort={{ key: "started", dir: "desc" }}
-          searchPlaceholder="search attempts…"
-          emptyText="no attempts yet for this scenario"
+          searchPlaceholder="Search attempts…"
+          emptyText="No attempts yet for this scenario"
         />
       </div>
     </>

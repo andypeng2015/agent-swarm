@@ -15,9 +15,12 @@ import {
   newRunId,
   resetErrorAttempts,
 } from "../db/queries.ts";
+import { getJudgeLive } from "../judge/live-registry.ts";
 import { loadRegistry, serializeConfig, serializeScenario } from "../registry.ts";
 import { summarizeRun } from "../results.ts";
 import { executeRun, killAllActiveStacks, killRunStacks } from "../runner/index.ts";
+import { type SessionLogRow, SwarmClient } from "../swarm/client.ts";
+import type { SandboxInfo } from "../types.ts";
 
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data, null, 2), {
@@ -40,6 +43,50 @@ interface RawSessionLogLine {
   content?: string;
   lineNumber?: number;
   createdAt?: string;
+}
+
+/** Attempt statuses for which a live sandbox may still be producing logs. */
+const LIVE_ATTEMPT_STATUSES = new Set(["pending", "running", "judging"]);
+
+const LIVE_FETCH_TIMEOUT_MS = 8_000;
+
+/** Reject after `ms` so a dead sandbox can never stall the transcript endpoint. */
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  const signal = AbortSignal.timeout(ms);
+  return new Promise<T>((resolve, reject) => {
+    signal.addEventListener(
+      "abort",
+      () => reject(new Error(`live transcript fetch timed out after ${ms}ms`)),
+      { once: true },
+    );
+    promise.then(resolve, reject);
+  });
+}
+
+/**
+ * Fetch fresh session-log rows straight from a still-running attempt's sandbox.
+ * Uses the attempt's stored task ids when present; otherwise lists the sandbox's
+ * tasks (every task in a throwaway eval sandbox belongs to this attempt).
+ * Single-shot reads — the UI polls this endpoint, so no stability polling here.
+ */
+async function fetchLiveTranscriptRows(
+  sandbox: SandboxInfo,
+  taskIds: string[],
+): Promise<SessionLogRow[]> {
+  const client = new SwarmClient(sandbox.apiUrl, sandbox.swarmKey);
+  let ids = taskIds;
+  if (ids.length === 0) {
+    const res = await client.get<{ tasks?: { id?: unknown }[] } | { id?: unknown }[]>("/api/tasks");
+    const tasks = Array.isArray(res) ? res : (res.tasks ?? []);
+    ids = tasks
+      .map((t) => t?.id)
+      .filter((id): id is string => typeof id === "string" && id.length > 0);
+  }
+  const rows: SessionLogRow[] = [];
+  for (const taskId of ids) {
+    rows.push(...(await client.getSessionLogs(taskId)));
+  }
+  return rows;
 }
 
 /** Runs currently executing inside this server process (local-first trigger). */
@@ -161,45 +208,79 @@ export async function startServer(port = Number(process.env.EVALS_PORT ?? 4801))
         ]);
         return json({ attempt, judgments, artifacts });
       },
+      /**
+       * Live judge-trace stream (v3 spec §4 — frozen contract). Registry-only,
+       * in-process read: ALWAYS 200, no DB lookup. Unknown attempt, finished
+       * attempt, cleared entry, restarted server → { judging: false, traces: [] }.
+       * Only meaningful while attempt.status === "judging"; finished attempts
+       * use the persisted judgments instead.
+       */
+      "/api/attempts/:id/judge-live": (req) => json(getJudgeLive(req.params.id)),
       "/api/attempts/:id/transcript": async (req) => {
         const attempt = await getAttempt(db, req.params.id);
         if (!attempt) return json({ error: "attempt not found" }, 404);
         const harness = loadRegistry().configs.get(attempt.configId)?.provider ?? null;
+        const wantLive = new URL(req.url).searchParams.get("live") === "1";
+        if (wantLive && LIVE_ATTEMPT_STATUSES.has(attempt.status) && attempt.sandbox) {
+          try {
+            const rows = await withTimeout(
+              fetchLiveTranscriptRows(attempt.sandbox, attempt.taskIds),
+              LIVE_FETCH_TIMEOUT_MS,
+            );
+            return json({ source: "raw-session-logs", harness, rows, text: null, live: true });
+          } catch {
+            // sandbox dead, unreachable, or slow — fall through to the stored artifacts
+          }
+        }
         const artifacts = await listArtifacts(db, attempt.id, { withContent: true });
         const raw = artifacts.find((a) => a.kind === "raw-session-logs");
         if (raw?.content) {
           const rows = raw.content
             .split("\n")
             .filter(Boolean)
-            .flatMap((line) => {
+            .map((line, index) => {
               try {
                 const r = JSON.parse(line) as RawSessionLogLine;
                 const iteration = r.iteration ?? 0;
                 const lineNumber = r.lineNumber ?? 0;
-                return [
-                  {
-                    // old artifacts lack id/createdAt — synthesize id, leave createdAt empty
-                    id: r.id ?? `${iteration}:${lineNumber}`,
-                    taskId: r.taskId ?? "",
-                    sessionId: r.sessionId ?? "",
-                    iteration,
-                    cli: r.cli ?? "",
-                    content: r.content ?? "",
-                    lineNumber,
-                    createdAt: r.createdAt ?? "",
-                  },
-                ];
+                return {
+                  // old artifacts lack id/createdAt — synthesize id, leave createdAt empty
+                  id: r.id ?? `${iteration}:${lineNumber}`,
+                  taskId: r.taskId ?? "",
+                  sessionId: r.sessionId ?? "",
+                  iteration,
+                  cli: r.cli ?? "",
+                  content: r.content ?? "",
+                  lineNumber,
+                  createdAt: r.createdAt ?? "",
+                };
               } catch {
-                return [];
+                // never drop rows — surface unparseable lines as raw content (item 15)
+                return {
+                  id: `raw:${index}`,
+                  taskId: "",
+                  sessionId: "",
+                  iteration: 0,
+                  cli: "",
+                  content: line,
+                  lineNumber: index,
+                  createdAt: "",
+                };
               }
             });
-          return json({ source: "raw-session-logs", harness, rows, text: null });
+          return json({ source: "raw-session-logs", harness, rows, text: null, live: false });
         }
         const flat = artifacts.find((a) => a.kind === "transcript");
         if (flat?.content) {
-          return json({ source: "transcript", harness, rows: null, text: flat.content });
+          return json({
+            source: "transcript",
+            harness,
+            rows: null,
+            text: flat.content,
+            live: false,
+          });
         }
-        return json({ source: null, harness, rows: null, text: null });
+        return json({ source: null, harness, rows: null, text: null, live: false });
       },
       "/api/scenarios": () => {
         const registry = loadRegistry();

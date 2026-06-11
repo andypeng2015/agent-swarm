@@ -1,24 +1,53 @@
 import { type ReactNode, useMemo, useState } from "react";
-import { artifactUrl, cancelRun, getAttempt, getRun, resumeRun } from "../api.ts";
+import {
+  artifactUrl,
+  cancelRun,
+  getAttempt,
+  getJudgeLive,
+  getRun,
+  listConfigs,
+  resumeRun,
+} from "../api.ts";
 import { type Column, DataTable } from "../components/DataTable.tsx";
-import { fmtAgo, fmtBytes, fmtDate, fmtDuration, fmtScore } from "../components/format.ts";
-import { JsonView } from "../components/JsonView.tsx";
+import { EntityLink } from "../components/EntityLink.tsx";
+import {
+  fmtAgo,
+  fmtBytes,
+  fmtCost,
+  fmtDate,
+  fmtDuration,
+  humanizeKey,
+} from "../components/format.ts";
+import { HarnessIcon } from "../components/HarnessIcon.tsx";
 import { Matrix } from "../components/Matrix.tsx";
+import { ModelChip } from "../components/ModelChip.tsx";
+import { PrettyView } from "../components/PrettyView.tsx";
 import { Elapsed, Spinner } from "../components/Spinner.tsx";
-import { CostBadge, StatusBadge } from "../components/StatusBadge.tsx";
-import { InfoTip } from "../components/Tooltip.tsx";
+import {
+  CostBadge,
+  StatusBadge,
+  StatusScore,
+  statusGlyphInfo,
+} from "../components/StatusBadge.tsx";
+import { InfoTip, Tooltip } from "../components/Tooltip.tsx";
 import { navigate, usePoll } from "../hooks.ts";
 import type {
   ArtifactMetaJson,
   AttemptDetail,
   AttemptJson,
+  ConfigJson,
+  JudgeLiveResponse,
+  JudgeTraceJson,
   JudgmentJson,
-  PhaseTimingsJson,
   RunDetail,
   SandboxInfoJson,
 } from "../types.ts";
+import JudgeTrace from "./JudgeTrace.tsx";
 import Transcript from "./Transcript.tsx";
+import Waterfall from "./Waterfall.tsx";
 import "./run-details.css";
+
+type RdTab = "transcript" | "checks" | "timings" | "assets";
 
 function isUnfinished(status: string | null): boolean {
   return status === "pending" || status === "running" || status === "judging";
@@ -45,57 +74,131 @@ function safeDelta(fromIso: string, toIso: string): number | null {
   return to - from;
 }
 
-function dotTone(status: string): string {
-  if (status === "passed") return "green";
-  if (status === "failed" || status === "error") return "red";
-  if (status === "running" || status === "judging") return "accent";
-  return "dim";
+// ---- assets tab (item 16: kind → glyph with hover info, names truncated) ----
+
+const ASSET_KIND_GLYPHS: Record<string, string> = {
+  "raw-session-logs": "≋",
+  transcript: "☰",
+  "harness-session": "⌂",
+  meta: "ⓘ",
+  "sandbox-log": "▤",
+};
+
+function assetKindGlyph(kind: string): string {
+  return ASSET_KIND_GLYPHS[kind] ?? "▢";
 }
 
 const ASSET_COLUMNS: Column<ArtifactMetaJson>[] = [
   {
     key: "kind",
-    header: "kind",
+    header: "Kind",
+    width: "52px",
+    align: "center",
     filterOptions: (rows) => Array.from(new Set(rows.map((r) => r.kind))).sort(),
     filterValue: (r) => r.kind,
+    filterRender: (option) => (
+      <>
+        <span className="rd-kind-glyph">{assetKindGlyph(option)}</span> {humanizeKey(option)}
+      </>
+    ),
     searchText: (r) => r.kind,
-    render: (r) => <span className="chip">{r.kind}</span>,
+    titleText: (r) => humanizeKey(r.kind),
+    render: (r) => (
+      <Tooltip text={humanizeKey(r.kind)}>
+        <span className="rd-kind-glyph" role="img" aria-label={humanizeKey(r.kind)}>
+          {assetKindGlyph(r.kind)}
+        </span>
+      </Tooltip>
+    ),
   },
   {
     key: "name",
-    header: "name",
-    searchText: (r) => r.name ?? "",
+    header: "Name",
+    searchText: (r) => r.name ?? r.id,
     render: (r) => <code className="rd-mono">{r.name ?? r.id}</code>,
   },
   {
     key: "size",
-    header: "size",
+    header: "Size",
+    width: "76px",
     align: "right",
     sortValue: (r) => r.size,
+    searchText: (r) => fmtBytes(r.size),
     render: (r) => fmtBytes(r.size),
   },
   {
     key: "created",
-    header: "created",
+    header: "Created",
+    width: "92px",
     sortValue: (r) => r.createdAt,
-    render: (r) => <span title={r.createdAt}>{fmtAgo(r.createdAt)}</span>,
+    titleText: (r) => r.createdAt,
+    render: (r) => fmtAgo(r.createdAt),
   },
   {
     key: "actions",
-    header: "actions",
+    header: "Actions",
+    width: "130px",
     sortable: false,
     render: (r) => (
       <span className="rd-asset-actions">
         <a className="entity-link" href={artifactUrl(r.id)} target="_blank" rel="noreferrer">
-          open
+          Open
         </a>
         <a className="entity-link" href={artifactUrl(r.id, { download: true })}>
-          download
+          Download
         </a>
       </span>
     ),
   },
 ];
+
+// ---- checks tab name (item 4: the tab label carries the verdicts) ----
+
+function checksTabInfo(
+  judgments: JudgmentJson[],
+  judging: boolean,
+): { node: ReactNode; title: string } {
+  const checks = judgments.filter((j) => j.kind === "deterministic");
+  const judges = judgments.filter((j) => j.kind !== "deterministic");
+  if (judgments.length === 0 && !judging) {
+    return { node: "Checks & Judgments", title: "Deterministic checks & judge verdicts" };
+  }
+  const passed = checks.filter((j) => j.pass).length;
+  const checksText = checks.length > 0 ? `Checks ${passed}/${checks.length}` : "Checks";
+  const titleParts = [
+    checks.length > 0
+      ? `${passed} of ${checks.length} checks passed`
+      : "No deterministic checks yet",
+  ];
+  let judgeNode: ReactNode = null;
+  if (judging) {
+    judgeNode = (
+      <>
+        {" · Judge "}
+        <Spinner />
+      </>
+    );
+    titleParts.push("Judge running");
+  } else if (judges.length > 0) {
+    const allPass = judges.every((j) => j.pass);
+    judgeNode = (
+      <>
+        {" · Judge "}
+        <span className={allPass ? "tone-green" : "tone-red"}>{allPass ? "✓" : "✗"}</span>
+      </>
+    );
+    titleParts.push(allPass ? "Judge passed" : "Judge failed");
+  }
+  return {
+    node: (
+      <>
+        {checksText}
+        {judgeNode}
+      </>
+    ),
+    title: titleParts.join(" · "),
+  };
+}
 
 export default function RunDetailsPage(props: {
   runId: string;
@@ -117,6 +220,13 @@ export default function RunDetailsPage(props: {
   const run = runPoll.data && runPoll.data.run.id === runId ? runPoll.data : null;
   const attempts = useMemo(() => run?.attempts ?? [], [run]);
 
+  // Config catalog (one shot) — provider/harness + model fallback for the summary.
+  const configsPoll = usePoll(() => listConfigs(), null, []);
+  const configById = useMemo(
+    () => new Map((configsPoll.data ?? []).map((c) => [c.id, c])),
+    [configsPoll.data],
+  );
+
   const selId = props.attemptId ?? defaultAttemptId(run);
   const runAttempt = selId ? (attempts.find((a) => a.id === selId) ?? null) : null;
 
@@ -130,7 +240,16 @@ export default function RunDetailsPage(props: {
   const attempt = detail?.attempt ?? runAttempt;
   const attemptUnfinished = attempt !== null && isUnfinished(attempt.status);
 
-  const [tab, setTab] = useState<"transcript" | "assets">("transcript");
+  // Live judge traces while the attempt is in its judging phase (v3 spec §8.2).
+  const judging = attempt?.status === "judging";
+  const judgeLivePoll = usePoll<JudgeLiveResponse | null>(
+    () => (selId && judging ? getJudgeLive(selId) : Promise.resolve(null)),
+    judging ? 2000 : null,
+    [selId, judging],
+  );
+  const judgeLive = judging ? judgeLivePoll.data : null;
+
+  const [tab, setTab] = useState<RdTab>("transcript");
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
 
@@ -138,9 +257,9 @@ export default function RunDetailsPage(props: {
     return (
       <div className="panel">
         {runPoll.error ? (
-          <span className="rd-load-error">failed to load run: {runPoll.error}</span>
+          <span className="rd-load-error">Failed to load run: {runPoll.error}</span>
         ) : (
-          <Spinner label="loading run…" />
+          <Spinner label="Loading run…" />
         )}
       </div>
     );
@@ -176,18 +295,20 @@ export default function RunDetailsPage(props: {
     : [];
 
   const artifacts = detail?.artifacts ?? [];
+  const judgments = detail?.judgments ?? [];
+  const checksTab = checksTabInfo(judgments, judging);
 
   return (
     <>
       <div className="panel rd-top">
         <div className="rd-title-row">
           <a className="rd-back" href="#/runs">
-            ← runs
+            ← Runs
           </a>
           <h2 className="rd-name">{r.name ?? r.id}</h2>
           {r.name ? <span className="chip rd-mono">{r.id}</span> : null}
           <StatusBadge status={r.status} />
-          {run.active ? <Spinner label="live" /> : null}
+          {run.active ? <Spinner label="Live" /> : null}
           <span className="rd-spacer" />
           {canCancel ? (
             <button
@@ -195,10 +316,10 @@ export default function RunDetailsPage(props: {
               className="btn btn-danger"
               disabled={busy}
               onClick={() => {
-                if (window.confirm("cancel this run?")) act(() => cancelRun(runId));
+                if (window.confirm("Cancel this run?")) act(() => cancelRun(runId));
               }}
             >
-              cancel
+              Cancel
             </button>
           ) : null}
           {canResume ? (
@@ -208,50 +329,56 @@ export default function RunDetailsPage(props: {
               disabled={busy}
               onClick={() => act(() => resumeRun(runId))}
             >
-              resume
+              Resume
             </button>
           ) : null}
         </div>
         {actionError ? <div className="rd-load-error">{actionError}</div> : null}
         <div className="meta-grid">
-          <Meta label="created" title={r.createdAt}>
+          <Meta label="Created" title={r.createdAt}>
             {fmtDate(r.createdAt)} · {fmtAgo(r.createdAt)}
           </Meta>
-          <Meta label="finished" title={r.finishedAt ?? undefined}>
+          <Meta label="Finished" title={r.finishedAt ?? undefined}>
             {fmtDate(r.finishedAt)}
           </Meta>
-          <Meta label="wall time">{wallTime}</Meta>
-          <Meta label="total cost">
+          <Meta label="Wall Time">{wallTime}</Meta>
+          <Meta label="Total Cost">
             <CostBadge costUsd={totals.totalCostUsd} source={null} />
             {totals.unpricedAttempts > 0 ? (
               <InfoTip text={`${totals.unpricedAttempts} unpriced attempt(s) not included`} />
             ) : null}
           </Meta>
-          <Meta label="attempts">
-            {totals.finished}/{totals.attempts} · {totals.passedAttempts} passed ·{" "}
-            {totals.errorAttempts} err
+          <Meta label="Judge Cost">
+            <span className={totals.judgeCostUsd === null ? "cost-badge dim" : "cost-badge"}>
+              {fmtCost(totals.judgeCostUsd)}
+            </span>{" "}
+            <InfoTip text="Judge LLM cost — not included in Total Cost" />
           </Meta>
-          <Meta label={`best@${r.attemptsPerCell}`}>
-            {totals.passedCells}/{totals.totalCells} cells
+          <Meta label="Attempts">
+            {totals.finished}/{totals.attempts} · {totals.passedAttempts} Passed ·{" "}
+            {totals.errorAttempts} Errors
           </Meta>
-          <Meta label="concurrency">{r.concurrency}</Meta>
-          <Meta label="judge model">
+          <Meta label={`Best@${r.attemptsPerCell}`}>
+            {totals.passedCells}/{totals.totalCells} Cells
+          </Meta>
+          <Meta label="Concurrency">{r.concurrency}</Meta>
+          <Meta label="Judge Model">
             {r.judgeModel ? (
-              <code className="rd-mono">{r.judgeModel}</code>
+              <ModelChip model={r.judgeModel} />
             ) : (
-              <span className="dim">default</span>
+              <span className="dim">Default</span>
             )}
           </Meta>
-          <Meta label="matrix">
-            {r.scenarioIds.length} scenarios × {r.configIds.length} configs
+          <Meta label="Matrix">
+            {r.scenarioIds.length} Scenarios × {r.configIds.length} Configs
           </Meta>
         </div>
       </div>
 
       <div className="layout-30-70 rd-body">
-        <div className="rd-left">
+        <div className="rd-left scroll-col">
           <div className="panel">
-            <div className="panel-title">matrix</div>
+            <div className="panel-title">Matrix</div>
             <div className="rd-matrix-wrap">
               <Matrix
                 scenarioIds={r.scenarioIds}
@@ -268,62 +395,87 @@ export default function RunDetailsPage(props: {
             </div>
             {cellAttempts.length > 1 ? (
               <div className="rd-attempt-picker">
-                {cellAttempts.map((a) => (
-                  <button
-                    type="button"
-                    key={a.id}
-                    className={a.id === selId ? "btn rd-att-btn selected" : "btn rd-att-btn"}
-                    onClick={() => navigate(`#/runs/${runId}/attempts/${a.id}`)}
-                  >
-                    <span className={`rd-dot ${dotTone(a.status)}`} />#{a.attemptIndex}
-                  </button>
-                ))}
+                {cellAttempts.map((a) => {
+                  const info = statusGlyphInfo(a.status);
+                  return (
+                    <button
+                      type="button"
+                      key={a.id}
+                      className={a.id === selId ? "btn rd-att-btn selected" : "btn rd-att-btn"}
+                      title={`Attempt #${a.attemptIndex} · ${info.label}`}
+                      onClick={() => navigate(`#/runs/${runId}/attempts/${a.id}`)}
+                    >
+                      <span className={`rd-dot ${info.tone}`} />#{a.attemptIndex}
+                    </button>
+                  );
+                })}
               </div>
             ) : null}
           </div>
 
-          <AttemptSummary attempt={attempt} selId={selId} error={attemptPoll.error} />
-          <TimingsPanel attempt={attempt} />
+          <AttemptSummary
+            attempt={attempt}
+            selId={selId}
+            error={attemptPoll.error}
+            config={attempt ? (configById.get(attempt.configId) ?? null) : null}
+          />
           <SandboxPanel attempt={attempt} />
-          <JudgmentsPanel attempt={attempt} judgments={detail?.judgments ?? []} />
         </div>
 
-        <div className="rd-right panel">
-          <div className="tabs">
+        <div className="rd-right panel scroll-col">
+          <div className="tabs rd-tabs">
             <button
               type="button"
               className={tab === "transcript" ? "tab active" : "tab"}
               onClick={() => setTab("transcript")}
             >
-              transcript
+              Transcript
+            </button>
+            <button
+              type="button"
+              className={tab === "checks" ? "tab active" : "tab"}
+              title={checksTab.title}
+              onClick={() => setTab("checks")}
+            >
+              {checksTab.node}
+            </button>
+            <button
+              type="button"
+              className={tab === "timings" ? "tab active" : "tab"}
+              onClick={() => setTab("timings")}
+            >
+              Timings
             </button>
             <button
               type="button"
               className={tab === "assets" ? "tab active" : "tab"}
               onClick={() => setTab("assets")}
             >
-              assets
+              Assets
             </button>
           </div>
           {tab === "transcript" ? (
             selId ? (
               <Transcript key={selId} attemptId={selId} live={attemptUnfinished} />
             ) : (
-              <div className="dim">no attempt selected</div>
+              <div className="dim">No attempt selected</div>
             )
+          ) : tab === "checks" ? (
+            <ChecksTab attempt={attempt} judgments={judgments} live={judgeLive} />
+          ) : tab === "timings" ? (
+            <TimingsTab attempt={attempt} />
           ) : (
             <>
               <DataTable
                 rows={artifacts}
                 columns={ASSET_COLUMNS}
                 rowKey={(row) => row.id}
-                emptyText="no artifacts yet"
-                searchPlaceholder="search artifacts…"
-                maxHeight="70vh"
+                emptyText="No artifacts yet"
+                searchPlaceholder="Search artifacts…"
               />
               {artifacts.length === 0 && attemptUnfinished ? (
                 <div className="rd-stage">
-                  <Spinner label="artifacts land as the attempt progresses…" />
+                  <Spinner label="Artifacts land as the attempt progresses…" />
                 </div>
               ) : null}
             </>
@@ -349,16 +501,17 @@ function AttemptSummary(props: {
   attempt: AttemptJson | null;
   selId: string | null;
   error: string | null;
+  config: ConfigJson | null;
 }): ReactNode {
-  const { attempt } = props;
+  const { attempt, config } = props;
   if (!attempt) {
     return (
       <div className="panel">
-        <div className="panel-title">attempt</div>
+        <div className="panel-title">Attempt</div>
         {props.selId && props.error ? (
-          <div className="rd-load-error">failed to load attempt: {props.error}</div>
+          <div className="rd-load-error">Failed to load attempt: {props.error}</div>
         ) : (
-          <div className="dim">no attempts yet</div>
+          <div className="dim">No attempts yet</div>
         )}
       </div>
     );
@@ -367,46 +520,58 @@ function AttemptSummary(props: {
   return (
     <div className="panel">
       <div className="panel-title">
-        attempt #{attempt.attemptIndex}
+        Attempt #{attempt.attemptIndex}
         <span className="dim rd-attempt-id"> {attempt.id}</span>
       </div>
       {attempt.status === "pending" ? (
         <div className="rd-stage">
-          <Spinner label="waiting for a pool slot…" />
+          <Spinner label="Waiting for a pool slot…" />
         </div>
       ) : null}
       {attempt.status === "running" && !attempt.sandbox ? (
         <div className="rd-stage">
-          <Spinner label="booting sandboxes…" />
+          <Spinner label="Booting sandboxes…" />
         </div>
       ) : null}
       <div className="meta-grid">
-        <Meta label="status">
-          <StatusBadge status={attempt.status} />
+        <Meta label="Status">
+          <StatusScore status={attempt.status} score={attempt.score} />
         </Meta>
-        <Meta label="score">{fmtScore(attempt.score)}</Meta>
-        <Meta label="cost">
+        <Meta label="Cost">
           <CostBadge costUsd={attempt.costUsd} source={attempt.costSource} />
         </Meta>
-        <Meta label="duration">
+        <Meta label="Judge Cost">
+          <span className={attempt.judgeCostUsd === null ? "cost-badge dim" : "cost-badge"}>
+            {fmtCost(attempt.judgeCostUsd)}
+          </span>{" "}
+          <InfoTip text="Judge LLM cost — not included in Total Cost" />
+        </Meta>
+        <Meta label="Duration">
           {live ? <Elapsed since={attempt.startedAt} /> : fmtDuration(attempt.durationMs)}
         </Meta>
-        <Meta label="retries">{attempt.retries}</Meta>
-        <Meta label="started" title={attempt.startedAt ?? undefined}>
+        <Meta label="Retries">{attempt.retries}</Meta>
+        <Meta label="Started" title={attempt.startedAt ?? undefined}>
           {fmtDate(attempt.startedAt)}
         </Meta>
-        <Meta label="finished" title={attempt.finishedAt ?? undefined}>
+        <Meta label="Finished" title={attempt.finishedAt ?? undefined}>
           {fmtDate(attempt.finishedAt)}
         </Meta>
-        {attempt.tokens ? (
-          <Meta label="model">
-            {attempt.tokens.model ? <code className="rd-mono">{attempt.tokens.model}</code> : "—"}
-          </Meta>
-        ) : null}
+        <Meta label="Model">
+          <ModelChip model={attempt.tokens?.model ?? config?.model ?? null} />
+        </Meta>
+        <Meta label="Scenario">
+          <EntityLink kind="scenario" id={attempt.scenarioId} />
+        </Meta>
+        <Meta label="Config">
+          <span className="rd-config-ref">
+            <HarnessIcon harness={config?.provider ?? null} />
+            <EntityLink kind="config" id={attempt.configId} />
+          </span>
+        </Meta>
       </div>
       {attempt.taskIds.length > 0 ? (
         <div className="rd-tasks">
-          <span className="meta-label">tasks</span>
+          <span className="meta-label">Tasks</span>
           {attempt.taskIds.map((taskId) => (
             <code className="chip rd-mono" key={taskId}>
               {taskId}
@@ -419,107 +584,70 @@ function AttemptSummary(props: {
   );
 }
 
-const TIMING_PHASES: { key: Exclude<keyof PhaseTimingsJson, "perTask">; label: string }[] = [
-  { key: "bootMs", label: "boot" },
-  { key: "seedMs", label: "seed" },
-  { key: "tasksMs", label: "tasks" },
-  { key: "logCaptureMs", label: "log capture" },
-  { key: "costMs", label: "cost wait" },
-  { key: "checksMs", label: "checks" },
-  { key: "llmJudgeMs", label: "llm judge" },
-  { key: "agenticJudgeMs", label: "agentic judge" },
-  { key: "artifactsMs", label: "artifacts" },
-];
+// ---- timings tab (item 7) ----
 
-function TimingsPanel(props: { attempt: AttemptJson | null }): ReactNode {
-  const timings = props.attempt?.timings ?? null;
-  return (
-    <div className="panel">
-      <div className="panel-title">phase timings</div>
-      {timings ? (
-        <table className="rd-timings">
-          <tbody>
-            {TIMING_PHASES.map((phase) => {
-              const rows: ReactNode[] = [
-                <tr key={phase.key}>
-                  <td>{phase.label}</td>
-                  <td>{fmtDuration(timings[phase.key])}</td>
-                </tr>,
-              ];
-              if (phase.key === "tasksMs") {
-                for (const t of timings.perTask) {
-                  rows.push(
-                    <tr className="sub" key={`task-${t.taskId}`}>
-                      <td>task {t.taskId}</td>
-                      <td>{fmtDuration(t.ms)}</td>
-                    </tr>,
-                  );
-                }
-              }
-              return rows;
-            })}
-          </tbody>
-        </table>
-      ) : props.attempt && isUnfinished(props.attempt.status) ? (
-        <div className="dim rd-not-captured">timings land when the attempt finishes</div>
-      ) : (
-        <div className="dim rd-not-captured">timings not captured (older run)</div>
-      )}
-    </div>
-  );
+function TimingsTab(props: { attempt: AttemptJson | null }): ReactNode {
+  const { attempt } = props;
+  if (!attempt) return <div className="dim">No attempt selected</div>;
+  if (attempt.timings) {
+    return <Waterfall timings={attempt.timings} totalMs={attempt.durationMs} />;
+  }
+  if (isUnfinished(attempt.status)) {
+    return <div className="dim rd-not-captured">Timings land when the attempt finishes</div>;
+  }
+  return <div className="dim rd-not-captured">Timings not captured (older run)</div>;
+}
+
+// ---- sandbox panel (item 14: PrettyView with Raw JSON toggle) ----
+
+const SANDBOX_LABELS: Record<string, string> = {
+  swarmKey: "Swarm API Key",
+  apiSandboxId: "API Sandbox",
+  workerSandboxId: "Worker Sandbox",
+  workerAgentId: "Worker Agent",
+};
+
+function monoRenderer(value: unknown): ReactNode {
+  return <code className="rd-mono">{String(value)}</code>;
 }
 
 function SandboxPanel(props: { attempt: AttemptJson | null }): ReactNode {
   const sandbox = props.attempt?.sandbox ?? null;
   return (
     <div className="panel">
-      <div className="panel-title">sandbox</div>
+      <div className="panel-title">Sandbox</div>
       {sandbox ? (
-        <SandboxGrid sandbox={sandbox} />
+        <SandboxView sandbox={sandbox} />
       ) : props.attempt && isUnfinished(props.attempt.status) ? (
-        <div className="dim rd-not-captured">sandbox not booted yet</div>
+        <div className="dim rd-not-captured">Sandbox not booted yet</div>
       ) : (
-        <div className="dim rd-not-captured">sandbox info not captured (older run)</div>
+        <div className="dim rd-not-captured">Sandbox info not captured (older run)</div>
       )}
     </div>
   );
 }
 
-function SandboxGrid(props: { sandbox: SandboxInfoJson }): ReactNode {
-  const sb = props.sandbox;
+function SandboxView(props: { sandbox: SandboxInfoJson }): ReactNode {
   return (
-    <div className="meta-grid">
-      <Meta label="worker sandbox">
-        <code className="rd-mono">{sb.workerSandboxId}</code>
-      </Meta>
-      <Meta label="api sandbox">
-        <code className="rd-mono">{sb.apiSandboxId}</code>
-      </Meta>
-      <Meta label="worker template">{sb.workerTemplate}</Meta>
-      <Meta label="api template">{sb.apiTemplate}</Meta>
-      <Meta label="api url">
-        <a href={sb.apiUrl} target="_blank" rel="noreferrer">
-          {sb.apiUrl}
-        </a>{" "}
-        <InfoTip text="dead after sandbox teardown" />
-      </Meta>
-      <Meta label="swarm api key">
-        <CopyCode text={sb.swarmKey} />
-      </Meta>
-      <Meta label="worker agent">
-        <code className="rd-mono">{sb.workerAgentId}</code>
-      </Meta>
-      <Meta label="domain">{sb.domain ?? "—"}</Meta>
-      <Meta label="api started" title={sb.apiStartedAt ?? undefined}>
-        {fmtDate(sb.apiStartedAt)}
-      </Meta>
-      <Meta label="worker started" title={sb.workerStartedAt ?? undefined}>
-        {fmtDate(sb.workerStartedAt)}
-      </Meta>
-      <Meta label="expires" title={sb.expiresAt ?? undefined}>
-        {fmtDate(sb.expiresAt)}
-      </Meta>
-    </div>
+    <PrettyView
+      value={props.sandbox}
+      rawLabel="Sandbox"
+      labels={SANDBOX_LABELS}
+      renderers={{
+        swarmKey: (v) => <CopyCode text={String(v)} />,
+        apiSandboxId: monoRenderer,
+        workerSandboxId: monoRenderer,
+        workerAgentId: monoRenderer,
+        apiUrl: (v) => (
+          <>
+            <a className="entity-link" href={String(v)} target="_blank" rel="noreferrer">
+              {String(v)}
+            </a>{" "}
+            <InfoTip text="Dead after sandbox teardown" />
+          </>
+        ),
+      }}
+    />
   );
 }
 
@@ -529,7 +657,7 @@ function CopyCode(props: { text: string }): ReactNode {
     <button
       type="button"
       className="rd-copy"
-      title="click to copy"
+      title="Click to copy"
       onClick={() => {
         void navigator.clipboard.writeText(props.text);
         setCopied(true);
@@ -537,28 +665,41 @@ function CopyCode(props: { text: string }): ReactNode {
       }}
     >
       <code>{props.text}</code>
-      {copied ? <span className="accent"> copied</span> : null}
+      {copied ? <span className="accent"> Copied</span> : null}
     </button>
   );
 }
 
-function JudgmentsPanel(props: {
+// ---- checks & judgments tab (item 4 + v3 judge traces) ----
+
+function ChecksTab(props: {
   attempt: AttemptJson | null;
   judgments: JudgmentJson[];
+  live: JudgeLiveResponse | null;
 }): ReactNode {
-  const { attempt, judgments } = props;
+  const { attempt, judgments, live } = props;
   const judging = attempt?.status === "judging";
+  // While judging with live traces available, the live stream IS the view — the
+  // deterministic trace covers the checks (no double-display of persisted rows).
+  if (judging && live && live.traces.length > 0) {
+    return (
+      <div className="rd-checks">
+        {live.traces.map((t, i) => (
+          <JudgeTrace trace={t} live key={`${t.judge}-${t.startedAt}-${String(i)}`} />
+        ))}
+      </div>
+    );
+  }
   return (
-    <div className="panel">
-      <div className="panel-title">checks &amp; judgments</div>
+    <div className="rd-checks">
       {judging ? (
         <div className="rd-stage">
-          <Spinner label="judging…" />
+          <Spinner label="Judging…" />
         </div>
       ) : null}
       {judgments.length === 0 && !judging ? (
         <div className="dim">
-          {attempt && isUnfinished(attempt.status) ? "no judgments yet" : "no judgments"}
+          {attempt && isUnfinished(attempt.status) ? "No judgments yet" : "No judgments"}
         </div>
       ) : null}
       {judgments.map((j) => (
@@ -568,26 +709,106 @@ function JudgmentsPanel(props: {
   );
 }
 
+/** Judgment kind as a glyph (item 2): deterministic ≡, llm/agentic ✶ — tooltip carries the word. */
+function judgmentKindInfo(kind: string): { glyph: string; label: string } {
+  if (kind === "deterministic") return { glyph: "≡", label: "Deterministic Check" };
+  if (kind === "agentic") return { glyph: "✶", label: "Agentic Judge" };
+  if (kind === "llm") return { glyph: "✶", label: "LLM Judge" };
+  return { glyph: "✶", label: humanizeKey(kind) };
+}
+
+/** Judge model id from the raw payload (`{ model, object }`) — fallback for old rows. */
+function rawJudgeModel(raw: string | null): string | null {
+  if (raw === null) return null;
+  try {
+    const parsed = JSON.parse(raw) as { model?: unknown };
+    return typeof parsed.model === "string" ? parsed.model : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Persisted judgment → trace shape for the JudgeTrace showcase (v3 spec §8.2, frozen). */
+function judgmentToTrace(j: JudgmentJson): JudgeTraceJson {
+  return {
+    judge: j.name.startsWith("agentic") ? "agentic" : "llm",
+    model: j.tokens?.model ?? null,
+    startedAt: j.createdAt,
+    finishedAt: j.createdAt,
+    durationMs: j.durationMs,
+    costUsd: j.costUsd,
+    tokens: j.tokens,
+    error: null,
+    steps: j.steps ?? [],
+  };
+}
+
 function JudgmentBlock(props: { judgment: JudgmentJson }): ReactNode {
   const j = props.judgment;
+  const kind = judgmentKindInfo(j.kind);
+  const isLlmKind = j.kind !== "deterministic";
+  const model = useMemo(
+    () => (isLlmKind ? (j.tokens?.model ?? rawJudgeModel(j.raw)) : null),
+    [isLlmKind, j.tokens, j.raw],
+  );
+  const hasTrace = j.steps !== null;
+  const [showRaw, setShowRaw] = useState(false);
   return (
     <div className={`rd-judgment ${j.pass ? "pass" : "fail"}`}>
       <div className="rd-judgment-head">
         <span className="rd-judgment-name">{j.name}</span>
-        <span className="chip">{j.kind}</span>
-        <span className={j.pass ? "rd-pf pass" : "rd-pf fail"}>{j.pass ? "✓ pass" : "✗ fail"}</span>
-        {j.score !== null ? <span className="rd-mono">{fmtScore(j.score)}</span> : null}
+        <Tooltip text={kind.label}>
+          <span className="rd-judgment-kind" role="img" aria-label={kind.label}>
+            {kind.glyph}
+          </span>
+        </Tooltip>
+        <StatusScore status={j.pass ? "pass" : "fail"} score={j.score} />
+        {model !== null ? <ModelChip model={model} /> : null}
+        <span className="rd-judgment-spacer" />
+        {isLlmKind ? (
+          <Tooltip text="Judge LLM cost — not included in attempt cost">
+            <span className={j.costUsd === null ? "cost-badge dim" : "cost-badge"}>
+              {fmtCost(j.costUsd)}
+            </span>
+          </Tooltip>
+        ) : null}
+        <Tooltip text={isLlmKind ? "Judge duration" : "Check elapsed"}>
+          <span className={j.durationMs === null ? "rd-judgment-ms dim" : "rd-judgment-ms"}>
+            {fmtDuration(j.durationMs)}
+          </span>
+        </Tooltip>
         <span className="dim" title={j.createdAt}>
           {fmtAgo(j.createdAt)}
         </span>
       </div>
       {j.reasoning ? <div className="rd-judgment-reason">{j.reasoning}</div> : null}
-      {j.raw !== null ? <RawJson raw={j.raw} /> : null}
+      {hasTrace ? (
+        <>
+          <div className="rd-judgment-trace">
+            <JudgeTrace trace={judgmentToTrace(j)} />
+          </div>
+          {j.raw !== null ? (
+            <div className="rd-judgment-raw-toggle">
+              <button type="button" className="pv-toggle" onClick={() => setShowRaw((r) => !r)}>
+                {showRaw ? "▾ Hide Raw" : "▸ Raw"}
+              </button>
+              {showRaw ? <JudgmentRaw raw={j.raw} /> : null}
+            </div>
+          ) : null}
+        </>
+      ) : (
+        <>
+          {j.raw !== null ? <JudgmentRaw raw={j.raw} /> : null}
+          {isLlmKind ? (
+            <div className="dim rd-not-captured">Trace not captured (older run)</div>
+          ) : null}
+        </>
+      )}
     </div>
   );
 }
 
-function RawJson(props: { raw: string }): ReactNode {
+function JudgmentRaw(props: { raw: string }): ReactNode {
   const parsed = useMemo<{ ok: true; value: unknown } | { ok: false }>(() => {
     try {
       return { ok: true, value: JSON.parse(props.raw) as unknown };
@@ -598,7 +819,7 @@ function RawJson(props: { raw: string }): ReactNode {
   if (!parsed.ok) return <pre className="rd-raw">{props.raw}</pre>;
   return (
     <div className="rd-judgment-raw">
-      <JsonView value={parsed.value} collapseDepth={1} label="raw" />
+      <PrettyView value={parsed.value} rawLabel="Raw" />
     </div>
   );
 }

@@ -72,3 +72,30 @@ export function fmtScore(score: number | null): string {
   if (score === null || Number.isNaN(score)) return "—";
   return score.toFixed(2);
 }
+
+/** Per-1M-token price: "$0.435" | "—" (trailing zeros trimmed). */
+export function fmtPerM(v: number | null): string {
+  if (v === null || Number.isNaN(v)) return "—";
+  return `$${Number(v.toFixed(4))}`;
+}
+
+const ACRONYMS = new Set(["id", "url", "api", "usd", "llm", "ms", "json", "cli"]);
+
+/** "apiSandboxId" → "API Sandbox ID"; "bootMs" → "Boot"; "cache_read" → "Cache Read". */
+export function humanizeKey(key: string): string {
+  const words = key
+    .replace(/[_-]+/g, " ")
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2")
+    .trim()
+    .split(/\s+/);
+  // duration keys read better without the trailing unit ("bootMs" → "Boot")
+  if (words.length > 1 && words[words.length - 1].toLowerCase() === "ms") words.pop();
+  return words
+    .map((w) => {
+      const lower = w.toLowerCase();
+      if (ACRONYMS.has(lower)) return lower.toUpperCase();
+      return lower.length > 0 ? lower[0].toUpperCase() + lower.slice(1) : lower;
+    })
+    .join(" ");
+}

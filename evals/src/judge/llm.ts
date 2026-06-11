@@ -1,7 +1,16 @@
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
-import { generateObject } from "ai";
+import { generateObject, type LanguageModelUsage } from "ai";
 import { z } from "zod";
-import type { Scenario, SwarmTask } from "../types.ts";
+import { lookupOpenrouterModel, priceUsage } from "../cost/pricing.ts";
+import type {
+  JudgeKind,
+  JudgeStep,
+  JudgeTrace,
+  Scenario,
+  SwarmTask,
+  TokenTotals,
+} from "../types.ts";
+import type { JudgeLiveHandle } from "./live-registry.ts";
 
 const DEFAULT_JUDGE_MODEL = "deepseek/deepseek-v4-pro";
 
@@ -25,6 +34,61 @@ export interface LlmJudgeInput {
   tasks: SwarmTask[];
   transcript: string;
   model?: string;
+  /** Live-registry handle — the trace is attached before the LLM call starts. */
+  live?: JudgeLiveHandle;
+}
+
+/**
+ * Map an AI SDK v6 usage block to TokenTotals. `inputTokens` is the TOTAL
+ * prompt tokens (cache reads included) — price with
+ * `{ inputIncludesCacheRead: true }`.
+ */
+export function usageToTokens(model: string | null, usage: LanguageModelUsage): TokenTotals {
+  return {
+    model,
+    inputTokens: usage.inputTokens ?? 0,
+    outputTokens: usage.outputTokens ?? 0,
+    cacheReadTokens: usage.inputTokenDetails?.cacheReadTokens ?? 0,
+    cacheWriteTokens: usage.inputTokenDetails?.cacheWriteTokens ?? 0,
+  };
+}
+
+/** Fresh (mutable) trace — attach to the live registry, then keep mutating it. */
+export function newJudgeTrace(judge: JudgeKind, model: string | null): JudgeTrace {
+  return {
+    judge,
+    model,
+    startedAt: new Date().toISOString(),
+    finishedAt: null,
+    durationMs: null,
+    costUsd: null,
+    tokens: null,
+    error: null,
+    steps: [],
+  };
+}
+
+/**
+ * Finalize a trace: finishedAt + durationMs, tokens = field-wise sum over
+ * steps carrying usage (model = the configured judge model id), costUsd =
+ * sum of non-null step costs (null when ALL are null).
+ */
+export function finishJudgeTrace(trace: JudgeTrace): void {
+  trace.finishedAt = new Date().toISOString();
+  trace.durationMs = Math.max(0, Date.parse(trace.finishedAt) - Date.parse(trace.startedAt));
+  const usages = trace.steps.flatMap((s) => (s.tokens ? [s.tokens] : []));
+  trace.tokens =
+    usages.length === 0
+      ? null
+      : {
+          model: trace.model,
+          inputTokens: usages.reduce((s, u) => s + u.inputTokens, 0),
+          outputTokens: usages.reduce((s, u) => s + u.outputTokens, 0),
+          cacheReadTokens: usages.reduce((s, u) => s + u.cacheReadTokens, 0),
+          cacheWriteTokens: usages.reduce((s, u) => s + u.cacheWriteTokens, 0),
+        };
+  const costs = trace.steps.flatMap((s) => (s.costUsd === null ? [] : [s.costUsd]));
+  trace.costUsd = costs.length === 0 ? null : costs.reduce((s, c) => s + c, 0);
 }
 
 /** Cap transcript size so judge calls stay cheap; keep head + tail. */
@@ -34,11 +98,18 @@ function truncateMiddle(text: string, maxChars: number): string {
   return `${text.slice(0, half)}\n\n[... ${text.length - maxChars} chars truncated ...]\n\n${text.slice(-half)}`;
 }
 
-export async function judgeWithLlm(input: LlmJudgeInput): Promise<LlmVerdict & { raw: string }> {
+export async function judgeWithLlm(
+  input: LlmJudgeInput,
+): Promise<LlmVerdict & { raw: string; trace: JudgeTrace }> {
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) throw new Error("OPENROUTER_API_KEY is required for the LLM judge");
   const openrouter = createOpenRouter({ apiKey });
   const model = input.model ?? process.env.EVAL_JUDGE_MODEL ?? DEFAULT_JUDGE_MODEL;
+
+  // Attached before the call so the live view shows the judge as started.
+  const trace = newJudgeTrace("llm", model);
+  input.live?.attach(trace);
+  const priced = await lookupOpenrouterModel(model);
 
   const taskSummaries = input.tasks
     .map(
@@ -67,11 +138,51 @@ Grading rules:
 - Deduct for evidence of actual failure: wrong/missing output, contradictions between claim and evidence, destructive or off-task actions.
 - Cite concrete evidence for your verdict.`;
 
-  const { object } = await generateObject({
-    model: openrouter(model),
-    schema: VerdictSchema,
-    prompt,
-  });
-
-  return { ...object, raw: JSON.stringify({ model, object }) };
+  const callStart = Date.now();
+  try {
+    const result = await generateObject({
+      model: openrouter(model),
+      schema: VerdictSchema,
+      prompt,
+    });
+    const tokens = usageToTokens(model, result.usage);
+    const step: JudgeStep = {
+      index: 0,
+      kind: "reasoning",
+      // Model thinking when the provider surfaced it; else the verdict's rationale.
+      text:
+        result.reasoning && result.reasoning.trim().length > 0
+          ? result.reasoning
+          : result.object.reasoning,
+      tool: null,
+      args: null,
+      output: null,
+      pass: null,
+      startedAt: new Date(callStart).toISOString(),
+      durationMs: Date.now() - callStart,
+      tokens,
+      costUsd: priced ? priceUsage(priced, tokens, { inputIncludesCacheRead: true }) : null,
+    };
+    trace.steps.push(step);
+    finishJudgeTrace(trace);
+    return { ...result.object, raw: JSON.stringify({ model, object: result.object }), trace };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    trace.steps.push({
+      index: trace.steps.length,
+      kind: "error",
+      text: message,
+      tool: null,
+      args: null,
+      output: null,
+      pass: null,
+      startedAt: new Date(callStart).toISOString(),
+      durationMs: Date.now() - callStart,
+      tokens: null,
+      costUsd: null,
+    });
+    trace.error = message;
+    finishJudgeTrace(trace);
+    throw err;
+  }
 }

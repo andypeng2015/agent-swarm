@@ -8,9 +8,30 @@
 }
 
 .t-caption {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
   color: var(--dim);
   font-family: var(--font-mono);
   font-size: 11px;
+}
+
+.t-caption-sep {
+  color: var(--border);
+}
+
+.t-live {
+  color: var(--accent);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.t-unparsed {
+  color: var(--red);
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+  cursor: help;
 }
 
 .t-empty {
@@ -122,12 +143,21 @@
 }
 
 .t-tool-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   font-size: 12px;
-  font-weight: 700;
-  color: var(--accent);
 }
 
-.t-tool-error .t-tool-head {
+.t-tool-name {
+  font-weight: 700;
+  color: var(--accent);
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+.t-tool-error .t-tool-name {
   color: var(--red);
 }
 
@@ -147,6 +177,37 @@
 
 .t-tool-result.error {
   color: var(--red);
+}
+
+/* ---- raw fallback rows (item 15 — nothing silently dropped) ---- */
+
+.t-raw {
+  font-family: var(--font-mono);
+  background: var(--bg);
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+  padding: 6px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.t-raw-head {
+  /* no text-transform — the cli value is an identifier and must stay verbatim */
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--dim);
+}
+
+.t-raw pre {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 11.5px;
+  color: var(--dim);
+  max-height: 240px;
+  overflow: auto;
 }
 
 /* ---- provider meta ---- */

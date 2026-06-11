@@ -11,8 +11,9 @@ import {
   setRunStatus,
   updateAttempt,
 } from "../db/queries.ts";
-import { judgeAgentic } from "../judge/agentic.ts";
+import { AgenticJudgeError, judgeAgentic } from "../judge/agentic.ts";
 import { runChecks } from "../judge/deterministic.ts";
+import { beginJudging, clearJudging, endJudging } from "../judge/live-registry.ts";
 import { judgeWithLlm } from "../judge/llm.ts";
 import { flattenTranscript, type SessionCostRow, SwarmClient } from "../swarm/client.ts";
 import {
@@ -30,6 +31,7 @@ import type {
   DeterministicCheck,
   HarnessConfig,
   JudgeContext,
+  JudgeTrace,
   PhaseTimings,
   SandboxInfo,
   Scenario,
@@ -130,6 +132,31 @@ function sumRowTokens(rows: SessionCostRow[]): TokenTotals {
     outputTokens: rows.reduce((s, r) => s + (r.outputTokens ?? 0), 0),
     cacheReadTokens: rows.reduce((s, r) => s + (r.cacheReadTokens ?? 0), 0),
     cacheWriteTokens: rows.reduce((s, r) => s + (r.cacheWriteTokens ?? 0), 0),
+  };
+}
+
+/** Sum two nullable USD amounts; null only when BOTH are null. */
+function sumNullableCosts(a: number | null, b: number | null): number | null {
+  if (a === null && b === null) return null;
+  return (a ?? 0) + (b ?? 0);
+}
+
+/**
+ * Field-wise sum of two judge token totals (failed agentic trace + llm
+ * fallback). Model = the fallback's, else the failed trace's; null when both
+ * are null.
+ */
+function mergeJudgeTokens(
+  failed: TokenTotals | null,
+  fallback: TokenTotals | null,
+): TokenTotals | null {
+  if (!failed && !fallback) return null;
+  return {
+    model: fallback?.model ?? failed?.model ?? null,
+    inputTokens: (failed?.inputTokens ?? 0) + (fallback?.inputTokens ?? 0),
+    outputTokens: (failed?.outputTokens ?? 0) + (fallback?.outputTokens ?? 0),
+    cacheReadTokens: (failed?.cacheReadTokens ?? 0) + (fallback?.cacheReadTokens ?? 0),
+    cacheWriteTokens: (failed?.cacheWriteTokens ?? 0) + (fallback?.cacheWriteTokens ?? 0),
   };
 }
 
@@ -360,6 +387,14 @@ async function runAttemptOnce(opts: {
     });
 
     await updateAttempt(db, attempt.id, { status: "judging" });
+    // Judges stream their (mutable) traces here; the API server reads them for
+    // the polled /api/attempts/:id/judge-live endpoint. Cleared in `finally`.
+    const judgeLive = beginJudging(attempt.id);
+    // Aggregate judge LLM cost (harness overhead) — NEVER added to costUsd.
+    let judgeCostUsd: number | null = null;
+    const addJudgeCost = (c: number | null): void => {
+      if (c !== null) judgeCostUsd = (judgeCostUsd ?? 0) + c;
+    };
 
     const ctx: JudgeContext = {
       tasks,
@@ -370,7 +405,7 @@ async function runAttemptOnce(opts: {
     };
 
     const checks = [tasksCompletedCheck(tasks), ...(scenario.outcome.checks ?? [])];
-    const checksTimed = await timed(() => runChecks(checks, ctx));
+    const checksTimed = await timed(() => runChecks(checks, ctx, judgeLive));
     const checkResults = checksTimed.result;
     timings.checksMs = checksTimed.ms;
     for (const result of checkResults) {
@@ -381,6 +416,7 @@ async function runAttemptOnce(opts: {
         name: result.name,
         pass: result.pass,
         reasoning: result.detail ?? null,
+        durationMs: result.durationMs,
       });
       log(
         `[check] ${result.name}: ${result.pass ? "pass" : "FAIL"}${result.detail ? ` (${result.detail})` : ""}`,
@@ -401,6 +437,7 @@ async function runAttemptOnce(opts: {
           tasks,
           transcript,
           model: spec.model ?? opts.judgeModel ?? undefined,
+          live: judgeLive,
         }),
       );
       const verdict = llmTimed.result;
@@ -416,7 +453,12 @@ async function runAttemptOnce(opts: {
         score: verdict.score,
         reasoning: verdict.reasoning,
         raw: verdict.raw,
+        durationMs: verdict.trace.durationMs ?? llmTimed.ms,
+        costUsd: verdict.trace.costUsd,
+        tokensJson: verdict.trace.tokens ? JSON.stringify(verdict.trace.tokens) : null,
+        stepsJson: JSON.stringify(verdict.trace.steps),
       });
+      addJudgeCost(verdict.trace.costUsd);
       log(`[judge] llm score=${verdict.score.toFixed(2)} pass=${llmPass}`);
     }
 
@@ -426,6 +468,8 @@ async function runAttemptOnce(opts: {
       const agenticT0 = Date.now();
       let verdict: Awaited<ReturnType<typeof judgeAgentic>>;
       let judgeName = "agentic-judge";
+      // Kept on AgenticJudgeError so the failed loop's steps/cost are never lost.
+      let failedTrace: JudgeTrace | null = null;
       try {
         verdict = await judgeAgentic({
           scenario,
@@ -435,6 +479,7 @@ async function runAttemptOnce(opts: {
           ctx,
           model: spec.model ?? opts.judgeModel ?? undefined,
           maxSteps: spec.maxSteps,
+          live: judgeLive,
         });
       } catch (err) {
         // Agent never submitted a verdict (or judge-model flake) — fall back to
@@ -442,6 +487,7 @@ async function runAttemptOnce(opts: {
         log(
           `[judge] agentic judge failed (${err instanceof Error ? err.message : err}); falling back to llm judge`,
         );
+        failedTrace = err instanceof AgenticJudgeError ? err.trace : null;
         judgeName = "agentic-judge (llm fallback)";
         verdict = await judgeWithLlm({
           scenario,
@@ -449,12 +495,24 @@ async function runAttemptOnce(opts: {
           tasks,
           transcript,
           model: spec.model ?? opts.judgeModel ?? undefined,
+          live: judgeLive,
         });
       }
       timings.agenticJudgeMs = Date.now() - agenticT0;
       agenticPass = verdict.pass && verdict.score >= threshold;
       // Agentic verdicts verify against the live sandbox, so they take score precedence.
       score = verdict.score;
+      // Fallback path: merge the failed agentic trace with the fallback's —
+      // the failed loop's spend is real and MUST be counted.
+      const steps = failedTrace
+        ? [...failedTrace.steps, ...verdict.trace.steps].map((s, i) => ({ ...s, index: i }))
+        : verdict.trace.steps;
+      const judgmentCost = failedTrace
+        ? sumNullableCosts(failedTrace.costUsd, verdict.trace.costUsd)
+        : verdict.trace.costUsd;
+      const judgmentTokens = failedTrace
+        ? mergeJudgeTokens(failedTrace.tokens, verdict.trace.tokens)
+        : verdict.trace.tokens;
       await insertJudgment(db, {
         id: crypto.randomUUID(),
         attemptId: attempt.id,
@@ -464,9 +522,19 @@ async function runAttemptOnce(opts: {
         score: verdict.score,
         reasoning: verdict.reasoning,
         raw: verdict.raw,
+        durationMs: failedTrace
+          ? timings.agenticJudgeMs
+          : (verdict.trace.durationMs ?? timings.agenticJudgeMs),
+        costUsd: judgmentCost,
+        tokensJson: judgmentTokens ? JSON.stringify(judgmentTokens) : null,
+        stepsJson: JSON.stringify(steps),
       });
+      addJudgeCost(judgmentCost);
       log(`[judge] agentic score=${verdict.score.toFixed(2)} pass=${agenticPass}`);
     }
+
+    // Live view flips judging → false; traces stay readable until clearJudging.
+    endJudging(attempt.id);
 
     const passed = checksPass && llmPass && agenticPass;
     if (score === null) score = passed ? 1 : 0;
@@ -567,6 +635,7 @@ async function runAttemptOnce(opts: {
       score,
       costUsd,
       costSource,
+      judgeCostUsd,
       tokensJson: tokens ? JSON.stringify(tokens) : null,
       timingsJson: JSON.stringify(timings),
       durationMs: Date.now() - startedAt,
@@ -576,6 +645,9 @@ async function runAttemptOnce(opts: {
       `[done] ${passed ? "PASSED" : "FAILED"} score=${score.toFixed(2)}${costUsd !== null ? ` cost=$${costUsd.toFixed(4)}` : ""}`,
     );
   } finally {
+    // After final persistence on success, and on every error path — the live
+    // registry never leaks. Retries re-enter via beginJudging (resets entry).
+    clearJudging(attempt.id);
     untrack();
     await stack.kill();
   }

@@ -1,17 +1,28 @@
-import { type ReactNode, useMemo, useState } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { createPortal } from "react-dom";
 import { InfoTip } from "./Tooltip.tsx";
 
 export interface Column<T> {
   key: string; // unique column id
   header: string;
   headerTip?: string; // optional "i"-tooltip on the header
-  width?: string; // CSS width ("90px", "1fr"); default auto
+  width?: string; // CSS width ("90px"); feeds the <colgroup> — table-layout is fixed
   align?: "left" | "right" | "center"; // default "left"
   sortable?: boolean; // default true
   sortValue?: (row: T) => string | number | null; // default: searchText ?? rendered string
-  filterOptions?: (rows: T[]) => string[]; // presence enables a dropdown filter
-  filterValue?: (row: T) => string | string[]; // row's value(s) matched against selection
+  filterOptions?: (rows: T[]) => string[]; // presence enables a multi-select dropdown filter
+  filterValue?: (row: T) => string | string[]; // row's value(s) matched against the selection
+  filterRender?: (option: string) => ReactNode; // custom option rendering (e.g. harness icon)
   searchText?: (row: T) => string; // contributes to the fuzzy haystack
+  titleText?: (row: T) => string; // hover-reveal title; default searchText → string render
   render: (row: T) => ReactNode;
 }
 
@@ -24,8 +35,10 @@ export interface DataTableProps<T> {
   selectedKey?: string | null; // highlights row
   searchable?: boolean; // default true — fuzzy input above the table
   searchPlaceholder?: string;
+  /** "stacked": row 1 = filters, row 2 = full-width search. Default "inline". */
+  toolbarLayout?: "inline" | "stacked";
   defaultSort?: { key: string; dir: "asc" | "desc" };
-  emptyText?: string; // default "nothing here yet"
+  emptyText?: string; // default "Nothing here yet"
   maxHeight?: string; // scroll container, sticky header
 }
 
@@ -42,12 +55,130 @@ export function fuzzyMatch(query: string, haystack: string): boolean {
   return false;
 }
 
+const EDGE = 8;
+
+/**
+ * Multi-select dropdown filter: button showing "Label · n ▾", portal panel with
+ * checkboxes (viewport-aware, escapes any container). Empty selection = no filter.
+ */
+export function MultiSelect(props: {
+  label: string;
+  options: string[];
+  selected: string[];
+  onChange: (next: string[]) => void;
+  renderOption?: (option: string) => ReactNode;
+}): ReactNode {
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  const close = useCallback(() => {
+    setOpen(false);
+    setPos(null);
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!open || !btnRef.current || !panelRef.current) return;
+    const anchor = btnRef.current.getBoundingClientRect();
+    const panel = panelRef.current.getBoundingClientRect();
+    const left = Math.max(EDGE, Math.min(anchor.left, window.innerWidth - EDGE - panel.width));
+    let top = anchor.bottom + 4;
+    if (top + panel.height > window.innerHeight - EDGE) top = anchor.top - 4 - panel.height;
+    setPos({ left, top: Math.max(EDGE, top) });
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (panelRef.current?.contains(t) || btnRef.current?.contains(t)) return;
+      close();
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") close();
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open, close]);
+
+  const toggle = (option: string) => {
+    const next = props.selected.includes(option)
+      ? props.selected.filter((o) => o !== option)
+      : [...props.selected, option];
+    props.onChange(next);
+  };
+
+  const active = props.selected.length > 0;
+  return (
+    <>
+      <button
+        type="button"
+        ref={btnRef}
+        className={active ? "ms-btn active" : "ms-btn"}
+        onClick={() => (open ? close() : setOpen(true))}
+        title={`Filter by ${props.label}`}
+      >
+        {props.label}
+        {active ? <span className="ms-count">{props.selected.length}</span> : null}
+        <span className="ms-arrow">▾</span>
+      </button>
+      {open
+        ? createPortal(
+            <div
+              ref={panelRef}
+              className="ms-menu"
+              style={
+                pos
+                  ? { left: pos.left, top: pos.top }
+                  : { left: -9999, top: -9999, visibility: "hidden" }
+              }
+            >
+              {props.options.length === 0 ? <div className="ms-empty dim">No options</div> : null}
+              {props.options.map((option) => (
+                <label className="ms-option" key={option}>
+                  <input
+                    type="checkbox"
+                    checked={props.selected.includes(option)}
+                    onChange={() => toggle(option)}
+                  />
+                  <span className="ms-option-label">
+                    {props.renderOption ? props.renderOption(option) : option}
+                  </span>
+                </label>
+              ))}
+              {active ? (
+                <button type="button" className="ms-clear" onClick={() => props.onChange([])}>
+                  Clear
+                </button>
+              ) : null}
+            </div>,
+            document.body,
+          )
+        : null}
+    </>
+  );
+}
+
 function sortValueOf<T>(col: Column<T>, row: T): string | number | null {
   if (col.sortValue) return col.sortValue(row);
   if (col.searchText) return col.searchText(row);
   const rendered = col.render(row);
   if (typeof rendered === "string" || typeof rendered === "number") return rendered;
   return null;
+}
+
+function titleOf<T>(col: Column<T>, row: T): string | undefined {
+  if (col.titleText) return col.titleText(row);
+  if (col.searchText) return col.searchText(row);
+  const rendered = col.render(row);
+  if (typeof rendered === "string") return rendered;
+  if (typeof rendered === "number") return String(rendered);
+  return undefined;
 }
 
 function compareValues(a: string | number | null, b: string | number | null): number {
@@ -61,11 +192,12 @@ function compareValues(a: string | number | null, b: string | number | null): nu
 export function DataTable<T>(props: DataTableProps<T>): ReactNode {
   const { rows, columns, rowKey, onRowClick, rowHref } = props;
   const searchable = props.searchable ?? true;
+  const stacked = props.toolbarLayout === "stacked";
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<{ key: string; dir: "asc" | "desc" } | null>(
     props.defaultSort ?? null,
   );
-  const [filters, setFilters] = useState<Record<string, string>>({});
+  const [filters, setFilters] = useState<Record<string, string[]>>({});
 
   const filterCols = columns.filter((c) => c.filterOptions);
 
@@ -82,14 +214,14 @@ export function DataTable<T>(props: DataTableProps<T>): ReactNode {
     }
     for (const col of columns.filter((c) => c.filterOptions)) {
       const selected = filters[col.key];
-      if (!selected) continue;
+      if (!selected || selected.length === 0) continue;
       out = out.filter((row) => {
         const v = col.filterValue
           ? col.filterValue(row)
           : col.searchText
             ? col.searchText(row)
             : "";
-        return Array.isArray(v) ? v.includes(selected) : v === selected;
+        return Array.isArray(v) ? v.some((item) => selected.includes(item)) : selected.includes(v);
       });
     }
     if (sort) {
@@ -110,53 +242,59 @@ export function DataTable<T>(props: DataTableProps<T>): ReactNode {
     );
   };
 
+  const searchInput = searchable ? (
+    <input
+      className="dt-search"
+      type="search"
+      placeholder={props.searchPlaceholder ?? "Search…"}
+      value={query}
+      onChange={(e) => setQuery(e.target.value)}
+    />
+  ) : null;
+
+  const filterControls = filterCols.map((col) => (
+    <MultiSelect
+      key={col.key}
+      label={col.header}
+      options={col.filterOptions ? col.filterOptions(rows) : []}
+      selected={filters[col.key] ?? []}
+      onChange={(next) => setFilters((f) => ({ ...f, [col.key]: next }))}
+      renderOption={col.filterRender}
+    />
+  ));
+
   return (
     <div className="data-table">
       {searchable || filterCols.length > 0 ? (
-        <div className="dt-bar">
-          {searchable ? (
-            <input
-              className="dt-search"
-              type="search"
-              placeholder={props.searchPlaceholder ?? "search…"}
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-            />
-          ) : null}
-          {filterCols.map((col) => (
-            <select
-              key={col.key}
-              className="dt-filter"
-              value={filters[col.key] ?? ""}
-              onChange={(e) => setFilters((f) => ({ ...f, [col.key]: e.target.value }))}
-              title={`filter by ${col.header}`}
-            >
-              <option value="">all</option>
-              {(col.filterOptions ? col.filterOptions(rows) : []).map((opt) => (
-                <option key={opt} value={opt}>
-                  {opt}
-                </option>
-              ))}
-            </select>
-          ))}
-        </div>
+        stacked ? (
+          <div className="dt-bar stacked">
+            {filterCols.length > 0 ? <div className="dt-filters">{filterControls}</div> : null}
+            {searchInput}
+          </div>
+        ) : (
+          <div className="dt-bar">
+            {searchInput}
+            {filterControls}
+          </div>
+        )
       ) : null}
       <div
         className="dt-scroll"
         style={props.maxHeight ? { maxHeight: props.maxHeight } : undefined}
       >
         <table className="data">
+          <colgroup>
+            {columns.map((col) => (
+              <col key={col.key} style={col.width ? { width: col.width } : undefined} />
+            ))}
+          </colgroup>
           <thead>
             <tr>
               {columns.map((col) => {
                 const sortable = col.sortable ?? true;
                 const arrow = sort?.key === col.key ? (sort.dir === "asc" ? " ▲" : " ▼") : "";
                 return (
-                  <th
-                    key={col.key}
-                    style={col.width ? { width: col.width } : undefined}
-                    className={col.align ? `align-${col.align}` : undefined}
-                  >
+                  <th key={col.key} className={col.align ? `align-${col.align}` : undefined}>
                     {sortable ? (
                       <button type="button" className="dt-sort" onClick={() => toggleSort(col.key)}>
                         {col.header}
@@ -175,7 +313,7 @@ export function DataTable<T>(props: DataTableProps<T>): ReactNode {
             {visible.length === 0 ? (
               <tr>
                 <td className="dt-empty" colSpan={columns.length}>
-                  {props.emptyText ?? "nothing here yet"}
+                  {props.emptyText ?? "Nothing here yet"}
                 </td>
               </tr>
             ) : (
@@ -207,17 +345,24 @@ export function DataTable<T>(props: DataTableProps<T>): ReactNode {
                     }
                     tabIndex={handleClick ? 0 : undefined}
                   >
-                    {columns.map((col) => (
-                      <td key={col.key} className={col.align ? `align-${col.align}` : undefined}>
-                        {href !== null ? (
-                          <a className="dt-row-link" href={href}>
-                            {col.render(row)}
-                          </a>
-                        ) : (
-                          col.render(row)
-                        )}
-                      </td>
-                    ))}
+                    {columns.map((col) => {
+                      const cell = (
+                        <div className="dt-cell" title={titleOf(col, row)}>
+                          {col.render(row)}
+                        </div>
+                      );
+                      return (
+                        <td key={col.key} className={col.align ? `align-${col.align}` : undefined}>
+                          {href !== null ? (
+                            <a className="dt-row-link" href={href}>
+                              {cell}
+                            </a>
+                          ) : (
+                            cell
+                          )}
+                        </td>
+                      );
+                    })}
                   </tr>
                 );
               })

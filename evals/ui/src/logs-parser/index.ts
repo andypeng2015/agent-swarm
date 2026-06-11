@@ -160,9 +160,12 @@ function lifecycleBlock(item: NormalizedItem): ProviderMetaBlock {
     data.type === "turn.started" ||
     data.type === "turn.failed" ||
     data.type === "session_init" ||
+    data.type === "item.started" ||
     (typeof data.type === "string" &&
       (data.type.startsWith("session.") ||
         data.type.startsWith("file.watcher.") ||
+        data.type.startsWith("server.") ||
+        data.type.startsWith("message.part.") ||
         data.type === "message.updated"))
   ) {
     return metaBlock(item, "internal", { internalType: "runtime", ...data });
