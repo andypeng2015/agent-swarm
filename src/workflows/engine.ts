@@ -521,10 +521,12 @@ async function executeStep(
 
   let result: Awaited<ReturnType<typeof executor.run>>;
   try {
+    const executionContext =
+      node.inputs && Object.keys(node.inputs).length > 0 ? { ...ctx, ...interpolationCtx } : ctx;
     result = await Promise.race([
       executor.run({
         config: interpolatedConfig,
-        context: ctx,
+        context: executionContext,
         meta,
       }),
       timeoutPromise(timeoutMs),

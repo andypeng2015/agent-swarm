@@ -17,6 +17,7 @@ import {
   type ExecutorDependencies,
   type ExecutorResult,
 } from "../workflows/executors/base";
+import { PropertyMatchExecutor } from "../workflows/executors/property-match";
 import { ExecutorRegistry } from "../workflows/executors/registry";
 import { resolveInputs } from "../workflows/input";
 
@@ -56,50 +57,6 @@ class CounterExecutor extends BaseExecutor<
     config: z.infer<typeof CounterExecutor.schema>,
   ): Promise<ExecutorResult<z.infer<typeof CounterExecutor.outSchema>>> {
     return { status: "success", output: { doubled: config.value * 2 } };
-  }
-}
-
-class BranchExecutor extends BaseExecutor<
-  typeof BranchExecutor.schema,
-  typeof BranchExecutor.outSchema
-> {
-  static readonly schema = z.object({
-    conditions: z.array(z.object({ field: z.string(), op: z.string(), value: z.unknown() })),
-  });
-  static readonly outSchema = z.object({ passed: z.boolean() });
-
-  readonly type = "property-match";
-  readonly mode = "instant" as const;
-  readonly configSchema = BranchExecutor.schema;
-  readonly outputSchema = BranchExecutor.outSchema;
-
-  protected async execute(
-    config: z.infer<typeof BranchExecutor.schema>,
-    context: Readonly<Record<string, unknown>>,
-  ): Promise<ExecutorResult<z.infer<typeof BranchExecutor.outSchema>>> {
-    // Simple evaluation: check first condition
-    const cond = config.conditions[0];
-    if (!cond) return { status: "success", output: { passed: true }, nextPort: "true" };
-
-    const fieldPath = cond.field.split(".");
-    let value: unknown = context;
-    for (const key of fieldPath) {
-      if (value == null || typeof value !== "object") {
-        value = undefined;
-        break;
-      }
-      value = (value as Record<string, unknown>)[key];
-    }
-
-    let passed = false;
-    if (cond.op === "eq") passed = value === cond.value;
-    if (cond.op === "neq") passed = value !== cond.value;
-
-    return {
-      status: "success",
-      output: { passed },
-      nextPort: passed ? "true" : "false",
-    };
   }
 }
 
@@ -189,7 +146,7 @@ function createTestRegistry(): ExecutorRegistry {
   const registry = new ExecutorRegistry();
   registry.register(new EchoExecutor(mockDeps));
   registry.register(new CounterExecutor(mockDeps));
-  registry.register(new BranchExecutor(mockDeps));
+  registry.register(new PropertyMatchExecutor(mockDeps));
   registry.register(new SlowExecutor(mockDeps));
   registry.register(new FailingExecutor(mockDeps));
   registry.register(new ValidatePassExecutor(mockDeps));
@@ -282,6 +239,45 @@ describe("Workflow Engine v2 (Phase 3)", () => {
   // ─── Branching Workflow ───────────────────────────────────
 
   describe("Branching workflow", () => {
+    test("property-match resolves fields through node inputs aliases", async () => {
+      const registry = createTestRegistry();
+      const def: WorkflowDefinition = {
+        nodes: [
+          {
+            id: "review-task",
+            type: "echo",
+            config: { message: "approved" },
+            next: "check",
+          },
+          {
+            id: "check",
+            type: "property-match",
+            inputs: { review: "review-task" },
+            config: {
+              conditions: [{ field: "review.echo", op: "eq", value: "approved" }],
+            },
+            next: { true: "ok", false: "notok" },
+          },
+          { id: "ok", type: "echo", config: { message: "passed" } },
+          { id: "notok", type: "echo", config: { message: "failed" } },
+        ],
+      };
+
+      const workflow = makeWorkflow(def);
+      const runId = await startWorkflowExecution(workflow, {}, registry);
+
+      const run = getWorkflowRun(runId);
+      expect(run!.status).toBe("completed");
+
+      const steps = getWorkflowRunStepsByRunId(runId);
+      const stepNodeIds = steps.map((s) => s.nodeId);
+      expect(stepNodeIds).toContain("ok");
+      expect(stepNodeIds).not.toContain("notok");
+
+      const checkStep = steps.find((s) => s.nodeId === "check");
+      expect(checkStep?.nextPort).toBe("true");
+    });
+
     test("follows true port on property-match", async () => {
       const registry = createTestRegistry();
       const def: WorkflowDefinition = {
@@ -342,6 +338,65 @@ describe("Workflow Engine v2 (Phase 3)", () => {
       const stepNodeIds = steps.map((s) => s.nodeId);
       expect(stepNodeIds).toContain("notok");
       expect(stepNodeIds).not.toContain("ok");
+    });
+
+    test("property-match with inputs still resolves non-aliased fields from global context", async () => {
+      const registry = createTestRegistry();
+      const def: WorkflowDefinition = {
+        nodes: [
+          { id: "start", type: "echo", config: { message: "data" }, next: "check" },
+          {
+            id: "check",
+            type: "property-match",
+            inputs: { alias: "trigger.unused" },
+            config: {
+              conditions: [{ field: "start.echo", op: "eq", value: "data" }],
+            },
+            next: { true: "ok", false: "notok" },
+          },
+          { id: "ok", type: "echo", config: { message: "passed" } },
+          { id: "notok", type: "echo", config: { message: "failed" } },
+        ],
+      };
+
+      const workflow = makeWorkflow(def);
+      const runId = await startWorkflowExecution(workflow, {}, registry);
+
+      const steps = getWorkflowRunStepsByRunId(runId);
+      const stepNodeIds = steps.map((s) => s.nodeId);
+      expect(stepNodeIds).toContain("ok");
+      expect(stepNodeIds).not.toContain("notok");
+    });
+
+    test("property-match routes missing aliased fields to false port", async () => {
+      const registry = createTestRegistry();
+      const def: WorkflowDefinition = {
+        nodes: [
+          { id: "start", type: "echo", config: { message: "data" }, next: "check" },
+          {
+            id: "check",
+            type: "property-match",
+            inputs: { review: "start" },
+            config: {
+              conditions: [{ field: "review.missing", op: "eq", value: "data" }],
+            },
+            next: { true: "ok", false: "notok" },
+          },
+          { id: "ok", type: "echo", config: { message: "passed" } },
+          { id: "notok", type: "echo", config: { message: "failed" } },
+        ],
+      };
+
+      const workflow = makeWorkflow(def);
+      const runId = await startWorkflowExecution(workflow, {}, registry);
+
+      const steps = getWorkflowRunStepsByRunId(runId);
+      const stepNodeIds = steps.map((s) => s.nodeId);
+      expect(stepNodeIds).toContain("notok");
+      expect(stepNodeIds).not.toContain("ok");
+
+      const checkStep = steps.find((s) => s.nodeId === "check");
+      expect(checkStep?.nextPort).toBe("false");
     });
   });
 
