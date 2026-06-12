@@ -45,6 +45,7 @@ import {
   isRateLimitMessage,
   MAX_RATE_LIMIT_RESET_MS,
   parseRateLimitResetTime,
+  type RateLimitWindowTelemetry,
   resolveCodexCreditsExhaustedCooldownMs,
 } from "../utils/error-tracker.ts";
 import { resolveHarnessProvider } from "../utils/harness-provider.ts";
@@ -1120,6 +1121,35 @@ async function reportKeyRateLimit(
     console.log(
       `[credentials] Reported key ...${keySuffix} as rate-limited until ${rateLimitedUntil}`,
     );
+  } catch {
+    // Non-blocking
+  }
+}
+
+async function reportKeyRateLimitWindows(
+  apiUrl: string,
+  apiKey: string,
+  keyType: string,
+  keySuffix: string,
+  keyIndex: number,
+  windows: RateLimitWindowTelemetry,
+): Promise<void> {
+  if (Object.keys(windows).length === 0) return;
+  try {
+    await fetch(`${apiUrl}/api/keys/report-rate-limit-windows`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        keyType,
+        keySuffix,
+        keyIndex,
+        windows,
+      }),
+    });
+    console.log(`[credentials] Reported rate-limit windows for key ...${keySuffix}`);
   } catch {
     // Non-blocking
   }
@@ -3404,6 +3434,17 @@ async function checkCompletedProcesses(
           credentialInfo.keySuffix,
           credentialInfo.keyIndex,
           rateLimitedUntil,
+        ).catch(() => {});
+      }
+
+      if (credentialInfo && result.rateLimitWindows) {
+        reportKeyRateLimitWindows(
+          apiConfig.apiUrl,
+          apiConfig.apiKey,
+          credentialInfo.keyType,
+          credentialInfo.keySuffix,
+          credentialInfo.keyIndex,
+          result.rateLimitWindows,
         ).catch(() => {});
       }
       let bridgeDiagnostics: Awaited<ReturnType<typeof getBridgeFailureDiagnostics>> | undefined;

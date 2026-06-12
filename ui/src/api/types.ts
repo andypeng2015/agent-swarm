@@ -1384,6 +1384,17 @@ export interface ApiKeyStatus {
   provider: string;
   /** Optional human-friendly label set from the dashboard. */
   name: string | null;
+  rateLimitWindows: Record<
+    string,
+    {
+      status: string;
+      utilization?: number;
+      resetsAt?: number;
+      isUsingOverage?: boolean;
+      surpassedThreshold?: number;
+      lastSeenAt: string;
+    }
+  >;
   createdAt: string;
   updatedAt: string;
 }

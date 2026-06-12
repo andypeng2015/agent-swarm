@@ -34,6 +34,7 @@ export interface CostData {
 }
 
 import type { ProviderName } from "../types";
+import type { RateLimitWindowTelemetry } from "../utils/error-tracker";
 
 /** Normalized event emitted by any provider adapter. */
 export type ProviderEvent =
@@ -137,6 +138,12 @@ export interface ProviderResult {
    * three-tier cooldown resolver.
    */
   rateLimitResetAt?: string;
+  /**
+   * Latest provider-emitted rate-limit window snapshots observed during the
+   * session, keyed by provider window type (for Claude: five_hour, seven_day).
+   * Best-effort and informational; consumers must tolerate it being absent.
+   */
+  rateLimitWindows?: RateLimitWindowTelemetry;
 }
 
 /** Behavioral traits that govern prompt assembly and feature gating. */
