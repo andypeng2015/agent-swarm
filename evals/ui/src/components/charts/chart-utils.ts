@@ -18,6 +18,41 @@ export function seriesColor(index: number, override?: string): string {
   return override ?? CHART_PALETTE[index % CHART_PALETTE.length];
 }
 
+/**
+ * Fixed group colors for the color-by toggles (v7 spec §C1 — FROZEN).
+ * Harness providers and the well-known model vendors get stable hues; every
+ * other group hashes deterministically into CHART_PALETTE via colorForGroup.
+ */
+export const HARNESS_COLORS: Record<string, string> = {
+  claude: "var(--orange)",
+  pi: "var(--blue)",
+  opencode: "var(--green)",
+  codex: "var(--accent)",
+};
+
+export const VENDOR_COLORS: Record<string, string> = {
+  anthropic: "var(--orange)",
+  openai: "var(--accent)",
+  google: "var(--blue)",
+  deepseek: "var(--red)",
+  "z-ai": "var(--yellow)",
+  qwen: "var(--green)",
+};
+
+/** Deterministic non-crypto string hash (djb2) for palette assignment. */
+function hashString(s: string): number {
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) h = (h * 33) ^ s.charCodeAt(i);
+  return Math.abs(h);
+}
+
+/** Stable color for a group label: fixed map first, then palette by hash. */
+export function colorForGroup(group: string, fixed?: Record<string, string>): string {
+  const hit = fixed?.[group.toLowerCase()];
+  if (hit) return hit;
+  return CHART_PALETTE[hashString(group.toLowerCase()) % CHART_PALETTE.length];
+}
+
 /** Observe the rendered width of the chart container (responsive SVG). */
 export function useContainerWidth(): [RefObject<HTMLDivElement | null>, number] {
   const ref = useRef<HTMLDivElement>(null);

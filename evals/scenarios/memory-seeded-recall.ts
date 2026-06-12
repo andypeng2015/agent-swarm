@@ -10,6 +10,10 @@ import type { Scenario } from "../src/types.ts";
  * This is the F2 E2E gate: it fails fast at seed time (loud attempt error)
  * when embeddings are broken — the API sandbox needs EMBEDDING_API_KEY or
  * OPENAI_API_KEY in evals/.env.
+ *
+ * Designated smoke scenario (v7 §5.1): 1 worker, 1 task, deterministic-only
+ * (zero judge LLM spend) — the cheapest run that still proves a real swarm
+ * capability end to end.
  */
 export const memorySeededRecall: Scenario = {
   id: "memory-seeded-recall",
@@ -19,6 +23,8 @@ export const memorySeededRecall: Scenario = {
     "the task starts, then asks the agent to retrieve that knowledge from memory and write",
     "host:port to /workspace/nightjar-deploy.txt. The value is absent from the task description,",
     "so a pass proves seeded memories are embedded and retrievable. Deterministic-only.",
+    "Designated smoke scenario — cheapest meaningful end-to-end verification (run this first",
+    "after harness changes).",
   ].join(" "),
   seed: {
     memories: [

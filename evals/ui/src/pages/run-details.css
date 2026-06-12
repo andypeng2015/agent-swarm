@@ -148,6 +148,74 @@
   background: var(--text);
 }
 
+/* ---- cell summary band (v7 §2.2 — rendered only when attemptsPerCell > 1) ---- */
+
+.rd-cellsum {
+  margin-top: 10px;
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+}
+
+.rd-cellsum-toggle {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.rd-cellsum-toggle:hover {
+  color: var(--accent);
+}
+
+.rd-cellsum-table {
+  margin-top: 6px;
+  max-height: 230px;
+  overflow-y: auto;
+}
+
+.rd-cellsum-row {
+  display: grid;
+  grid-template-columns: minmax(0, 2.6fr) repeat(6, minmax(62px, 1fr));
+  gap: 8px;
+  align-items: center;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text);
+  text-decoration: none;
+}
+
+.rd-cellsum-row > span:not(:first-child) {
+  text-align: right;
+  white-space: nowrap;
+}
+
+a.rd-cellsum-row:hover {
+  background: var(--panel-2);
+}
+
+.rd-cellsum-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--panel);
+  color: var(--dim);
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.rd-cellsum-cell {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* ---- attempt summary ---- */
 
 .rd-attempt-id {
@@ -183,6 +251,15 @@
 .rd-not-captured {
   font-size: 12px;
   font-style: italic;
+}
+
+/* attempt token totals (v7 §11.2) */
+.rd-tokens {
+  overflow-wrap: anywhere;
+}
+
+.rd-tokens .dim {
+  font-size: 10.5px;
 }
 
 /* ---- timings waterfall (item 7) ---- */
@@ -291,6 +368,107 @@
 
 .wf-row.live .wf-dur {
   color: var(--accent);
+}
+
+/* ---- workers & sandboxes (v7 §10.3 / §12.6) ---- */
+
+/* Member section titles carry agent names — keep them verbatim, not uppercased. */
+.rd-member-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+.rd-member-name {
+  font-size: 11.5px;
+  color: var(--text);
+}
+
+.rd-member-lead {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--accent);
+  border: 1px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border-radius: 4px;
+  padding: 0 5px;
+  line-height: 1.6;
+  cursor: default;
+}
+
+.rd-member-template {
+  font-size: 10px;
+  font-weight: 400;
+  cursor: default;
+}
+
+.rd-member-role {
+  font-weight: 400;
+  font-size: 10px;
+}
+
+/* §10.3: agent status at roster-capture time. */
+.rd-member-status {
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--dim);
+  cursor: default;
+}
+
+/* §12.6: explicit marker when a member overrode the matrix cell's config. */
+.rd-member-override {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--orange);
+  border: 1px dashed color-mix(in srgb, var(--orange) 60%, transparent);
+  border-radius: 4px;
+  padding: 0 5px;
+  line-height: 1.6;
+  cursor: help;
+}
+
+.rd-member-config {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.rd-member-tokens {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--dim);
+  white-space: nowrap;
+}
+
+.rd-member-tasks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.rd-task-chip {
+  cursor: pointer;
+  color: var(--text);
+}
+
+.rd-task-chip:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.rd-member-caps {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* ---- sandbox ---- */

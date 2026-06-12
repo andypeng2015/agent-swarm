@@ -137,15 +137,20 @@ export function useModels(): ModelLookup {
 
   return useMemo<ModelLookup>(() => {
     const models = data?.models ?? [];
+    const aliases = data?.aliases ?? {};
     const byId = new Map(models.map((m) => [m.id, m]));
     const resolve = (id: string | null): ModelJson | null => {
       if (id === null || id.length === 0 || models.length === 0) return null;
-      for (const candidate of modelIdCandidates(id)) {
+      // v7 §8: bare claude aliases ("fable") resolve to the latest family
+      // member ("claude-fable-5") via the server-computed frozen map FIRST,
+      // then go through the normal candidate chain (dotted/suffix matching).
+      const target = aliases[id.trim().toLowerCase()] ?? id;
+      for (const candidate of modelIdCandidates(target)) {
         const hit = byId.get(candidate);
         if (hit) return hit;
       }
       // last resort: suffix match ("deepseek-v4-flash" → "deepseek/deepseek-v4-flash")
-      for (const candidate of modelIdCandidates(id)) {
+      for (const candidate of modelIdCandidates(target)) {
         const hit = models.find((m) => m.id.endsWith(`/${candidate}`));
         if (hit) return hit;
       }

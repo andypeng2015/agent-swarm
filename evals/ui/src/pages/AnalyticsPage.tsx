@@ -2,11 +2,21 @@ import { type ReactNode, useCallback, useMemo, useState } from "react";
 import { getAnalytics } from "../api.ts";
 import { ConfigChip } from "../components/ConfigChip.tsx";
 import { BarChart, type BarGroup } from "../components/charts/BarChart.tsx";
+import { colorForGroup, HARNESS_COLORS, VENDOR_COLORS } from "../components/charts/chart-utils.ts";
 import { type HeatCellData, HeatTable } from "../components/charts/HeatTable.tsx";
 import { type ChartMarker, LineChart, type LineSeries } from "../components/charts/LineChart.tsx";
-import { type Column, DataTable } from "../components/DataTable.tsx";
+import { type MiniBar, MiniBarChart } from "../components/charts/MiniBarChart.tsx";
+import { ScatterChart, type ScatterPoint } from "../components/charts/ScatterChart.tsx";
+import { type Column, DataTable, MultiSelect } from "../components/DataTable.tsx";
 import { EntityLink } from "../components/EntityLink.tsx";
-import { fmtAgo, fmtCost, fmtDate, fmtDuration, fmtScore } from "../components/format.ts";
+import {
+  fmtAgo,
+  fmtCost,
+  fmtDate,
+  fmtDuration,
+  fmtScore,
+  fmtTokens,
+} from "../components/format.ts";
 import { HarnessIcon } from "../components/HarnessIcon.tsx";
 import { ModelChip } from "../components/ModelChip.tsx";
 import { Spinner } from "../components/Spinner.tsx";
@@ -14,10 +24,13 @@ import { InfoTip } from "../components/Tooltip.tsx";
 import { useModels, usePoll } from "../hooks.ts";
 import type {
   AnalyticsCell,
+  AnalyticsGroupRollup,
   AnalyticsModel,
   AnalyticsResponse,
+  AnalyticsScatterPoint,
   AnalyticsSeries,
   AnalyticsSeriesPoint,
+  AnalyticsTokenSums,
 } from "../types.ts";
 import "./analytics.css";
 
@@ -29,6 +42,15 @@ function fmtPct(rate: number): string {
 /** Axis-tick-friendly cost: "$0.14" / "$0.0021" (trailing zeros trimmed — fits the 46px gutter). */
 function fmtCostTick(v: number): string {
   return `$${Number(v.toFixed(4))}`;
+}
+
+/** Hover-title breakdown of a token sum (v7 §11): in/out/cacheR/cacheW. */
+function tokensTitle(t: AnalyticsTokenSums): string {
+  return (
+    `in ${fmtTokens(t.inputTokens)} · out ${fmtTokens(t.outputTokens)} · ` +
+    `cacheR ${fmtTokens(t.cacheReadTokens)} · cacheW ${fmtTokens(t.cacheWriteTokens)} · ` +
+    `over ${t.tokenAttempts} token-bearing attempts`
+  );
 }
 
 // ---- metric definitions (the InfoTip carries each metric's formula) ----
@@ -71,9 +93,9 @@ const TREND_METRICS: Record<TrendMetricKey, MetricDef<AnalyticsSeriesPoint>> = {
   },
 };
 
-type HeatMetricKey = "avg" | "total" | "judge";
+type HeatMetricKey = "avg" | "total" | "judge" | "min" | "max";
 
-const HEAT_ORDER: HeatMetricKey[] = ["avg", "total", "judge"];
+const HEAT_ORDER: HeatMetricKey[] = ["avg", "total", "judge", "min", "max"];
 
 const HEAT_METRICS: Record<HeatMetricKey, MetricDef<AnalyticsCell>> = {
   avg: {
@@ -94,11 +116,23 @@ const HEAT_METRICS: Record<HeatMetricKey, MetricDef<AnalyticsCell>> = {
     value: (c) => c.avgJudgeCostUsd,
     format: (v) => fmtCost(v),
   },
+  min: {
+    label: "Min Cost",
+    tip: "Cheapest priced attempt in the cell, across all runs (v7 §6).",
+    value: (c) => c.minCostUsd ?? null,
+    format: (v) => fmtCost(v),
+  },
+  max: {
+    label: "Max Cost",
+    tip: "Most expensive priced attempt in the cell, across all runs (v7 §6).",
+    value: (c) => c.maxCostUsd ?? null,
+    format: (v) => fmtCost(v),
+  },
 };
 
-type ModelMetricKey = "attempt" | "run" | "minute";
+type ModelMetricKey = "attempt" | "run" | "minute" | "duration" | "accuracy";
 
-const MODEL_ORDER: ModelMetricKey[] = ["attempt", "run", "minute"];
+const MODEL_ORDER: ModelMetricKey[] = ["attempt", "run", "minute", "duration", "accuracy"];
 
 const MODEL_METRICS: Record<ModelMetricKey, MetricDef<AnalyticsModel>> = {
   attempt: {
@@ -118,6 +152,18 @@ const MODEL_METRICS: Record<ModelMetricKey, MetricDef<AnalyticsModel>> = {
     tip: "Σ task cost ÷ minutes of agent work, over attempts carrying both a cost and a duration.",
     value: (m) => m.costPerMinute,
     format: (v) => fmtCost(v),
+  },
+  duration: {
+    label: "Duration",
+    tip: "Mean attempt duration over attempts with a duration — lower is better (chart sorts fastest first).",
+    value: (m) => m.avgDurationMs,
+    format: (v) => fmtDuration(v),
+  },
+  accuracy: {
+    label: "Accuracy",
+    tip: "Mean judge score over attempts with a score — higher is better.",
+    value: (m) => m.avgScore,
+    format: (v) => fmtScore(v),
   },
 };
 
@@ -166,6 +212,95 @@ function TipRow(props: { label: string; children: ReactNode }): ReactNode {
   );
 }
 
+// ---- section 0: Highlights — three at-a-glance per-model cards (v7 §7.3) ----
+
+interface HighlightDef {
+  key: string;
+  title: string;
+  sub: string;
+  tip: string;
+  value: (m: AnalyticsModel) => number | null;
+  format: (v: number) => string;
+  /** Bar order: best first ("asc" when lower is better). */
+  dir: "asc" | "desc";
+}
+
+const HIGHLIGHT_CARDS: HighlightDef[] = [
+  {
+    key: "accuracy",
+    title: "Accuracy",
+    sub: "avg judge score · higher is better",
+    tip: "Mean judge score per model, across every graded attempt of every run. Top 8 models by attempts; bar color = model vendor.",
+    value: (m) => m.avgScore,
+    format: (v) => fmtScore(v),
+    dir: "desc",
+  },
+  {
+    key: "speed",
+    title: "Speed",
+    sub: "avg attempt duration · lower is better",
+    tip: "Mean attempt duration per model, over attempts that captured a duration. Top 8 models by attempts; bar color = model vendor.",
+    value: (m) => m.avgDurationMs,
+    format: (v) => fmtDuration(v),
+    dir: "asc",
+  },
+  {
+    key: "price",
+    title: "Price",
+    sub: "avg cost per attempt · lower is better",
+    tip: "Σ task cost ÷ priced attempts per model (judge cost excluded). Top 8 models by attempts; bar color = model vendor.",
+    value: (m) => m.avgCostPerAttempt,
+    format: (v) => fmtCost(v),
+    dir: "asc",
+  },
+];
+
+const HIGHLIGHT_MODEL_CAP = 8;
+
+function HighlightCard(props: {
+  def: HighlightDef;
+  models: AnalyticsModel[];
+  resolve: (id: string | null) => { name: string } | null;
+}): ReactNode {
+  const { def, models, resolve } = props;
+  const bars = useMemo<MiniBar[]>(() => {
+    const dir = def.dir === "asc" ? 1 : -1;
+    return [...models]
+      .sort((a, b) => b.attempts - a.attempts)
+      .map((m) => ({ m, v: def.value(m) }))
+      .filter((e): e is { m: AnalyticsModel; v: number } => e.v !== null)
+      .slice(0, HIGHLIGHT_MODEL_CAP)
+      .sort((a, b) => dir * (a.v - b.v))
+      .map(({ m, v }) => ({
+        key: m.model,
+        label: resolve(m.model)?.name ?? m.model,
+        value: v,
+        color: colorForGroup(m.vendor ?? "(unknown)", VENDOR_COLORS),
+      }));
+  }, [def, models, resolve]);
+
+  return (
+    <div className="panel an-highlight">
+      <div className="an-highlight-title">
+        {def.title} <InfoTip text={def.tip} />
+      </div>
+      <div className="an-highlight-sub dim">{def.sub}</div>
+      <MiniBarChart bars={bars} format={def.format} emptyText="No data yet" />
+    </div>
+  );
+}
+
+function HighlightsSection(props: { models: AnalyticsModel[] }): ReactNode {
+  const { resolve } = useModels();
+  return (
+    <div className="an-highlights">
+      {HIGHLIGHT_CARDS.map((def) => (
+        <HighlightCard key={def.key} def={def} models={props.models} resolve={resolve} />
+      ))}
+    </div>
+  );
+}
+
 // ---- section 1: Trends — "Is the swarm improving over time?" ----
 
 function bestOf(list: AnalyticsSeries[]): AnalyticsSeries | null {
@@ -175,86 +310,82 @@ function bestOf(list: AnalyticsSeries[]): AnalyticsSeries | null {
   );
 }
 
+/** Overlay cap (v7 §6.2 — frozen): excess pairs dropped in series-size order. */
+const SERIES_CAP = 8;
+
 function TrendsSection(props: { series: AnalyticsSeries[] }): ReactNode {
   const { series } = props;
-  const [pickedScenario, setPickedScenario] = useState<string | null>(null);
-  const [pickedConfig, setPickedConfig] = useState<string | null>(null);
+  // null = uninitialized → default to the single best (scenario, config) pair.
+  const [pickedScenarios, setPickedScenarios] = useState<string[] | null>(null);
+  const [pickedConfigs, setPickedConfigs] = useState<string[] | null>(null);
   const [metricKey, setMetricKey] = useState<TrendMetricKey>("score");
   const metric = TREND_METRICS[metricKey];
 
-  const scenarioIds = useMemo(() => [...new Set(series.map((s) => s.scenarioId))], [series]);
-
-  // Default: the (scenario, config) pair with the most points; selections fall
-  // back gracefully when the picked combination has no series.
-  const scenarioId =
-    pickedScenario !== null && scenarioIds.includes(pickedScenario)
-      ? pickedScenario
-      : (bestOf(series)?.scenarioId ?? null);
-  const scenarioSeries = useMemo(
-    () => series.filter((s) => s.scenarioId === scenarioId),
-    [series, scenarioId],
+  const scenarioOptions = useMemo(
+    () => [...new Set(series.map((s) => s.scenarioId))].sort(),
+    [series],
   );
-  const selected =
-    scenarioSeries.find((s) => s.configId === pickedConfig) ?? bestOf(scenarioSeries);
+  const configOptions = useMemo(() => [...new Set(series.map((s) => s.configId))].sort(), [series]);
 
-  const chartSeries = useMemo<LineSeries[]>(() => {
-    if (selected === null) return [];
-    return [
-      {
-        id: `${selected.scenarioId}|${selected.configId}`,
-        name: `${selected.scenarioId} × ${selected.configId}`,
-        points: selected.points
-          .map((p) => ({ x: Date.parse(p.createdAt), y: metric.value(p) }))
-          .filter((p) => Number.isFinite(p.x)),
-      },
-    ];
-  }, [selected, metric]);
+  const best = useMemo(() => bestOf(series), [series]);
+  const scenSel = pickedScenarios ?? (best !== null ? [best.scenarioId] : []);
+  const cfgSel = pickedConfigs ?? (best !== null ? [best.configId] : []);
 
-  const markers = useMemo<ChartMarker[]>(() => {
-    if (selected === null) return [];
-    return selected.versionEvents
-      .map((ev) => ({
-        x: Date.parse(ev.createdAt),
-        label: `${ev.kind === "api" ? "api" : "w"} ${ev.to}`,
-        color: ev.kind === "api" ? "var(--blue)" : "var(--orange)",
-      }))
-      .filter((m) => Number.isFinite(m.x));
-  }, [selected]);
+  // Plotted series = the cartesian product of the selections that has a series
+  // (empty selection = no filter), capped at SERIES_CAP, largest series kept.
+  const matched = series.filter(
+    (s) =>
+      (scenSel.length === 0 || scenSel.includes(s.scenarioId)) &&
+      (cfgSel.length === 0 || cfgSel.includes(s.configId)),
+  );
+  const plotted = [...matched]
+    .sort((a, b) => b.points.length - a.points.length)
+    .slice(0, SERIES_CAP);
+
+  // plotted is derived fresh each render and the mapping is trivial — no memo.
+  const chartSeries: LineSeries[] = plotted.map((s) => ({
+    id: `${s.scenarioId}|${s.configId}`,
+    name: `${s.scenarioId} × ${s.configId}`,
+    points: s.points
+      .map((p) => ({ x: Date.parse(p.createdAt), y: metric.value(p) }))
+      .filter((p) => Number.isFinite(p.x)),
+  }));
+
+  // Version markers are per-series — rendered only when exactly 1 series plots.
+  const single = plotted.length === 1 ? (plotted[0] ?? null) : null;
+  const markers: ChartMarker[] =
+    single === null
+      ? []
+      : single.versionEvents
+          .map((ev) => ({
+            x: Date.parse(ev.createdAt),
+            label: `${ev.kind === "api" ? "api" : "w"} ${ev.to}`,
+            color: ev.kind === "api" ? "var(--blue)" : "var(--orange)",
+          }))
+          .filter((m) => Number.isFinite(m.x));
+
+  const runsPlotted = plotted.reduce((acc, s) => acc + s.points.length, 0);
 
   return (
     <div className="panel">
       <SectionHead
         title="Improving Over Time?"
-        tip="One point per run for the selected scenario × config. Dashed vertical lines mark API / worker version changes captured at sandbox boot — development progress shows up as the metric moving across those lines."
+        tip="One point per run for each selected scenario × config pair — pick several to overlay them. Dashed vertical lines mark API / worker version changes captured at sandbox boot (shown when a single series is plotted)."
       >
-        {selected !== null ? (
+        {series.length > 0 ? (
           <>
-            <label className="an-select">
-              <span className="dim">Scenario</span>
-              <select
-                value={scenarioId ?? ""}
-                onChange={(e) => {
-                  setPickedScenario(e.target.value);
-                  setPickedConfig(null);
-                }}
-              >
-                {scenarioIds.map((id) => (
-                  <option key={id} value={id}>
-                    {id}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="an-select">
-              <span className="dim">Config</span>
-              <select value={selected.configId} onChange={(e) => setPickedConfig(e.target.value)}>
-                {scenarioSeries.map((s) => (
-                  <option key={s.configId} value={s.configId}>
-                    {s.configId}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <MultiSelect
+              label="Scenario"
+              options={scenarioOptions}
+              selected={scenSel}
+              onChange={setPickedScenarios}
+            />
+            <MultiSelect
+              label="Config"
+              options={configOptions}
+              selected={cfgSel}
+              onChange={setPickedConfigs}
+            />
             <Seg
               options={TREND_ORDER.map((k) => ({ key: k, label: TREND_METRICS[k].label }))}
               value={metricKey}
@@ -264,7 +395,7 @@ function TrendsSection(props: { series: AnalyticsSeries[] }): ReactNode {
           </>
         ) : null}
       </SectionHead>
-      {selected === null ? (
+      {series.length === 0 ? (
         <div className="chart-empty">Not enough data yet — finished eval runs will chart here</div>
       ) : (
         <>
@@ -273,32 +404,46 @@ function TrendsSection(props: { series: AnalyticsSeries[] }): ReactNode {
             markers={markers}
             height={240}
             yFormat={metric.format}
-            emptyText={`No ${metric.label} data for this pair yet`}
+            emptyText={
+              matched.length === 0
+                ? "No series match the selection"
+                : `No ${metric.label} data for this selection yet`
+            }
           />
           <div className="an-foot">
             <span className="dim">
-              {selected.points.length} {selected.points.length === 1 ? "run" : "runs"} plotted
+              {runsPlotted} {runsPlotted === 1 ? "run" : "runs"} across {plotted.length}{" "}
+              {plotted.length === 1 ? "series" : "series"}
             </span>
-            {selected.versionEvents.length > 0 ? (
-              selected.versionEvents.map((ev) => (
-                <span
-                  className="an-event"
-                  key={`${ev.kind}-${ev.runId}-${ev.to}`}
-                  title={ev.createdAt}
-                >
-                  <span className={`an-event-kind ${ev.kind}`}>
-                    {ev.kind === "api" ? "API" : "Worker"}
+            {matched.length > plotted.length ? (
+              <span className="dim">
+                showing {plotted.length} of {matched.length} series
+              </span>
+            ) : null}
+            {single !== null ? (
+              single.versionEvents.length > 0 ? (
+                single.versionEvents.map((ev) => (
+                  <span
+                    className="an-event"
+                    key={`${ev.kind}-${ev.runId}-${ev.to}`}
+                    title={ev.createdAt}
+                  >
+                    <span className={`an-event-kind ${ev.kind}`}>
+                      {ev.kind === "api" ? "API" : "Worker"}
+                    </span>
+                    <span className="an-event-change">
+                      {ev.from !== null ? `${ev.from} → ${ev.to}` : ev.to}
+                    </span>
+                    <EntityLink kind="run" id={ev.runId} />
+                    <span className="dim">{fmtDate(ev.createdAt)}</span>
                   </span>
-                  <span className="an-event-change">
-                    {ev.from !== null ? `${ev.from} → ${ev.to}` : ev.to}
-                  </span>
-                  <EntityLink kind="run" id={ev.runId} />
-                  <span className="dim">{fmtDate(ev.createdAt)}</span>
-                </span>
-              ))
-            ) : (
-              <span className="dim">No version changes captured in this series</span>
-            )}
+                ))
+              ) : (
+                <span className="dim">No version changes captured in this series</span>
+              )
+            ) : plotted.length > 1 ? (
+              <span className="dim">Version markers appear when a single series is plotted</span>
+            ) : null}
           </div>
         </>
       )}
@@ -306,7 +451,122 @@ function TrendsSection(props: { series: AnalyticsSeries[] }): ReactNode {
   );
 }
 
-// ---- section 2: Cost Matrix — "What is the cost of running it in special tasks?" ----
+// ---- section 2: Efficiency — score vs tokens scatter (v7 §7.3, screenshot 6) ----
+
+type ScatterYKey = "score" | "passRate";
+type ColorByKey = "harness" | "vendor";
+
+const SCATTER_Y: Record<
+  ScatterYKey,
+  {
+    label: string;
+    value: (p: AnalyticsScatterPoint) => number | null;
+    format: (v: number) => string;
+  }
+> = {
+  score: { label: "Avg Score", value: (p) => p.avgScore, format: (v) => fmtScore(v) },
+  passRate: { label: "Pass Rate", value: (p) => p.passRate, format: fmtPct },
+};
+
+const SCATTER_LABEL_CAP = 14;
+
+function EfficiencySection(props: { scatter: AnalyticsScatterPoint[] }): ReactNode {
+  const [yKey, setYKey] = useState<ScatterYKey>("score");
+  const [colorBy, setColorBy] = useState<ColorByKey>("vendor");
+  const { resolve } = useModels();
+  const yDef = SCATTER_Y[yKey];
+
+  const points = useMemo<ScatterPoint[]>(
+    () =>
+      props.scatter.flatMap((p) => {
+        const y = yDef.value(p);
+        if (p.avgTotalTokens === null || y === null) return [];
+        const group = colorBy === "harness" ? (p.harnesses[0] ?? "(unknown)") : p.vendor;
+        const color = colorForGroup(group, colorBy === "harness" ? HARNESS_COLORS : VENDOR_COLORS);
+        const label = resolve(p.model)?.name ?? p.model;
+        return [
+          {
+            key: p.model,
+            label,
+            x: p.avgTotalTokens,
+            y,
+            color,
+            group,
+            r: 4 + Math.min(4, Math.sqrt(p.attempts)),
+            tip: (
+              <>
+                <div className="chart-tip-title">{label}</div>
+                <div className="chart-tip-row">
+                  <span>Avg Score</span>
+                  <span className="chart-tip-value">{fmtScore(p.avgScore)}</span>
+                </div>
+                <div className="chart-tip-row">
+                  <span>Pass Rate</span>
+                  <span className="chart-tip-value">
+                    {p.passRate !== null ? fmtPct(p.passRate) : "—"}
+                  </span>
+                </div>
+                <div className="chart-tip-row">
+                  <span>Avg Tokens</span>
+                  <span className="chart-tip-value">{fmtTokens(p.avgTotalTokens)}</span>
+                </div>
+                <div className="chart-tip-row">
+                  <span>Avg Cost</span>
+                  <span className="chart-tip-value">{fmtCost(p.avgCostUsd)}</span>
+                </div>
+                <div className="chart-tip-row">
+                  <span>Attempts</span>
+                  <span className="chart-tip-value">{p.attempts}</span>
+                </div>
+              </>
+            ),
+          },
+        ];
+      }),
+    [props.scatter, yDef, colorBy, resolve],
+  );
+
+  return (
+    <div className="panel">
+      <SectionHead
+        title="Efficiency — Score vs Tokens"
+        tip="One dot per model: quality on the y axis against mean total tokens (input + output + cache read + cache write) per attempt on the x axis. Dot size scales with attempts; the shaded corner is the most attractive quadrant — high quality at low token spend."
+      >
+        <span className="an-seg-label dim">Y</span>
+        <Seg
+          options={[
+            { key: "score" as const, label: "Score" },
+            { key: "passRate" as const, label: "Pass Rate" },
+          ]}
+          value={yKey}
+          onChange={setYKey}
+        />
+        <span className="an-seg-label dim">Color</span>
+        <Seg
+          options={[
+            { key: "harness" as const, label: "Harness" },
+            { key: "vendor" as const, label: "Vendor" },
+          ]}
+          value={colorBy}
+          onChange={setColorBy}
+        />
+      </SectionHead>
+      <ScatterChart
+        points={points}
+        height={300}
+        xLabel="Avg total tokens per attempt"
+        yLabel={yDef.label}
+        xFormat={(v) => fmtTokens(Math.round(v))}
+        yFormat={yDef.format}
+        quadrant={{ x: "low", y: "high", label: "most attractive quadrant" }}
+        showLabels={points.length <= SCATTER_LABEL_CAP}
+        emptyText="No token-bearing graded attempts yet — v7 runs capture tokens for every attempt"
+      />
+    </div>
+  );
+}
+
+// ---- section 3: Cost Matrix — "What is the cost of running it in special tasks?" ----
 
 function CellTip(props: { cell: AnalyticsCell }): ReactNode {
   const c = props.cell;
@@ -327,6 +587,8 @@ function CellTip(props: { cell: AnalyticsCell }): ReactNode {
         {c.pricedAttempts} / {c.attempts}
       </TipRow>
       <TipRow label="Avg Cost">{fmtCost(c.avgCostUsd)}</TipRow>
+      <TipRow label="Min Cost">{fmtCost(c.minCostUsd ?? null)}</TipRow>
+      <TipRow label="Max Cost">{fmtCost(c.maxCostUsd ?? null)}</TipRow>
       <TipRow label="Total Cost">{fmtCost(c.totalCostUsd)}</TipRow>
       <TipRow label="Judge Cost">
         {c.totalJudgeCostUsd !== null ? (
@@ -340,6 +602,13 @@ function CellTip(props: { cell: AnalyticsCell }): ReactNode {
       </TipRow>
       <TipRow label="Avg Score">{fmtScore(c.avgScore)}</TipRow>
       <TipRow label="Avg Duration">{fmtDuration(c.avgDurationMs)}</TipRow>
+      <TipRow label="Tokens">
+        {c.tokens != null ? (
+          <span title={tokensTitle(c.tokens)}>{fmtTokens(c.tokens.totalTokens)}</span>
+        ) : (
+          "—"
+        )}
+      </TipRow>
       <TipRow label="Last Run">{fmtAgo(c.lastRunAt)}</TipRow>
     </div>
   );
@@ -402,7 +671,7 @@ function CostSection(props: { data: AnalyticsResponse }): ReactNode {
     <div className="panel">
       <SectionHead
         title="What Does It Cost?"
-        tip="Cost per scenario × config, aggregated across every run. Only priced attempts count toward cost; judge LLM cost is harness overhead kept separate — switch the metric to Judge Cost to inspect it."
+        tip="Cost per scenario × config, aggregated across every run. Only priced attempts count toward cost; judge LLM cost is harness overhead kept separate — switch the metric to Judge Cost to inspect it. Min/Max show the per-attempt spread."
       >
         <Seg
           options={HEAT_ORDER.map((k) => ({ key: k, label: HEAT_METRICS[k].label }))}
@@ -430,7 +699,7 @@ function CostSection(props: { data: AnalyticsResponse }): ReactNode {
   );
 }
 
-// ---- section 3: Models — "What model is better while keeping performance?" ----
+// ---- section 4: Models — "What model is better while keeping performance?" ----
 
 const MODEL_COLUMNS: Column<AnalyticsModel>[] = [
   {
@@ -521,6 +790,18 @@ const MODEL_COLUMNS: Column<AnalyticsModel>[] = [
     sortValue: (m) => m.avgDurationMs,
     render: (m) => fmtDuration(m.avgDurationMs),
   },
+  {
+    key: "tokens",
+    header: "Tokens",
+    headerTip:
+      "Σ tokens (input + output + cache read + cache write) over the model's token-bearing attempts — hover for the breakdown (v7 §11).",
+    width: "76px",
+    align: "right",
+    sortValue: (m) => m.tokens?.totalTokens ?? null,
+    titleText: (m) => (m.tokens != null ? tokensTitle(m.tokens) : "no token data"),
+    render: (m) =>
+      m.tokens != null ? fmtTokens(m.tokens.totalTokens) : <span className="dim">—</span>,
+  },
 ];
 
 function ModelsSection(props: { models: AnalyticsModel[] }): ReactNode {
@@ -528,22 +809,23 @@ function ModelsSection(props: { models: AnalyticsModel[] }): ReactNode {
   const metric = MODEL_METRICS[metricKey];
   const { resolve } = useModels();
 
-  const groups = useMemo<BarGroup[]>(
-    () =>
-      props.models
-        .map((m) => ({ m, v: metric.value(m) }))
-        .sort(
-          (a, b) =>
-            (b.v ?? Number.NEGATIVE_INFINITY) - (a.v ?? Number.NEGATIVE_INFINITY) ||
-            b.m.attempts - a.m.attempts,
-        )
-        .map(({ m, v }) => ({
-          key: m.model,
-          label: resolve(m.model)?.name ?? m.model,
-          values: [v],
-        })),
-    [props.models, metric, resolve],
-  );
+  const groups = useMemo<BarGroup[]>(() => {
+    // §6.2: ascending for Duration (faster = better at the top), descending otherwise.
+    const dir = metricKey === "duration" ? 1 : -1;
+    return props.models
+      .map((m) => ({ m, v: metric.value(m) }))
+      .sort((a, b) => {
+        if (a.v === null && b.v === null) return b.m.attempts - a.m.attempts;
+        if (a.v === null) return 1;
+        if (b.v === null) return -1;
+        return dir * (a.v - b.v) || b.m.attempts - a.m.attempts;
+      })
+      .map(({ m, v }) => ({
+        key: m.model,
+        label: resolve(m.model)?.name ?? m.model,
+        values: [v],
+      }));
+  }, [props.models, metric, metricKey, resolve]);
 
   return (
     <div className="panel">
@@ -579,6 +861,172 @@ function ModelsSection(props: { models: AnalyticsModel[] }): ReactNode {
   );
 }
 
+// ---- section 5: Rollups — by harness / by vendor (v7 §7.3) ----
+
+function rollupColumns(mode: ColorByKey): Column<AnalyticsGroupRollup>[] {
+  return [
+    {
+      key: "group",
+      header: mode === "harness" ? "Harness" : "Vendor",
+      searchText: (r) => r.group,
+      render: (r) => (
+        <span className="an-group">
+          <span
+            className="chart-dot"
+            style={{
+              background: colorForGroup(
+                r.group,
+                mode === "harness" ? HARNESS_COLORS : VENDOR_COLORS,
+              ),
+            }}
+          />
+          {mode === "harness" ? <HarnessIcon harness={r.group} showLabel /> : r.group}
+        </span>
+      ),
+    },
+    {
+      key: "models",
+      header: "Models",
+      width: "64px",
+      align: "right",
+      sortValue: (r) => r.models.length,
+      titleText: (r) => (r.models.length > 0 ? r.models.join(", ") : "no models"),
+      render: (r) => r.models.length,
+    },
+    {
+      key: "runs",
+      header: "Runs",
+      width: "56px",
+      align: "right",
+      sortValue: (r) => r.runs,
+      render: (r) => r.runs,
+    },
+    {
+      key: "attempts",
+      header: "Attempts",
+      width: "74px",
+      align: "right",
+      sortValue: (r) => r.attempts,
+      titleText: (r) =>
+        `${r.attempts} attempts · ${r.graded} graded · ${r.errors} errors · ${r.configIds.length} configs`,
+      render: (r) => r.attempts,
+    },
+    {
+      key: "passRate",
+      header: "Pass Rate",
+      headerTip:
+        "Passed ÷ graded (passed + failed). Errors are infra failures and never lower the rate.",
+      width: "78px",
+      align: "right",
+      sortValue: (r) => r.passRate,
+      titleText: (r) => `${r.passed} passed / ${r.graded} graded`,
+      render: (r) => (r.passRate !== null ? fmtPct(r.passRate) : <span className="dim">—</span>),
+    },
+    {
+      key: "score",
+      header: "Avg Score",
+      headerTip: "Mean judge score over attempts with a score.",
+      width: "78px",
+      align: "right",
+      sortValue: (r) => r.avgScore,
+      render: (r) => fmtScore(r.avgScore),
+    },
+    {
+      key: "totalCost",
+      header: "Σ Cost",
+      headerTip: "Σ task cost over the group's priced attempts (judge cost excluded).",
+      width: "78px",
+      align: "right",
+      sortValue: (r) => r.totalCostUsd,
+      titleText: (r) => `${r.pricedAttempts} / ${r.attempts} attempts priced`,
+      render: (r) => fmtCost(r.totalCostUsd),
+    },
+    {
+      key: "avgCost",
+      header: "$ / Attempt",
+      headerTip: "Σ task cost ÷ priced attempts.",
+      width: "86px",
+      align: "right",
+      sortValue: (r) => r.avgCostPerAttempt,
+      render: (r) => fmtCost(r.avgCostPerAttempt),
+    },
+    {
+      key: "minCost",
+      header: "Min",
+      headerTip: "Cheapest priced attempt in the group.",
+      width: "72px",
+      align: "right",
+      sortValue: (r) => r.minCostUsd,
+      render: (r) => fmtCost(r.minCostUsd),
+    },
+    {
+      key: "maxCost",
+      header: "Max",
+      headerTip: "Most expensive priced attempt in the group.",
+      width: "72px",
+      align: "right",
+      sortValue: (r) => r.maxCostUsd,
+      render: (r) => fmtCost(r.maxCostUsd),
+    },
+    {
+      key: "duration",
+      header: "Avg Duration",
+      headerTip: "Mean attempt duration over attempts with a duration.",
+      width: "92px",
+      align: "right",
+      sortValue: (r) => r.avgDurationMs,
+      render: (r) => fmtDuration(r.avgDurationMs),
+    },
+    {
+      key: "tokens",
+      header: "Tokens",
+      headerTip:
+        "Σ tokens (input + output + cache read + cache write) over the group's token-bearing attempts — hover for the breakdown.",
+      width: "76px",
+      align: "right",
+      sortValue: (r) => r.tokens?.totalTokens ?? null,
+      titleText: (r) => (r.tokens != null ? tokensTitle(r.tokens) : "no token data"),
+      render: (r) =>
+        r.tokens != null ? fmtTokens(r.tokens.totalTokens) : <span className="dim">—</span>,
+    },
+  ];
+}
+
+function RollupSection(props: {
+  harnesses: AnalyticsGroupRollup[];
+  vendors: AnalyticsGroupRollup[];
+}): ReactNode {
+  const [mode, setMode] = useState<ColorByKey>("harness");
+  const rows = mode === "harness" ? props.harnesses : props.vendors;
+  const columns = useMemo(() => rollupColumns(mode), [mode]);
+
+  return (
+    <div className="panel">
+      <SectionHead
+        title="By Harness, By Vendor"
+        tip="The same per-model aggregates rolled up one level: by harness provider (which agent CLI ran the attempt) or by model vendor (who serves the model the attempt actually used). Group colors match the scatter above."
+      >
+        <Seg
+          options={[
+            { key: "harness" as const, label: "By Harness" },
+            { key: "vendor" as const, label: "By Vendor" },
+          ]}
+          value={mode}
+          onChange={setMode}
+        />
+      </SectionHead>
+      <DataTable
+        rows={rows}
+        columns={columns}
+        rowKey={(r) => r.group}
+        searchable={false}
+        defaultSort={{ key: "attempts", dir: "desc" }}
+        emptyText="Not enough data yet — rollups appear after the first run"
+      />
+    </div>
+  );
+}
+
 // ---- page ----
 
 function PageHead(props: { data: AnalyticsResponse; onRefresh: () => void }): ReactNode {
@@ -602,11 +1050,13 @@ function PageHead(props: { data: AnalyticsResponse; onRefresh: () => void }): Re
 }
 
 /**
- * Analytics (v5 spec §3) — three sections, one per Taras question:
- * Trends ("Is the swarm improving over time?"), Cost Matrix ("What is the cost
- * of running it in special tasks?"), Models ("What model is better while
- * keeping performance?"). Single fetch + manual refresh; every section
- * degrades to an explicit empty state over partial/old data.
+ * Analytics v2 (v7 spec §6.2/§7.3) — top to bottom: Highlights (three per-model
+ * mini bar cards à la artificialanalysis.ai), Trends (multi-select scenario ×
+ * config overlay), Efficiency (score-vs-tokens scatter with the most-attractive
+ * quadrant and a harness/vendor color toggle), Cost Matrix (now with Min/Max),
+ * Models (now with Duration/Accuracy metrics + Tokens), and harness/vendor
+ * rollups. Single fetch + manual refresh; every section degrades to an explicit
+ * empty state over partial/pre-v7 data (no NaN, ever).
  */
 export default function AnalyticsPage(): ReactNode {
   const analytics = usePoll(getAnalytics, null, []);
@@ -624,9 +1074,15 @@ export default function AnalyticsPage(): ReactNode {
   return (
     <>
       <PageHead data={analytics.data} onRefresh={analytics.refresh} />
+      <HighlightsSection models={analytics.data.models} />
       <TrendsSection series={analytics.data.series} />
+      <EfficiencySection scatter={analytics.data.scatter ?? []} />
       <CostSection data={analytics.data} />
       <ModelsSection models={analytics.data.models} />
+      <RollupSection
+        harnesses={analytics.data.harnesses ?? []}
+        vendors={analytics.data.vendors ?? []}
+      />
     </>
   );
 }

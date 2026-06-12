@@ -1,30 +1,110 @@
 import { configs } from "../configs/index.ts";
 import { scenarios } from "../scenarios/index.ts";
 import type { Registry } from "./runner/index.ts";
-import type { HarnessConfig, Scenario } from "./types.ts";
+import {
+  type HarnessConfig,
+  type Scenario,
+  scenarioWorkerCount,
+  type WorkerSpec,
+} from "./types.ts";
 
 const MAX_WORKERS = 3;
+/**
+ * Env keys the boot path owns — WorkerSpec.env may never override them
+ * (v7 §9/§12). TEMPLATE_ID / AGENT_NAME / SYSTEM_PROMPT* are reserved too:
+ * they are SET FROM the spec's typed fields (template/name/systemPrompt).
+ */
+export const WORKER_SPEC_RESERVED_ENV = new Set([
+  "API_KEY",
+  "AGENT_SWARM_API_KEY",
+  "MCP_BASE_URL",
+  "AGENT_ROLE",
+  "AGENT_ID",
+  "HARNESS_PROVIDER",
+  "MODEL_OVERRIDE",
+  "MAX_CONCURRENT_TASKS",
+  "YOLO",
+  "HOME",
+  "PATH",
+  "TEMPLATE_ID",
+  "TEMPLATE_REGISTRY_URL",
+  "AGENT_NAME",
+  "SYSTEM_PROMPT",
+  "SYSTEM_PROMPT_FILE",
+]);
+const TEMPLATE_SLUG_RE = /^[a-z0-9][a-z0-9-]*$/;
+const ENV_KEY_RE = /^[A-Z][A-Z0-9_]*$/;
 const MAX_SEED_MEMORIES = 16;
 /** Bare filename, no path separators — prevents traversal out of evals/scenarios/fixtures/. */
 const SQL_DUMP_NAME_RE = /^[A-Za-z0-9._-]+\.sql$/;
 
+const CONFIG_IDS = new Set(configs.map((c) => c.id));
+
+/** Shared member-spec rules (v7 §9/§12) for workers[] entries AND the lead. */
+function validateWorkerSpec(
+  spec: WorkerSpec,
+  label: string,
+  names: Set<string>,
+  errors: string[],
+): void {
+  if (spec.template !== undefined && !TEMPLATE_SLUG_RE.test(spec.template)) {
+    errors.push(`${label}.template "${spec.template}" must match ${TEMPLATE_SLUG_RE}`);
+  }
+  if (spec.name !== undefined) {
+    if (spec.name.trim().length === 0) {
+      errors.push(`${label}.name must be non-empty when present`);
+    } else if (names.has(spec.name)) {
+      errors.push(`${label}.name "${spec.name}" duplicates another member's name`);
+    }
+    names.add(spec.name);
+  }
+  if (spec.configId !== undefined && !CONFIG_IDS.has(spec.configId)) {
+    errors.push(`${label}.configId "${spec.configId}" is not in the config catalog`);
+  }
+  if (spec.model !== undefined && spec.model.trim().length === 0) {
+    errors.push(`${label}.model must be non-empty when present`);
+  }
+  for (const key of Object.keys(spec.env ?? {})) {
+    if (!ENV_KEY_RE.test(key)) {
+      errors.push(`${label}.env key "${key}" must match ${ENV_KEY_RE}`);
+    } else if (WORKER_SPEC_RESERVED_ENV.has(key)) {
+      errors.push(`${label}.env key "${key}" is reserved by the boot path`);
+    }
+  }
+}
+
 /**
- * Scenario shape validation (v6 §0.11 — rules FROZEN). Returns human-readable
- * violations; empty array = valid. File existence/content of `seed.sqlDump` is
- * validated later, host-side in the runner, so a missing fixture breaks one
- * attempt — not the whole registry.
+ * Scenario shape validation (v6 §0.11 + v7 §9/§12 — rules FROZEN). Returns
+ * human-readable violations; empty array = valid. File existence/content of
+ * `seed.sqlDump` is validated later, host-side in the runner, so a missing
+ * fixture breaks one attempt — not the whole registry.
  */
 export function validateScenario(s: Scenario): string[] {
   const errors: string[] = [];
-  if (
+  const names = new Set<string>();
+  if (Array.isArray(s.workers)) {
+    // WorkerSpec[] shape (v7 §9): 1..MAX entries; identity/env rules per spec.
+    if (s.workers.length < 1 || s.workers.length > MAX_WORKERS) {
+      errors.push(`workers array must have 1..${MAX_WORKERS} entries, got ${s.workers.length}`);
+    }
+    s.workers.forEach((spec: WorkerSpec, i) => {
+      validateWorkerSpec(spec, `workers[${i}]`, names, errors);
+    });
+  } else if (
     s.workers !== undefined &&
     (!Number.isInteger(s.workers) || s.workers < 1 || s.workers > MAX_WORKERS)
   ) {
     errors.push(`workers must be an integer in [1, ${MAX_WORKERS}], got ${s.workers}`);
   }
-  const workers = s.workers ?? 1;
+  // Lead (v7 §12): one extra member, outside the worker cap; same spec rules.
+  if (s.lead !== undefined) validateWorkerSpec(s.lead, "lead", names, errors);
+  const workers = Math.max(1, scenarioWorkerCount(s.workers));
   s.tasks.forEach((task, i) => {
-    if (
+    if (task.worker === "lead") {
+      if (s.lead === undefined) {
+        errors.push(`task ${i} ("${task.title}"): worker "lead" requires scenario.lead`);
+      }
+    } else if (
       task.worker !== undefined &&
       (!Number.isInteger(task.worker) || task.worker < 0 || task.worker >= workers)
     ) {
@@ -90,13 +170,31 @@ export function loadRegistry(): Registry {
   };
 }
 
-/** JSON-safe scenario shape for the API/UI (check functions become names). v2 — v6 §0.10. */
+/** JSON-safe member spec (v7 §9/§12) — env VALUES stay out, keys only. */
+export interface SerializedWorkerSpec {
+  template: string | null;
+  name: string | null;
+  systemPrompt: string | null;
+  configId: string | null;
+  model: string | null;
+  envKeys: string[];
+}
+
+/**
+ * JSON-safe scenario shape for the API/UI (check functions become names).
+ * v4 — v6 §0.10 + v7 §9 (`workerSpecs`) + v7 §12 (`lead`, member overrides).
+ */
 export interface SerializedScenario {
   id: string;
   name: string;
   description: string | null;
+  /** Worker COUNT for either Scenario.workers shape (back-compat). */
   workers: number;
-  tasks: { title: string; description: string; worker: number; dependsOn: number[] }[];
+  /** Null when the scenario uses the numeric (homogeneous) shape. */
+  workerSpecs: SerializedWorkerSpec[] | null;
+  /** Null when the scenario defines no lead (v7 §12). */
+  lead: SerializedWorkerSpec | null;
+  tasks: { title: string; description: string; worker: number | "lead"; dependsOn: number[] }[];
   seed: { exec: string[]; sqlDump: string | null; memories: string[] } | null;
   timeoutMs: number;
   outcome: {
@@ -107,13 +205,26 @@ export interface SerializedScenario {
   };
 }
 
+function serializeWorkerSpec(w: WorkerSpec): SerializedWorkerSpec {
+  return {
+    template: w.template ?? null,
+    name: w.name ?? null,
+    systemPrompt: w.systemPrompt ?? null,
+    configId: w.configId ?? null,
+    model: w.model ?? null,
+    envKeys: Object.keys(w.env ?? {}),
+  };
+}
+
 export function serializeScenario(s: Scenario): SerializedScenario {
   const hasSeed = Boolean(s.seed?.exec?.length || s.seed?.sqlDump || s.seed?.memories?.length);
   return {
     id: s.id,
     name: s.name,
     description: s.description ?? null,
-    workers: s.workers ?? 1,
+    workers: scenarioWorkerCount(s.workers),
+    workerSpecs: Array.isArray(s.workers) ? s.workers.map(serializeWorkerSpec) : null,
+    lead: s.lead ? serializeWorkerSpec(s.lead) : null,
     tasks: s.tasks.map((t) => ({
       title: t.title,
       description: t.description,

@@ -281,46 +281,80 @@ async function resolvePricedModel(
   return null;
 }
 
+/** Price one provider's events: provider-reported USD wins, else tokens × rates. */
+async function priceEvents(
+  provider: HarnessProvider,
+  configModel: string | null,
+  events: UsageEvent[],
+): Promise<{ totalUsd: number; pricedAny: boolean }> {
+  const lookupCache = new Map<string, PricedModel | null>();
+  let totalUsd = 0;
+  let pricedAny = false;
+  for (const event of events) {
+    if (event.costUsd !== null) {
+      totalUsd += event.costUsd;
+      pricedAny = true;
+      continue;
+    }
+    const model = await resolvePricedModel(provider, event.model, configModel, lookupCache);
+    if (!model) continue;
+    const usd = priceUsage(
+      model,
+      {
+        model: event.model,
+        inputTokens: event.inputTokens,
+        outputTokens: event.outputTokens,
+        cacheReadTokens: event.cacheReadTokens,
+        cacheWriteTokens: event.cacheWriteTokens,
+      },
+      // OpenAI input_tokens INCLUDE cached tokens; Anthropic/pi/opencode exclude them.
+      { inputIncludesCacheRead: provider === "codex" },
+    );
+    if (usd !== null) {
+      totalUsd += usd;
+      pricedAny = true;
+    }
+  }
+  return { totalUsd, pricedAny };
+}
+
 export async function recomputeCost(input: RecomputeInput): Promise<RecomputeResult> {
   try {
     const events = extractEvents(input);
     if (events.length === 0) return { costUsd: null, tokens: null };
 
     const tokens = aggregateTokens(events);
-    const lookupCache = new Map<string, PricedModel | null>();
+    const { totalUsd, pricedAny } = await priceEvents(input.provider, input.configModel, events);
+    return { costUsd: pricedAny ? totalUsd : null, tokens };
+  } catch {
+    // Extraction must never fail an attempt.
+    return { costUsd: null, tokens: null };
+  }
+}
+
+/**
+ * Heterogeneous-roster recompute (v7 §12.5 — FROZEN): the extractor runs PER
+ * MEMBER — each input carries that member's provider, configModel, session
+ * files, and the log rows of that member's tasks. The attempt result is the
+ * Σ of member costs (null when none priced) and the field-wise Σ of member
+ * tokens; `tokens.model` = the dominant model across ALL members' events.
+ * Homogeneous rosters keep using {@link recomputeCost} (bit-for-bit).
+ */
+export async function recomputeCostMulti(inputs: RecomputeInput[]): Promise<RecomputeResult> {
+  try {
+    const allEvents: UsageEvent[] = [];
     let totalUsd = 0;
     let pricedAny = false;
-    for (const event of events) {
-      if (event.costUsd !== null) {
-        totalUsd += event.costUsd;
-        pricedAny = true;
-        continue;
-      }
-      const model = await resolvePricedModel(
-        input.provider,
-        event.model,
-        input.configModel,
-        lookupCache,
-      );
-      if (!model) continue;
-      const usd = priceUsage(
-        model,
-        {
-          model: event.model,
-          inputTokens: event.inputTokens,
-          outputTokens: event.outputTokens,
-          cacheReadTokens: event.cacheReadTokens,
-          cacheWriteTokens: event.cacheWriteTokens,
-        },
-        // OpenAI input_tokens INCLUDE cached tokens; Anthropic/pi/opencode exclude them.
-        { inputIncludesCacheRead: input.provider === "codex" },
-      );
-      if (usd !== null) {
-        totalUsd += usd;
-        pricedAny = true;
-      }
+    for (const input of inputs) {
+      const events = extractEvents(input);
+      if (events.length === 0) continue;
+      allEvents.push(...events);
+      const priced = await priceEvents(input.provider, input.configModel, events);
+      totalUsd += priced.totalUsd;
+      pricedAny = pricedAny || priced.pricedAny;
     }
-    return { costUsd: pricedAny ? totalUsd : null, tokens };
+    if (allEvents.length === 0) return { costUsd: null, tokens: null };
+    return { costUsd: pricedAny ? totalUsd : null, tokens: aggregateTokens(allEvents) };
   } catch {
     // Extraction must never fail an attempt.
     return { costUsd: null, tokens: null };

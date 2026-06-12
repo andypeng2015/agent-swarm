@@ -1,10 +1,15 @@
 /**
- * Boots a full swarm stack (API + N homogeneous workers) in E2B sandboxes for
- * a single eval attempt, reusing the repo's battle-tested dispatch primitives.
+ * Boots a full swarm stack (API + the scenario's roster members) in E2B
+ * sandboxes for a single eval attempt, reusing the repo's battle-tested
+ * dispatch primitives.
  *
- * Topology mirrors `e2b start-stack`: one sandbox per service, workers reach
- * the API over its public E2B port proxy URL. No lead — eval tasks are
- * directly assigned to a worker's agentId, which that worker handles alone.
+ * Topology mirrors `e2b start-stack`: one sandbox per service, members reach
+ * the API over its public E2B port proxy URL. Rosters may be heterogeneous
+ * (v7 §9/§12): each member boots with its own EFFECTIVE HarnessConfig (cell
+ * config unless overridden) and identity envs (TEMPLATE_ID / AGENT_NAME /
+ * SYSTEM_PROMPT), and a scenario may add ONE lead member (AGENT_ROLE=lead —
+ * the swarm routes agentId-less tasks to it). Eval tasks are otherwise
+ * directly assigned to a worker's agentId.
  */
 import {
   createSandbox,
@@ -18,7 +23,7 @@ import {
   waitForHttpOk,
 } from "../../../src/e2b/dispatch";
 import { redactWithEnv } from "../../../src/e2b/env";
-import type { HarnessConfig } from "../types.ts";
+import type { HarnessConfig, WorkerSpec } from "../types.ts";
 import { cleanVersion } from "./version.ts";
 
 const API_PORT = 3013;
@@ -28,9 +33,28 @@ const WORKER_TEMPLATE = process.env.EVALS_E2B_TEMPLATE_WORKER ?? "agent-swarm-wo
 /** stdout/stderr clip for the SQL-seed import result (matches the runner's SEED_OUTPUT_CLIP). */
 const SQL_SEED_OUTPUT_CLIP = 20_000;
 
-export interface WorkerHandle {
-  /** 0-based index, stable for the attempt's lifetime. */
+/**
+ * One resolved roster member to boot (v7 §9.3 — FROZEN shape). The runner
+ * resolves these from the scenario's `workers` / `lead` against the matrix
+ * cell's config (frozen §12.3 rule) and passes them to {@link bootStack}.
+ */
+export interface BootMember {
+  /** 0..N-1 workers; the lead (when present) is index N (v7 §12.4). */
   index: number;
+  role: "lead" | "worker";
+  /** `{}` for default members (numeric `workers` shape). */
+  spec: WorkerSpec;
+  /** EFFECTIVE config (v7 §12.3) — the cell config unless the spec overrode it. */
+  config: HarnessConfig;
+  /** True iff spec.configId or spec.model overrode the cell config. */
+  overridden: boolean;
+}
+
+export interface WorkerHandle {
+  /** 0-based member index, stable for the attempt's lifetime (lead = N). */
+  index: number;
+  /** The boot member this handle was created from (role/spec/effective config). */
+  member: BootMember;
   sandbox: E2BSandboxInfo;
   /** UUID generated host-side; the worker self-registers under it via AGENT_ID env. */
   agentId: string;
@@ -48,7 +72,10 @@ export interface SqlSeedResult {
 
 export interface StackHandle {
   apiSandbox: E2BSandboxInfo;
-  /** One handle per booted worker, ordered by index. Length === scenario.workers ?? 1. */
+  /**
+   * One handle per booted member, ordered by index: workers 0..N-1, then the
+   * lead at index N when the scenario defines one (v7 §12.4).
+   */
   workers: WorkerHandle[];
   apiUrl: string;
   swarmKey: string;
@@ -170,24 +197,40 @@ export function apiRuntimeEnv(swarmKey: string): Record<string, string> {
   };
 }
 
-/** Exported for tests. */
+/**
+ * Per-member sandbox env (exported for tests). Built from the member's
+ * EFFECTIVE config; frozen merge order (v7 §9.3, later wins):
+ *   1. base runtime env (AGENT_ROLE = member role; MAX_CONCURRENT_TASKS "1"
+ *      for workers / "2" for the lead — the worker entrypoint's lead default);
+ *   2. credentialsForConfig(effectiveConfig) — per-member credential isolation;
+ *   3. effectiveConfig.env ?? {};
+ *   4. identity envs from the spec: TEMPLATE_ID / AGENT_NAME / SYSTEM_PROMPT;
+ *   5. spec.env ?? {} (validated non-reserved at registry load).
+ */
 export function workerRuntimeEnv(opts: {
   swarmKey: string;
   apiUrl: string;
   agentId: string;
+  /** EFFECTIVE member config (v7 §12.3). */
   config: HarnessConfig;
+  /** Member role; default "worker". */
+  role?: "lead" | "worker";
+  /** Member identity + extra env (v7 §9); default {}. */
+  spec?: WorkerSpec;
 }): Record<string, string> {
   const { config } = opts;
+  const role = opts.role ?? "worker";
+  const spec = opts.spec ?? {};
   return {
     API_KEY: opts.swarmKey,
     AGENT_SWARM_API_KEY: opts.swarmKey,
     MCP_BASE_URL: opts.apiUrl,
-    AGENT_ROLE: "worker",
+    AGENT_ROLE: role,
     AGENT_ID: opts.agentId,
     HARNESS_PROVIDER: config.provider,
     ...(config.model ? { MODEL_OVERRIDE: config.model } : {}),
     YOLO: "true",
-    MAX_CONCURRENT_TASKS: "1",
+    MAX_CONCURRENT_TASKS: role === "lead" ? "2" : "1",
     WORKER_LOG_DIR: "/logs",
     LEAD_LOG_DIR: "/logs",
     // Image runtime defaults the dispatcher normally pins (commands.run env
@@ -227,6 +270,12 @@ export function workerRuntimeEnv(opts: {
       : {}),
     ...credentialsForConfig(config),
     ...(config.env ?? {}),
+    // Identity envs from the typed spec fields (v7 §9.3 step 4) — these keys
+    // are in WORKER_SPEC_RESERVED_ENV, so spec.env can never collide.
+    ...(spec.template ? { TEMPLATE_ID: spec.template } : {}),
+    ...(spec.name ? { AGENT_NAME: spec.name } : {}),
+    ...(spec.systemPrompt ? { SYSTEM_PROMPT: spec.systemPrompt } : {}),
+    ...(spec.env ?? {}),
   };
 }
 
@@ -272,11 +321,14 @@ async function waitForAgentReady(opts: {
 }
 
 export async function bootStack(opts: {
-  config: HarnessConfig;
+  /**
+   * Resolved roster members to boot (v7 §9.3) — workers at indices 0..N-1,
+   * optionally followed by ONE lead at index N. The runner resolves these
+   * from the scenario; count semantics are unchanged from the v1 number form.
+   */
+  members: BootMember[];
   /** Groups every sandbox of the attempt in e2b listings, e.g. "evals-<runId>". */
   swarmSlug: string;
-  /** Number of homogeneous workers to boot. Default 1. */
-  workers?: number;
   /** SQL text dump imported into /app/data/agent-swarm-db.sqlite BEFORE the API entrypoint starts. */
   preBootSql?: { fixture: string; text: string };
   /** Sandbox TTL. Default 1800s. */
@@ -296,10 +348,10 @@ export async function bootStack(opts: {
   const timeoutSec = opts.timeoutSec ?? 1800;
   const log = opts.log ?? (() => {});
   const swarmKey = `evals-${crypto.randomUUID()}`;
-  const workerCount = opts.workers ?? 1;
-  // One agent id per worker — a shared AGENT_ID would collapse N workers into
+  const members = opts.members;
+  // One agent id per member — a shared AGENT_ID would collapse N members into
   // one agent row (the entrypoint self-registers via X-Agent-ID: $AGENT_ID).
-  const workerAgentIds = Array.from({ length: workerCount }, () => crypto.randomUUID());
+  const memberAgentIds = members.map(() => crypto.randomUUID());
 
   const created: E2BSandboxInfo[] = [];
   let killed = false;
@@ -407,21 +459,26 @@ export async function bootStack(opts: {
     }
     opts.signal?.throwIfAborted();
 
-    // Boot all workers in parallel — sequential boots add ~1–3 min each
+    // Boot all members in parallel — sequential boots add ~1–3 min each
     // (registration + idle waits). Promise.all rejects on the first failure;
     // the catch below kills everything created so far (sandboxes are pushed
     // into `created` synchronously right after creation).
     const allWorkerEnvs: Record<string, string>[] = [];
-    const bootWorker = async (index: number): Promise<WorkerHandle> => {
-      const agentId = workerAgentIds[index] as string;
+    const bootMember = async (member: BootMember, position: number): Promise<WorkerHandle> => {
+      const agentId = memberAgentIds[position] as string;
+      const config = member.config;
       log(
-        `creating worker ${index} sandbox (template ${WORKER_TEMPLATE}, ${opts.config.provider}${opts.config.model ? ` / ${opts.config.model}` : ""})`,
+        `creating ${member.role} ${member.index} sandbox (template ${WORKER_TEMPLATE}, ` +
+          `${config.provider}${config.model ? ` / ${config.model}` : ""}` +
+          `${member.overridden ? " [override]" : ""})`,
       );
       const workerEnv = workerRuntimeEnv({
         swarmKey,
         apiUrl,
         agentId,
-        config: opts.config,
+        config,
+        role: member.role,
+        spec: member.spec,
       });
       allWorkerEnvs.push(workerEnv);
       const workerSandbox = await createSandbox({
@@ -435,8 +492,9 @@ export async function bootStack(opts: {
           launcher: "agent-swarm-e2b",
           role: "worker",
           swarm: opts.swarmSlug,
-          swarmRole: "worker",
-          workerIndex: String(index),
+          // "lead" for the lead member — matches the root e2b.ts convention.
+          swarmRole: member.role,
+          workerIndex: String(member.index),
           agentId,
           evals: "true",
         },
@@ -452,10 +510,10 @@ export async function bootStack(opts: {
         role: "worker",
         cwd: "/workspace",
       });
-      log(`waiting for worker ${index} agent registration`);
+      log(`waiting for ${member.role} ${member.index} agent registration`);
       opts.signal?.throwIfAborted();
       await waitForAgentRegistration(apiUrl, agentId, swarmKey, opts.waitMs ?? 180_000);
-      log(`waiting for worker ${index} to be idle + credentials ready`);
+      log(`waiting for ${member.role} ${member.index} to be idle + credentials ready`);
       opts.signal?.throwIfAborted();
       await waitForAgentReady({
         apiUrl,
@@ -478,9 +536,9 @@ export async function bootStack(opts: {
       } catch {
         // best-effort version capture
       }
-      return { index, sandbox: workerSandbox, agentId, version };
+      return { index: member.index, member, sandbox: workerSandbox, agentId, version };
     };
-    const workers = await Promise.all(Array.from({ length: workerCount }, (_, i) => bootWorker(i)));
+    const workers = await Promise.all(members.map((m, i) => bootMember(m, i)));
     opts.signal?.throwIfAborted();
 
     // Every worker's env joins the secret set — any of them can leak into logs.

@@ -1,4 +1,5 @@
 import type { HarnessProvider, TokenTotals } from "../types.ts";
+import { buildClaudeAliasMap, resolveClaudeAlias } from "./model-alias.ts";
 
 export interface PricedModel {
   id: string; // models.dev model id, e.g. "deepseek/deepseek-v4-pro" (openrouter section)
@@ -16,6 +17,7 @@ interface ModelsDevModel {
   name?: string;
   reasoning?: boolean;
   tool_call?: boolean;
+  release_date?: string;
   limit?: { context?: number };
   cost?: { input?: number; output?: number; cache_read?: number; cache_write?: number };
 }
@@ -70,17 +72,40 @@ const PROVIDER_SECTION: Record<HarnessProvider, string> = {
   opencode: "openrouter",
 };
 
+let claudeAliasPromise: Promise<Record<string, string>> | null = null;
+
+/**
+ * Frozen bare-alias map (v7 §8): "fable" → "claude-fable-5", "opus" → the
+ * latest opus, … — computed once per process from the snapshot's `anthropic`
+ * section via the pure rule in model-alias.ts. Shared by claude pricing
+ * lookups here and shipped to the UI on GET /api/models (`aliases`).
+ */
+export function getClaudeAliasMap(): Promise<Record<string, string>> {
+  claudeAliasPromise ??= loadCache().then((cache) => {
+    const section = cache.anthropic;
+    if (!section) return {};
+    return buildClaudeAliasMap(
+      Object.entries(section.models).map(([id, m]) => ({
+        id,
+        releaseDate: m.release_date ?? null,
+      })),
+    );
+  });
+  return claudeAliasPromise;
+}
+
 /**
  * Resolve a concrete model id observed in harness output (or a config MODEL_OVERRIDE)
  * to a priced model. Provider → models.dev section mapping:
- *   claude  → "anthropic" section, bare id; strip trailing date suffix /-\d{8}$/
+ *   claude  → "anthropic" section. Bare aliases ("haiku"/"opus"/"fable") resolve
+ *             FIRST to the latest family member via the frozen alias map (v7 §8);
+ *             dated ids strip their suffix /-\d{8}$/
  *             (e.g. "claude-haiku-4-5-20251001" → "claude-haiku-4-5")
  *   codex   → "openai" section, bare id
  *   pi / opencode → strip leading "openrouter/" then look up in the "openrouter" section
  *             (e.g. "openrouter/deepseek/deepseek-v4-flash" → "deepseek/deepseek-v4-flash");
  *             ids without the prefix (as emitted in harness session files) look up directly.
- * Returns null when not found (shortnames like "haiku"/"opus"/"fable" return null —
- * recompute prefers per-event concrete ids and only falls back to configModel).
+ * Returns null when not found.
  */
 export async function lookupModelCost(
   provider: HarnessProvider,
@@ -95,6 +120,9 @@ export async function lookupModelCost(
       modelId.startsWith("openrouter/") ? modelId.slice("openrouter/".length) : modelId,
     );
   } else if (provider === "claude") {
+    // Bare alias ("fable") → latest family member ("claude-fable-5") — v7 §8.
+    const aliased = resolveClaudeAlias(modelId, await getClaudeAliasMap());
+    if (aliased) candidates.push(aliased);
     // Prefer the canonical undated entry; the snapshot carries dated aliases too.
     const stripped = modelId.replace(/-\d{8}$/, "");
     if (stripped !== modelId) candidates.push(stripped);

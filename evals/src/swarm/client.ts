@@ -23,6 +23,40 @@ export interface SessionCostRow {
   costSource: string;
 }
 
+/**
+ * The GET /api/agents subset the roster capture consumes (v7 §10.1 — per the
+ * root AgentSchema: src/types.ts + src/http/agents.ts `listAgents`, slim shape).
+ */
+export interface AgentJson {
+  id: string;
+  name: string | null;
+  isLead: boolean;
+  status: string | null;
+  /** Free-form profile role (template-applied), e.g. "worker"/"researcher". */
+  role: string | null;
+  capabilities: string[];
+  maxTasks: number | null;
+  lastActivityAt: string | null;
+  provider: string | null;
+  /** Worker-pushed harness provider; preferred over `provider` for display. */
+  harnessProvider: string | null;
+}
+
+function normalizeAgent(raw: Record<string, unknown>): AgentJson {
+  return {
+    id: String(raw.id ?? ""),
+    name: typeof raw.name === "string" ? raw.name : null,
+    isLead: Boolean(raw.isLead),
+    status: typeof raw.status === "string" ? raw.status : null,
+    role: typeof raw.role === "string" ? raw.role : null,
+    capabilities: Array.isArray(raw.capabilities) ? raw.capabilities.map(String) : [],
+    maxTasks: typeof raw.maxTasks === "number" ? raw.maxTasks : null,
+    lastActivityAt: typeof raw.lastActivityAt === "string" ? raw.lastActivityAt : null,
+    provider: typeof raw.provider === "string" ? raw.provider : null,
+    harnessProvider: typeof raw.harnessProvider === "string" ? raw.harnessProvider : null,
+  };
+}
+
 /** Thin authenticated client for one attempt's swarm API. */
 export class SwarmClient {
   constructor(
@@ -58,14 +92,18 @@ export class SwarmClient {
 
   async createTask(opts: {
     task: string;
-    agentId: string;
+    /**
+     * Target agent. OMITTED for lead-routed tasks (v7 §12.2): the swarm API
+     * routes agentId-less tasks to the lead agent (src/http/tasks.ts default).
+     */
+    agentId?: string;
     /** Task UUIDs this task depends on — forwarded verbatim (native swarm-API deps, v6 §9). */
     dependsOn?: string[];
     outputSchema?: Record<string, unknown>;
   }): Promise<SwarmTask> {
     const res = await this.request<Record<string, unknown>>("POST", "/api/tasks", {
       task: opts.task,
-      agentId: opts.agentId,
+      ...(opts.agentId ? { agentId: opts.agentId } : {}),
       source: "api",
       ...(opts.dependsOn ? { dependsOn: opts.dependsOn } : {}),
       ...(opts.outputSchema ? { outputSchema: opts.outputSchema } : {}),
@@ -159,6 +197,12 @@ export class SwarmClient {
       // best-effort cancel
     }
     return { ...(task ?? { id, title: "", description: "", status: "unknown" }), timedOut: true };
+  }
+
+  /** Registered agents of the attempt's stack (slim shape) — roster capture (v7 §10.1). */
+  async listAgents(): Promise<AgentJson[]> {
+    const res = await this.request<{ agents?: Record<string, unknown>[] }>("GET", "/api/agents");
+    return (res.agents ?? []).map(normalizeAgent);
   }
 
   async getSessionLogs(taskId: string): Promise<SessionLogRow[]> {

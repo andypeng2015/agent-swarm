@@ -63,6 +63,73 @@ describe("SwarmClient.createTask dependsOn passthrough (v6 §0.7)", () => {
     const body = (captured[0] as CapturedRequest).body as Record<string, unknown>;
     expect("dependsOn" in body).toBe(false);
   });
+
+  test("agentId is omitted for lead-routed tasks (v7 §12.2 — the swarm routes them to the lead)", async () => {
+    const captured = mockFetch({ id: "lead-task", title: "t", status: "pending" });
+    const client = new SwarmClient("http://stack.test", "swarm-key");
+    await client.createTask({ task: "title\n\nbody" });
+    const body = (captured[0] as CapturedRequest).body as Record<string, unknown>;
+    expect("agentId" in body).toBe(false);
+    expect(body.source).toBe("api");
+  });
+});
+
+describe("SwarmClient.listAgents (v7 §10.1 roster capture)", () => {
+  test("normalizes the slim GET /api/agents shape; missing fields become nulls/[]", async () => {
+    const captured = mockFetch({
+      agents: [
+        {
+          id: "agent-1",
+          name: "scribe-a",
+          isLead: false,
+          status: "idle",
+          role: "worker",
+          capabilities: ["implementation", "git"],
+          maxTasks: 3,
+          lastActivityAt: "2026-06-12T10:00:00Z",
+          provider: "claude",
+          harnessProvider: "claude",
+        },
+        { id: "agent-2", isLead: true },
+      ],
+    });
+    const client = new SwarmClient("http://stack.test", "swarm-key");
+    const agents = await client.listAgents();
+    expect((captured[0] as CapturedRequest).url).toBe("http://stack.test/api/agents");
+    expect((captured[0] as CapturedRequest).headers.authorization).toBe("Bearer swarm-key");
+    expect(agents).toEqual([
+      {
+        id: "agent-1",
+        name: "scribe-a",
+        isLead: false,
+        status: "idle",
+        role: "worker",
+        capabilities: ["implementation", "git"],
+        maxTasks: 3,
+        lastActivityAt: "2026-06-12T10:00:00Z",
+        provider: "claude",
+        harnessProvider: "claude",
+      },
+      {
+        id: "agent-2",
+        name: null,
+        isLead: true,
+        status: null,
+        role: null,
+        capabilities: [],
+        maxTasks: null,
+        lastActivityAt: null,
+        provider: null,
+        harnessProvider: null,
+      },
+    ]);
+  });
+
+  test("missing agents array → []", async () => {
+    mockFetch({});
+    const client = new SwarmClient("http://stack.test", "swarm-key");
+    expect(await client.listAgents()).toEqual([]);
+  });
 });
 
 describe("SwarmClient memory endpoints (v6 §0.6/§0.7)", () => {

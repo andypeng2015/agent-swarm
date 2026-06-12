@@ -32,6 +32,12 @@ export interface CellJson {
   totalCostUsd: number | null;
   avgDurationMs: number | null;
   errors: number;
+  /** v7 §2: count of passed attempts in the cell. Absent on pre-v7 servers. */
+  passed?: number;
+  /** v7 §2: attempts with costUsd !== null. Absent on pre-v7 servers. */
+  pricedAttempts?: number;
+  /** v7 §2: totalCostUsd ÷ priced attempts; null when 0 priced. */
+  avgCostUsd?: number | null;
 }
 
 export interface TotalsJson {
@@ -75,7 +81,11 @@ export interface SandboxInfoV1Json {
   workerVersion?: string | null;
 }
 
-/** One worker entry of the persisted sandboxJson v2 blob (v6 spec §0.3 — FROZEN). */
+/**
+ * One worker entry of the persisted sandboxJson v2 blob (v6 spec §0.3 —
+ * FROZEN; v7 §9/§12 add the nullable identity + effective-config fields,
+ * absent on old rows).
+ */
 export interface SandboxWorkerInfoJson {
   index: number;
   sandboxId: string;
@@ -84,6 +94,50 @@ export interface SandboxWorkerInfoJson {
   startedAt: string | null;
   expiresAt: string | null;
   version: string | null;
+  /** WorkerSpec.name (AGENT_NAME) — v7 §9. Null/absent = default worker. */
+  name?: string | null;
+  /** WorkerSpec.template (TEMPLATE_ID) — v7 §9; NOT the E2B template. */
+  agentTemplate?: string | null;
+  /** "lead" | "worker" (v7 §12). Null/absent (pre-v7 rows) = worker. */
+  role?: "lead" | "worker" | null;
+  /**
+   * EFFECTIVE member config (v7 §12) — non-null only when this member
+   * OVERRODE the attempt's cell config; fall back to the cell config.
+   */
+  configId?: string | null;
+  provider?: string | null;
+  model?: string | null;
+}
+
+/**
+ * Per-member roster + cost snapshot captured at attempt end (v7 §10/§12 —
+ * FROZEN). Null/absent on pre-v7 attempts — fall back to the sandbox workers.
+ * Includes the LEAD (memberRole "lead") when the scenario defines one.
+ */
+export interface WorkerRosterEntryJson {
+  /** Member index — joins SandboxWorkerInfoJson.index (lead = workers.length). */
+  index: number;
+  memberRole: "lead" | "worker";
+  agentId: string;
+  sandboxId: string;
+  name: string | null;
+  /** Free-form profile role from the agents API (template-applied). */
+  role: string | null;
+  isLead: boolean;
+  /** Agent status at roster-capture time (§10.3); null when the agent fetch missed. */
+  status: string | null;
+  provider: string | null;
+  capabilities: string[];
+  maxTasks: number | null;
+  lastActivityAt: string | null;
+  agentTemplate: string | null;
+  /** Effective member config (v7 §12); null = ran the cell config exactly. */
+  configId: string | null;
+  model: string | null;
+  version: string | null;
+  taskIds: string[];
+  costUsd: number | null;
+  tokens: TokenTotalsJson | null;
 }
 
 /** sandboxJson v2 (v6 spec §0.3 — FROZEN): discriminated by `v: 2` / `workers` array. */
@@ -189,6 +243,8 @@ export interface AttemptJson {
   judgeCostUsd: number | null;
   tokens: TokenTotalsJson | null;
   sandbox: SandboxInfoJson | null;
+  /** v7 §10: per-worker roster + cost. Null/absent on pre-v7 attempts. */
+  workers?: WorkerRosterEntryJson[] | null;
   timings: PhaseTimingsJson | null;
   durationMs: number | null;
   startedAt: string | null;
@@ -312,14 +368,29 @@ export interface TranscriptResponse {
   live?: boolean;
 }
 
-/** Mirrors SerializedScenario v2 (v6 spec §0.10). */
+/** Mirrors SerializedWorkerSpec (v7 §9/§12) — env keys only, never values. */
+export interface WorkerSpecJson {
+  template: string | null;
+  name: string | null;
+  systemPrompt: string | null;
+  /** v7 §12: member config override; null = the cell's config. */
+  configId: string | null;
+  model: string | null;
+  envKeys: string[];
+}
+
+/** Mirrors SerializedScenario v4 (v6 §0.10 + v7 §9 `workerSpecs` + §12 `lead`). */
 export interface ScenarioJson {
   id: string;
   name: string;
   description: string | null;
-  /** Number of homogeneous workers booted per attempt (default 1). */
+  /** Worker COUNT booted per attempt (default 1) — either workers shape. */
   workers: number;
-  tasks: { title: string; description: string; worker: number; dependsOn: number[] }[];
+  /** v7 §9: per-worker specs; null/absent = homogeneous numeric shape. */
+  workerSpecs?: WorkerSpecJson[] | null;
+  /** v7 §12: optional lead member; null/absent = no lead. */
+  lead?: WorkerSpecJson | null;
+  tasks: { title: string; description: string; worker: number | "lead"; dependsOn: number[] }[];
   seed: { exec: string[]; sqlDump: string | null; memories: string[] } | null;
   timeoutMs: number;
   outcome: {
@@ -355,6 +426,12 @@ export interface ModelJson {
 export interface ModelsResponse {
   defaultJudgeModel: string;
   models: ModelJson[];
+  /**
+   * v7 §8: frozen claude bare-alias map ("fable" → "claude-fable-5", …),
+   * computed server-side from the models.dev anthropic section. Absent on
+   * pre-v7 servers — resolution then degrades to the raw id (old behavior).
+   */
+  aliases?: Record<string, string>;
 }
 
 export interface CreateRunBody {
@@ -364,6 +441,61 @@ export interface CreateRunBody {
   attemptsPerCell?: number;
   concurrency?: number;
   judgeModel?: string;
+}
+
+// ---- analytics v2 additions (round 7 — v7 spec §6/§7/§11, FROZEN) ----
+// Optional fields below are ALWAYS populated by the v7 server; optionality
+// only covers pre-v7 payloads, which must keep rendering (degrade to "—").
+
+/** Σ token usage over a group's token-bearing attempts (v7 §11). */
+export interface AnalyticsTokenSums {
+  tokenAttempts: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  /** input + output + cacheRead + cacheWrite. */
+  totalTokens: number;
+  /** totalTokens / tokenAttempts; null when tokenAttempts === 0. */
+  avgTotalTokens: number | null;
+}
+
+/** Rollup keyed by harness ("claude") or model vendor ("anthropic") — v7 §7. */
+export interface AnalyticsGroupRollup {
+  group: string;
+  models: string[];
+  configIds: string[];
+  runs: number;
+  attempts: number;
+  graded: number;
+  passed: number;
+  errors: number;
+  passRate: number | null;
+  avgScore: number | null;
+  pricedAttempts: number;
+  totalCostUsd: number | null;
+  avgCostPerAttempt: number | null;
+  minCostUsd: number | null;
+  maxCostUsd: number | null;
+  avgDurationMs: number | null;
+  tokens: AnalyticsTokenSums | null;
+}
+
+/** One scatter point per model key (v7 §7/§11 — accuracy vs tokens). */
+export interface AnalyticsScatterPoint {
+  model: string;
+  /** Model vendor (anthropic/openai/google/deepseek/…); "(unknown)" fallback. */
+  vendor: string;
+  harnesses: string[];
+  attempts: number;
+  graded: number;
+  passRate: number | null;
+  avgScore: number | null;
+  avgCostUsd: number | null;
+  avgDurationMs: number | null;
+  /** x axis: mean total tokens per token-bearing attempt; null → omit point. */
+  avgTotalTokens: number | null;
+  totalTokens: number;
 }
 
 // ---- analytics (round 5 — v5 spec §1, FROZEN; mirrors evals/src/types.ts) ----
@@ -391,6 +523,11 @@ export interface AnalyticsCell {
   avgDurationMs: number | null;
   avgScore: number | null;
   lastRunAt: string | null;
+  /** v7 §6: min/max costUsd over priced attempts; null when 0 priced. */
+  minCostUsd?: number | null;
+  maxCostUsd?: number | null;
+  /** v7 §11: token sums over the cell's token-bearing attempts. */
+  tokens?: AnalyticsTokenSums | null;
 }
 
 /** Per-model rollup (model key: tokens.model → registry config.model → "(configId)"). */
@@ -412,6 +549,13 @@ export interface AnalyticsModel {
   /** $ per minute of work: Σcost / (Σduration/60000) over attempts having BOTH fields. */
   costPerMinute: number | null;
   avgDurationMs: number | null;
+  /** v7 §6: min/max costUsd over priced attempts; null when 0 priced. */
+  minCostUsd?: number | null;
+  maxCostUsd?: number | null;
+  /** v7 §7: model vendor (anthropic/openai/…); "(unknown)" fallback. */
+  vendor?: string;
+  /** v7 §11: token sums over the model's token-bearing attempts. */
+  tokens?: AnalyticsTokenSums | null;
 }
 
 /** One run's aggregate for a (scenario, config) cell — a time-series point. */
@@ -430,6 +574,11 @@ export interface AnalyticsSeriesPoint {
   avgDurationMs: number | null;
   apiVersion: string | null;
   workerVersion: string | null;
+  /** v7 §6: min/max costUsd over the run-cell's priced attempts. */
+  minCostUsd?: number | null;
+  maxCostUsd?: number | null;
+  /** v7 §11: token sums over the run-cell's token-bearing attempts. */
+  tokens?: AnalyticsTokenSums | null;
 }
 
 /** A detected version change along a series (drawn as a vertical marker line). */
@@ -457,4 +606,10 @@ export interface AnalyticsResponse {
   matrix: AnalyticsCell[];
   models: AnalyticsModel[];
   series: AnalyticsSeries[];
+  /** v7 §7: rollups by harness provider, sorted by attempts desc. */
+  harnesses?: AnalyticsGroupRollup[];
+  /** v7 §7: rollups by model vendor, sorted by attempts desc. */
+  vendors?: AnalyticsGroupRollup[];
+  /** v7 §7/§11: one point per model key (scatter: accuracy vs tokens). */
+  scatter?: AnalyticsScatterPoint[];
 }

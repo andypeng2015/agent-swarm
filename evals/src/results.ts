@@ -14,6 +14,12 @@ export interface CellSummary {
   totalCostUsd: number | null;
   avgDurationMs: number | null;
   errors: number;
+  /** v7 §2: COUNT of passed attempts in the cell. */
+  passed: number;
+  /** v7 §2: attempts with costUsd !== null. */
+  pricedAttempts: number;
+  /** v7 §2: totalCostUsd / pricedAttempts; null when 0 priced. */
+  avgCostUsd: number | null;
 }
 
 export interface RunSummary {
@@ -50,6 +56,7 @@ export function summarizeRun(run: EvalRunRow, attempts: AttemptRow[]): RunSummar
         .map((a) => a.durationMs)
         .filter((d): d is number => d !== null);
       const first = cellAttempts.find((a) => a.attemptIndex === 0);
+      const totalCostUsd = costs.length ? costs.reduce((a, b) => a + b, 0) : null;
       cells.push({
         scenarioId,
         configId,
@@ -62,11 +69,14 @@ export function summarizeRun(run: EvalRunRow, attempts: AttemptRow[]): RunSummar
             : null,
         bestScore: scores.length ? Math.max(...scores) : null,
         avgScore: scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length : null,
-        totalCostUsd: costs.length ? costs.reduce((a, b) => a + b, 0) : null,
+        totalCostUsd,
         avgDurationMs: durations.length
           ? durations.reduce((a, b) => a + b, 0) / durations.length
           : null,
         errors: cellAttempts.filter((a) => a.status === "error").length,
+        passed: cellAttempts.filter((a) => a.status === "passed").length,
+        pricedAttempts: costs.length,
+        avgCostUsd: totalCostUsd === null ? null : totalCostUsd / costs.length,
       });
     }
   }

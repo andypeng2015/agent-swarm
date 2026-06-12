@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { loadRegistry, serializeScenario, validateScenario } from "../src/registry.ts";
 import { validateSqlDumpText } from "../src/runner/index.ts";
-import { scenarios } from "./index.ts";
+import { scenarioWorkerCount } from "../src/types.ts";
+import { DEFAULT_SCENARIO_IDS, scenarios } from "./index.ts";
 
 /**
  * Registry-load gate for the bundled scenarios (v6 WP-B): every registered
@@ -11,14 +12,13 @@ import { scenarios } from "./index.ts";
  */
 
 const EXPECTED_IDS = [
-  "hello-file",
-  "quick-reasoning",
   "sql-seeded-history",
   "memory-seeded-recall",
   "memory-pipeline",
   "two-workers",
   "relay-handoff",
   "build-verify-fix",
+  "roster-demo",
 ];
 
 describe("scenario registry", () => {
@@ -27,6 +27,16 @@ describe("scenario registry", () => {
     for (const id of EXPECTED_IDS) {
       expect(registry.scenarios.has(id)).toBe(true);
     }
+  });
+
+  test("the v7 §5.1 dummies are gone and the smoke scenario is the default", () => {
+    const registry = loadRegistry();
+    expect(registry.scenarios.has("hello-file")).toBe(false);
+    expect(registry.scenarios.has("quick-reasoning")).toBe(false);
+    expect(DEFAULT_SCENARIO_IDS).toEqual(["memory-seeded-recall"]);
+    expect(registry.scenarios.get("memory-seeded-recall")?.description).toContain(
+      "Designated smoke scenario",
+    );
   });
 
   test("scenario ids are unique", () => {
@@ -44,7 +54,7 @@ describe("scenario registry", () => {
     for (const s of scenarios) {
       const serialized = serializeScenario(s);
       expect(serialized.id).toBe(s.id);
-      expect(serialized.workers).toBe(s.workers ?? 1);
+      expect(serialized.workers).toBe(scenarioWorkerCount(s.workers));
       expect(serialized.tasks.length).toBe(s.tasks.length);
     }
   });
@@ -103,6 +113,38 @@ describe("spec'd scenario shapes (v6)", () => {
     const checkNames = (s?.outcome.checks ?? []).map((c) => c.name);
     expect(checkNames).toContain("file-contains[w1]:/workspace/relay-received.txt");
     expect(checkNames).toContain("file-absent[w0]:/workspace/relay-received.txt");
+  });
+
+  test("roster-demo exercises the v7 heterogeneous roster: specs, overrides, lead routing", () => {
+    const s = byId.get("roster-demo");
+    expect(Array.isArray(s?.workers)).toBe(true);
+    const workers = s?.workers as import("../src/types.ts").WorkerSpec[];
+    expect(workers).toHaveLength(2);
+    // worker 0: cell config + identity (template/name) — NOT overridden
+    expect(workers[0]).toEqual({ name: "scribe-a", template: "coder" });
+    // worker 1: catalog config override
+    expect(workers[1]).toEqual({ name: "scribe-b", configId: "pi-deepseek-flash" });
+    // lead: stronger-model override + the official lead template
+    expect(s?.lead).toEqual({ name: "coordinator", template: "lead", configId: "claude-sonnet" });
+    // one task per worker by index + the lead task via worker: "lead"
+    expect(s?.tasks.map((t) => t.worker)).toEqual([0, 1, "lead"]);
+    // deterministic-only — zero judge LLM spend
+    expect(s?.outcome.llmJudge).toBeUndefined();
+    expect(s?.outcome.agenticJudge).toBeUndefined();
+    const checkNames = (s?.outcome.checks ?? []).map((c) => c.name);
+    expect(checkNames).toEqual([
+      "file-contains[w0]:/workspace/roster-a.txt",
+      "file-contains[w1]:/workspace/roster-b.txt",
+      "file-contains[w2]:/workspace/roster-lead.txt",
+    ]);
+
+    // serialization (v4 SerializedScenario): workerSpecs + lead survive
+    const serialized = serializeScenario(s as import("../src/types.ts").Scenario);
+    expect(serialized.workers).toBe(2);
+    expect(serialized.workerSpecs?.map((w) => w.name)).toEqual(["scribe-a", "scribe-b"]);
+    expect(serialized.workerSpecs?.[1]?.configId).toBe("pi-deepseek-flash");
+    expect(serialized.lead?.configId).toBe("claude-sonnet");
+    expect(serialized.tasks[2]?.worker).toBe("lead");
   });
 
   test("build-verify-fix seeds the test suite and grades by re-running it (§13 S2)", () => {

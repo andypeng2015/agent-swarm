@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { Registry } from "../runner/index.ts";
-import { type AnalyticsSourceRow, buildAnalytics } from "./analytics.ts";
+import { type AnalyticsSourceRow, buildAnalytics, vendorOfModelKey } from "./analytics.ts";
 
 /** Real dirty fixture from evals.db — CLI cursor-restore escape after the version. */
 const DIRTY_WORKER_VERSION = "agent-swarm v1.85.0\n\u001b[?25h";
@@ -11,7 +11,16 @@ const registry: Registry = {
     ["pi-deepseek", { id: "pi-deepseek", provider: "pi", model: "deepseek/deepseek-chat" }],
     // No model field — modelKey falls back to "(claude-tier)".
     ["claude-tier", { id: "claude-tier", provider: "claude", modelTier: "regular" }],
+    // Bare-alias config model (the real claude-haiku catalog entry shape).
+    ["claude-haiku", { id: "claude-haiku", provider: "claude", model: "haiku" }],
   ]),
+};
+
+/** Mirrors the frozen §8 rule output for the committed snapshot (subset). */
+const ALIASES: Record<string, string> = {
+  haiku: "claude-haiku-4-5",
+  fable: "claude-fable-5",
+  opus: "claude-opus-4-8",
 };
 
 /** Fixture row: an OLD attempt — every nullable metric null (pre-cost-tracking DB rows). */
@@ -27,12 +36,26 @@ function row(partial: Partial<AnalyticsSourceRow> = {}): AnalyticsSourceRow {
     judgeCostUsd: null,
     durationMs: null,
     tokenModel: null,
+    tokenInput: null,
+    tokenOutput: null,
+    tokenCacheRead: null,
+    tokenCacheWrite: null,
     apiVersion: null,
     workerVersion: null,
     runName: null,
     runCreatedAt: "2026-06-01T00:00:00.000Z",
     ...partial,
   };
+}
+
+/** Deep walk: every number anywhere in the payload must be finite (hard rule). */
+function nonFinitePaths(value: unknown, path = "$"): string[] {
+  if (typeof value === "number") return Number.isFinite(value) ? [] : [path];
+  if (Array.isArray(value)) return value.flatMap((v, i) => nonFinitePaths(v, `${path}[${i}]`));
+  if (value !== null && typeof value === "object") {
+    return Object.entries(value).flatMap(([k, v]) => nonFinitePaths(v, `${path}.${k}`));
+  }
+  return [];
 }
 
 describe("buildAnalytics — empty input", () => {
@@ -44,6 +67,9 @@ describe("buildAnalytics — empty input", () => {
     expect(res.matrix).toEqual([]);
     expect(res.models).toEqual([]);
     expect(res.series).toEqual([]);
+    expect(res.harnesses).toEqual([]);
+    expect(res.vendors).toEqual([]);
+    expect(res.scatter).toEqual([]);
   });
 });
 
@@ -327,5 +353,302 @@ describe("buildAnalytics — series + version events", () => {
     expect(b!.totalCostUsd).toBeNull();
     expect(b!.passRate).toBeNull(); // error-only run: graded 0 → null, not NaN
     expect(b!.graded).toBe(0);
+  });
+});
+
+// ---- v7 spec §6.1 / §7 / §11 coverage ----
+
+describe("buildAnalytics — token sums (v7 §11)", () => {
+  test("token-bearing attempts sum; null/zero-token attempts excluded; avgTotalTokens", () => {
+    const res = buildAnalytics(
+      [
+        row({ tokenInput: 100, tokenOutput: 20, tokenCacheRead: 5, tokenCacheWrite: 1 }),
+        row({ tokenInput: 50, tokenOutput: 10, tokenCacheRead: null, tokenCacheWrite: null }),
+        row({ tokenInput: 0, tokenOutput: 0, tokenCacheRead: 0, tokenCacheWrite: 0 }), // all-zero blob
+        row(), // no token capture at all
+      ],
+      registry,
+    );
+    const cell = res.matrix[0]!;
+    expect(cell.tokens).toEqual({
+      tokenAttempts: 2,
+      inputTokens: 150,
+      outputTokens: 30,
+      cacheReadTokens: 5,
+      cacheWriteTokens: 1,
+      totalTokens: 186,
+      avgTotalTokens: 93,
+    });
+    // The cell's single series point carries the same sums.
+    expect(res.series[0]!.points[0]!.tokens).toEqual(cell.tokens!);
+    // Model rollup (same group here) too.
+    expect(res.models[0]!.tokens).toEqual(cell.tokens!);
+  });
+
+  test("group with zero token-bearing attempts → tokens null (not a zeroed object)", () => {
+    const res = buildAnalytics([row(), row({ status: "failed" })], registry);
+    expect(res.matrix[0]!.tokens).toBeNull();
+    expect(res.models[0]!.tokens).toBeNull();
+    expect(res.series[0]!.points[0]!.tokens).toBeNull();
+    expect(res.harnesses![0]!.tokens).toBeNull();
+    expect(res.vendors![0]!.tokens).toBeNull();
+  });
+
+  test("negative/garbage token values are defensively clamped to 0", () => {
+    const res = buildAnalytics(
+      [
+        row({ tokenInput: -5, tokenOutput: 0 }), // not token-bearing after clamping
+        row({ tokenInput: Number.NaN as unknown as number, tokenOutput: 10 }),
+      ],
+      registry,
+    );
+    const tokens = res.matrix[0]!.tokens!;
+    expect(tokens.tokenAttempts).toBe(1);
+    expect(tokens.inputTokens).toBe(0);
+    expect(tokens.outputTokens).toBe(10);
+    expect(tokens.totalTokens).toBe(10);
+    expect(nonFinitePaths(res)).toEqual([]);
+  });
+});
+
+describe("buildAnalytics — min/max cost (v7 §6.1)", () => {
+  test("min/max over priced attempts on cells, points, models; $0 counts", () => {
+    const res = buildAnalytics(
+      [
+        row({ costUsd: 0, tokenModel: "m1" }),
+        row({ costUsd: 1.5, tokenModel: "m1" }),
+        row({ costUsd: 0.25, tokenModel: "m1" }),
+        row({ costUsd: null, tokenModel: "m1" }),
+      ],
+      registry,
+    );
+    const cell = res.matrix[0]!;
+    expect(cell.minCostUsd).toBe(0);
+    expect(cell.maxCostUsd).toBe(1.5);
+    expect(res.series[0]!.points[0]!.minCostUsd).toBe(0);
+    expect(res.series[0]!.points[0]!.maxCostUsd).toBe(1.5);
+    const m = res.models.find((x) => x.model === "m1")!;
+    expect(m.minCostUsd).toBe(0);
+    expect(m.maxCostUsd).toBe(1.5);
+    expect(res.harnesses![0]!.minCostUsd).toBe(0);
+    expect(res.harnesses![0]!.maxCostUsd).toBe(1.5);
+  });
+
+  test("zero priced attempts → min/max null everywhere (never NaN/Infinity)", () => {
+    const res = buildAnalytics([row(), row()], registry);
+    expect(res.matrix[0]!.minCostUsd).toBeNull();
+    expect(res.matrix[0]!.maxCostUsd).toBeNull();
+    expect(res.models[0]!.minCostUsd).toBeNull();
+    expect(res.models[0]!.maxCostUsd).toBeNull();
+    expect(res.series[0]!.points[0]!.minCostUsd).toBeNull();
+    expect(res.vendors![0]!.minCostUsd).toBeNull();
+    expect(nonFinitePaths(res)).toEqual([]);
+  });
+
+  test("single priced attempt → min === max", () => {
+    const res = buildAnalytics([row({ costUsd: 0.42 })], registry);
+    expect(res.matrix[0]!.minCostUsd).toBe(0.42);
+    expect(res.matrix[0]!.maxCostUsd).toBe(0.42);
+  });
+});
+
+describe("vendorOfModelKey (v7 §7.1 — frozen rule)", () => {
+  test("slash ids take the vendor segment; the openrouter/ routing prefix is skipped", () => {
+    expect(vendorOfModelKey("deepseek/deepseek-v4-flash")).toBe("deepseek");
+    expect(vendorOfModelKey("openrouter/deepseek/deepseek-v4-flash")).toBe("deepseek");
+    expect(vendorOfModelKey("openrouter/z-ai/glm-4.7-flash")).toBe("z-ai");
+    expect(vendorOfModelKey("Google/Gemini-3-Flash")).toBe("google");
+  });
+
+  test("prefix families", () => {
+    expect(vendorOfModelKey("claude-fable-5")).toBe("anthropic");
+    expect(vendorOfModelKey("claude-haiku-4-5-20251001")).toBe("anthropic");
+    expect(vendorOfModelKey("gpt-5.4-mini")).toBe("openai");
+    expect(vendorOfModelKey("o3-mini")).toBe("openai");
+    expect(vendorOfModelKey("codex-mini-latest")).toBe("openai");
+    expect(vendorOfModelKey("davinci-002")).toBe("openai");
+    expect(vendorOfModelKey("gemini-3-flash-preview")).toBe("google");
+  });
+
+  test("parenthesized config fallback and unknowns", () => {
+    expect(vendorOfModelKey("(ghost-config)")).toBe("(unknown)");
+    expect(vendorOfModelKey("<synthetic>")).toBe("(unknown)");
+    expect(vendorOfModelKey("glm-4.7-flash")).toBe("(unknown)");
+    expect(vendorOfModelKey("")).toBe("(unknown)");
+  });
+});
+
+describe("buildAnalytics — claude alias resolution (v7 §8)", () => {
+  test("bare aliases in tokenModel AND config fallbacks group under the latest id", () => {
+    const res = buildAnalytics(
+      [
+        row({ tokenModel: "fable", configId: "claude-haiku" }), // historical token model
+        row({ tokenModel: "claude-fable-5", configId: "claude-haiku" }), // concrete capture
+        row({ tokenModel: null, configId: "claude-haiku" }), // falls to config model "haiku"
+      ],
+      registry,
+      ALIASES,
+    );
+    const names = res.models.map((m) => m.model).sort();
+    expect(names).toEqual(["claude-fable-5", "claude-haiku-4-5"]);
+    const fable = res.models.find((m) => m.model === "claude-fable-5")!;
+    expect(fable.attempts).toBe(2); // alias + concrete merged into one key
+    expect(fable.vendor).toBe("anthropic");
+    expect(res.vendors!.map((v) => v.group)).toEqual(["anthropic"]);
+  });
+
+  test("no alias map (pre-v7 callers) degrades to raw keys", () => {
+    const res = buildAnalytics([row({ tokenModel: "fable" })], registry);
+    expect(res.models[0]!.model).toBe("fable");
+  });
+
+  test("concrete and non-claude ids pass through the alias map untouched", () => {
+    const res = buildAnalytics(
+      [row({ tokenModel: "deepseek/deepseek-v4-flash" }), row({ tokenModel: "claude-opus-4-7" })],
+      registry,
+      ALIASES,
+    );
+    const names = res.models.map((m) => m.model).sort();
+    expect(names).toEqual(["claude-opus-4-7", "deepseek/deepseek-v4-flash"]);
+  });
+});
+
+describe("buildAnalytics — harness/vendor rollups (v7 §7.2)", () => {
+  test("harness key: registry provider, configId-prefix fallback, rollup aggregates", () => {
+    const res = buildAnalytics(
+      [
+        row({ configId: "pi-deepseek", costUsd: 1, score: 0.8, runId: "run-a" }),
+        row({ configId: "pi-deepseek", costUsd: 3, score: 0.4, status: "failed", runId: "run-b" }),
+        row({ configId: "ghost-config", tokenModel: "mystery" }), // left the catalog → prefix
+      ],
+      registry,
+      ALIASES,
+    );
+    expect(res.harnesses!.map((h) => h.group)).toEqual(["pi", "ghost"]);
+    const pi = res.harnesses![0]!;
+    expect(pi.attempts).toBe(2);
+    expect(pi.graded).toBe(2);
+    expect(pi.passed).toBe(1);
+    expect(pi.passRate).toBeCloseTo(0.5);
+    expect(pi.avgScore).toBeCloseTo(0.6);
+    expect(pi.pricedAttempts).toBe(2);
+    expect(pi.totalCostUsd).toBeCloseTo(4);
+    expect(pi.avgCostPerAttempt).toBeCloseTo(2);
+    expect(pi.minCostUsd).toBe(1);
+    expect(pi.maxCostUsd).toBe(3);
+    expect(pi.models).toEqual(["deepseek/deepseek-chat"]);
+    expect(pi.configIds).toEqual(["pi-deepseek"]);
+    expect(pi.runs).toBe(2);
+    const ghost = res.harnesses![1]!;
+    expect(ghost.models).toEqual(["mystery"]);
+  });
+
+  test("vendor rollups group across harnesses by the resolved model vendor", () => {
+    const res = buildAnalytics(
+      [
+        row({ configId: "claude-haiku" }), // → claude-haiku-4-5 → anthropic
+        row({ configId: "claude-tier", tokenModel: "claude-opus-4-7" }), // anthropic too
+        row({ configId: "pi-deepseek" }), // deepseek/deepseek-chat → deepseek
+      ],
+      registry,
+      ALIASES,
+    );
+    expect(res.vendors!.map((v) => v.group)).toEqual(["anthropic", "deepseek"]);
+    const anthropic = res.vendors![0]!;
+    expect(anthropic.attempts).toBe(2);
+    expect(anthropic.models.sort()).toEqual(["claude-haiku-4-5", "claude-opus-4-7"]);
+    expect(anthropic.configIds.sort()).toEqual(["claude-haiku", "claude-tier"]);
+  });
+
+  test("rollups sorted by attempts desc, group asc on ties", () => {
+    const res = buildAnalytics(
+      [
+        row({ configId: "claude-haiku" }),
+        row({ configId: "pi-deepseek" }),
+        row({ configId: "pi-deepseek" }),
+      ],
+      registry,
+      ALIASES,
+    );
+    expect(res.harnesses!.map((h) => h.group)).toEqual(["pi", "claude"]);
+  });
+});
+
+describe("buildAnalytics — scatter (v7 §7.2/§11)", () => {
+  test("one point per model key with tokens-vs-accuracy material", () => {
+    const res = buildAnalytics(
+      [
+        row({
+          tokenModel: "m1",
+          score: 0.9,
+          costUsd: 0.5,
+          durationMs: 60_000,
+          tokenInput: 1000,
+          tokenOutput: 200,
+        }),
+        row({
+          tokenModel: "m1",
+          score: 0.7,
+          status: "failed",
+          costUsd: 0.3,
+          tokenInput: 800,
+          tokenOutput: 100,
+        }),
+        row({ tokenModel: "m2" }), // no tokens, no price — point with null axes material
+      ],
+      registry,
+      ALIASES,
+    );
+    expect(res.scatter!).toHaveLength(2);
+    const p1 = res.scatter!.find((p) => p.model === "m1")!;
+    expect(p1.attempts).toBe(2);
+    expect(p1.graded).toBe(2);
+    expect(p1.passRate).toBeCloseTo(0.5);
+    expect(p1.avgScore).toBeCloseTo(0.8);
+    expect(p1.avgCostUsd).toBeCloseTo(0.4);
+    expect(p1.avgDurationMs).toBeCloseTo(60_000);
+    expect(p1.avgTotalTokens).toBeCloseTo(1050); // (1200 + 900) / 2
+    expect(p1.totalTokens).toBe(2100);
+    expect(p1.harnesses).toEqual(["pi"]);
+    expect(p1.vendor).toBe("(unknown)");
+    const p2 = res.scatter!.find((p) => p.model === "m2")!;
+    expect(p2.avgTotalTokens).toBeNull(); // UI omits the point
+    expect(p2.totalTokens).toBe(0);
+    expect(p2.avgScore).toBeNull();
+    expect(p2.avgCostUsd).toBeNull();
+  });
+
+  test("scatter order matches models (attempts desc) and carries every harness", () => {
+    const res = buildAnalytics(
+      [
+        row({ tokenModel: "shared", configId: "pi-deepseek" }),
+        row({ tokenModel: "shared", configId: "claude-tier" }),
+        row({ tokenModel: "rare", configId: "pi-deepseek" }),
+      ],
+      registry,
+      ALIASES,
+    );
+    expect(res.scatter!.map((p) => p.model)).toEqual(res.models.map((m) => m.model));
+    expect(res.scatter![0]!.harnesses.sort()).toEqual(["claude", "pi"]);
+  });
+});
+
+describe("buildAnalytics — no NaN/Infinity anywhere (hard rule)", () => {
+  test("messy mixed fixture (old rows, zero denominators, garbage) stays finite", () => {
+    const res = buildAnalytics(
+      [
+        row(), // all-null old row
+        row({ status: "error" }),
+        row({ status: "running" }),
+        row({ costUsd: 0, durationMs: 0, score: 0 }),
+        row({ configId: "ghost-config" }),
+        row({ tokenModel: "fable", tokenInput: -1 }),
+        row({ tokenModel: "<synthetic>", configId: "claude-haiku" }),
+        row({ tokenInput: Number.POSITIVE_INFINITY as unknown as number }),
+      ],
+      registry,
+      ALIASES,
+    );
+    expect(nonFinitePaths(res)).toEqual([]);
   });
 });

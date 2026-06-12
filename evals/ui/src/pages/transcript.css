@@ -298,6 +298,52 @@
   margin: 2px 0 2px 16px;
 }
 
+/* ---- per-task sub-tabs (v7 §1 — only when rows span >1 task) ---- */
+
+.t-tasktabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+
+.t-tasktab {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 2px 9px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--dim);
+  cursor: pointer;
+}
+
+.t-tasktab:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+.t-tasktab.selected {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.t-tasktab-glyph {
+  font-size: 11px;
+  line-height: 1;
+}
+
+.t-tasktab-title {
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* ---- shared small toggle ---- */
 
 .t-toggle {

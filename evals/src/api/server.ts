@@ -1,6 +1,6 @@
 import { join, normalize, sep } from "node:path";
 import { DEFAULT_CONFIG_IDS } from "../../configs/index.ts";
-import { listOpenrouterModels } from "../cost/pricing.ts";
+import { getClaudeAliasMap, listOpenrouterModels } from "../cost/pricing.ts";
 import { getDb, initDb } from "../db/client.ts";
 import {
   createRun,
@@ -122,8 +122,8 @@ function computeRunVersions(attempts: AttemptRow[]): RunVersions {
 }
 
 /**
- * Analytics source query (v5 spec §1.1 — columns frozen). json_valid guards
- * keep malformed/empty JSON columns from failing the whole aggregation —
+ * Analytics source query (v5 spec §1.1 + v7 §6.1 token columns). json_valid
+ * guards keep malformed/empty JSON columns from failing the whole aggregation —
  * they degrade to NULL like every other missing field on old rows.
  *
  * worker_version reads BOTH sandboxJson shapes (v6 spec §0.3): legacy v1 blobs
@@ -136,6 +136,14 @@ export const ANALYTICS_SQL = `
          a.judge_cost_usd, a.duration_ms,
          CASE WHEN json_valid(a.tokens_json)
               THEN json_extract(a.tokens_json, '$.model') END        AS token_model,
+         CASE WHEN json_valid(a.tokens_json)
+              THEN json_extract(a.tokens_json, '$.inputTokens') END  AS token_input,
+         CASE WHEN json_valid(a.tokens_json)
+              THEN json_extract(a.tokens_json, '$.outputTokens') END AS token_output,
+         CASE WHEN json_valid(a.tokens_json)
+              THEN json_extract(a.tokens_json, '$.cacheReadTokens') END  AS token_cache_read,
+         CASE WHEN json_valid(a.tokens_json)
+              THEN json_extract(a.tokens_json, '$.cacheWriteTokens') END AS token_cache_write,
          CASE WHEN json_valid(a.sandbox_json)
               THEN json_extract(a.sandbox_json, '$.apiVersion') END  AS api_version,
          CASE WHEN json_valid(a.sandbox_json)
@@ -146,6 +154,22 @@ export const ANALYTICS_SQL = `
          r.name AS run_name, r.created_at AS run_created_at
   FROM attempts a JOIN eval_runs r ON r.id = a.run_id
   ORDER BY r.created_at ASC, a.attempt_index ASC`;
+
+/** Defensive numeric read off a SQL/JSON value — null instead of NaN, always. */
+function numOrNull(v: unknown): number | null {
+  if (v === null || v === undefined) return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * Attempt rows embedded in API responses always carry `workers` (v7 §10.2):
+ * the per-member roster snapshot when captured, explicit null on pre-v7 rows
+ * (the UI then falls back to the sandboxJson worker entries).
+ */
+function serializeAttempt(attempt: AttemptRow): AttemptRow {
+  return { ...attempt, workers: attempt.workers ?? null };
+}
 
 /** Runs currently executing inside this server process (local-first trigger). */
 const activeRuns = new Map<string, AbortController>();
@@ -237,7 +261,7 @@ export async function startServer(port = Number(process.env.EVALS_PORT ?? 4801))
         return json({
           ...summarizeRun(run, attempts),
           versions: computeRunVersions(attempts),
-          attempts,
+          attempts: attempts.map(serializeAttempt),
           active: activeRuns.has(run.id),
         });
       },
@@ -269,7 +293,7 @@ export async function startServer(port = Number(process.env.EVALS_PORT ?? 4801))
           listJudgments(db, attempt.id),
           listArtifacts(db, attempt.id),
         ]);
-        return json({ attempt, judgments, artifacts });
+        return json({ attempt: serializeAttempt(attempt), judgments, artifacts });
       },
       /**
        * Live judge-trace stream (v3 spec §4 — frozen contract). Registry-only,
@@ -357,12 +381,21 @@ export async function startServer(port = Number(process.env.EVALS_PORT ?? 4801))
         const registry = loadRegistry();
         return json([...registry.scenarios.values()].map(serializeScenario));
       },
+      /**
+       * Scenario detail (v7 §5.2 — frozen): unknown ids return 200 with
+       * `scenario: null` + the bare id, so historical runs referencing removed
+       * scenarios keep a working detail page (recentAttempts is queried by the
+       * stored id — registry-independent). Known ids keep the legacy shape.
+       */
       "/api/scenarios/:id": async (req) => {
         const registry = loadRegistry();
         const scenario = registry.scenarios.get(req.params.id);
-        if (!scenario) return json({ error: "scenario not found" }, 404);
-        const recent = await listAttemptsByScenario(db, scenario.id);
-        return json({ scenario: serializeScenario(scenario), recentAttempts: recent });
+        const recent = await listAttemptsByScenario(db, req.params.id);
+        const recentAttempts = recent.map(serializeAttempt);
+        if (!scenario) {
+          return json({ scenario: null, scenarioId: req.params.id, recentAttempts });
+        }
+        return json({ scenario: serializeScenario(scenario), recentAttempts });
       },
       "/api/configs": () => {
         const registry = loadRegistry();
@@ -375,7 +408,10 @@ export async function startServer(port = Number(process.env.EVALS_PORT ?? 4801))
       },
       "/api/models": async () => {
         const models = await listOpenrouterModels();
-        return json({ defaultJudgeModel: DEFAULT_JUDGE_MODEL, models });
+        // v7 §8: frozen claude alias map (fable → claude-fable-5, …) so the UI
+        // resolves bare aliases stored on historical rows at display time.
+        const aliases = await getClaudeAliasMap();
+        return json({ defaultJudgeModel: DEFAULT_JUDGE_MODEL, models, aliases });
       },
       /**
        * Pre-aggregated analytics (v5 spec §1 — frozen contract). One SQL pass
@@ -395,12 +431,19 @@ export async function startServer(port = Number(process.env.EVALS_PORT ?? 4801))
           judgeCostUsd: r.judge_cost_usd === null ? null : Number(r.judge_cost_usd),
           durationMs: r.duration_ms === null ? null : Number(r.duration_ms),
           tokenModel: (r.token_model as string) ?? null,
+          // v7 §6.1: token sums; numOrNull guards stored-JSON garbage (no NaN).
+          tokenInput: numOrNull(r.token_input),
+          tokenOutput: numOrNull(r.token_output),
+          tokenCacheRead: numOrNull(r.token_cache_read),
+          tokenCacheWrite: numOrNull(r.token_cache_write),
           apiVersion: (r.api_version as string) ?? null,
           workerVersion: (r.worker_version as string) ?? null,
           runName: (r.run_name as string) ?? null,
           runCreatedAt: r.run_created_at as string,
         }));
-        return json(buildAnalytics(rows, loadRegistry()));
+        // v7 §7.1/§8: historical bare-alias model keys group under the latest
+        // concrete family id — same map the UI receives on /api/models.
+        return json(buildAnalytics(rows, loadRegistry(), await getClaudeAliasMap()));
       },
       "/api/artifacts/:id": async (req) => {
         const artifact = await getArtifact(db, req.params.id);

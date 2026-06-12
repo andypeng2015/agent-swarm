@@ -22,8 +22,17 @@ describe("lookupModelCost", () => {
     expect(m?.inputPerM).not.toBeNull();
   });
 
-  test("shortnames return null", async () => {
-    expect(await lookupModelCost("claude", "haiku")).toBeNull();
+  test("claude: bare aliases resolve to the latest family member (v7 §8)", async () => {
+    const haiku = await lookupModelCost("claude", "haiku");
+    expect(haiku?.id).toBe("claude-haiku-4-5");
+    const fable = await lookupModelCost("claude", "fable");
+    expect(fable?.id).toBe("claude-fable-5");
+  });
+
+  test("unknown shortnames still return null", async () => {
+    expect(await lookupModelCost("claude", "no-such-family")).toBeNull();
+    // alias resolution is claude-only — codex never aliases
+    expect(await lookupModelCost("codex", "fable")).toBeNull();
   });
 });
 

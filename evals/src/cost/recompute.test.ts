@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { recomputeCost } from "./recompute.ts";
+import { recomputeCost, recomputeCostMulti } from "./recompute.ts";
 
 // ---- claude fixtures (shape copied from evals.db raw-session-logs artifacts) ----
 
@@ -93,10 +93,25 @@ describe("recomputeCost: claude", () => {
     expect(result.costUsd).toBeCloseTo(0.005242, 8);
   });
 
-  test("unknown model + shortname config → unpriced but tokens kept", async () => {
+  test("unknown model + alias config → priced via the alias's latest family model (v7 §8)", async () => {
     const result = await recomputeCost({
       provider: "claude",
       configModel: "haiku",
+      logRows: [
+        claudeLogRow({ msgId: "msg_A", usage: CLAUDE_USAGE_A, model: "some-internal-model" }),
+      ],
+      sessionFiles: [],
+    });
+    // "haiku" → claude-haiku-4-5: (10*1 + 13568*0.1 + 13584*1.25 + 7*5) / 1e6
+    expect(result.costUsd).toBeCloseTo(0.0183818, 8);
+    expect(result.tokens?.model).toBe("some-internal-model");
+    expect(result.tokens?.cacheWriteTokens).toBe(13584);
+  });
+
+  test("unknown model + null config → unpriced but tokens kept", async () => {
+    const result = await recomputeCost({
+      provider: "claude",
+      configModel: null,
       logRows: [
         claudeLogRow({ msgId: "msg_A", usage: CLAUDE_USAGE_A, model: "some-internal-model" }),
       ],
@@ -289,6 +304,104 @@ describe("recomputeCost: codex", () => {
     // gpt-5-codex: $1.25 in / $10 out / $0.125 cache-read per 1M; input INCLUDES cache:
     // ((2000-800)*1.25 + 800*0.125 + 400*10) / 1e6
     expect(result.costUsd).toBeCloseTo(0.0056, 10);
+  });
+});
+
+// ---- heterogeneous-roster per-member merge (v7 §12.5) ----
+
+describe("recomputeCostMulti: per-member merge (v7 §12.5)", () => {
+  test("claude member + pi member: Σ of member costs, field-wise Σ of tokens, dominant model across ALL events", async () => {
+    const result = await recomputeCostMulti([
+      {
+        provider: "claude",
+        configModel: "haiku",
+        logRows: [
+          claudeLogRow({ msgId: "msg_A", usage: CLAUDE_USAGE_A }),
+          claudeLogRow({ msgId: "msg_B", usage: CLAUDE_USAGE_B }),
+        ],
+        sessionFiles: [],
+      },
+      {
+        provider: "pi",
+        configModel: "openrouter/deepseek/deepseek-v4-flash",
+        logRows: [],
+        sessionFiles: [
+          {
+            path: "/home/worker/.pi/agent/sessions/--workspace--/s.jsonl",
+            content: piAssistantLine({
+              usage: {
+                input: 1000,
+                output: 500,
+                cacheRead: 0,
+                cacheWrite: 0,
+                cost: { input: 0.0001, output: 0.0001, total: 0.0002 },
+              },
+            }),
+          },
+        ],
+      },
+    ]);
+    // member costs: claude per the single-member test (0.0236238) + pi provider-reported 0.0002
+    expect(result.costUsd).toBeCloseTo(0.0236238 + 0.0002, 8);
+    // field-wise sums across both members' events
+    expect(result.tokens?.inputTokens).toBe(20 + 1000);
+    expect(result.tokens?.outputTokens).toBe(435 + 500);
+    expect(result.tokens?.cacheReadTokens).toBe(44488);
+    expect(result.tokens?.cacheWriteTokens).toBe(13584);
+    // dominant model across ALL members' events: claude contributes 2 events, pi 1
+    expect(result.tokens?.model).toBe("claude-haiku-4-5-20251001");
+  });
+
+  test("single input matches recomputeCost (homogeneous parity)", async () => {
+    const input = {
+      provider: "claude" as const,
+      configModel: "haiku",
+      logRows: [claudeLogRow({ msgId: "msg_A", usage: CLAUDE_USAGE_A })],
+      sessionFiles: [],
+    };
+    expect(await recomputeCostMulti([input])).toEqual(await recomputeCost(input));
+  });
+
+  test("one priced member + one unparseable member: cost = the priced member's, tokens kept", async () => {
+    const result = await recomputeCostMulti([
+      {
+        provider: "claude",
+        configModel: "haiku",
+        logRows: [claudeLogRow({ msgId: "msg_A", usage: CLAUDE_USAGE_A })],
+        sessionFiles: [],
+      },
+      {
+        provider: "opencode",
+        configModel: null,
+        logRows: [],
+        sessionFiles: [{ path: "/x", content: "not json" }],
+      },
+    ]);
+    expect(result.costUsd).toBeCloseTo(0.0183818, 8);
+    expect(result.tokens?.model).toBe("claude-haiku-4-5-20251001");
+  });
+
+  test("members with unpriceable models: null cost but merged tokens (never NaN)", async () => {
+    const result = await recomputeCostMulti([
+      {
+        provider: "claude",
+        configModel: null,
+        logRows: [claudeLogRow({ msgId: "msg_A", usage: CLAUDE_USAGE_A, model: "mystery-model" })],
+        sessionFiles: [],
+      },
+    ]);
+    expect(result.costUsd).toBeNull();
+    expect(result.tokens?.model).toBe("mystery-model");
+    expect(JSON.stringify(result)).not.toContain("NaN");
+  });
+
+  test("empty inputs / nothing extractable → all nulls", async () => {
+    expect(await recomputeCostMulti([])).toEqual({ costUsd: null, tokens: null });
+    expect(
+      await recomputeCostMulti([
+        { provider: "pi", configModel: null, logRows: [], sessionFiles: [] },
+      ]),
+    ).toEqual({ costUsd: null, tokens: null });
   });
 });
 

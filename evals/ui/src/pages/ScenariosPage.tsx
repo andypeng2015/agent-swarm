@@ -1,16 +1,17 @@
-import type { ReactNode } from "react";
+import { type ReactNode, useLayoutEffect, useRef, useState } from "react";
 import { getScenario, listScenarios } from "../api.ts";
 import { ConfigChip } from "../components/ConfigChip.tsx";
 import { type Column, DataTable } from "../components/DataTable.tsx";
 import { EntityLink } from "../components/EntityLink.tsx";
 import { fmtAgo, fmtDuration } from "../components/format.ts";
+import { Markdown } from "../components/Markdown.tsx";
 import { ModelChip } from "../components/ModelChip.tsx";
 import { PrettyView } from "../components/PrettyView.tsx";
 import { Spinner } from "../components/Spinner.tsx";
 import { CostBadge, StatusScore, statusGlyphInfo } from "../components/StatusBadge.tsx";
 import { InfoTip, Tooltip } from "../components/Tooltip.tsx";
 import { navigate, usePoll } from "../hooks.ts";
-import type { AttemptJson, ScenarioJson } from "../types.ts";
+import type { AttemptJson, ScenarioJson, WorkerSpecJson } from "../types.ts";
 import "./scenarios.css";
 
 type JudgeKind = "llm" | "agentic";
@@ -202,6 +203,380 @@ const attemptColumns: Column<AttemptJson>[] = [
   },
 ];
 
+function AttemptsPanel(props: { attempts: AttemptJson[] }): ReactNode {
+  return (
+    <div className="panel">
+      <h3 className="panel-title">
+        Recent Attempts{props.attempts.length > 0 ? ` · ${props.attempts.length}` : ""}
+      </h3>
+      <DataTable
+        rows={props.attempts}
+        columns={attemptColumns}
+        rowKey={(a) => a.id}
+        defaultSort={{ key: "started", dir: "desc" }}
+        searchPlaceholder="Search attempts…"
+        emptyText="No attempts yet for this scenario"
+      />
+    </div>
+  );
+}
+
+// ---- §3 clamp (v7 — frozen classes .sc-clamp / .sc-clamp.expanded / .sc-clamp-toggle) ----
+
+/** v7 §3 frozen threshold: blocks taller than this clamp with a fade + toggle. */
+const CLAMP_MAX_PX = 320;
+
+/**
+ * Auto-expanded prose container: renders children full-width; when the rendered
+ * height exceeds CLAMP_MAX_PX it clamps (max-height + hidden overflow) with a
+ * bottom fade and a Show more / Show less toggle.
+ */
+function ClampBox(props: { children: ReactNode }): ReactNode {
+  const [expanded, setExpanded] = useState(false);
+  const [clampable, setClampable] = useState(false);
+  const boxRef = useRef<HTMLDivElement | null>(null);
+
+  // scrollHeight reports the full content height even while max-height clamps
+  // the box, so one measurement rule works in both states. Re-measure on
+  // content change and on resize (re-wrapping changes the height).
+  useLayoutEffect(() => {
+    const el = boxRef.current;
+    if (!el) return undefined;
+    const measure = () => setClampable(el.scrollHeight > CLAMP_MAX_PX + 1);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  const cls = `sc-clamp${expanded ? " expanded" : ""}${clampable ? " clampable" : ""}`;
+  return (
+    <div className="sc-clampwrap">
+      <div ref={boxRef} className={cls}>
+        {props.children}
+      </div>
+      {clampable ? (
+        <button
+          type="button"
+          className="sc-clamp-toggle"
+          onClick={() => setExpanded((e) => !e)}
+          title={expanded ? "Collapse this block" : "Expand the full block"}
+        >
+          {expanded ? "▴ Show less" : "▾ Show more"}
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+// ---- §9.4 member chips (workerSpecs / lead) ----
+
+interface MemberInfo {
+  role: "worker" | "lead";
+  index: number;
+  spec: WorkerSpecJson;
+}
+
+/** Lead first (mirrors run-details ordering), then workers in index order. */
+function scenarioMembers(s: ScenarioJson): MemberInfo[] {
+  const members: MemberInfo[] = [];
+  if (s.lead) members.push({ role: "lead", index: s.workers, spec: s.lead });
+  if (s.workerSpecs) {
+    s.workerSpecs.forEach((spec, index) => {
+      members.push({ role: "worker", index, spec });
+    });
+  }
+  return members;
+}
+
+function memberOverrideText(spec: WorkerSpecJson): string | null {
+  if (spec.configId === null && spec.model === null) return null;
+  return `${spec.configId ?? ""}${spec.model !== null ? `:${spec.model}` : ""}`;
+}
+
+function MemberCard(props: { member: MemberInfo }): ReactNode {
+  const { role, index, spec } = props.member;
+  return (
+    <div className="tip-card">
+      <div className="tip-card-title">{role === "lead" ? "lead" : `worker ${index}`}</div>
+      <div className="tip-card-row">
+        <span className="tip-card-label">Template</span>
+        <span className="tip-card-value">
+          {spec.template !== null ? <code>{spec.template}</code> : <span className="dim">—</span>}
+        </span>
+      </div>
+      <div className="tip-card-row">
+        <span className="tip-card-label">Name</span>
+        <span className="tip-card-value">{spec.name ?? <span className="dim">—</span>}</span>
+      </div>
+      <div className="tip-card-row">
+        <span className="tip-card-label">Config</span>
+        <span className="tip-card-value">
+          {spec.configId !== null ? (
+            <code>{spec.configId}</code>
+          ) : (
+            <span className="dim">cell config</span>
+          )}
+        </span>
+      </div>
+      <div className="tip-card-row">
+        <span className="tip-card-label">Model</span>
+        <span className="tip-card-value">
+          {spec.model !== null ? (
+            <code>{spec.model}</code>
+          ) : (
+            <span className="dim">cell model</span>
+          )}
+        </span>
+      </div>
+      <div className="tip-card-row">
+        <span className="tip-card-label">System Prompt</span>
+        <span className="tip-card-value">
+          {spec.systemPrompt !== null ? "✓ custom" : <span className="dim">—</span>}
+        </span>
+      </div>
+      <div className="tip-card-row">
+        <span className="tip-card-label">Env Keys</span>
+        <span className="tip-card-value">
+          {spec.envKeys.length > 0 ? spec.envKeys.join(", ") : <span className="dim">—</span>}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function MemberChip(props: { member: MemberInfo }): ReactNode {
+  const { role, index, spec } = props.member;
+  const override = memberOverrideText(spec);
+  return (
+    <Tooltip wide text={<MemberCard member={props.member} />}>
+      <span className="sc-member">
+        <span className={role === "lead" ? "sc-member-role sc-member-role-lead" : "sc-member-role"}>
+          {role === "lead" ? "lead" : `worker ${index}`}
+        </span>
+        {spec.template !== null ? (
+          <span className="sc-member-template">{spec.template}</span>
+        ) : null}
+        {spec.name !== null ? <span className="sc-member-name">{spec.name}</span> : null}
+        {override !== null ? <span className="sc-member-override">{override}</span> : null}
+      </span>
+    </Tooltip>
+  );
+}
+
+// ---- §3 two-column detail ----
+
+function Fact(props: { label: string; children: ReactNode }): ReactNode {
+  return (
+    <div className="sc-fact">
+      <div className="sc-fact-label">{props.label}</div>
+      <div className="sc-fact-value">{props.children}</div>
+    </div>
+  );
+}
+
+function ProseBlock(props: { title: string; meta?: ReactNode; children: ReactNode }): ReactNode {
+  return (
+    <section className="sc-block">
+      <div className="sc-block-head">
+        <span className="sc-block-title">{props.title}</span>
+        {props.meta !== undefined ? <span className="sc-block-meta">{props.meta}</span> : null}
+      </div>
+      {props.children}
+    </section>
+  );
+}
+
+function FactsColumn(props: { scenario: ScenarioJson }): ReactNode {
+  const s = props.scenario;
+  const members = scenarioMembers(s);
+  const seed = s.seed;
+  return (
+    <div className="sc-facts">
+      <Fact label="Id">
+        <span className="chip">{s.id}</span>
+      </Fact>
+      <Fact label="Judges">
+        {judgeKinds(s).length === 0 ? (
+          <span className="dim">deterministic only</span>
+        ) : (
+          <div className="sc-judge-facts">
+            {s.outcome.llmJudge ? (
+              <div className="sc-judge-fact">
+                <JudgeGlyph kind="llm" />
+                <span>LLM Judge</span>
+                <span className="dim">{s.outcome.llmJudge.model ?? "default model"}</span>
+              </div>
+            ) : null}
+            {s.outcome.agenticJudge ? (
+              <div className="sc-judge-fact">
+                <JudgeGlyph kind="agentic" />
+                <span>Agentic Judge</span>
+                <span className="dim">
+                  {s.outcome.agenticJudge.model ?? "default model"}
+                  {s.outcome.agenticJudge.maxSteps !== null
+                    ? ` · ≤${s.outcome.agenticJudge.maxSteps} steps`
+                    : ""}
+                </span>
+              </div>
+            ) : null}
+          </div>
+        )}
+      </Fact>
+      <Fact label="Workers">
+        <span>
+          {s.workers}
+          {s.lead ? " + lead" : ""}
+        </span>
+        {members.length > 0 ? (
+          <div className="sc-members">
+            {members.map((m) => (
+              <MemberChip key={`${m.role}-${String(m.index)}`} member={m} />
+            ))}
+          </div>
+        ) : null}
+      </Fact>
+      <Fact label="Timeout">{fmtDuration(s.timeoutMs)}</Fact>
+      <Fact label="Pass Threshold">≥ {s.outcome.passThreshold}</Fact>
+      <Fact label={`Checks · ${s.outcome.checks.length}`}>
+        {s.outcome.checks.length === 0 ? (
+          <span className="dim">—</span>
+        ) : (
+          <div className="sc-checks">
+            {s.outcome.checks.map((check) => (
+              <code className="sc-check" key={check}>
+                {check}
+              </code>
+            ))}
+          </div>
+        )}
+      </Fact>
+      <Fact label="Seed">
+        {!seed ? (
+          <span className="dim">—</span>
+        ) : (
+          <div className="sc-seed">
+            {seed.sqlDump !== null ? (
+              <div>
+                SQL dump <code className="sc-check">{seed.sqlDump}</code>
+              </div>
+            ) : null}
+            {seed.memories.length > 0 ? (
+              <Tooltip text={seed.memories.join("\n\n")}>
+                <div>
+                  {seed.memories.length} {seed.memories.length === 1 ? "memory" : "memories"}
+                </div>
+              </Tooltip>
+            ) : null}
+            {seed.exec.length > 0 ? (
+              <div>
+                {seed.exec.length} exec {seed.exec.length === 1 ? "command" : "commands"}
+              </div>
+            ) : null}
+          </div>
+        )}
+      </Fact>
+    </div>
+  );
+}
+
+function TaskWorkerBadge(props: { worker: number | "lead" }): ReactNode {
+  if (props.worker === "lead") {
+    return <span className="sc-task-worker sc-task-worker-lead">LEAD</span>;
+  }
+  return <span className="sc-task-worker">worker {props.worker}</span>;
+}
+
+function ProseColumn(props: { scenario: ScenarioJson }): ReactNode {
+  const s = props.scenario;
+  const llm = s.outcome.llmJudge;
+  const agentic = s.outcome.agenticJudge;
+  return (
+    <div className="sc-prose">
+      {s.description ? (
+        <ProseBlock title="Description">
+          <ClampBox>
+            <Markdown text={s.description} />
+          </ClampBox>
+        </ProseBlock>
+      ) : null}
+      {llm ? (
+        <ProseBlock
+          title="LLM Judge Rubric"
+          meta={llm.model !== null ? <ModelChip model={llm.model} dim /> : "default judge model"}
+        >
+          <ClampBox>
+            <Markdown text={llm.rubric} />
+          </ClampBox>
+        </ProseBlock>
+      ) : null}
+      {agentic ? (
+        <ProseBlock
+          title="Agentic Judge Rubric"
+          meta={
+            <>
+              {agentic.model !== null ? (
+                <ModelChip model={agentic.model} dim />
+              ) : (
+                "default judge model"
+              )}
+              {agentic.maxSteps !== null ? ` · ≤${agentic.maxSteps} steps` : null}
+            </>
+          }
+        >
+          <ClampBox>
+            <Markdown text={agentic.rubric} />
+          </ClampBox>
+        </ProseBlock>
+      ) : null}
+      <ProseBlock title={`Tasks · ${s.tasks.length}`}>
+        <div className="sc-tasks">
+          {s.tasks.map((task, i) => (
+            <div className="sc-task" key={`${String(i)}-${task.title}`}>
+              <div className="sc-task-head">
+                <span className="sc-task-idx">#{i}</span>
+                <span className="sc-task-title">{task.title}</span>
+                <TaskWorkerBadge worker={task.worker} />
+                {task.dependsOn.length > 0 ? (
+                  <span className="dim sc-task-deps">
+                    after {task.dependsOn.map((d) => `#${d}`).join(", ")}
+                  </span>
+                ) : null}
+              </div>
+              <div className="sc-task-desc">
+                <Markdown text={task.description} />
+              </div>
+            </div>
+          ))}
+        </div>
+      </ProseBlock>
+      {s.seed !== null && s.seed.exec.length > 0 ? (
+        <ProseBlock title={`Seed Exec · ${s.seed.exec.length}`}>
+          <div className="sc-exec">
+            {s.seed.exec.map((cmd) => (
+              <pre key={cmd}>
+                <code>{cmd}</code>
+              </pre>
+            ))}
+          </div>
+        </ProseBlock>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * v7 §5.2 — WP-AAPI7 changes `GET /api/scenarios/:id` for unregistered ids to
+ * 200 `{ scenario: null, scenarioId, recentAttempts }`. This local shape keeps
+ * the page compiling against both the pre- and post-AAPI7 `getScenario` types;
+ * the cast becomes an identity once api.ts declares the union.
+ */
+interface ScenarioDetailData {
+  scenario: ScenarioJson | null;
+  scenarioId?: string;
+  recentAttempts: AttemptJson[];
+}
+
 function ScenarioDetail(props: { scenarioId: string }): ReactNode {
   const { data, error, loading } = usePoll(() => getScenario(props.scenarioId), null, [
     props.scenarioId,
@@ -223,7 +598,30 @@ function ScenarioDetail(props: { scenarioId: string }): ReactNode {
     );
   }
 
-  const { scenario, recentAttempts } = data;
+  const detail = data as ScenarioDetailData;
+  const { scenario, recentAttempts } = detail;
+
+  // §5.2 graceful fallback: scenario removed from the registry — historical
+  // attempts still render; no Definition panel.
+  if (!scenario) {
+    const bareId = detail.scenarioId ?? props.scenarioId;
+    return (
+      <>
+        <div className="panel sc-header">
+          <a className="entity-link" href="#/scenarios">
+            ← Scenarios
+          </a>
+          <span className="chip">{bareId}</span>
+          <span className="sc-unregistered">
+            Unregistered scenario (removed from the registry — historical attempts below)
+          </span>
+          {error ? <span className="sc-error">{error}</span> : null}
+        </div>
+        <AttemptsPanel attempts={recentAttempts} />
+      </>
+    );
+  }
+
   return (
     <>
       <div className="panel sc-header">
@@ -245,27 +643,25 @@ function ScenarioDetail(props: { scenarioId: string }): ReactNode {
         <h3 className="panel-title">
           Definition <InfoTip text="Checks always include the implicit tasks-completed check" />
         </h3>
-        <PrettyView
-          value={scenario}
-          rawLabel="scenario"
-          renderers={{
-            model: (v) => <ModelChip model={typeof v === "string" ? v : null} />,
-          }}
-        />
+        <div className="sc-def">
+          <FactsColumn scenario={scenario} />
+          <ProseColumn scenario={scenario} />
+        </div>
+        <details className="sc-raw">
+          <summary className="sc-raw-summary">Raw JSON</summary>
+          <div className="sc-raw-body">
+            <PrettyView
+              value={scenario}
+              rawLabel="scenario"
+              defaultRaw
+              renderers={{
+                model: (v) => <ModelChip model={typeof v === "string" ? v : null} />,
+              }}
+            />
+          </div>
+        </details>
       </div>
-      <div className="panel">
-        <h3 className="panel-title">
-          Recent Attempts{recentAttempts.length > 0 ? ` · ${recentAttempts.length}` : ""}
-        </h3>
-        <DataTable
-          rows={recentAttempts}
-          columns={attemptColumns}
-          rowKey={(a) => a.id}
-          defaultSort={{ key: "started", dir: "desc" }}
-          searchPlaceholder="Search attempts…"
-          emptyText="No attempts yet for this scenario"
-        />
-      </div>
+      <AttemptsPanel attempts={recentAttempts} />
     </>
   );
 }

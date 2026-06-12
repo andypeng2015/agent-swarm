@@ -103,6 +103,8 @@ const COLUMN_MIGRATIONS = [
   "ALTER TABLE attempts ADD COLUMN sandbox_json TEXT",
   "ALTER TABLE attempts ADD COLUMN timings_json TEXT",
   "ALTER TABLE attempts ADD COLUMN judge_cost_usd REAL",
+  // v7 §10.1: per-member roster + cost snapshot (WorkerRosterEntry[]).
+  "ALTER TABLE attempts ADD COLUMN workers_json TEXT",
   "ALTER TABLE judgments ADD COLUMN duration_ms INTEGER",
   "ALTER TABLE judgments ADD COLUMN cost_usd REAL",
   "ALTER TABLE judgments ADD COLUMN tokens_json TEXT",

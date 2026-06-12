@@ -92,9 +92,14 @@ export function listScenarios(): Promise<ScenarioJson[]> {
   return request("/api/scenarios");
 }
 
+/**
+ * Scenario detail. v7 §5.2: unknown/removed scenario ids return 200 with
+ * `scenario: null` + `scenarioId` (historical attempts still listed) instead
+ * of a 404 — the detail page renders an unregistered-scenario fallback.
+ */
 export function getScenario(
   id: string,
-): Promise<{ scenario: ScenarioJson; recentAttempts: AttemptJson[] }> {
+): Promise<{ scenario: ScenarioJson | null; scenarioId?: string; recentAttempts: AttemptJson[] }> {
   return request(`/api/scenarios/${encodeURIComponent(id)}`);
 }
 

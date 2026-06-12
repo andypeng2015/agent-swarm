@@ -54,9 +54,11 @@ export const configs: HarnessConfig[] = [
   },
   {
     id: "claude-fable",
-    label: "Claude Code / fable (latest)",
+    label: "Claude Code / fable 5",
     provider: "claude",
-    model: "fable",
+    // Pinned concrete id (round-7 item 4) — bare "fable" would grade a moving
+    // target. Historical rows with model "fable" resolve at read time (v7 §8).
+    model: "claude-fable-5",
   },
   {
     id: "pi-deepseek-flash",

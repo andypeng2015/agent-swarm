@@ -159,3 +159,57 @@ table.heat td.heat-cell.empty {
   color: var(--dim);
   text-align: center;
 }
+
+/* ---- scatter chart (v7 spec §C2) ---- */
+
+.chart-quadrant {
+  fill: var(--green);
+  opacity: 0.07;
+}
+
+.chart-quadrant-label {
+  fill: var(--green);
+  font-size: 9.5px;
+  font-family: var(--font-mono);
+  opacity: 0.85;
+}
+
+.chart-axis-label {
+  fill: var(--dim);
+  font-size: 10.5px;
+}
+
+.chart-scatter-dot {
+  stroke: var(--panel);
+  stroke-width: 1;
+  opacity: 0.9;
+}
+
+.chart-scatter-dot.hover {
+  opacity: 1;
+  stroke: var(--text);
+}
+
+.chart-scatter-label {
+  fill: var(--dim);
+  font-size: 9.5px;
+  font-family: var(--font-mono);
+}
+
+/* ---- highlights mini bars (v7 spec §C3) ---- */
+
+.chart-minibar {
+  opacity: 0.92;
+}
+
+.chart-minibar-value {
+  fill: var(--text);
+  font-size: 9.5px;
+  font-family: var(--font-mono);
+}
+
+.chart-minibar-label {
+  fill: var(--dim);
+  font-size: 9px;
+  font-family: var(--font-mono);
+}

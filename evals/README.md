@@ -6,11 +6,11 @@ Evaluation harness for agent-swarm: runs a **scenario × harness-config matrix**
 
 Each attempt (one cell of the matrix, possibly repeated for best@n):
 
-1. **Boot** a fresh stack — one E2B sandbox for the swarm API (`agent-swarm-api-latest` template) + one for the worker (`agent-swarm-worker-latest`), worker configured with the cell's `HARNESS_PROVIDER` / `MODEL_OVERRIDE` and only the credentials that provider needs. Reuses `src/e2b/dispatch.ts` primitives from the repo root.
+1. **Boot** a fresh stack — one E2B sandbox for the swarm API (`agent-swarm-api-latest` template) + one per roster member (`agent-swarm-worker-latest`). Each member runs its **effective** config's `HARNESS_PROVIDER` / `MODEL_OVERRIDE` (the matrix cell's config unless the scenario overrides that member — see worker configuration below) and receives only the credentials its provider needs, so heterogeneous rosters get per-sandbox credential isolation for free. Reuses `src/e2b/dispatch.ts` primitives from the repo root.
 2. **Seed** (optional) — shell commands in the worker sandbox (`scenario.seed.exec`).
 3. **Run** — create the scenario's task(s) directly assigned to the worker agent, poll until terminal status or timeout.
 4. **Grade** — deterministic checks (implicit `tasks-completed` + scenario checks), an optional **LLM judge** over the flattened transcript, and an optional **agentic judge**: an AI SDK tool-loop with live sandbox/API access (`run_command` / `read_file` / `api_get` / `submit_verdict`) that verifies the rubric itself instead of trusting the transcript (falls back to the LLM judge if it never submits a verdict).
-5. **Persist artifacts** (secret-redacted): flattened transcript, **raw swarm session-log events** (`session-logs.jsonl`), the **harness's own raw session files** pulled from the worker filesystem (e.g. Claude Code's `~/.claude/projects/**/*.jsonl`, codex `~/.codex/sessions`, pi `~/.pi`, opencode `~/.local/share/opencode` — files touched during the attempt, capped 10 × 1.5 MB), task records, seed command outputs (`seed-output.json`), raw session-cost rows (`session-costs.json`), the full session-file listing with sizes/mtimes (`session-files.json`), and the worker + API entrypoint log tails. Per-attempt sandbox info (both sandbox ids, templates, apiUrl, swarm key, TTL, API + worker build versions) is stored at boot, and per-phase wall-clock timings on finish.
+5. **Persist artifacts** (secret-redacted): flattened transcript, **raw swarm session-log events** (`session-logs.jsonl`), the **harness's own raw session files** pulled from the worker filesystem (e.g. Claude Code's `~/.claude/projects/**/*.jsonl`, codex `~/.codex/sessions`, pi `~/.pi`, opencode `~/.local/share/opencode` — files touched during the attempt, capped 10 × 1.5 MB), task records, seed command outputs (`seed-output.json`), raw session-cost rows (`session-costs.json`), the roster snapshot with per-member cost/tokens (`roster.json`), the full session-file listing with sizes/mtimes (`session-files.json`), and the worker + API entrypoint log tails. Per-attempt sandbox info (both sandbox ids, templates, apiUrl, swarm key, TTL, API + worker build versions) is stored at boot, and per-phase wall-clock timings on finish.
 6. **Teardown** — both sandboxes killed, even on failure.
 
 ### Fail-safety
@@ -30,12 +30,22 @@ bun install
 # ANTHROPIC_API_KEY / OPENAI_API_KEY from the repo-root .env into evals/.env
 
 bun src/cli.ts registry                       # available scenarios + configs
-bun src/cli.ts run                            # default: hello-file × 3 configs
-bun src/cli.ts run --scenarios hello-file,quick-reasoning --configs claude-haiku,pi-deepseek-flash --attempts 2 --judge-model anthropic/claude-sonnet-4.5
+bun src/cli.ts run                            # default: memory-seeded-recall × 3 configs
+bun src/cli.ts run --scenarios memory-seeded-recall,build-verify-fix --configs claude-haiku,pi-deepseek-flash --attempts 2 --judge-model anthropic/claude-sonnet-4.5
 bun src/cli.ts resume <runId>                 # continue an interrupted run
 bun src/cli.ts show <runId>                   # terminal result matrix
 bun src/cli.ts serve                          # UI on http://localhost:4801
 ```
+
+### Smoke scenario
+
+`memory-seeded-recall` is the **designated smoke scenario** — the cheapest meaningful end-to-end verification (1 worker, 1 task, deterministic-only: zero judge LLM spend) that still proves a real swarm capability (seeded-memory embed + retrieval). Run it first after any harness change:
+
+```bash
+bun src/cli.ts run --scenarios memory-seeded-recall --configs claude-haiku
+```
+
+It requires `EMBEDDING_API_KEY` or `OPENAI_API_KEY` in `evals/.env` (the API sandbox embeds the seeded memory server-side); without one the attempt fails loudly at seed time. The former `hello-file` / `quick-reasoning` dummies were removed from the registry — historical runs referencing them still render everywhere (the scenario detail page falls back to an "unregistered scenario" view).
 
 ### UI (`serve`)
 
@@ -61,11 +71,18 @@ Seeding runs before the first task is created, in this order:
 - `memories` — strings (max 16) indexed as **swarm-scope memories** via the memory API after boot; embeddings are computed server-side, and the runner blocks until every seeded memory is searchable (90 s gate). Requires `EMBEDDING_API_KEY` or `OPENAI_API_KEY` in `evals/.env` — without one the attempt fails loudly at seed time instead of mysteriously at judging time.
 - `exec` — shell commands run in **worker 0's** sandbox after the stack is healthy (and after memories), e.g. to plant workspace files.
 
-### Multi-worker + task routing
+### Worker configuration, rosters + task routing
 
-- `workers: N` (default 1, max 3) boots N **homogeneous** workers — same harness config; per-worker heterogeneous configs are out of scope.
-- Each task routes to one worker via `worker: i` (default 0). Tasks are still awaited sequentially in index order — multi-worker proves routing/isolation, not concurrency.
-- Grade per-worker side effects with `fileContainsOnWorker(i, path, re)` / `fileAbsentOnWorker(i, path)`; plain `ctx.exec` / `ctx.readFile` (and the agentic judge's tools) stay bound to worker 0.
+- `workers: N` (default 1, max 3) boots N **homogeneous** workers on the cell's config (back-compat shape).
+- `workers: WorkerSpec[]` (1–3 entries) configures each member individually:
+  - `template` → `TEMPLATE_ID` (template-registry slug, e.g. `coder` / `researcher`; the worker fetches it from `TEMPLATE_REGISTRY_URL` and applies its `agentDefaults` — role, capabilities, maxTasks — plus identity files; a fetch failure is non-fatal),
+  - `name` → `AGENT_NAME`, `systemPrompt` → `SYSTEM_PROMPT`,
+  - `configId` / `model` → **per-member config override** (heterogeneous rosters): the member runs `catalog[configId]` (or the cell config) with `model` applied on top — provider and credentials follow the *effective* config. The cell config stays the matrix axis; overridden members are labeled as overrides in the UI and their cost/tokens attribute to the model they actually ran.
+  - `env` → extra member env, merged last (reserved boot-path keys are rejected at registry load).
+- `lead: WorkerSpec` boots one **extra** member with `AGENT_ROLE=lead` (registers `isLead`, default 2 concurrent tasks; does not count toward the 3-worker cap). Tasks with `worker: "lead"` are created **without** an `agentId` — the swarm API routes unassigned tasks to the lead, which is the lead-orchestration entry point.
+- Each task routes to one worker via `worker: i` (default 0) or to the lead via `worker: "lead"`. Tasks are still awaited sequentially in index order — rosters prove routing/isolation/attribution, not concurrency.
+- Grade per-member side effects with `fileContainsOnWorker(i, path, re)` / `fileAbsentOnWorker(i, path)` (the lead is member index N = the worker count); plain `ctx.exec` / `ctx.readFile` (and the agentic judge's tools) stay bound to worker 0.
+- Per-attempt the runner snapshots the **roster** (GET `/api/agents` of the attempt's stack) with per-member cost/token attribution (each member's tasks' session-cost rows) into `attempts.workers_json` + a `roster.json` artifact.
 
 ### Task dependencies (`dependsOn`)
 
@@ -75,14 +92,13 @@ Seeding runs before the first task is created, in this order:
 
 | id | proves | workers | needs embedding key |
 |---|---|---|---|
-| `hello-file` | smoke: precise instruction → file side effect (agentic judge) | 1 | – |
-| `quick-reasoning` | minimal reason-and-report loop (LLM judge) | 1 | – |
 | `sql-seeded-history` | `seed.sqlDump` import + agent consuming seeded API history | 1 | – |
-| `memory-seeded-recall` | `seed.memories` → embed → retrieval (the F2 E2E gate) | 1 | yes |
+| `memory-seeded-recall` | **designated smoke**: `seed.memories` → embed → retrieval (the F2 E2E gate) | 1 | yes |
 | `memory-pipeline` | cross-task knowledge flow via memory + `dependsOn` DAG mode | 1 | yes |
 | `two-workers` | multi-worker routing + sandbox isolation | 2 | – |
 | `relay-handoff` | cross-worker handoff through swarm memory (`dependsOn` × `workers`) | 2 | yes |
 | `build-verify-fix` | build → verify/fix dependency chain, deterministic compile-grade check | 1 | – |
+| `roster-demo` | heterogeneous roster: worker specs/templates, per-member config overrides, lead boot + agentId-less routing, per-member attribution | 2 + lead | – |
 
 ### Scenario backlog + tier-ladder recipe
 
@@ -98,7 +114,7 @@ bun src/cli.ts run --scenarios build-verify-fix \
 
 Judge model precedence: `scenario.judge.model` > run `--judge-model` > `EVAL_JUDGE_MODEL` > `deepseek/deepseek-v4-pro`.
 
-Scoring per cell: **best@n** (any attempt passed), pass@1, best/avg judge score, total cost, avg duration. Cost is **always tracked** via a fallback chain: harness-reported session-cost rows (`costSource: "harness"`) → recomputed from per-message token usage × the models.dev pricing snapshot (`"recomputed"`) → tagged `"unpriced"` with any extracted tokens still stored.
+Scoring per cell: **best@n** (any attempt passed), pass@1, best/avg judge score, total cost, avg duration. Cost is **always tracked** via a fallback chain: harness-reported session-cost rows (`costSource: "harness"`) → recomputed from per-message token usage × the models.dev pricing snapshot (`"recomputed"`) → tagged `"unpriced"` with any extracted tokens still stored. **Token usage is tracked universally**: when harness-priced rows carry no token columns, the recompute extractor still runs (tokens only — cost/source untouched), so every attempt with parseable harness output stores `tokens_json`. On heterogeneous rosters the extractor runs per member (each member's provider/model/session files) and results merge.
 
 ## Env
 

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { validateScenario } from "./registry.ts";
+import { serializeScenario, validateScenario } from "./registry.ts";
 import type { Scenario } from "./types.ts";
 
 /** Minimal valid scenario; tests override single fields to isolate one rule. */
@@ -115,5 +115,115 @@ describe("validateScenario (v6 §0.11 frozen rules)", () => {
     test("non-integer entries rejected", () => {
       expect(validateScenario(tasks3({ 1: [0.5] }))).not.toEqual([]);
     });
+  });
+});
+
+describe("validateScenario — WorkerSpec[] + lead (v7 §9/§12 frozen rules)", () => {
+  test("array shape: 1..3 specs accepted, 0 / 4 rejected", () => {
+    expect(validateScenario(scenario({ workers: [{}] }))).toEqual([]);
+    expect(validateScenario(scenario({ workers: [{}, {}, {}] }))).toEqual([]);
+    expect(validateScenario(scenario({ workers: [] }))).not.toEqual([]);
+    expect(validateScenario(scenario({ workers: [{}, {}, {}, {}] }))).not.toEqual([]);
+  });
+
+  test("template must be a lowercase slug", () => {
+    expect(validateScenario(scenario({ workers: [{ template: "coder" }] }))).toEqual([]);
+    expect(validateScenario(scenario({ workers: [{ template: "Bad Slug" }] }))).not.toEqual([]);
+  });
+
+  test("names must be non-empty and unique across workers AND the lead", () => {
+    expect(validateScenario(scenario({ workers: [{ name: "a" }, { name: "b" }] }))).toEqual([]);
+    expect(validateScenario(scenario({ workers: [{ name: " " }] }))).not.toEqual([]);
+    expect(validateScenario(scenario({ workers: [{ name: "a" }, { name: "a" }] }))).not.toEqual([]);
+    expect(
+      validateScenario(scenario({ workers: [{ name: "a" }], lead: { name: "a" } })),
+    ).not.toEqual([]);
+  });
+
+  test("env keys: SHOUTY_SNAKE only; boot-path-owned keys rejected", () => {
+    expect(validateScenario(scenario({ workers: [{ env: { MY_FLAG: "1" } }] }))).toEqual([]);
+    expect(validateScenario(scenario({ workers: [{ env: { "bad-key": "1" } }] }))).not.toEqual([]);
+    for (const key of [
+      "AGENT_ID",
+      "HARNESS_PROVIDER",
+      "TEMPLATE_ID",
+      "AGENT_NAME",
+      "SYSTEM_PROMPT",
+    ]) {
+      expect(validateScenario(scenario({ workers: [{ env: { [key]: "x" } }] }))).not.toEqual([]);
+    }
+  });
+
+  test("configId override must exist in the config catalog", () => {
+    expect(validateScenario(scenario({ workers: [{ configId: "claude-fable" }] }))).toEqual([]);
+    expect(validateScenario(scenario({ workers: [{ configId: "no-such-config" }] }))).not.toEqual(
+      [],
+    );
+  });
+
+  test("model override must be non-empty when present", () => {
+    expect(validateScenario(scenario({ workers: [{ model: "claude-haiku-4-5" }] }))).toEqual([]);
+    expect(validateScenario(scenario({ workers: [{ model: "  " }] }))).not.toEqual([]);
+  });
+
+  test("lead spec gets the same member rules", () => {
+    expect(validateScenario(scenario({ lead: { configId: "claude-fable" } }))).toEqual([]);
+    expect(validateScenario(scenario({ lead: { configId: "no-such-config" } }))).not.toEqual([]);
+    expect(validateScenario(scenario({ lead: { env: { MODEL_OVERRIDE: "x" } } }))).not.toEqual([]);
+  });
+
+  test('task.worker "lead" requires scenario.lead', () => {
+    const tasks = [{ title: "t0", description: "d0", worker: "lead" as const }];
+    expect(validateScenario(scenario({ tasks }))).not.toEqual([]);
+    expect(validateScenario(scenario({ tasks, lead: {} }))).toEqual([]);
+  });
+});
+
+describe("serializeScenario — workerSpecs + lead (v7 §9/§12)", () => {
+  test("numeric workers shape serializes workerSpecs/lead as null", () => {
+    const s = serializeScenario(scenario({ workers: 2 }));
+    expect(s.workers).toBe(2);
+    expect(s.workerSpecs).toBeNull();
+    expect(s.lead).toBeNull();
+  });
+
+  test("spec array serializes identity + overrides; env keys only, never values", () => {
+    const s = serializeScenario(
+      scenario({
+        workers: [
+          { template: "coder", name: "alice", env: { MY_SECRETISH: "value" } },
+          { configId: "claude-fable", model: "claude-haiku-4-5" },
+        ],
+        lead: { name: "lead-1", configId: "claude-fable" },
+      }),
+    );
+    expect(s.workers).toBe(2);
+    expect(s.workerSpecs).toEqual([
+      {
+        template: "coder",
+        name: "alice",
+        systemPrompt: null,
+        configId: null,
+        model: null,
+        envKeys: ["MY_SECRETISH"],
+      },
+      {
+        template: null,
+        name: null,
+        systemPrompt: null,
+        configId: "claude-fable",
+        model: "claude-haiku-4-5",
+        envKeys: [],
+      },
+    ]);
+    expect(s.lead).toEqual({
+      template: null,
+      name: "lead-1",
+      systemPrompt: null,
+      configId: "claude-fable",
+      model: null,
+      envKeys: [],
+    });
+    expect(JSON.stringify(s)).not.toContain("value");
   });
 });

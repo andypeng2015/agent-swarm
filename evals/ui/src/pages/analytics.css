@@ -1,5 +1,5 @@
-/* WP-AUI — analytics page (v5 spec §3). Shared tokens/classes live in styles.css;
-   chart styles live in components/charts/charts.css. */
+/* WP-AUI — analytics page (v5 spec §3 + v7 spec §6.2/§7.3). Shared tokens/classes
+   live in styles.css; chart styles live in components/charts/charts.css. */
 
 .an-head {
   display: flex;
@@ -50,15 +50,52 @@
   margin-left: auto;
 }
 
-.an-select {
+.an-seg-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* ---- highlights row (v7 §7.3 — à la artificialanalysis.ai) ---- */
+
+.an-highlights {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.an-highlights .panel {
+  margin: 0;
+  min-width: 0;
+}
+
+@media (max-width: 900px) {
+  .an-highlights {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.an-highlight-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.an-highlight-sub {
+  font-size: 11px;
+  margin: 2px 0 8px;
+}
+
+/* ---- harness / vendor rollup table ---- */
+
+.an-group {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 12px;
-}
-
-.an-select select {
-  max-width: 220px;
 }
 
 /* ---- segmented metric control ---- */

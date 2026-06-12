@@ -1,4 +1,4 @@
-import { type ReactNode, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { getTranscript } from "../api.ts";
 import { HarnessIcon } from "../components/HarnessIcon.tsx";
 import { JsonView } from "../components/JsonView.tsx";
@@ -145,7 +145,24 @@ function buildTranscript(rows: SessionLogRecord[]): BuiltTranscript {
   return { entries, messageCount: messages.length, unparsedCount, resultById, callIds };
 }
 
-export default function Transcript(props: { attemptId: string; live?: boolean }): ReactNode {
+/** Per-task status/skip info for the §1 sub-tab glyphs (from tasks.json). */
+export interface TranscriptTaskStatus {
+  status: string | null;
+  skipped: boolean;
+}
+
+export default function Transcript(props: {
+  attemptId: string;
+  live?: boolean;
+  /** v7 §1: attempt.taskIds in creation order — fixes sub-tab order + labels. */
+  taskIds?: string[];
+  /** v7 §1: taskId → display title (from the tasks.json artifact when loaded). */
+  taskTitles?: Record<string, string>;
+  /** v7 §1: taskId → status/skip info — drives the sub-tab status glyphs. */
+  taskStatuses?: Record<string, TranscriptTaskStatus>;
+  /** v7 §10.3: Workers-panel task chips focus a sub-tab (nonce re-triggers). */
+  focusTask?: { taskId: string; nonce: number } | null;
+}): ReactNode {
   const live = props.live === true;
   const { data, error } = usePoll(
     () => getTranscript(props.attemptId, { live }),
@@ -153,9 +170,61 @@ export default function Transcript(props: { attemptId: string; live?: boolean })
     [props.attemptId, live],
   );
 
+  const rows = data?.source === "raw-session-logs" ? (data.rows ?? null) : null;
+
+  // §1 frozen rule: sub-tabs render only when the rows span > 1 distinct
+  // non-empty taskId. Tab set = props.taskIds ∪ row taskIds (tasks without any
+  // rows — e.g. skipped dependents — keep a visible tab); order = props.taskIds
+  // first, then first appearance in rows.
+  const taskTabs = useMemo<string[] | null>(() => {
+    if (rows === null) return null;
+    const inRows: string[] = [];
+    const seen = new Set<string>();
+    for (const r of rows) {
+      if (r.taskId !== "" && !seen.has(r.taskId)) {
+        seen.add(r.taskId);
+        inRows.push(r.taskId);
+      }
+    }
+    if (seen.size < 2) return null;
+    const ordered: string[] = [];
+    for (const id of [...(props.taskIds ?? []), ...inRows]) {
+      if (id !== "" && !ordered.includes(id)) ordered.push(id);
+    }
+    return ordered;
+  }, [rows, props.taskIds]);
+
+  // null = "All" (default). A selection whose tab disappears falls back to All;
+  // the selection itself persists across live polls (component state).
+  const [selectedTask, setSelectedTask] = useState<string | null>(null);
+  const activeTask =
+    selectedTask !== null && taskTabs !== null && taskTabs.includes(selectedTask)
+      ? selectedTask
+      : null;
+
+  // Focus requests from the Workers panel — each nonce applies at most once
+  // (the page scopes focusTask to the current attempt, so 0 is a safe baseline).
+  const appliedFocus = useRef(0);
+  useEffect(() => {
+    const f = props.focusTask;
+    if (!f || f.nonce === appliedFocus.current) return;
+    if (taskTabs?.includes(f.taskId) === true) {
+      appliedFocus.current = f.nonce;
+      setSelectedTask(f.taskId);
+    }
+  }, [props.focusTask, taskTabs]);
+
+  // §1: filtering is client-side and reapplied on every poll; rows with an
+  // empty taskId (synthesized fallback rows) appear ONLY under All.
+  const visibleRows = useMemo(
+    () =>
+      rows !== null && activeTask !== null ? rows.filter((r) => r.taskId === activeTask) : rows,
+    [rows, activeTask],
+  );
+
   const built = useMemo(
-    () => (data?.source === "raw-session-logs" && data.rows ? buildTranscript(data.rows) : null),
-    [data],
+    () => (visibleRows !== null ? buildTranscript(visibleRows) : null),
+    [visibleRows],
   );
 
   if (!data) {
@@ -194,7 +263,7 @@ export default function Transcript(props: { attemptId: string; live?: boolean })
     );
   }
 
-  const rowCount = data.rows?.length ?? 0;
+  const rowCount = visibleRows?.length ?? 0;
   return (
     <div className="transcript">
       <Caption harness={data.harness} live={data.live === true}>
@@ -211,7 +280,24 @@ export default function Transcript(props: { attemptId: string; live?: boolean })
           </>
         ) : null}
       </Caption>
-      {rowCount === 0 ? <div className="t-empty dim">No events yet</div> : null}
+      {taskTabs !== null ? (
+        <TaskTabs
+          tabs={taskTabs}
+          active={activeTask}
+          titles={props.taskTitles}
+          statuses={props.taskStatuses}
+          onSelect={setSelectedTask}
+        />
+      ) : null}
+      {rowCount === 0 ? (
+        <div className="t-empty dim">
+          {activeTask === null
+            ? "No events yet"
+            : props.taskStatuses?.[activeTask]?.skipped === true
+              ? "No events for this task — it was skipped (failed dependency)"
+              : "No events for this task"}
+        </div>
+      ) : null}
       {built?.entries.map((entry) => {
         switch (entry.kind) {
           case "divider": {
@@ -270,6 +356,77 @@ function Footer(): ReactNode {
   return (
     <div className="t-footer">
       <Spinner label="Streaming…" />
+    </div>
+  );
+}
+
+// ---- per-task sub-tabs (v7 §1) ----
+
+const TASK_TITLE_CLIP = 32;
+
+function clipTitle(s: string): string {
+  return s.length > TASK_TITLE_CLIP ? `${s.slice(0, TASK_TITLE_CLIP - 1)}…` : s;
+}
+
+/** Static status glyph per sub-tab (no spinners — single-animation rule). */
+function taskTabGlyph(st: TranscriptTaskStatus | undefined): {
+  glyph: string;
+  tone: string;
+  label: string;
+} {
+  if (st?.skipped === true)
+    return { glyph: "⊘", tone: "dim", label: "Skipped (failed dependency)" };
+  const s = (st?.status ?? "").toLowerCase();
+  if (s === "completed" || s === "done") return { glyph: "✓", tone: "green", label: "Completed" };
+  if (s === "failed" || s === "error") return { glyph: "✗", tone: "red", label: "Failed" };
+  if (s === "in_progress" || s === "running") {
+    return { glyph: "◔", tone: "accent", label: "In Progress" };
+  }
+  if (s === "pending" || s === "created" || s === "assigned") {
+    return { glyph: "○", tone: "dim", label: "Pending" };
+  }
+  if (s === "") return { glyph: "•", tone: "neutral", label: "Status unknown" };
+  return { glyph: "•", tone: "neutral", label: s };
+}
+
+function TaskTabs(props: {
+  tabs: string[];
+  active: string | null;
+  titles?: Record<string, string>;
+  statuses?: Record<string, TranscriptTaskStatus>;
+  onSelect: (taskId: string | null) => void;
+}): ReactNode {
+  return (
+    <div className="t-tasktabs">
+      <button
+        type="button"
+        className={props.active === null ? "t-tasktab selected" : "t-tasktab"}
+        title="All events, including rows without a task id"
+        onClick={() => props.onSelect(null)}
+      >
+        All
+      </button>
+      {props.tabs.map((taskId, i) => {
+        const glyph = taskTabGlyph(props.statuses?.[taskId]);
+        const title = props.titles?.[taskId];
+        return (
+          <button
+            type="button"
+            key={taskId}
+            className={props.active === taskId ? "t-tasktab selected" : "t-tasktab"}
+            title={`${taskId}\n${glyph.label}`}
+            onClick={() => props.onSelect(taskId)}
+          >
+            <span className={`t-tasktab-glyph tone-${glyph.tone}`} aria-hidden="true">
+              {glyph.glyph}
+            </span>
+            Task {i + 1}
+            {title !== undefined ? (
+              <span className="t-tasktab-title"> · {clipTitle(title)}</span>
+            ) : null}
+          </button>
+        );
+      })}
     </div>
   );
 }

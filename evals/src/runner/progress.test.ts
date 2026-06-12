@@ -83,7 +83,15 @@ describe("bootStack fails fast on abort (RC-3)", () => {
   test("pre-aborted signal throws before any sandbox is created", async () => {
     const t0 = Date.now();
     const promise = bootStack({
-      config: { id: "test-config", provider: "claude" },
+      members: [
+        {
+          index: 0,
+          role: "worker",
+          spec: {},
+          config: { id: "test-config", provider: "claude" },
+          overridden: false,
+        },
+      ],
       swarmSlug: "evals-test",
       signal: abortedSignal(),
       log: () => {},

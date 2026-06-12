@@ -1,5 +1,5 @@
 import type { Client } from "@libsql/client";
-import { recomputeCost } from "../cost/recompute.ts";
+import { recomputeCost, recomputeCostMulti } from "../cost/recompute.ts";
 import {
   clearAttemptResults,
   getRun,
@@ -24,8 +24,14 @@ import {
   recordAttemptTimings,
   setAttemptPhase,
 } from "../live/attempt-progress.ts";
-import { flattenTranscript, type SessionCostRow, SwarmClient } from "../swarm/client.ts";
 import {
+  type AgentJson,
+  flattenTranscript,
+  type SessionCostRow,
+  SwarmClient,
+} from "../swarm/client.ts";
+import {
+  type BootMember,
   bootStack,
   collectHarnessSessionFiles,
   markAttemptStart,
@@ -44,11 +50,18 @@ import {
   type JudgeContext,
   type JudgeTrace,
   type PhaseTimings,
+  type RecomputeInput,
+  type RecomputeResult,
   type SandboxInfo,
   type Scenario,
   type SwarmTask,
+  scenarioWorkerCount,
+  scenarioWorkerSpec,
   type TaskSpec,
   type TokenTotals,
+  totalTokenCount,
+  type WorkerRosterEntry,
+  type WorkerSpec,
 } from "../types.ts";
 
 const DEFAULT_TASK_TIMEOUT_MS = 10 * 60 * 1000;
@@ -158,7 +171,11 @@ export function processTerminalTask<T extends SwarmTask>(
   return task;
 }
 
-/** Build the persisted sandboxJson v2 blob (v6 §0.3 — shape FROZEN). */
+/**
+ * Build the persisted sandboxJson v2 blob (v6 §0.3 — shape FROZEN; v7 §9.3
+ * adds the nullable identity + effective-config member fields — the override
+ * trio is non-null ONLY when the member overrode the cell config).
+ */
 export function buildSandboxInfo(stack: StackHandle): SandboxInfo {
   return {
     v: 2,
@@ -177,8 +194,139 @@ export function buildSandboxInfo(stack: StackHandle): SandboxInfo {
       startedAt: w.sandbox.startedAt ?? null,
       expiresAt: w.sandbox.endAt ?? w.sandbox.expiresAt ?? null,
       version: w.version,
+      name: w.member.spec.name ?? null,
+      agentTemplate: w.member.spec.template ?? null,
+      role: w.member.role,
+      configId: w.member.overridden ? w.member.config.id : null,
+      provider: w.member.overridden ? w.member.config.provider : null,
+      model: w.member.overridden ? (w.member.config.model ?? null) : null,
     })),
   };
+}
+
+// ---- roster members + per-member attribution (v7 §9/§10/§12 — FROZEN) ----
+
+/**
+ * Member config resolution (v7 §12.3 — FROZEN):
+ *   base   = spec.configId ? catalog[spec.configId] : cellConfig
+ *   model  = spec.model ?? base.model     (provider/env/tier from base)
+ *   overridden = spec.configId !== undefined || spec.model !== undefined
+ */
+export function resolveMemberConfig(
+  spec: WorkerSpec,
+  cellConfig: HarnessConfig,
+  catalog: Map<string, HarnessConfig>,
+): { config: HarnessConfig; overridden: boolean } {
+  const base = spec.configId !== undefined ? catalog.get(spec.configId) : cellConfig;
+  if (!base) {
+    // Unreachable for registered scenarios (validateScenario gates configId).
+    throw new Error(`member configId "${spec.configId}" is not in the config catalog`);
+  }
+  return {
+    config: { ...base, model: spec.model ?? base.model },
+    overridden: spec.configId !== undefined || spec.model !== undefined,
+  };
+}
+
+/**
+ * Resolve the scenario's roster against the matrix cell's config: workers at
+ * indices 0..N-1 (either `workers` shape), then ONE lead at index N when the
+ * scenario defines one (v7 §12.4 — the lead is APPENDED, never shifts worker
+ * indices, and does not count toward the worker cap).
+ */
+export function resolveBootMembers(
+  scenario: Scenario,
+  cellConfig: HarnessConfig,
+  catalog: Map<string, HarnessConfig>,
+): BootMember[] {
+  const count = scenarioWorkerCount(scenario.workers);
+  const members: BootMember[] = [];
+  for (let i = 0; i < count; i++) {
+    const spec = scenarioWorkerSpec(scenario.workers, i);
+    members.push({
+      index: i,
+      role: "worker",
+      spec,
+      ...resolveMemberConfig(spec, cellConfig, catalog),
+    });
+  }
+  if (scenario.lead) {
+    members.push({
+      index: count,
+      role: "lead",
+      spec: scenario.lead,
+      ...resolveMemberConfig(scenario.lead, cellConfig, catalog),
+    });
+  }
+  return members;
+}
+
+/**
+ * v7 §12.5 (FROZEN): a roster is heterogeneous when any member overrode the
+ * cell config, or a lead runs a different provider — those attempts recompute
+ * cost/tokens PER MEMBER; homogeneous rosters keep the single-pass path.
+ */
+export function isHeterogeneousRoster(members: BootMember[], cellConfig: HarnessConfig): boolean {
+  return members.some(
+    (m) => m.overridden || (m.role === "lead" && m.config.provider !== cellConfig.provider),
+  );
+}
+
+/**
+ * One roster entry per boot member (v7 §10.1 — field sourcing FROZEN).
+ * `agents` is the attempt stack's GET /api/agents snapshot; a member with no
+ * matching agent row keeps nulls (+ `capabilities: []`, isLead from its boot
+ * role). Per-member cost = Σ totalCostUsd over the member's tasks' session-cost
+ * rows (null when none priced); tokens = field-wise Σ (null when the rows
+ * carry no token data). The Σ of member costs may be less than the attempt's
+ * costUsd when recompute priced the attempt — allowed; the UI labels member
+ * cost as harness-reported.
+ */
+export function buildRosterEntries(opts: {
+  workers: WorkerHandle[];
+  agents: AgentJson[];
+  /** taskId → member index, in creation order. */
+  taskMemberIndex: Map<string, number>;
+  costRows: { taskId: string; rows: SessionCostRow[] }[];
+}): WorkerRosterEntry[] {
+  return opts.workers.map((w) => {
+    const taskIds = [...opts.taskMemberIndex]
+      .filter(([, index]) => index === w.index)
+      .map(([taskId]) => taskId);
+    const idSet = new Set(taskIds);
+    const rows = opts.costRows.filter((t) => idSet.has(t.taskId)).flatMap((t) => t.rows);
+    const pricedRows = rows.filter((r) => r.totalCostUsd !== null);
+    const hasTokenData = rows.some(
+      (r) =>
+        r.inputTokens !== null ||
+        r.outputTokens !== null ||
+        r.cacheReadTokens !== null ||
+        r.cacheWriteTokens !== null,
+    );
+    const agent = opts.agents.find((a) => a.id === w.agentId) ?? null;
+    return {
+      index: w.index,
+      memberRole: w.member.role,
+      agentId: w.agentId,
+      sandboxId: w.sandbox.sandboxID,
+      name: agent?.name ?? null,
+      role: agent?.role ?? null,
+      isLead: agent ? agent.isLead : w.member.role === "lead",
+      status: agent?.status ?? null,
+      provider: agent?.harnessProvider ?? agent?.provider ?? w.member.config.provider,
+      capabilities: agent?.capabilities ?? [],
+      maxTasks: agent?.maxTasks ?? null,
+      lastActivityAt: agent?.lastActivityAt ?? null,
+      agentTemplate: w.member.spec.template ?? null,
+      configId: w.member.overridden ? w.member.config.id : null,
+      model: w.member.overridden ? (w.member.config.model ?? null) : null,
+      version: w.version,
+      taskIds,
+      costUsd:
+        pricedRows.length > 0 ? pricedRows.reduce((s, r) => s + (r.totalCostUsd ?? 0), 0) : null,
+      tokens: hasTokenData ? sumRowTokens(rows) : null,
+    };
+  });
 }
 
 // ---- seed.memories readiness gate (v6 §2.3 — FROZEN) ----
@@ -326,6 +474,64 @@ function sumRowTokens(rows: SessionCostRow[]): TokenTotals {
   };
 }
 
+/**
+ * v7 §11.1 (FROZEN) attempt cost/token decision, extracted from
+ * `runAttemptOnce` so the branch is directly unit-testable (the recompute
+ * extractor is injected as a thunk):
+ * - harness-priced rows → costUsd = Σ totalCostUsd, costSource "harness",
+ *   tokens summed from the rows. Harnesses can post priced rows with NULL
+ *   token columns — when that branch yields ZERO tokens, the recompute
+ *   extractor runs for TOKENS ONLY; `costUsd` / `costSource = "harness"` are
+ *   never touched. Result: every attempt with parseable harness output
+ *   carries tokens_json regardless of costSource.
+ * - otherwise → full recompute: priced ⇒ "recomputed", else "unpriced"
+ *   (tokens, if any, still stored).
+ */
+export async function resolveAttemptCost(opts: {
+  allRows: SessionCostRow[];
+  runRecompute: () => Promise<RecomputeResult>;
+  log?: (msg: string) => void;
+}): Promise<{
+  costUsd: number | null;
+  costSource: CostSource | null;
+  tokens: TokenTotals | null;
+  recomputeMs: number;
+}> {
+  const { allRows, runRecompute, log } = opts;
+  const priced = allRows.some(
+    (r) => (r.totalCostUsd ?? 0) > 0 || (r.costSource && r.costSource !== "unpriced"),
+  );
+  let costUsd: number | null = null;
+  let costSource: CostSource | null = null;
+  let tokens: TokenTotals | null = null;
+  let recomputeMs = 0;
+  if (allRows.length > 0 && priced) {
+    costUsd = allRows.reduce((s, r) => s + (r.totalCostUsd ?? 0), 0);
+    costSource = "harness";
+    tokens = sumRowTokens(allRows);
+    if (totalTokenCount(tokens) === 0) {
+      const recompute = await timed(runRecompute);
+      recomputeMs += recompute.ms;
+      const recomputed = recompute.result.tokens;
+      if (recomputed && totalTokenCount(recomputed) > 0) {
+        tokens = recomputed;
+        log?.("[cost] harness rows carried no tokens — token usage recomputed from session output");
+      }
+    }
+  } else {
+    const recompute = await timed(runRecompute);
+    recomputeMs += recompute.ms;
+    tokens = recompute.result.tokens;
+    if (recompute.result.costUsd !== null) {
+      costUsd = recompute.result.costUsd;
+      costSource = "recomputed";
+    } else {
+      costSource = "unpriced"; // tokens (if any) still stored
+    }
+  }
+  return { costUsd, costSource, tokens, recomputeMs };
+}
+
 /** Sum two nullable USD amounts; null only when BOTH are null. */
 function sumNullableCosts(a: number | null, b: number | null): number | null {
   if (a === null && b === null) return null;
@@ -391,6 +597,8 @@ async function runAttemptOnce(opts: {
   attempt: AttemptRow;
   scenario: Scenario;
   config: HarnessConfig;
+  /** Config catalog — member overrides resolve against it (v7 §12.3). */
+  configs: Map<string, HarnessConfig>;
   judgeModel: string | null;
   /** Cancel signal — checked at every phase boundary and inside every polling await. */
   signal?: AbortSignal;
@@ -414,6 +622,8 @@ async function runAttemptOnce(opts: {
     status: "running",
     startedAt: new Date().toISOString(),
     error: null,
+    // A retry must not keep the previous try's roster (its sandboxes are dead).
+    workersJson: null,
   });
   // A re-run of an interrupted attempt must not keep half-written results.
   await clearAttemptResults(db, attempt.id);
@@ -424,13 +634,18 @@ async function runAttemptOnce(opts: {
     ? await loadSqlDumpFixture(scenario.seed.sqlDump)
     : undefined;
 
+  // Roster resolution (v7 §9.3/§12.3): workers 0..N-1 + optional lead at N,
+  // each with its EFFECTIVE config. Resolution is pure — failures (impossible
+  // for registered scenarios) throw before any sandbox exists.
+  const members = resolveBootMembers(scenario, config, opts.configs);
+  const heterogeneous = isHeterogeneousRoster(members, config);
+
   const timings = newPhaseTimings();
   setAttemptPhase(attempt.id, "boot");
   const boot = await timed(() =>
     bootStack({
-      config,
+      members,
       swarmSlug: `evals-${attempt.runId}`,
-      workers: scenario.workers ?? 1,
       preBootSql,
       timeoutSec,
       signal,
@@ -557,32 +772,48 @@ async function runAttemptOnce(opts: {
     setAttemptPhase(attempt.id, "tasks");
     const tasksT0 = Date.now();
     const createdTaskIds: string[] = [];
+    // taskId → member index, recorded at creation (v7 §10.1 per-member cost
+    // attribution; `worker: "lead"` tasks map to the lead member).
+    const taskMemberIndex = new Map<string, number>();
 
+    const workerCount = stack.workers.filter((w) => w.member.role === "worker").length;
     const resolveWorker = (spec: TaskSpec): WorkerHandle => {
+      if (spec.worker === "lead") {
+        const lead = stack.workers.find((w) => w.member.role === "lead");
+        if (!lead) {
+          // Unreachable for registered scenarios (validateScenario gates it).
+          throw new Error(`task "${spec.title}" targets the lead but this scenario boots none`);
+        }
+        return lead;
+      }
       const index = spec.worker ?? 0;
       const w = stack.workers[index];
-      if (!w) {
+      if (!w || w.member.role !== "worker") {
         throw new Error(
-          `task "${spec.title}" references worker ${index} but only ${stack.workers.length} booted`,
+          `task "${spec.title}" references worker ${index} but only ${workerCount} booted`,
         );
       }
       return w;
     };
     const createTaskFor = async (spec: TaskSpec): Promise<SwarmTask> => {
       const w = resolveWorker(spec);
+      const toLead = spec.worker === "lead";
       const deps = (spec.dependsOn ?? []).map((d) => createdTaskIds[d] as string);
       log(
-        `[task] creating "${spec.title}" → worker ${w.index} (${w.agentId})` +
+        `[task] creating "${spec.title}" → ${toLead ? "lead" : `worker ${w.index}`} (${w.agentId})` +
           (deps.length > 0 ? ` deps=[${deps.map((d) => d.slice(0, 8)).join(", ")}]` : ""),
       );
-      // agentId is NEVER omitted — an unassigned task routes to a lead, and
-      // eval stacks have no lead (the task would rot unclaimed until timeout).
+      // Worker tasks are ALWAYS directly assigned (an unassigned task on a
+      // lead-less stack would rot unclaimed until timeout). Lead tasks are
+      // created WITHOUT agentId (v7 §12.2): the swarm API routes agentId-less
+      // tasks to the lead — the lead-orchestration entry point.
       const created = await client.createTask({
         task: `${spec.title}\n\n${spec.description}`,
-        agentId: w.agentId,
+        ...(toLead ? {} : { agentId: w.agentId }),
         ...(deps.length > 0 ? { dependsOn: deps } : {}),
       });
       createdTaskIds.push(created.id);
+      taskMemberIndex.set(created.id, w.index);
       return created;
     };
     const awaitTask = async (id: string): Promise<SwarmTask> => {
@@ -688,7 +919,12 @@ async function runAttemptOnce(opts: {
       const collected: typeof sessionFilesByWorker = [];
       for (const w of stack.workers) {
         try {
-          const result = await collectHarnessSessionFiles(w.sandbox.sandboxID, config.provider);
+          // Per-member provider (v7 §12.5) — a member overriding the cell
+          // config writes its session files where ITS harness puts them.
+          const result = await collectHarnessSessionFiles(
+            w.sandbox.sandboxID,
+            w.member.config.provider,
+          );
           collected.push({ index: w.index, ...result });
         } catch (err) {
           log(
@@ -724,34 +960,73 @@ async function runAttemptOnce(opts: {
     const transcript = flattenTranscript(logRows);
 
     // 2. recomputed from tokens × models.dev pricing; 3. tagged unpriced.
-    const priced = allRows.some(
-      (r) => (r.totalCostUsd ?? 0) > 0 || (r.costSource && r.costSource !== "unpriced"),
-    );
-    let costUsd: number | null = null;
-    let costSource: CostSource | null = null;
-    let tokens: TokenTotals | null = null;
-    if (allRows.length > 0 && priced) {
-      costUsd = allRows.reduce((s, r) => s + (r.totalCostUsd ?? 0), 0);
-      costSource = "harness";
-      tokens = sumRowTokens(allRows);
-    } else {
-      const recompute = await timed(() =>
-        recomputeCost({
-          provider: config.provider,
-          configModel: config.model ?? null,
-          logRows,
-          sessionFiles: sessionFileUnion,
-        }),
+    // Heterogeneous rosters (v7 §12.5): the extractor runs PER MEMBER — that
+    // member's session files + its tasks' log rows, with the member's own
+    // provider/configModel — and results merge. Homogeneous rosters keep the
+    // single-pass path bit-for-bit.
+    const memberTaskIds = (index: number): Set<string> =>
+      new Set(
+        [...taskMemberIndex].filter(([, member]) => member === index).map(([taskId]) => taskId),
       );
-      costMs += recompute.ms;
-      tokens = recompute.result.tokens;
-      if (recompute.result.costUsd !== null) {
-        costUsd = recompute.result.costUsd;
-        costSource = "recomputed";
-      } else {
-        costSource = "unpriced"; // tokens (if any) still stored
+    const runRecompute = () =>
+      heterogeneous
+        ? recomputeCostMulti(
+            stack.workers.map((w): RecomputeInput => {
+              const ids = memberTaskIds(w.index);
+              return {
+                provider: w.member.config.provider,
+                configModel: w.member.config.model ?? null,
+                logRows: logRows.filter((r) => ids.has(r.taskId)),
+                sessionFiles: sessionFilesByWorker.find((f) => f.index === w.index)?.files ?? [],
+              };
+            }),
+          )
+        : recomputeCost({
+            provider: config.provider,
+            configModel: config.model ?? null,
+            logRows,
+            sessionFiles: sessionFileUnion,
+          });
+    // v7 §11.1 (FROZEN) decision — extracted to `resolveAttemptCost` for
+    // direct unit coverage (see resolve-attempt-cost.test.ts).
+    const costOutcome = await resolveAttemptCost({ allRows, runRecompute, log });
+    costMs += costOutcome.recomputeMs;
+    const { costUsd, costSource, tokens } = costOutcome;
+
+    // Roster + per-member cost snapshot (v7 §10.1): one GET /api/agents call
+    // while the stack is still alive, joined with the boot members and each
+    // member's tasks' cost rows. Non-fatal — a failed fetch leaves
+    // workers_json null and the UI falls back to the sandboxJson workers.
+    const rosterTimed = await timed(async (): Promise<WorkerRosterEntry[] | null> => {
+      try {
+        const agents = await client.listAgents();
+        return buildRosterEntries({
+          workers: stack.workers,
+          agents,
+          taskMemberIndex,
+          costRows: costRowsByTask,
+        });
+      } catch (err) {
+        log(
+          `[roster] agent fetch failed (${err instanceof Error ? err.message : err}) — workers_json stays null`,
+        );
+        return null;
       }
+    });
+    costMs += rosterTimed.ms;
+    const roster = rosterTimed.result;
+    if (roster) {
+      await updateAttempt(db, attempt.id, { workersJson: JSON.stringify(roster) });
+      await insertArtifact(db, {
+        id: crypto.randomUUID(),
+        attemptId: attempt.id,
+        kind: "meta",
+        name: "roster.json",
+        content: stack.redact(JSON.stringify(roster, null, 2)),
+      });
+      log(`[roster] captured ${roster.length} member(s)`);
     }
+
     timings.costMs = costMs;
     recordAttemptTimings(attempt.id, timings);
     log(`[cost] source=${costSource}${costUsd !== null ? ` $${costUsd.toFixed(4)}` : ""}`);
@@ -1145,6 +1420,7 @@ async function runAttemptWithRetry(opts: {
         attempt,
         scenario,
         config,
+        configs: registry.configs,
         judgeModel: opts.judgeModel,
         signal: opts.signal,
         // Raw log — runAttemptOnce wraps it once for the live registry itself.

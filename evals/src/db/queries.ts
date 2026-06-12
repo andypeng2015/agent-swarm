@@ -11,6 +11,7 @@ import type {
   RunStatus,
   SandboxInfo,
   TokenTotals,
+  WorkerRosterEntry,
 } from "../types.ts";
 
 function rowToRun(r: Row): EvalRunRow {
@@ -57,6 +58,8 @@ function rowToAttempt(r: Row): AttemptRow {
     judgeCostUsd: r.judge_cost_usd === null ? null : Number(r.judge_cost_usd),
     tokens: parseJsonColumn<TokenTotals>(r.tokens_json),
     sandbox: parseJsonColumn<SandboxInfo>(r.sandbox_json),
+    // v7 §10.1 — null on pre-v7 rows (readers fall back to sandbox.workers).
+    workers: parseJsonColumn<WorkerRosterEntry[]>(r.workers_json),
     timings: parseJsonColumn<PhaseTimings>(r.timings_json),
     durationMs: r.duration_ms === null ? null : Number(r.duration_ms),
     startedAt: (r.started_at as string) ?? null,
@@ -162,6 +165,7 @@ export async function updateAttempt(
     /** Pre-serialized JSON strings — callers JSON.stringify, stored as-is. */
     tokensJson: string | null;
     sandboxJson: string | null;
+    workersJson: string | null;
     timingsJson: string | null;
     durationMs: number | null;
     startedAt: string;
@@ -184,6 +188,7 @@ export async function updateAttempt(
     judgeCostUsd: "judge_cost_usd",
     tokensJson: "tokens_json",
     sandboxJson: "sandbox_json",
+    workersJson: "workers_json",
     timingsJson: "timings_json",
     durationMs: "duration_ms",
     startedAt: "started_at",

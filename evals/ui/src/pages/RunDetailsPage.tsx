@@ -19,6 +19,7 @@ import {
   fmtDate,
   fmtDuration,
   fmtScore,
+  fmtTokens,
   humanizeKey,
 } from "../components/format.ts";
 import { JsonView } from "../components/JsonView.tsx";
@@ -35,12 +36,19 @@ import {
 } from "../components/StatusBadge.tsx";
 import { InfoTip, Tooltip } from "../components/Tooltip.tsx";
 import { navigate, useConfigs, usePoll } from "../hooks.ts";
-import { type NormalizedSandboxInfo, normalizeSandboxInfo, workerLabel } from "../lib/sandbox.ts";
+import {
+  memberLabel,
+  type NormalizedSandboxInfo,
+  type NormalizedWorker,
+  normalizeSandboxInfo,
+  workerLabel,
+} from "../lib/sandbox.ts";
 import type {
   ArtifactMetaJson,
   AttemptDetail,
   AttemptJson,
   AttemptProgressResponse,
+  CellJson,
   ConfigJson,
   JudgeLiveResponse,
   JudgeTraceJson,
@@ -49,9 +57,11 @@ import type {
   RunDetail,
   SandboxInfoJson,
   TaskArtifactJson,
+  TokenTotalsJson,
+  WorkerRosterEntryJson,
 } from "../types.ts";
 import JudgeTrace from "./JudgeTrace.tsx";
-import Transcript from "./Transcript.tsx";
+import Transcript, { type TranscriptTaskStatus } from "./Transcript.tsx";
 import Waterfall from "./Waterfall.tsx";
 import "./run-details.css";
 
@@ -267,6 +277,40 @@ export default function RunDetailsPage(props: {
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
 
+  // tasks.json artifact → per-task title/status/skip flags (v6 §9.5 + v7 §1).
+  // Fetched ONCE here and shared by the attempt summary and the transcript
+  // sub-tabs (the artifact text cache makes refetches free anyway).
+  const artifacts = useMemo(() => detail?.artifacts ?? [], [detail]);
+  const tasksArtifact =
+    artifacts.find((a) => a.kind === "task" && a.name === "tasks.json") ??
+    artifacts.find((a) => a.kind === "task") ??
+    null;
+  const tasksFetched = useArtifactText(tasksArtifact?.id ?? null);
+  const taskFlags = useMemo(() => parseTaskFlags(tasksFetched.text), [tasksFetched.text]);
+  const taskTitles = useMemo(() => {
+    const out: Record<string, string> = {};
+    for (const [id, flag] of taskFlags) if (flag.title !== null) out[id] = flag.title;
+    return out;
+  }, [taskFlags]);
+  const taskStatuses = useMemo(() => {
+    const out: Record<string, TranscriptTaskStatus> = {};
+    for (const [id, flag] of taskFlags) out[id] = { status: flag.status, skipped: flag.skipped };
+    return out;
+  }, [taskFlags]);
+
+  // v7 §10.3: Workers-panel task chips jump into the transcript's sub-tab.
+  // Requests carry the attempt id so a stale one never crosses attempts.
+  const [focusTask, setFocusTask] = useState<{
+    taskId: string;
+    nonce: number;
+    attemptId: string;
+  } | null>(null);
+  const openTaskInTranscript = (taskId: string) => {
+    if (selId === null) return;
+    setTab("transcript");
+    setFocusTask((prev) => ({ taskId, nonce: (prev?.nonce ?? 0) + 1, attemptId: selId }));
+  };
+
   // Cancel flow (item 12): in-app confirm + "Cancelling…" until `active` flips false.
   const { confirm, confirmDialog } = useConfirm();
   const [cancelRequested, setCancelRequested] = useState(false);
@@ -340,7 +384,6 @@ export default function RunDetailsPage(props: {
         .sort((a, b) => a.attemptIndex - b.attemptIndex)
     : [];
 
-  const artifacts = detail?.artifacts ?? [];
   const judgments = detail?.judgments ?? [];
   const checksTab = checksTabInfo(judgments, judging);
 
@@ -418,6 +461,9 @@ export default function RunDetailsPage(props: {
             {r.scenarioIds.length} Scenarios × {r.configIds.length} Configs
           </Meta>
         </div>
+        {r.attemptsPerCell > 1 ? (
+          <CellSummaryBand runId={runId} attemptsPerCell={r.attemptsPerCell} cells={run.cells} />
+        ) : null}
       </div>
 
       <div className="layout-30-70 rd-body">
@@ -463,9 +509,9 @@ export default function RunDetailsPage(props: {
             selId={selId}
             error={attemptPoll.error}
             config={attempt ? configs.byId(attempt.configId) : null}
-            artifacts={artifacts}
+            taskFlags={taskFlags}
           />
-          <SandboxPanel attempt={attempt} />
+          <WorkersPanel attempt={attempt} onOpenTask={openTaskInTranscript} />
         </div>
 
         {/* Item 5: the tab bar pins at the very top of the pane; only the content scrolls. */}
@@ -511,7 +557,15 @@ export default function RunDetailsPage(props: {
           <div className="rd-tab-content">
             {tab === "transcript" ? (
               selId ? (
-                <Transcript key={selId} attemptId={selId} live={attemptUnfinished} />
+                <Transcript
+                  key={selId}
+                  attemptId={selId}
+                  live={attemptUnfinished}
+                  taskIds={attempt?.taskIds}
+                  taskTitles={taskTitles}
+                  taskStatuses={taskStatuses}
+                  focusTask={focusTask !== null && focusTask.attemptId === selId ? focusTask : null}
+                />
               ) : (
                 <div className="dim">No attempt selected</div>
               )
@@ -555,6 +609,83 @@ function Meta(props: { label: string; title?: string; children: ReactNode }): Re
   );
 }
 
+// ---- cell summary band (v7 §2.2: per-cell aggregates across N attempts) ----
+
+/**
+ * Rendered only when attemptsPerCell > 1 — `run.cells` already aggregates
+ * across the cell's attempts, so no extra fetch is needed. Rows link to the
+ * cell's first attempt (same href scheme as the Matrix). `passed` /
+ * `avgCostUsd` are v7 server fields — absent on cached pre-v7 payloads,
+ * rendered as "—" (never NaN).
+ */
+function CellSummaryBand(props: {
+  runId: string;
+  attemptsPerCell: number;
+  cells: CellJson[];
+}): ReactNode {
+  const rows = useMemo(
+    () =>
+      props.cells
+        .filter((c) => c.attempts > 0)
+        .sort(
+          (a, b) =>
+            a.scenarioId.localeCompare(b.scenarioId) || a.configId.localeCompare(b.configId),
+        ),
+    [props.cells],
+  );
+  // Default collapsed only when the band would be tall (> 8 cells).
+  const [open, setOpen] = useState(rows.length <= 8);
+  if (rows.length === 0) return null;
+  return (
+    <div className="rd-cellsum">
+      <button
+        type="button"
+        className="rd-cellsum-toggle"
+        title="Per-cell aggregates across this run's attempts"
+        onClick={() => setOpen((v) => !v)}
+      >
+        {open ? "▾" : "▸"} Cell Summary{" "}
+        <span className="dim">
+          · {rows.length} {rows.length === 1 ? "Cell" : "Cells"} × {props.attemptsPerCell} Attempts
+        </span>
+      </button>
+      {open ? (
+        <div className="rd-cellsum-table">
+          <div className="rd-cellsum-row rd-cellsum-head" aria-hidden="true">
+            <span>Cell</span>
+            <span>Passed</span>
+            <span>Best</span>
+            <span>Avg Score</span>
+            <span>Σ Cost</span>
+            <span>Avg Cost</span>
+            <span>Avg Dur</span>
+          </div>
+          {rows.map((c) => (
+            <a
+              key={`${c.scenarioId}|${c.configId}`}
+              className="rd-cellsum-row"
+              href={`#/runs/${props.runId}/attempts/${props.runId}_${c.scenarioId}_${c.configId}_0`}
+              title={`${c.scenarioId} × ${c.configId} — open the first attempt`}
+            >
+              <span className="rd-cellsum-cell">
+                {c.scenarioId} <span className="dim">×</span> {c.configId}
+              </span>
+              <span>
+                {typeof c.passed === "number" ? c.passed : "—"}/{c.attempts}
+              </span>
+              <span>{fmtScore(c.bestScore)}</span>
+              <span>{fmtScore(c.avgScore)}</span>
+              <span>{fmtCost(c.totalCostUsd)}</span>
+              <span>{c.avgCostUsd === undefined ? "—" : fmtCost(c.avgCostUsd)}</span>
+              <span>{fmtDuration(c.avgDurationMs)}</span>
+            </a>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 /**
  * Duplicates evals/src/types.ts CASCADE_SKIP_RE (v6 spec §0.12 — FROZEN source
  * string). Fallback skip classification for tasks.json rows predating the
@@ -563,11 +694,13 @@ function Meta(props: { label: string; title?: string; children: ReactNode }): Re
 const CASCADE_SKIP_RE = /^Blocked dependency [0-9a-f]{8} was /;
 
 interface TaskFlag {
+  title: string | null;
+  status: string | null;
   skipped: boolean;
   failureReason: string | null;
 }
 
-/** tasks.json artifact text → taskId → skip info (v6 §9.5). */
+/** tasks.json artifact text → taskId → title/status/skip info (v6 §9.5 + v7 §1). */
 function parseTaskFlags(text: string | null): Map<string, TaskFlag> {
   const map = new Map<string, TaskFlag>();
   if (text === null) return map;
@@ -586,7 +719,12 @@ function parseTaskFlags(text: string | null): Map<string, TaskFlag> {
       (entry.skipped === undefined &&
         entry.status === "failed" &&
         CASCADE_SKIP_RE.test(failureReason ?? ""));
-    map.set(entry.id, { skipped, failureReason });
+    map.set(entry.id, {
+      title: typeof entry.title === "string" && entry.title.length > 0 ? entry.title : null,
+      status: typeof entry.status === "string" ? entry.status : null,
+      skipped,
+      failureReason,
+    });
   }
   return map;
 }
@@ -596,16 +734,10 @@ function AttemptSummary(props: {
   selId: string | null;
   error: string | null;
   config: ConfigJson | null;
-  artifacts: ArtifactMetaJson[];
+  /** Parsed tasks.json flags — fetched once by the page (v6 §9.5). */
+  taskFlags: Map<string, TaskFlag>;
 }): ReactNode {
-  const { attempt, config } = props;
-  // tasks.json artifact → per-task skip flags (hooks must run unconditionally).
-  const tasksArtifact =
-    props.artifacts.find((a) => a.kind === "task" && a.name === "tasks.json") ??
-    props.artifacts.find((a) => a.kind === "task") ??
-    null;
-  const tasksFetched = useArtifactText(tasksArtifact?.id ?? null);
-  const taskFlags = useMemo(() => parseTaskFlags(tasksFetched.text), [tasksFetched.text]);
+  const { attempt, config, taskFlags } = props;
   if (!attempt) {
     return (
       <div className="panel">
@@ -661,6 +793,9 @@ function AttemptSummary(props: {
         <Meta label="Model">
           <ModelChip model={attempt.tokens?.model ?? config?.model ?? null} />
         </Meta>
+        <Meta label="Tokens">
+          <TokensValue tokens={attempt.tokens} />
+        </Meta>
         <Meta label="Scenario">
           <EntityLink kind="scenario" id={attempt.scenarioId} />
         </Meta>
@@ -689,6 +824,36 @@ function AttemptSummary(props: {
       ) : null}
       {attempt.error ? <div className="rd-attempt-error">{attempt.error}</div> : null}
     </div>
+  );
+}
+
+/**
+ * Attempt token totals (v7 §11.2): `total (in X · out Y · cacheR Z · cacheW W)`
+ * compact-formatted; the title carries the exact numbers + the dominant model.
+ * Null totals AND all-zero totals (legacy rows) render as "—".
+ */
+function TokensValue(props: { tokens: TokenTotalsJson | null }): ReactNode {
+  const t = props.tokens;
+  const total =
+    t === null ? 0 : t.inputTokens + t.outputTokens + t.cacheReadTokens + t.cacheWriteTokens;
+  if (t === null || total === 0) return <span className="dim">—</span>;
+  const title = [
+    `input ${t.inputTokens.toLocaleString()}`,
+    `output ${t.outputTokens.toLocaleString()}`,
+    `cache read ${t.cacheReadTokens.toLocaleString()}`,
+    `cache write ${t.cacheWriteTokens.toLocaleString()}`,
+    t.model !== null ? `model ${t.model}` : null,
+  ]
+    .filter((line): line is string => line !== null)
+    .join("\n");
+  return (
+    <span className="rd-tokens" title={title}>
+      {fmtTokens(total)}{" "}
+      <span className="dim">
+        (in {fmtTokens(t.inputTokens)} · out {fmtTokens(t.outputTokens)} · cacheR{" "}
+        {fmtTokens(t.cacheReadTokens)} · cacheW {fmtTokens(t.cacheWriteTokens)})
+      </span>
+    </span>
   );
 }
 
@@ -735,18 +900,47 @@ function TimingsTab(props: {
   return <div className="dim rd-not-captured">Timings not captured (older run)</div>;
 }
 
-// ---- sandbox panel (item 14 + v6 §3.4: API block + per-worker blocks via the
-//      normalizer; the Raw toggle shows the stored blob — v1 or v2 — verbatim) ----
+// ---- workers & sandboxes panel (item 14 + v6 §3.4 + v7 §10.3/§12.6: roster
+//      blocks with per-member config/cost/tokens, override + LEAD badges;
+//      pre-v7 attempts (workers == null) fall back to the sandbox view) ----
 
-function SandboxPanel(props: { attempt: AttemptJson | null }): ReactNode {
-  const sandbox = props.attempt?.sandbox ?? null;
+function WorkersPanel(props: {
+  attempt: AttemptJson | null;
+  onOpenTask: (taskId: string) => void;
+}): ReactNode {
+  const attempt = props.attempt;
+  const sandbox = attempt?.sandbox ?? null;
   const info = useMemo(() => normalizeSandboxInfo(sandbox), [sandbox]);
+  // Lead first when present, then workers by index (§10.3).
+  const roster = useMemo<WorkerRosterEntryJson[] | null>(() => {
+    const entries = attempt?.workers ?? null;
+    if (entries === null || entries.length === 0) return null;
+    return [...entries].sort((a, b) =>
+      a.memberRole === b.memberRole ? a.index - b.index : a.memberRole === "lead" ? -1 : 1,
+    );
+  }, [attempt]);
+
+  if (attempt !== null && roster !== null) {
+    return (
+      <div className="panel">
+        <div className="panel-title">Workers &amp; Sandboxes</div>
+        <RosterView
+          attempt={attempt}
+          roster={roster}
+          sandbox={sandbox}
+          info={info}
+          onOpenTask={props.onOpenTask}
+        />
+      </div>
+    );
+  }
+  // Pre-v7 fallback — today's sandbox blocks, unchanged.
   return (
     <div className="panel">
       <div className="panel-title">Sandbox</div>
       {sandbox !== null && info !== null ? (
         <SandboxView raw={sandbox} info={info} />
-      ) : props.attempt && isUnfinished(props.attempt.status) ? (
+      ) : attempt && isUnfinished(attempt.status) ? (
         <div className="dim rd-not-captured">Sandbox not booted yet</div>
       ) : (
         <div className="dim rd-not-captured">Sandbox info not captured (older run)</div>
@@ -755,9 +949,202 @@ function SandboxPanel(props: { attempt: AttemptJson | null }): ReactNode {
   );
 }
 
+function RosterView(props: {
+  attempt: AttemptJson;
+  roster: WorkerRosterEntryJson[];
+  sandbox: SandboxInfoJson | null;
+  info: NormalizedSandboxInfo | null;
+  onOpenTask: (taskId: string) => void;
+}): ReactNode {
+  const { roster, info } = props;
+  const [showRaw, setShowRaw] = useState(false);
+  const workerCount = roster.filter((m) => m.memberRole === "worker").length;
+  return (
+    <div className="pv">
+      <div className="pv-bar">
+        <button
+          type="button"
+          className="pv-toggle"
+          onClick={() => setShowRaw((v) => !v)}
+          title={showRaw ? "Switch to the humanized view" : "Show the stored blobs verbatim"}
+        >
+          {showRaw ? "≡ Pretty" : "{ } Raw"}
+        </button>
+      </div>
+      {showRaw ? (
+        <div className="pv-rows">
+          {props.sandbox !== null ? (
+            <JsonView value={props.sandbox} collapseDepth={2} label="Sandbox" />
+          ) : null}
+          <JsonView value={roster} collapseDepth={2} label="Roster" />
+        </div>
+      ) : (
+        <div className="pv-rows">
+          {info !== null ? <ApiSection info={info} /> : null}
+          {roster.map((entry) => (
+            <MemberSection
+              key={`${entry.memberRole}-${String(entry.index)}`}
+              entry={entry}
+              sandboxWorker={info?.workers.find((w) => w.index === entry.index) ?? null}
+              cellConfigId={props.attempt.configId}
+              workerCount={workerCount}
+              onOpenTask={props.onOpenTask}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** v7 §10.3 — one roster member block (per-member config, cost, tasks, sandbox). */
+function MemberSection(props: {
+  entry: WorkerRosterEntryJson;
+  sandboxWorker: NormalizedWorker | null;
+  cellConfigId: string;
+  workerCount: number;
+  onOpenTask: (taskId: string) => void;
+}): ReactNode {
+  const configs = useConfigs();
+  const e = props.entry;
+  const sw = props.sandboxWorker;
+  const isLead = e.memberRole === "lead";
+  const name = e.name ?? (isLead ? "Lead" : workerLabel(e.index, props.workerCount));
+  // §12.3: the cell config stays the primary axis — members that overrode it
+  // (configId/model non-null on the roster entry) get an explicit marker.
+  const overridden = e.configId !== null || e.model !== null;
+  const effConfigId = e.configId ?? props.cellConfigId;
+  const effModel = e.model ?? configs.byId(effConfigId)?.model ?? null;
+  return (
+    <div className="pv-section">
+      <div className="pv-section-title rd-member-title">
+        <span className="rd-member-name">{name}</span>
+        {isLead ? (
+          <Tooltip text="Lead agent — tasks created without a member route here">
+            <span className="rd-member-lead">LEAD</span>
+          </Tooltip>
+        ) : null}
+        {e.agentTemplate !== null ? (
+          <Tooltip text="Agent template (registry slug)">
+            <span className="chip rd-member-template">{e.agentTemplate}</span>
+          </Tooltip>
+        ) : null}
+        {e.role !== null ? <span className="dim rd-member-role">{e.role}</span> : null}
+        {(e.status ?? null) !== null ? (
+          <Tooltip text="Agent status at roster capture (v7 §10.3)">
+            <span className="chip rd-member-status">{e.status}</span>
+          </Tooltip>
+        ) : null}
+      </div>
+      <div className="pv-section-body">
+        <div className="pv-rows">
+          <SbRow label="Config">
+            <span className="rd-member-config">
+              <ConfigChip configId={effConfigId} link />
+              <ModelChip model={effModel} />
+              {overridden ? (
+                <Tooltip
+                  text={`Overrides the cell config (${props.cellConfigId})${
+                    e.configId !== null ? ` · config ${e.configId}` : ""
+                  }${e.model !== null ? ` · model ${e.model}` : ""}`}
+                >
+                  <span className="rd-member-override">override</span>
+                </Tooltip>
+              ) : null}
+            </span>
+          </SbRow>
+          <SbRow label="Cost">
+            <Tooltip text="Harness-reported Σ over this member's tasks — a recomputed attempt cost may differ">
+              <span>
+                <CostBadge costUsd={e.costUsd} source={null} />
+              </span>
+            </Tooltip>{" "}
+            <MemberTokens tokens={e.tokens} />
+          </SbRow>
+          <SbRow label={`Tasks (${String(e.taskIds.length)})`}>
+            {e.taskIds.length > 0 ? (
+              <span className="rd-member-tasks">
+                {e.taskIds.map((taskId) => (
+                  <button
+                    type="button"
+                    key={taskId}
+                    className="chip rd-task-chip"
+                    title="Open this task in the transcript"
+                    onClick={() => props.onOpenTask(taskId)}
+                  >
+                    {taskId}
+                  </button>
+                ))}
+              </span>
+            ) : (
+              <span className="dim">—</span>
+            )}
+          </SbRow>
+          <SbRow label="Sandbox">
+            {e.sandboxId !== "" ? <CopyCode text={e.sandboxId} /> : <SbMono value={null} />}
+          </SbRow>
+          <SbRow label="Agent">
+            <SbMono value={e.agentId !== "" ? e.agentId : null} />
+          </SbRow>
+          <SbRow label="Version">
+            <SbMono value={e.version ?? sw?.version ?? null} />
+          </SbRow>
+          <SbRow label="Started">
+            <SbDate value={sw?.startedAt ?? null} />
+          </SbRow>
+          <SbRow label="Expires">
+            <SbDate value={sw?.expiresAt ?? null} />
+          </SbRow>
+          {e.capabilities.length > 0 ? (
+            <SbRow label="Capabilities">
+              <span className="dim rd-member-caps" title={e.capabilities.join(", ")}>
+                {e.capabilities.join(", ")}
+              </span>
+            </SbRow>
+          ) : null}
+          {e.maxTasks !== null ? (
+            <SbRow label="Max Tasks">
+              <SbMono value={String(e.maxTasks)} />
+            </SbRow>
+          ) : null}
+          {e.lastActivityAt !== null ? (
+            <SbRow label="Last Active">
+              <SbDate value={e.lastActivityAt} />
+            </SbRow>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Compact per-member token total (v7 §10.3); the title carries the breakdown. */
+function MemberTokens(props: { tokens: TokenTotalsJson | null }): ReactNode {
+  const t = props.tokens;
+  const total =
+    t === null ? 0 : t.inputTokens + t.outputTokens + t.cacheReadTokens + t.cacheWriteTokens;
+  if (t === null || total === 0) {
+    return <span className="rd-member-tokens">· — tokens</span>;
+  }
+  const title = [
+    `input ${t.inputTokens.toLocaleString()}`,
+    `output ${t.outputTokens.toLocaleString()}`,
+    `cache read ${t.cacheReadTokens.toLocaleString()}`,
+    `cache write ${t.cacheWriteTokens.toLocaleString()}`,
+  ].join("\n");
+  return (
+    <span className="rd-member-tokens" title={title}>
+      · {fmtTokens(total)} tokens
+    </span>
+  );
+}
+
 function SandboxView(props: { raw: SandboxInfoJson; info: NormalizedSandboxInfo }): ReactNode {
   const { info } = props;
   const [showRaw, setShowRaw] = useState(false);
+  // Lead is identified by role, never by count (v7 §12.6) — and excluded from
+  // the worker count so a 1-worker + lead roster still shows plain "Worker".
+  const workerCount = info.workers.filter((w) => w.role !== "lead").length;
   return (
     <div className="pv">
       <div className="pv-bar">
@@ -774,37 +1161,10 @@ function SandboxView(props: { raw: SandboxInfoJson; info: NormalizedSandboxInfo 
         <JsonView value={props.raw} collapseDepth={2} label="Sandbox" />
       ) : (
         <div className="pv-rows">
-          <div className="pv-section">
-            <div className="pv-section-title">API</div>
-            <div className="pv-section-body">
-              <div className="pv-rows">
-                <SbRow label="API Sandbox">
-                  <SbMono value={info.apiSandboxId} />
-                </SbRow>
-                <SbRow label="Template">
-                  <SbMono value={info.apiTemplate} />
-                </SbRow>
-                <SbRow label="API URL">
-                  <a className="entity-link" href={info.apiUrl} target="_blank" rel="noreferrer">
-                    {info.apiUrl}
-                  </a>{" "}
-                  <InfoTip text="Dead after sandbox teardown" />
-                </SbRow>
-                <SbRow label="Swarm API Key">
-                  <CopyCode text={info.swarmKey} />
-                </SbRow>
-                <SbRow label="API Version">
-                  <SbMono value={info.apiVersion} />
-                </SbRow>
-                <SbRow label="Started">
-                  <SbDate value={info.apiStartedAt} />
-                </SbRow>
-              </div>
-            </div>
-          </div>
+          <ApiSection info={info} />
           {info.workers.map((w) => (
             <div className="pv-section" key={w.index}>
-              <div className="pv-section-title">{workerLabel(w.index, info.workers.length)}</div>
+              <div className="pv-section-title">{memberLabel(w, workerCount)}</div>
               <div className="pv-section-body">
                 <div className="pv-rows">
                   <SbRow label="Sandbox">
@@ -831,6 +1191,41 @@ function SandboxView(props: { raw: SandboxInfoJson; info: NormalizedSandboxInfo 
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+/** API sandbox block — shared by the roster view and the pre-v7 fallback. */
+function ApiSection(props: { info: NormalizedSandboxInfo }): ReactNode {
+  const { info } = props;
+  return (
+    <div className="pv-section">
+      <div className="pv-section-title">API</div>
+      <div className="pv-section-body">
+        <div className="pv-rows">
+          <SbRow label="API Sandbox">
+            <SbMono value={info.apiSandboxId} />
+          </SbRow>
+          <SbRow label="Template">
+            <SbMono value={info.apiTemplate} />
+          </SbRow>
+          <SbRow label="API URL">
+            <a className="entity-link" href={info.apiUrl} target="_blank" rel="noreferrer">
+              {info.apiUrl}
+            </a>{" "}
+            <InfoTip text="Dead after sandbox teardown" />
+          </SbRow>
+          <SbRow label="Swarm API Key">
+            <CopyCode text={info.swarmKey} />
+          </SbRow>
+          <SbRow label="API Version">
+            <SbMono value={info.apiVersion} />
+          </SbRow>
+          <SbRow label="Started">
+            <SbDate value={info.apiStartedAt} />
+          </SbRow>
+        </div>
+      </div>
     </div>
   );
 }
@@ -1178,6 +1573,12 @@ function LogsTab(props: {
   const [source, setSource] = useState<LogSource>("runner");
 
   const workerIndices = useMemo(() => workerLogIndices(attempt, artifacts), [attempt, artifacts]);
+  // The lead's entrypoint log is saved as worker-<index>.log like any member —
+  // identify it by the sandboxJson role (v7 §12.6, never by position/count).
+  const leadIndices = useMemo(() => {
+    const info = normalizeSandboxInfo(attempt?.sandbox ?? null);
+    return new Set((info?.workers ?? []).filter((w) => w.role === "lead").map((w) => w.index));
+  }, [attempt]);
   const sources = useMemo<LogSource[]>(
     () => ["runner", ...workerIndices.map((i): LogSource => `worker-${i}`), "api"],
     [workerIndices],
@@ -1185,12 +1586,13 @@ function LogsTab(props: {
   // A selection that disappears (attempt switch, fewer workers) falls back to Runner.
   const active: LogSource = sources.includes(source) ? source : "runner";
 
-  const sourceLabel = (s: LogSource): string =>
-    s === "runner"
-      ? "Runner"
-      : s === "api"
-        ? "API"
-        : workerLabel(Number(s.slice("worker-".length)), workerIndices.length);
+  const sourceLabel = (s: LogSource): string => {
+    if (s === "runner") return "Runner";
+    if (s === "api") return "API";
+    const index = Number(s.slice("worker-".length));
+    if (leadIndices.has(index)) return "Lead";
+    return workerLabel(index, workerIndices.length - leadIndices.size);
+  };
 
   const unfinished = attempt !== null && isUnfinished(attempt.status);
   // Live runner stream (item 14) while the registry has the attempt; the

@@ -64,6 +64,87 @@ describe("workerRuntimeEnv session-summary credential injection", () => {
   });
 });
 
+describe("workerRuntimeEnv v7 member env (§9.3 frozen merge order)", () => {
+  test("identity envs map from the typed spec fields (TEMPLATE_ID / AGENT_NAME / SYSTEM_PROMPT)", () => {
+    process.env.CLAUDE_CODE_OAUTH_TOKEN = "oauth-test";
+    const env = workerRuntimeEnv({
+      swarmKey: "k",
+      apiUrl: "https://api.example",
+      agentId: "agent-1",
+      config: { id: "claude-haiku", provider: "claude", model: "haiku" },
+      spec: { template: "coder", name: "scribe-a", systemPrompt: "Be terse." },
+    });
+    expect(env.TEMPLATE_ID).toBe("coder");
+    expect(env.AGENT_NAME).toBe("scribe-a");
+    expect(env.SYSTEM_PROMPT).toBe("Be terse.");
+  });
+
+  test("default member: no identity keys, AGENT_ROLE=worker, MAX_CONCURRENT_TASKS=1", () => {
+    process.env.CLAUDE_CODE_OAUTH_TOKEN = "oauth-test";
+    const env = workerEnvFor({ id: "claude-haiku", provider: "claude", model: "haiku" });
+    expect(env.TEMPLATE_ID).toBeUndefined();
+    expect(env.AGENT_NAME).toBeUndefined();
+    expect(env.SYSTEM_PROMPT).toBeUndefined();
+    expect(env.AGENT_ROLE).toBe("worker");
+    expect(env.MAX_CONCURRENT_TASKS).toBe("1");
+  });
+
+  test("lead member: AGENT_ROLE=lead with the entrypoint's lead default MAX_CONCURRENT_TASKS=2", () => {
+    process.env.CLAUDE_CODE_OAUTH_TOKEN = "oauth-test";
+    const env = workerRuntimeEnv({
+      swarmKey: "k",
+      apiUrl: "https://api.example",
+      agentId: "agent-lead",
+      config: { id: "claude-sonnet", provider: "claude", model: "sonnet" },
+      role: "lead",
+      spec: { name: "coordinator" },
+    });
+    expect(env.AGENT_ROLE).toBe("lead");
+    expect(env.MAX_CONCURRENT_TASKS).toBe("2");
+    expect(env.AGENT_NAME).toBe("coordinator");
+  });
+
+  test("spec.env merges LAST (over config.env)", () => {
+    process.env.CLAUDE_CODE_OAUTH_TOKEN = "oauth-test";
+    const env = workerRuntimeEnv({
+      swarmKey: "k",
+      apiUrl: "https://api.example",
+      agentId: "agent-1",
+      config: {
+        id: "claude-haiku",
+        provider: "claude",
+        model: "haiku",
+        env: { EXTRA_FLAG: "from-config" },
+      },
+      spec: { env: { EXTRA_FLAG: "from-spec", MEMBER_ONLY: "1" } },
+    });
+    expect(env.EXTRA_FLAG).toBe("from-spec");
+    expect(env.MEMBER_ONLY).toBe("1");
+  });
+
+  test("credential isolation follows the EFFECTIVE config (pi override on a claude host env)", () => {
+    process.env.CLAUDE_CODE_OAUTH_TOKEN = "oauth-test";
+    process.env.OPENROUTER_API_KEY = "or-test-key";
+    // Member overridden to pi/openrouter: gets OPENROUTER_API_KEY, never the
+    // claude OAuth token (claude creds in env win inside the harness).
+    const env = workerRuntimeEnv({
+      swarmKey: "k",
+      apiUrl: "https://api.example",
+      agentId: "agent-1",
+      config: {
+        id: "pi-deepseek-flash",
+        provider: "pi",
+        model: "openrouter/deepseek/deepseek-v4-flash",
+      },
+      spec: { configId: "pi-deepseek-flash" },
+    });
+    expect(env.HARNESS_PROVIDER).toBe("pi");
+    expect(env.MODEL_OVERRIDE).toBe("openrouter/deepseek/deepseek-v4-flash");
+    expect(env.OPENROUTER_API_KEY).toBe("or-test-key");
+    expect(env.CLAUDE_CODE_OAUTH_TOKEN).toBeUndefined();
+  });
+});
+
 describe("apiRuntimeEnv", () => {
   test("pins EMBEDDING_DIMENSIONS to the 512-dim vec0 column width", () => {
     // Published API templates ≤ v1.85.0 compute Number(undefined) ?? 512 = NaN

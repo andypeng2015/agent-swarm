@@ -53,8 +53,8 @@ describe("validateSqlDumpText (v6 §1.3 frozen rules)", () => {
   });
 });
 
-describe("buildSandboxInfo — sandboxJson v2 (v6 §0.3 frozen shape)", () => {
-  test("snapshot for a 2-worker StackHandle", () => {
+describe("buildSandboxInfo — sandboxJson v2 (v6 §0.3 frozen shape + v7 §9.3 member fields)", () => {
+  test("snapshot for a 2-worker + lead StackHandle (default, overridden, lead members)", () => {
     const stack = {
       apiSandbox: {
         sandboxID: "ix1-api",
@@ -65,6 +65,13 @@ describe("buildSandboxInfo — sandboxJson v2 (v6 §0.3 frozen shape)", () => {
       workers: [
         {
           index: 0,
+          member: {
+            index: 0,
+            role: "worker",
+            spec: { name: "scribe-a", template: "coder" },
+            config: { id: "claude-haiku", provider: "claude", model: "haiku" },
+            overridden: false,
+          },
           sandbox: {
             sandboxID: "ix2-w0",
             templateID: "agent-swarm-worker-latest",
@@ -76,6 +83,17 @@ describe("buildSandboxInfo — sandboxJson v2 (v6 §0.3 frozen shape)", () => {
         },
         {
           index: 1,
+          member: {
+            index: 1,
+            role: "worker",
+            spec: { configId: "pi-deepseek-flash" },
+            config: {
+              id: "pi-deepseek-flash",
+              provider: "pi",
+              model: "openrouter/deepseek/deepseek-v4-flash",
+            },
+            overridden: true,
+          },
           sandbox: {
             sandboxID: "ix3-w1",
             templateID: "agent-swarm-worker-latest",
@@ -85,6 +103,24 @@ describe("buildSandboxInfo — sandboxJson v2 (v6 §0.3 frozen shape)", () => {
           },
           agentId: "11111111-1111-4111-8111-111111111111",
           version: null,
+        },
+        {
+          index: 2,
+          member: {
+            index: 2,
+            role: "lead",
+            spec: { name: "coordinator", configId: "claude-sonnet" },
+            config: { id: "claude-sonnet", provider: "claude", model: "sonnet" },
+            overridden: true,
+          },
+          sandbox: {
+            sandboxID: "ix4-lead",
+            templateID: "agent-swarm-worker-latest",
+            startedAt: "2026-06-11T10:01:10Z",
+            endAt: "2026-06-11T10:31:10Z",
+          },
+          agentId: "22222222-2222-4222-8222-222222222222",
+          version: "1.94.0",
         },
       ],
       apiUrl: "https://3013-ix1-api.e2b.dev",
@@ -113,6 +149,14 @@ describe("buildSandboxInfo — sandboxJson v2 (v6 §0.3 frozen shape)", () => {
           startedAt: "2026-06-11T10:01:00Z",
           expiresAt: "2026-06-11T10:31:00Z",
           version: "1.94.0",
+          name: "scribe-a",
+          agentTemplate: "coder",
+          role: "worker",
+          // not overridden — the effective-config trio stays null (readers
+          // fall back to the attempt's cell config)
+          configId: null,
+          provider: null,
+          model: null,
         },
         {
           index: 1,
@@ -122,6 +166,27 @@ describe("buildSandboxInfo — sandboxJson v2 (v6 §0.3 frozen shape)", () => {
           startedAt: "2026-06-11T10:01:05Z",
           expiresAt: "2026-06-11T10:31:05Z",
           version: null,
+          name: null,
+          agentTemplate: null,
+          role: "worker",
+          configId: "pi-deepseek-flash",
+          provider: "pi",
+          model: "openrouter/deepseek/deepseek-v4-flash",
+        },
+        {
+          index: 2,
+          sandboxId: "ix4-lead",
+          template: "agent-swarm-worker-latest",
+          agentId: "22222222-2222-4222-8222-222222222222",
+          startedAt: "2026-06-11T10:01:10Z",
+          expiresAt: "2026-06-11T10:31:10Z",
+          version: "1.94.0",
+          name: "coordinator",
+          agentTemplate: null,
+          role: "lead",
+          configId: "claude-sonnet",
+          provider: "claude",
+          model: "sonnet",
         },
       ],
     });
@@ -131,7 +196,19 @@ describe("buildSandboxInfo — sandboxJson v2 (v6 §0.3 frozen shape)", () => {
     const stack = {
       apiSandbox: { sandboxID: "a", templateID: "t" },
       workers: [
-        { index: 0, sandbox: { sandboxID: "w", templateID: "t" }, agentId: "id", version: null },
+        {
+          index: 0,
+          member: {
+            index: 0,
+            role: "worker",
+            spec: {},
+            config: { id: "c", provider: "claude" },
+            overridden: false,
+          },
+          sandbox: { sandboxID: "w", templateID: "t" },
+          agentId: "id",
+          version: null,
+        },
       ],
       apiUrl: "https://api",
       swarmKey: "key",

@@ -1,8 +1,8 @@
 /**
- * Pure analytics aggregation (v5 spec §1 — WP-AAPI). `buildAnalytics` turns the
- * joined attempts × runs rows (SQL lives in server.ts) plus the registry into a
- * pre-aggregated AnalyticsResponse — the response carries ONLY aggregates,
- * never the raw attempt list.
+ * Pure analytics aggregation (v5 spec §1 + v7 spec §6/§7/§11 — WP-AAPI).
+ * `buildAnalytics` turns the joined attempts × runs rows (SQL lives in
+ * server.ts) plus the registry into a pre-aggregated AnalyticsResponse — the
+ * response carries ONLY aggregates, never the raw attempt list.
  *
  * Null-safety rules (§1.3, frozen):
  *   - priced attempt := costUsd !== null (a genuine $0 harness cost is priced);
@@ -11,20 +11,34 @@
  *   - stored sandbox versions are re-cleaned with cleanVersion() on read —
  *     historical rows carry ANSI-dirty values;
  *   - error attempts are infra failures: counted, never lowering a pass rate.
+ *
+ * v7 additions (frozen rules, spec §6.1/§7/§11):
+ *   - min/max cost over a group's priced attempts; null when 0 priced;
+ *   - token sums over token-bearing attempts (any token field > 0); the whole
+ *     AnalyticsTokenSums object is null when a group has none;
+ *   - bare claude aliases ("fable", "haiku", …) in the model key resolve to
+ *     the latest concrete family id via the §8 alias map BEFORE grouping —
+ *     historical rows and config-model fallbacks group identically;
+ *   - rollups by harness (registry provider; configId-prefix fallback) and by
+ *     model vendor (vendorOfModelKey), plus one scatter point per model key.
  */
 
+import { resolveClaudeAlias } from "../cost/model-alias.ts";
 import type { Registry } from "../runner/index.ts";
 import { cleanVersion } from "../swarm/version.ts";
 import type {
   AnalyticsCell,
+  AnalyticsGroupRollup,
   AnalyticsModel,
   AnalyticsResponse,
+  AnalyticsScatterPoint,
   AnalyticsSeries,
   AnalyticsSeriesPoint,
+  AnalyticsTokenSums,
   AnalyticsVersionEvent,
 } from "../types.ts";
 
-/** One attempt joined with its run — the SQL row feeding buildAnalytics (§1.1, columns frozen). */
+/** One attempt joined with its run — the SQL row feeding buildAnalytics (§1.1 + v7 §6.1). */
 export interface AnalyticsSourceRow {
   runId: string;
   scenarioId: string;
@@ -38,6 +52,11 @@ export interface AnalyticsSourceRow {
   durationMs: number | null;
   /** json_extract(tokens_json, '$.model') — dominant observed model id. */
   tokenModel: string | null;
+  /** json_extract(tokens_json, '$.inputTokens') — null on rows without token capture (v7 §6.1). */
+  tokenInput: number | null;
+  tokenOutput: number | null;
+  tokenCacheRead: number | null;
+  tokenCacheWrite: number | null;
   /** Raw stored sandbox versions — may carry ANSI dirt; cleaned on read. */
   apiVersion: string | null;
   workerVersion: string | null;
@@ -63,15 +82,89 @@ function ratio(numerator: number, denominator: number): number | null {
   return Number.isFinite(v) ? v : null;
 }
 
-/** Model key precedence (§1.2): tokens.model → registry config.model → "(configId)". */
-function modelKey(row: AnalyticsSourceRow, registry: Registry): string {
-  if (row.tokenModel && row.tokenModel.trim().length > 0) return row.tokenModel;
-  const configModel = registry.configs.get(row.configId)?.model;
-  if (configModel && configModel.length > 0) return configModel;
-  return `(${row.configId})`;
+/** Min over the values; null when empty (v7 §6.1 — min cost over priced attempts). */
+function minOrNull(values: number[]): number | null {
+  if (values.length === 0) return null;
+  let m = values[0]!;
+  for (const v of values) if (v < m) m = v;
+  return m;
 }
 
-/** Shared per-group metric accumulation (cells, per-run points). */
+/** Max over the values; null when empty (v7 §6.1 — max cost over priced attempts). */
+function maxOrNull(values: number[]): number | null {
+  if (values.length === 0) return null;
+  let m = values[0]!;
+  for (const v of values) if (v > m) m = v;
+  return m;
+}
+
+/** Defensive numeric read: stored JSON may carry nulls or garbage — never NaN. */
+function tokenValue(v: number | null): number {
+  return v !== null && Number.isFinite(v) && v > 0 ? v : 0;
+}
+
+/**
+ * Model key precedence (§1.2, unchanged): tokens.model → registry config.model
+ * → "(configId)". v7 §7.1/§8: bare claude aliases in the resolved key
+ * ("fable" from historical token models, "haiku" from config fallbacks) map to
+ * the latest concrete family id so old and new rows group together; concrete
+ * ids and the parenthesized fallback pass through untouched.
+ */
+function modelKey(
+  row: AnalyticsSourceRow,
+  registry: Registry,
+  aliasMap: Record<string, string>,
+): string {
+  let key: string | null = null;
+  if (row.tokenModel && row.tokenModel.trim().length > 0) {
+    key = row.tokenModel;
+  } else {
+    const configModel = registry.configs.get(row.configId)?.model;
+    if (configModel && configModel.length > 0) key = configModel;
+  }
+  if (key === null) return `(${row.configId})`;
+  return resolveClaudeAlias(key, aliasMap) ?? key;
+}
+
+/**
+ * Harness group key (v7 §7.1, frozen): the registry provider of the row's
+ * configId; when the config left the catalog, the configId prefix before the
+ * first "-" ("claude-fable" → "claude"); final fallback "(unknown)".
+ */
+function harnessKey(configId: string, registry: Registry): string {
+  const provider = registry.configs.get(configId)?.provider;
+  if (provider) return provider;
+  const prefix = configId.split("-")[0] ?? "";
+  return prefix.length > 0 ? prefix : "(unknown)";
+}
+
+/**
+ * Model vendor (v7 §7.1, frozen rule — server-side only, the UI receives it):
+ *   1. parenthesized config fallback key "(configId)" → "(unknown)";
+ *   2. key contains "/" → first path segment lowercased ("deepseek/x" →
+ *      "deepseek"); a leading "openrouter/" routing prefix (evals config
+ *      convention, not a vendor) is skipped so harness-priced
+ *      ("openrouter/deepseek/…") and recomputed ("deepseek/…") rows agree;
+ *   3. starts with "claude" → "anthropic";
+ *   4. /^(gpt|o\d|codex|davinci)/ → "openai";
+ *   5. starts with "gemini" → "google";
+ *   6. else "(unknown)".
+ */
+export function vendorOfModelKey(key: string): string {
+  if (key.startsWith("(") && key.endsWith(")")) return "(unknown)";
+  const lower = key.trim().toLowerCase();
+  if (lower.includes("/")) {
+    const segments = lower.split("/").filter((s) => s.length > 0);
+    const first = segments[0] === "openrouter" && segments.length > 1 ? segments[1] : segments[0];
+    return first && first.length > 0 ? first : "(unknown)";
+  }
+  if (lower.startsWith("claude")) return "anthropic";
+  if (/^(gpt|o\d|codex|davinci)/.test(lower)) return "openai";
+  if (lower.startsWith("gemini")) return "google";
+  return "(unknown)";
+}
+
+/** Shared per-group metric accumulation (cells, per-run points, models, rollups). */
 interface MetricAcc {
   attempts: number;
   graded: number;
@@ -81,6 +174,12 @@ interface MetricAcc {
   judgeCosts: number[];
   durations: number[];
   scores: number[];
+  /** Token sums over token-bearing attempts (v7 §11). */
+  tokenAttempts: number;
+  tokenInput: number;
+  tokenOutput: number;
+  tokenCacheRead: number;
+  tokenCacheWrite: number;
 }
 
 function newMetricAcc(): MetricAcc {
@@ -93,6 +192,11 @@ function newMetricAcc(): MetricAcc {
     judgeCosts: [],
     durations: [],
     scores: [],
+    tokenAttempts: 0,
+    tokenInput: 0,
+    tokenOutput: 0,
+    tokenCacheRead: 0,
+    tokenCacheWrite: 0,
   };
 }
 
@@ -105,6 +209,34 @@ function accumulate(acc: MetricAcc, row: AnalyticsSourceRow): void {
   if (row.judgeCostUsd !== null) acc.judgeCosts.push(row.judgeCostUsd);
   if (row.durationMs !== null) acc.durations.push(row.durationMs);
   if (row.score !== null) acc.scores.push(row.score);
+  // v7 §6.1: an attempt is token-bearing iff any token field is > 0 — all-zero
+  // tokens_json blobs (the pre-v7 harness-priced gap) contribute nothing.
+  const input = tokenValue(row.tokenInput);
+  const output = tokenValue(row.tokenOutput);
+  const cacheRead = tokenValue(row.tokenCacheRead);
+  const cacheWrite = tokenValue(row.tokenCacheWrite);
+  if (input + output + cacheRead + cacheWrite > 0) {
+    acc.tokenAttempts += 1;
+    acc.tokenInput += input;
+    acc.tokenOutput += output;
+    acc.tokenCacheRead += cacheRead;
+    acc.tokenCacheWrite += cacheWrite;
+  }
+}
+
+/** AnalyticsTokenSums for a finished group; null when no token-bearing attempts (v7 §6.1). */
+function tokenSums(acc: MetricAcc): AnalyticsTokenSums | null {
+  if (acc.tokenAttempts === 0) return null;
+  const totalTokens = acc.tokenInput + acc.tokenOutput + acc.tokenCacheRead + acc.tokenCacheWrite;
+  return {
+    tokenAttempts: acc.tokenAttempts,
+    inputTokens: acc.tokenInput,
+    outputTokens: acc.tokenOutput,
+    cacheReadTokens: acc.tokenCacheRead,
+    cacheWriteTokens: acc.tokenCacheWrite,
+    totalTokens,
+    avgTotalTokens: ratio(totalTokens, acc.tokenAttempts),
+  };
 }
 
 interface RunAcc extends MetricAcc {
@@ -126,7 +258,11 @@ interface CellAcc extends MetricAcc {
 
 interface ModelAcc extends MetricAcc {
   model: string;
+  /** Model vendor (v7 §7.1) — computed once from the resolved key. */
+  vendor: string;
   providers: Set<string>;
+  /** Contributing harness keys (v7 §7.2 scatter), first-seen order. */
+  harnesses: Set<string>;
   configIds: Set<string>;
   runIds: Set<string>;
   /** Runs with ≥1 priced attempt (avgCostPerRun denominator). */
@@ -136,11 +272,80 @@ interface ModelAcc extends MetricAcc {
   pairedDurationMs: number;
 }
 
-export function buildAnalytics(rows: AnalyticsSourceRow[], registry: Registry): AnalyticsResponse {
+/** Rollup accumulator keyed by harness or vendor (v7 §7.2). */
+interface GroupAcc extends MetricAcc {
+  group: string;
+  models: Set<string>;
+  configIds: Set<string>;
+  runIds: Set<string>;
+}
+
+function accumulateGroup(
+  groups: Map<string, GroupAcc>,
+  group: string,
+  row: AnalyticsSourceRow,
+  model: string,
+): void {
+  let acc = groups.get(group);
+  if (!acc) {
+    acc = {
+      ...newMetricAcc(),
+      group,
+      models: new Set(),
+      configIds: new Set(),
+      runIds: new Set(),
+    };
+    groups.set(group, acc);
+  }
+  accumulate(acc, row);
+  acc.models.add(model);
+  acc.configIds.add(row.configId);
+  acc.runIds.add(row.runId);
+}
+
+/** GroupAcc → AnalyticsGroupRollup (same MetricAcc rules as models — v7 §7.2). */
+function finishGroup(g: GroupAcc): AnalyticsGroupRollup {
+  const totalCostUsd = g.costs.length ? sum(g.costs) : null;
+  return {
+    group: g.group,
+    models: [...g.models],
+    configIds: [...g.configIds],
+    runs: g.runIds.size,
+    attempts: g.attempts,
+    graded: g.graded,
+    passed: g.passed,
+    errors: g.errors,
+    passRate: ratio(g.passed, g.graded),
+    avgScore: mean(g.scores),
+    pricedAttempts: g.costs.length,
+    totalCostUsd,
+    avgCostPerAttempt: totalCostUsd === null ? null : ratio(totalCostUsd, g.costs.length),
+    minCostUsd: minOrNull(g.costs),
+    maxCostUsd: maxOrNull(g.costs),
+    avgDurationMs: mean(g.durations),
+    tokens: tokenSums(g),
+  };
+}
+
+/** Attempts desc, then group key — deterministic for a given input (v7 §7.2). */
+function sortGroups(groups: Map<string, GroupAcc>): AnalyticsGroupRollup[] {
+  return [...groups.values()]
+    .map(finishGroup)
+    .sort((a, b) => b.attempts - a.attempts || a.group.localeCompare(b.group));
+}
+
+export function buildAnalytics(
+  rows: AnalyticsSourceRow[],
+  registry: Registry,
+  /** v7 §8 claude alias map (getClaudeAliasMap()); {} degrades to raw keys. */
+  aliasMap: Record<string, string> = {},
+): AnalyticsResponse {
   const scenarioIds: string[] = [];
   const configIds: string[] = [];
   const cells = new Map<string, CellAcc>();
   const models = new Map<string, ModelAcc>();
+  const harnessGroups = new Map<string, GroupAcc>();
+  const vendorGroups = new Map<string, GroupAcc>();
 
   for (const row of rows) {
     if (!scenarioIds.includes(row.scenarioId)) scenarioIds.push(row.scenarioId);
@@ -186,13 +391,16 @@ export function buildAnalytics(rows: AnalyticsSourceRow[], registry: Registry): 
     }
 
     // ---- model rollup ----
-    const model = modelKey(row, registry);
+    const model = modelKey(row, registry, aliasMap);
+    const harness = harnessKey(row.configId, registry);
     let modelAcc = models.get(model);
     if (!modelAcc) {
       modelAcc = {
         ...newMetricAcc(),
         model,
+        vendor: vendorOfModelKey(model),
         providers: new Set(),
+        harnesses: new Set(),
         configIds: new Set(),
         runIds: new Set(),
         pricedRunIds: new Set(),
@@ -204,6 +412,7 @@ export function buildAnalytics(rows: AnalyticsSourceRow[], registry: Registry): 
     accumulate(modelAcc, row);
     const config = registry.configs.get(row.configId);
     if (config) modelAcc.providers.add(config.provider);
+    modelAcc.harnesses.add(harness);
     modelAcc.configIds.add(row.configId);
     modelAcc.runIds.add(row.runId);
     if (row.costUsd !== null) modelAcc.pricedRunIds.add(row.runId);
@@ -211,6 +420,10 @@ export function buildAnalytics(rows: AnalyticsSourceRow[], registry: Registry): 
       modelAcc.pairedCostUsd += row.costUsd;
       modelAcc.pairedDurationMs += row.durationMs;
     }
+
+    // ---- harness / vendor rollups (v7 §7) ----
+    accumulateGroup(harnessGroups, harness, row, model);
+    accumulateGroup(vendorGroups, modelAcc.vendor, row, model);
   }
 
   const matrix: AnalyticsCell[] = [...cells.values()].map((cell) => {
@@ -233,13 +446,20 @@ export function buildAnalytics(rows: AnalyticsSourceRow[], registry: Registry): 
       avgDurationMs: mean(cell.durations),
       avgScore: mean(cell.scores),
       lastRunAt: cell.lastRunAt,
+      minCostUsd: minOrNull(cell.costs),
+      maxCostUsd: maxOrNull(cell.costs),
+      tokens: tokenSums(cell),
     };
   });
 
-  const modelRollups: AnalyticsModel[] = [...models.values()]
+  // One pass over the model accs builds BOTH the rollup and its scatter point
+  // (v7 §7.2: one point per model key; same sort as models — attempts desc).
+  const modelEntries = [...models.values()]
     .map((m) => {
       const totalCostUsd = m.costs.length ? sum(m.costs) : null;
-      return {
+      const tokens = tokenSums(m);
+      const avgCostPerAttempt = totalCostUsd === null ? null : ratio(totalCostUsd, m.costs.length);
+      const rollup: AnalyticsModel = {
         model: m.model,
         providers: [...m.providers],
         configIds: [...m.configIds],
@@ -252,15 +472,38 @@ export function buildAnalytics(rows: AnalyticsSourceRow[], registry: Registry): 
         avgScore: mean(m.scores),
         pricedAttempts: m.costs.length,
         totalCostUsd,
-        avgCostPerAttempt: totalCostUsd === null ? null : ratio(totalCostUsd, m.costs.length),
+        avgCostPerAttempt,
         avgCostPerRun: totalCostUsd === null ? null : ratio(totalCostUsd, m.pricedRunIds.size),
         // Null when the both-fields subset is empty OR Σduration is 0 (§1.3).
         costPerMinute:
           m.pairedDurationMs > 0 ? ratio(m.pairedCostUsd, m.pairedDurationMs / 60_000) : null,
         avgDurationMs: mean(m.durations),
+        minCostUsd: minOrNull(m.costs),
+        maxCostUsd: maxOrNull(m.costs),
+        vendor: m.vendor,
+        tokens,
       };
+      const point: AnalyticsScatterPoint = {
+        model: m.model,
+        vendor: m.vendor,
+        harnesses: [...m.harnesses],
+        attempts: m.attempts,
+        graded: m.graded,
+        passRate: rollup.passRate,
+        avgScore: rollup.avgScore,
+        avgCostUsd: avgCostPerAttempt,
+        avgDurationMs: rollup.avgDurationMs,
+        avgTotalTokens: tokens?.avgTotalTokens ?? null,
+        totalTokens: tokens?.totalTokens ?? 0,
+      };
+      return { rollup, point };
     })
-    .sort((a, b) => b.attempts - a.attempts || a.model.localeCompare(b.model));
+    .sort(
+      (a, b) =>
+        b.rollup.attempts - a.rollup.attempts || a.rollup.model.localeCompare(b.rollup.model),
+    );
+  const modelRollups = modelEntries.map((e) => e.rollup);
+  const scatter = modelEntries.map((e) => e.point);
 
   const series: AnalyticsSeries[] = [...cells.values()].map((cell) => {
     const points: AnalyticsSeriesPoint[] = [...cell.runs.values()]
@@ -287,6 +530,9 @@ export function buildAnalytics(rows: AnalyticsSourceRow[], registry: Registry): 
           avgDurationMs: mean(p.durations),
           apiVersion: p.apiVersion,
           workerVersion: p.workerVersion,
+          minCostUsd: minOrNull(p.costs),
+          maxCostUsd: maxOrNull(p.costs),
+          tokens: tokenSums(p),
         };
       });
 
@@ -328,5 +574,8 @@ export function buildAnalytics(rows: AnalyticsSourceRow[], registry: Registry): 
     matrix,
     models: modelRollups,
     series,
+    harnesses: sortGroups(harnessGroups),
+    vendors: sortGroups(vendorGroups),
+    scatter,
   };
 }

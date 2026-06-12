@@ -28,8 +28,13 @@ export interface HarnessConfig {
 export interface TaskSpec {
   title: string;
   description: string;
-  /** Index of the worker this task is assigned to. Default 0. Must be < Scenario.workers. */
-  worker?: number;
+  /**
+   * Index of the worker this task is assigned to. Default 0. Must be
+   * < the scenario's worker count. `"lead"` (v7 §12) creates the task WITHOUT
+   * an agentId — the swarm API routes unassigned tasks to the lead agent
+   * (src/http/tasks.ts: getLeadAgent() default) — and requires Scenario.lead.
+   */
+  worker?: number | "lead";
   /**
    * Indices of tasks this task depends on (native swarm-API dependsOn, v6 §9).
    * Every entry must be < this task's own index (validateScenario, v6 §0.11).
@@ -90,8 +95,42 @@ export interface OutcomeSpec {
   passThreshold?: number;
 }
 
+/**
+ * One configured roster member of a scenario (v7 §9 + §12 — FROZEN). A spec
+ * shapes the agent's identity via the worker-entrypoint env contract:
+ *   template     → TEMPLATE_ID   (registry slug, e.g. "coder", "researcher";
+ *                  fetched from TEMPLATE_REGISTRY_URL, applies agentDefaults:
+ *                  role, capabilities, maxTasks + identity files)
+ *   name         → AGENT_NAME    (registered agent name; precedence over the
+ *                  template displayName and the worker-<idx> fallback)
+ *   systemPrompt → SYSTEM_PROMPT (extra system prompt appended to the base)
+ *   env          → merged LAST over config.env (validated; see validateScenario)
+ *
+ * Heterogeneous rosters (v7 §12): a member may override the matrix cell's
+ * HarnessConfig. Frozen resolution rule:
+ *   base   = configId ? catalog[configId] : the cell's config
+ *   model  = spec.model ?? base.model      (provider always = base.provider)
+ * The member's sandbox env (HARNESS_PROVIDER / MODEL_OVERRIDE / provider
+ * credentials) is built from the EFFECTIVE config — credential isolation stays
+ * per-sandbox, so members spanning providers never see each other's keys. The
+ * cell config remains the run's primary axis; overridden members are labeled
+ * as overrides in UI/analytics, and their cost/token attribution follows the
+ * ACTUAL model each member ran.
+ */
+export interface WorkerSpec {
+  template?: string;
+  name?: string;
+  systemPrompt?: string;
+  /** Catalog config id this member runs INSTEAD of the cell's config (v7 §12). */
+  configId?: string;
+  /** Model override applied on top of the member's base config (v7 §12). */
+  model?: string;
+  /** Reserved runtime keys (AGENT_ID, API_KEY, HARNESS_PROVIDER, …) are rejected. */
+  env?: Record<string, string>;
+}
+
 export interface Scenario {
-  /** Stable slug, e.g. "hello-file". */
+  /** Stable slug, e.g. "memory-seeded-recall". */
   id: string;
   name: string;
   description?: string;
@@ -101,8 +140,32 @@ export interface Scenario {
   outcome: OutcomeSpec;
   /** Per-attempt wall clock budget. Default 10 minutes. */
   timeoutMs?: number;
-  /** Number of homogeneous workers to boot for each attempt. Default 1. Max 3. */
-  workers?: number;
+  /**
+   * Workers booted per attempt. Number = N homogeneous default workers
+   * (back-compat); WorkerSpec[] = one configured worker per entry (v7 §9).
+   * Default 1. Max 3 either way.
+   */
+  workers?: number | WorkerSpec[];
+  /**
+   * Optional LEAD agent (v7 §12): boots one extra sandbox with AGENT_ROLE=lead
+   * (registers isLead via the worker entrypoint). Tasks with `worker: "lead"`
+   * are created WITHOUT an agentId and the swarm routes them to the lead —
+   * the lead-driven orchestration entry point. Cost/log/roster capture treat
+   * the lead like any member. The lead does NOT count toward the 3-worker cap.
+   */
+  lead?: WorkerSpec;
+}
+
+/** Worker count for either `Scenario.workers` shape (v7 §9). */
+export function scenarioWorkerCount(workers: Scenario["workers"]): number {
+  if (workers === undefined) return 1;
+  return Array.isArray(workers) ? workers.length : workers;
+}
+
+/** Per-index WorkerSpec for either shape (numeric shape = default specs). */
+export function scenarioWorkerSpec(workers: Scenario["workers"], index: number): WorkerSpec {
+  if (Array.isArray(workers)) return workers[index] ?? {};
+  return {};
 }
 
 /** Per-worker sandbox access exposed to judges (multi-worker v1, v6 §0.8). */
@@ -161,7 +224,16 @@ export interface TokenTotals {
   cacheWriteTokens: number;
 }
 
-/** One worker entry of the persisted sandboxJson v2 blob (v6 §0.3 — FROZEN). */
+/** Unified total (v7 §11): input + output + cache read + cache write. */
+export function totalTokenCount(t: TokenTotals): number {
+  return t.inputTokens + t.outputTokens + t.cacheReadTokens + t.cacheWriteTokens;
+}
+
+/**
+ * One worker entry of the persisted sandboxJson v2 blob (v6 §0.3 — FROZEN;
+ * v7 §9/§12 add the nullable identity + effective-config fields — absent on
+ * pre-v7 rows, never required by readers).
+ */
 export interface SandboxWorkerInfo {
   index: number;
   sandboxId: string;
@@ -171,6 +243,63 @@ export interface SandboxWorkerInfo {
   expiresAt: string | null; // sandbox endAt/expiresAt
   /** Worker build version (`agent-swarm version` in this worker's sandbox). Null = not captured. */
   version: string | null;
+  /** WorkerSpec.name passed as AGENT_NAME (v7 §9). Null/absent = default worker. */
+  name?: string | null;
+  /** WorkerSpec.template passed as TEMPLATE_ID (v7 §9) — NOT the E2B template. */
+  agentTemplate?: string | null;
+  /** "lead" | "worker" (v7 §12). Null/absent (pre-v7 rows) = worker. */
+  role?: "lead" | "worker" | null;
+  /**
+   * EFFECTIVE member config (v7 §12) — populated only when the member
+   * overrides the attempt's cell config (configId and/or model differ).
+   * Null/absent = the member ran the cell config exactly (readers fall back).
+   */
+  configId?: string | null;
+  provider?: HarnessProvider | null;
+  model?: string | null;
+}
+
+/**
+ * Per-member roster + cost snapshot captured at the END of an attempt
+ * (v7 §10/§12 — FROZEN). Persisted as `attempts.workers_json`; null on pre-v7
+ * rows (UI falls back to the sandboxJson worker entries). Includes the LEAD
+ * (when the scenario defines one) as a member with memberRole "lead".
+ */
+export interface WorkerRosterEntry {
+  /** Member index — joins SandboxWorkerInfo.index (lead = workers.length). */
+  index: number;
+  /** Boot-time role of this member (v7 §12). */
+  memberRole: "lead" | "worker";
+  agentId: string;
+  sandboxId: string;
+  /** From GET /api/agents of the attempt's stack; nulls when the fetch failed. */
+  name: string | null;
+  /** Free-form profile role from the agents API (template-applied). */
+  role: string | null;
+  isLead: boolean;
+  /** Agent status at roster-capture time (§10.3 status-at-capture); null when unmatched. */
+  status: string | null;
+  /** Registered harness provider (agents.harnessProvider ?? agents.provider). */
+  provider: string | null;
+  capabilities: string[];
+  maxTasks: number | null;
+  lastActivityAt: string | null;
+  /** WorkerSpec.template (TEMPLATE_ID) this member booted with. */
+  agentTemplate: string | null;
+  /**
+   * EFFECTIVE member config (v7 §12) — non-null only when the member overrode
+   * the attempt's cell config. Mirrors the SandboxWorkerInfo fields.
+   */
+  configId: string | null;
+  model: string | null;
+  /** Worker build version (copied from boot capture). */
+  version: string | null;
+  /** Task ids of this attempt assigned to this member. */
+  taskIds: string[];
+  /** Σ session-cost USD over this member's tasks; null when none priced. */
+  costUsd: number | null;
+  /** Σ token usage over this member's tasks' cost rows; null when no rows. */
+  tokens: TokenTotals | null;
 }
 
 /**
@@ -348,6 +477,8 @@ export interface AttemptRow {
   judgeCostUsd: number | null;
   tokens: TokenTotals | null;
   sandbox: SandboxInfo | null;
+  /** v7 §10: per-worker roster + cost (`workers_json`). Null on pre-v7 rows. */
+  workers?: WorkerRosterEntry[] | null;
   timings: PhaseTimings | null;
   durationMs: number | null;
   startedAt: string | null;
@@ -392,6 +523,66 @@ export interface ArtifactRow {
   createdAt: string;
 }
 
+// ---- analytics v2 additions (round 7 — v7 spec §6/§7/§11, FROZEN) ----
+// The v7 fields below are typed OPTIONAL purely for compile-staging and old
+// cached payloads: the v7 server ALWAYS populates them. Aggregation rules
+// mirror §1.3 of v5 (null — never NaN/Infinity — on empty denominators).
+
+/** Σ token usage over a group's token-bearing attempts (v7 §11). */
+export interface AnalyticsTokenSums {
+  /** Attempts contributing tokens (tokens_json present with totalTokens > 0). */
+  tokenAttempts: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  /** input + output + cacheRead + cacheWrite. */
+  totalTokens: number;
+  /** totalTokens / tokenAttempts; null when tokenAttempts === 0. */
+  avgTotalTokens: number | null;
+}
+
+/** Rollup keyed by harness ("claude") or model vendor ("anthropic") — v7 §7. */
+export interface AnalyticsGroupRollup {
+  group: string;
+  /** Distinct model keys contributing to the group. */
+  models: string[];
+  configIds: string[];
+  runs: number;
+  attempts: number;
+  graded: number;
+  passed: number;
+  errors: number;
+  passRate: number | null;
+  avgScore: number | null;
+  pricedAttempts: number;
+  totalCostUsd: number | null;
+  avgCostPerAttempt: number | null;
+  /** Min/max costUsd over priced attempts; null when 0 priced (v7 §6). */
+  minCostUsd: number | null;
+  maxCostUsd: number | null;
+  avgDurationMs: number | null;
+  tokens: AnalyticsTokenSums | null;
+}
+
+/** One scatter point per model key (v7 §7/§11 — accuracy vs tokens). */
+export interface AnalyticsScatterPoint {
+  model: string;
+  /** Model vendor (anthropic/openai/google/deepseek/…); "(unknown)" fallback. */
+  vendor: string;
+  /** Contributing harness providers (registry; configId-prefix fallback). */
+  harnesses: string[];
+  attempts: number;
+  graded: number;
+  passRate: number | null;
+  avgScore: number | null;
+  avgCostUsd: number | null;
+  avgDurationMs: number | null;
+  /** x axis: mean total tokens per token-bearing attempt; null → UI omits the point. */
+  avgTotalTokens: number | null;
+  totalTokens: number;
+}
+
 // ---- analytics (round 5, item 2 — v5 spec §1, FROZEN) ----
 
 /** One scenario × config cell aggregated across ALL runs (analytics heat matrix). */
@@ -424,6 +615,11 @@ export interface AnalyticsCell {
   avgScore: number | null;
   /** Newest run.createdAt touching this cell. */
   lastRunAt: string | null;
+  /** v7 §6: min/max costUsd over priced attempts; null when 0 priced. */
+  minCostUsd?: number | null;
+  maxCostUsd?: number | null;
+  /** v7 §11: token sums over the cell's token-bearing attempts. */
+  tokens?: AnalyticsTokenSums | null;
 }
 
 /** Per-model rollup (model key: tokens.model → registry config.model → "(configId)"). */
@@ -449,6 +645,13 @@ export interface AnalyticsModel {
   /** $ per minute of work: Σcost / (Σduration/60000) over attempts having BOTH fields. */
   costPerMinute: number | null;
   avgDurationMs: number | null;
+  /** v7 §6: min/max costUsd over priced attempts; null when 0 priced. */
+  minCostUsd?: number | null;
+  maxCostUsd?: number | null;
+  /** v7 §7: model vendor (anthropic/openai/…); "(unknown)" fallback. */
+  vendor?: string;
+  /** v7 §11: token sums over the model's token-bearing attempts. */
+  tokens?: AnalyticsTokenSums | null;
 }
 
 /** One run's aggregate for a (scenario, config) cell — a time-series point. */
@@ -468,6 +671,11 @@ export interface AnalyticsSeriesPoint {
   /** First non-null among the cell's attempts, cleanVersion()ed. */
   apiVersion: string | null;
   workerVersion: string | null;
+  /** v7 §6: min/max costUsd over the run-cell's priced attempts. */
+  minCostUsd?: number | null;
+  maxCostUsd?: number | null;
+  /** v7 §11: token sums over the run-cell's token-bearing attempts. */
+  tokens?: AnalyticsTokenSums | null;
 }
 
 /** A detected version change along a series (drawn as a vertical marker line). */
@@ -500,6 +708,12 @@ export interface AnalyticsResponse {
   models: AnalyticsModel[];
   /** Every (scenario, config) pair with ≥1 attempt. */
   series: AnalyticsSeries[];
+  /** v7 §7: rollups by harness provider, sorted by attempts desc. */
+  harnesses?: AnalyticsGroupRollup[];
+  /** v7 §7: rollups by model vendor, sorted by attempts desc. */
+  vendors?: AnalyticsGroupRollup[];
+  /** v7 §7/§11: one point per model key (scatter: accuracy vs tokens). */
+  scatter?: AnalyticsScatterPoint[];
 }
 
 /** Distinct cleaned versions across one run's attempts (runs list, v5 spec §1.5). */

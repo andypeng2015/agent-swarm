@@ -11,6 +11,8 @@
 
 export interface NormalizedWorker {
   index: number;
+  /** Boot role (v7 §12) — the lead is the last workers[] entry with role "lead". Null on v1/pre-v7 rows = worker. */
+  role: "lead" | "worker" | null;
   sandboxId: string;
   template: string | null;
   agentId: string | null;
@@ -44,6 +46,8 @@ function workerFromV2Entry(entry: unknown, position: number): NormalizedWorker |
   if (sandboxId === null) return null;
   return {
     index: typeof entry.index === "number" ? entry.index : position,
+    // Distinguish the lead by role, never by position/count (v7 §12.6).
+    role: entry.role === "lead" || entry.role === "worker" ? entry.role : null,
     sandboxId,
     template: str(entry.template),
     agentId: str(entry.agentId),
@@ -92,6 +96,7 @@ export function normalizeSandboxInfo(raw: unknown): NormalizedSandboxInfo | null
       : [
           {
             index: 0,
+            role: null,
             sandboxId: workerSandboxId,
             template: str(raw.workerTemplate),
             agentId: str(raw.workerAgentId),
@@ -106,4 +111,13 @@ export function normalizeSandboxInfo(raw: unknown): NormalizedSandboxInfo | null
 /** Tab/section label: "Worker" when there is exactly one, "Worker <i>" otherwise. */
 export function workerLabel(index: number, workerCount: number): string {
   return workerCount === 1 ? "Worker" : `Worker ${index}`;
+}
+
+/**
+ * Label for one sandbox member: the LEAD is identified by its `role`
+ * (v7 §12 — never by position or count). `workerCount` counts non-lead
+ * members so a 1-worker + lead roster still labels its worker plain "Worker".
+ */
+export function memberLabel(worker: NormalizedWorker, workerCount: number): string {
+  return worker.role === "lead" ? "Lead" : workerLabel(worker.index, workerCount);
 }
