@@ -102,6 +102,7 @@ import type {
 } from "../types";
 import { FollowUpConfigSchema, isTerminalTaskStatus } from "../types";
 import { deriveProviderFromKeyType } from "../utils/credentials";
+import type { RateLimitWindowTelemetry } from "../utils/error-tracker";
 import { getCurrentRequestUserId } from "../utils/request-auth-context";
 import { scrubSecrets } from "../utils/secret-scrubber";
 import { decryptSecret, encryptSecret, getEncryptionKey, resolveEncryptionKey } from "./crypto";
@@ -9984,8 +9985,29 @@ export interface ApiKeyStatus {
   name: string | null;
   /** Auto-derived harness provider (claude/pi/codex) — see deriveProviderFromKeyType. */
   provider: string;
+  /** Latest provider-emitted rate-limit window snapshots, keyed by window type. */
+  rateLimitWindows: RateLimitWindowTelemetry;
   createdAt: string;
   updatedAt: string;
+}
+
+type ApiKeyStatusRow = Omit<ApiKeyStatus, "rateLimitWindows"> & { rateLimitWindows: string | null };
+
+function parseRateLimitWindowsJson(value: string | null | undefined): RateLimitWindowTelemetry {
+  if (!value) return {};
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return parsed as RateLimitWindowTelemetry;
+    }
+  } catch {
+    // Ignore malformed historical values; telemetry is best-effort.
+  }
+  return {};
+}
+
+function rowToApiKeyStatus(row: ApiKeyStatusRow): ApiKeyStatus {
+  return { ...row, rateLimitWindows: parseRateLimitWindowsJson(row.rateLimitWindows) };
 }
 
 /**
@@ -10106,6 +10128,43 @@ export function markKeyRateLimited(
     );
 }
 
+export function recordKeyRateLimitWindows(
+  keyType: string,
+  keySuffix: string,
+  keyIndex: number,
+  windows: RateLimitWindowTelemetry,
+  scope = "global",
+  scopeId: string | null = null,
+): void {
+  if (Object.keys(windows).length === 0) return;
+
+  const now = new Date().toISOString();
+  const effectiveScopeId = scopeId ?? "";
+  const provider = deriveProviderFromKeyType(keyType);
+  const db = getDb();
+  const existing = db
+    .prepare<{ rateLimitWindows: string | null }, [string, string, string, string]>(
+      `SELECT rateLimitWindows FROM api_key_status
+       WHERE keyType = ? AND keySuffix = ? AND scope = ? AND scopeId = ?`,
+    )
+    .get(keyType, keySuffix, scope, effectiveScopeId);
+  const serialized = JSON.stringify({
+    ...parseRateLimitWindowsJson(existing?.rateLimitWindows),
+    ...windows,
+  });
+
+  db.prepare(
+    `INSERT INTO api_key_status (keyType, keySuffix, keyIndex, scope, scopeId, rateLimitWindows, provider, updatedAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(keyType, keySuffix, scope, scopeId)
+       DO UPDATE SET
+         rateLimitWindows = excluded.rateLimitWindows,
+         keyIndex = excluded.keyIndex,
+         provider = excluded.provider,
+         updatedAt = excluded.updatedAt`,
+  ).run(keyType, keySuffix, keyIndex, scope, effectiveScopeId, serialized, provider, now);
+}
+
 /**
  * Set or clear the human-friendly `name` label on a pooled credential.
  * Identified by the natural key (keyType + keySuffix + scope + scopeId).
@@ -10177,8 +10236,9 @@ export function getKeyStatuses(
 
   const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
   return db
-    .prepare<ApiKeyStatus, string[]>(`SELECT * FROM api_key_status ${where} ORDER BY keyIndex`)
-    .all(...params);
+    .prepare<ApiKeyStatusRow, string[]>(`SELECT * FROM api_key_status ${where} ORDER BY keyIndex`)
+    .all(...params)
+    .map(rowToApiKeyStatus);
 }
 
 export interface KeyCostSummary {
