@@ -2,8 +2,8 @@ import type { ConfigPreset } from "../src/types.ts";
 
 /**
  * Named quick-run config sets (v7.7 item 1 — shape FROZEN in src/types.ts).
- * Array order = display order in the new-run dialog (frontier, oss,
- * claude-family, budget). Served verbatim as GET /api/presets; the CLI
+ * Array order = display order in the new-run dialog (frontier, challengers,
+ * oss, claude-family, budget). Served verbatim as GET /api/presets; the CLI
  * expands `--preset <id>` through expandPresetSelection() below. Membership
  * is enforced by src/registry.test.ts: ids unique, configIds non-empty, every
  * entry resolves in the catalog.
@@ -19,7 +19,23 @@ export const CONFIG_PRESETS: ConfigPreset[] = [
       "claude-sonnet",
       "pi-deepseek-pro",
       "pi-gemini-pro",
+      // Round-9 expansion: top proprietary-API additions (AA II 57 / 55).
+      "pi-qwen3.7-max",
+      "pi-minimax-m3",
       "codex-5.5",
+    ],
+  },
+  {
+    // Round-9 expansion: the proprietary-API lift's strongest new entries.
+    id: "challengers",
+    label: "Challengers",
+    description: "New proprietary-API contenders (Alibaba, MiniMax, xAI, Mistral) — pi variants.",
+    configIds: [
+      "pi-qwen3.7-max",
+      "pi-minimax-m3",
+      "pi-qwen3.7-plus",
+      "pi-grok-4.3",
+      "pi-mistral-medium-3.5",
     ],
   },
   {
@@ -40,6 +56,10 @@ export const CONFIG_PRESETS: ConfigPreset[] = [
       "pi-mimo-v2.5-pro",
       "pi-mimo-v2.5",
       "pi-nemotron-3-ultra",
+      // Round-9 expansion: open-weight additions (MiniMax-M3, Qwen3.7 Max/Plus,
+      // Grok 4.3, Mistral Medium 3.5 and Mercury 2 are open_weights: false).
+      "pi-hy3-preview",
+      "pi-step-3.7-flash",
       "opencode-deepseek-flash",
       "opencode-deepseek-pro",
       "opencode-kimi-k2.5",
@@ -51,6 +71,8 @@ export const CONFIG_PRESETS: ConfigPreset[] = [
       "opencode-mimo-v2.5-pro",
       "opencode-mimo-v2.5",
       "opencode-nemotron-3-ultra",
+      "opencode-hy3-preview",
+      "opencode-step-3.7-flash",
     ],
   },
   {

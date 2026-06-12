@@ -216,6 +216,36 @@ export const CONFIG_AA_ROWS: Record<string, { sourceRow: string; matchedVariant:
     "pi-mimo-v2.5": { sourceRow: "MiMo-V2.5", matchedVariant: null },
     // [II 48] — unique row ("NVIDIA Nemotron 3 Super"/"Nano" are different models, not variants).
     "pi-nemotron-3-ultra": { sourceRow: "Nemotron 3 Ultra", matchedVariant: null },
+    // Round-9 expansion rows below (AA snapshot 2026-06-12, proprietary lift).
+    // [II 55] — exact name match; MiniMax-M2.7 is a different model, not a variant.
+    "pi-minimax-m3": { sourceRow: "MiniMax-M3", matchedVariant: null },
+    // [II 57] — exact name match, no variant siblings.
+    "pi-qwen3.7-max": { sourceRow: "Qwen3.7 Max", matchedVariant: null },
+    // [II 53] — exact name match, no variant siblings.
+    "pi-qwen3.7-plus": { sourceRow: "Qwen3.7 Plus", matchedVariant: null },
+    // [II 53] — "(medium)" [49], "(low)" [44] and "(Non-reasoning)" [31] rejected.
+    "pi-grok-4.3": {
+      sourceRow: "Grok 4.3 (high)",
+      matchedVariant:
+        "(high) — plain OpenRouter API usage with no effort param gets the default/high " +
+        'serving config; "(medium)"/"(low)" measure reduced-effort overrides and ' +
+        '"(Non-reasoning)" [II 31] is the reasoning-off twin.',
+    },
+    // [II 39] — unique row (Magistral/Devstral/Small/Large are different models, not variants).
+    "pi-mistral-medium-3.5": { sourceRow: "Mistral Medium 3.5", matchedVariant: null },
+    // [II 42] — "(variant 2)" [34, 9.6s total vs 27.7s] is the non-reasoning twin, rejected.
+    "pi-hy3-preview": {
+      sourceRow: "Hy3-preview",
+      matchedVariant:
+        "Reasoning row — plain OpenRouter API usage with no effort param gets the default " +
+        '(reasoning) serving config; "(variant 2)" [II 34] is the lower-II non-reasoning twin.',
+    },
+    // [II 43] — unique row ("Step 3.5 Flash 2603" is the older model, not a variant).
+    "pi-step-3.7-flash": { sourceRow: "Step 3.7 Flash", matchedVariant: null },
+    // [II 33] — unique row, no variant siblings.
+    "pi-mercury-2": { sourceRow: "Mercury 2", matchedVariant: null },
+    // [II 34] — same row as the opencode twin (twin completion).
+    "pi-gemini-flash-lite": { sourceRow: "Gemini 3.1 Flash-Lite", matchedVariant: null },
     // Same rows as the pi- twins: identical OpenRouter model ids.
     "opencode-gemini-flash": {
       sourceRow: "Gemini 3.5 Flash",
@@ -262,6 +292,26 @@ export const CONFIG_AA_ROWS: Record<string, { sourceRow: string; matchedVariant:
     },
     "opencode-mimo-v2.5": { sourceRow: "MiMo-V2.5", matchedVariant: null },
     "opencode-nemotron-3-ultra": { sourceRow: "Nemotron 3 Ultra", matchedVariant: null },
+    // Round-9 expansion — same rows/justifications as the pi- twins above.
+    "opencode-minimax-m3": { sourceRow: "MiniMax-M3", matchedVariant: null },
+    "opencode-qwen3.7-max": { sourceRow: "Qwen3.7 Max", matchedVariant: null },
+    "opencode-qwen3.7-plus": { sourceRow: "Qwen3.7 Plus", matchedVariant: null },
+    "opencode-grok-4.3": {
+      sourceRow: "Grok 4.3 (high)",
+      matchedVariant:
+        "(high) — plain OpenRouter API usage with no effort param gets the default/high " +
+        'serving config; "(medium)"/"(low)" measure reduced-effort overrides and ' +
+        '"(Non-reasoning)" [II 31] is the reasoning-off twin.',
+    },
+    "opencode-mistral-medium-3.5": { sourceRow: "Mistral Medium 3.5", matchedVariant: null },
+    "opencode-hy3-preview": {
+      sourceRow: "Hy3-preview",
+      matchedVariant:
+        "Reasoning row — plain OpenRouter API usage with no effort param gets the default " +
+        '(reasoning) serving config; "(variant 2)" [II 34] is the lower-II non-reasoning twin.',
+    },
+    "opencode-step-3.7-flash": { sourceRow: "Step 3.7 Flash", matchedVariant: null },
+    "opencode-mercury-2": { sourceRow: "Mercury 2", matchedVariant: null },
     // [II 38] — effort matching; "(xhigh)" [49] and bare "GPT-5.4 mini" [23] rejected.
     "codex-5.4-mini": {
       sourceRow: "GPT-5.4 mini (medium)",

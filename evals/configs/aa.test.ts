@@ -33,16 +33,19 @@ describe("AA mapping completeness (v7.6 item D, frozen)", () => {
     expect(mapped.size + unmatched.size).toBe(configs.length);
   });
 
-  test("frozen counts: 29 matched, 8 unmatched, 19 distinct AA rows", () => {
-    expect(Object.keys(CONFIG_AA_ROWS).length).toBe(29);
+  test("frozen counts: 46 matched, 8 unmatched, 27 distinct AA rows", () => {
+    expect(Object.keys(CONFIG_AA_ROWS).length).toBe(46);
     expect(Object.keys(AA_UNMATCHED_CONFIG_IDS).length).toBe(8);
-    // 19: Haiku, Sonnet 4.6 (max), Opus 4.8 (max), Opus 4.7 (max), Fable 5,
+    // 27: Haiku, Sonnet 4.6 (max), Opus 4.8 (max), Opus 4.7 (max), Fable 5,
     // DS Flash (High), DS Pro (High), Gemini 3.5 Flash, Gemini 3.1 Pro Preview
     // (v7.7 item 1), Qwen3 Coder Next, gpt-oss-120b (high),
-    // Gemini 3.1 Flash-Lite, GPT-5.4 mini (medium), GPT-5.5 (medium), plus the
+    // Gemini 3.1 Flash-Lite, GPT-5.4 mini (medium), GPT-5.5 (medium), the
     // round-8 OSS refresh: Kimi K2.6, GLM-5.1, MiMo-V2.5-Pro, MiMo-V2.5,
-    // Nemotron 3 Ultra (each shared by a pi/opencode twin pair).
-    expect(new Set(Object.values(CONFIG_AA_ROWS).map((m) => m.sourceRow)).size).toBe(19);
+    // Nemotron 3 Ultra, plus the round-9 expansion: MiniMax-M3, Qwen3.7 Max,
+    // Qwen3.7 Plus, Grok 4.3 (high), Mistral Medium 3.5, Hy3-preview,
+    // Step 3.7 Flash, Mercury 2 (each shared by a pi/opencode twin pair;
+    // Gemini 3.1 Flash-Lite gained its pi twin without adding a row).
+    expect(new Set(Object.values(CONFIG_AA_ROWS).map((m) => m.sourceRow)).size).toBe(27);
   });
 
   test("every sourceRow exists in the TSV", () => {
@@ -79,12 +82,29 @@ describe("AA mapping completeness (v7.6 item D, frozen)", () => {
       expect(getAaForConfig(`pi-${short}`)?.matchedVariant).toBeNull();
       expect(getAaForConfig(`opencode-${short}`)?.matchedVariant).toBeNull();
     }
+    // Round-9 expansion: unique rows without variant/effort siblings.
+    for (const short of [
+      "minimax-m3",
+      "qwen3.7-max",
+      "qwen3.7-plus",
+      "mistral-medium-3.5",
+      "step-3.7-flash",
+      "mercury-2",
+    ]) {
+      expect(getAaForConfig(`pi-${short}`)?.matchedVariant).toBeNull();
+      expect(getAaForConfig(`opencode-${short}`)?.matchedVariant).toBeNull();
+    }
+    // Twin completion: same unique row as the pre-existing opencode config.
+    expect(getAaForConfig("pi-gemini-flash-lite")?.matchedVariant).toBeNull();
     // Variant/effort picks document their justification.
     for (const id of ["claude-haiku", "claude-sonnet", "pi-deepseek-flash", "codex-5.5"]) {
       expect(getAaForConfig(id)?.matchedVariant).toBeTruthy();
     }
-    // Round-8 picks with a "(variant 2)" sibling justify rejecting it.
-    for (const short of ["kimi-k2.6", "glm-5.1", "mimo-v2.5-pro"]) {
+    // Round-9: Grok 4.3 effort pick justifies rejecting the other effort rows.
+    expect(getAaForConfig("pi-grok-4.3")?.matchedVariant).toContain("(high)");
+    expect(getAaForConfig("opencode-grok-4.3")?.matchedVariant).toContain("(high)");
+    // Picks with a "(variant 2)" sibling justify rejecting it.
+    for (const short of ["kimi-k2.6", "glm-5.1", "mimo-v2.5-pro", "hy3-preview"]) {
       expect(getAaForConfig(`pi-${short}`)?.matchedVariant).toContain("(variant 2)");
       expect(getAaForConfig(`opencode-${short}`)?.matchedVariant).toContain("(variant 2)");
     }
@@ -104,6 +124,16 @@ describe("AA mapping completeness (v7.6 item D, frozen)", () => {
       "mimo-v2.5-pro",
       "mimo-v2.5",
       "nemotron-3-ultra",
+      // Round-9 expansion (gemini-flash-lite: the pi twin joined in round 9).
+      "minimax-m3",
+      "qwen3.7-max",
+      "qwen3.7-plus",
+      "grok-4.3",
+      "mistral-medium-3.5",
+      "hy3-preview",
+      "step-3.7-flash",
+      "mercury-2",
+      "gemini-flash-lite",
     ]) {
       expect(getAaForConfig(`pi-${short}`)?.sourceRow).toBe(
         getAaForConfig(`opencode-${short}`)?.sourceRow ?? "",

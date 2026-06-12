@@ -152,6 +152,71 @@ export const configs: HarnessConfig[] = [
     provider: "pi",
     model: "openrouter/nvidia/nemotron-3-ultra-550b-a55b",
   },
+  // Round-9 expansion (AA snapshot 2026-06-12): proprietary-API models are now
+  // welcome — this lifts the round-8 open-weights-only filter and brings in the
+  // previously-skipped MiniMax-M3 and Qwen3.7 Max/Plus (open_weights: false).
+  // Every slug verified against src/be/modelsdev-cache.json openrouter section
+  // with tool_call: true.
+  {
+    id: "pi-minimax-m3",
+    label: "pi-mono / MiniMax M3 (OpenRouter)",
+    provider: "pi",
+    model: "openrouter/minimax/minimax-m3",
+  },
+  {
+    id: "pi-qwen3.7-max",
+    label: "pi-mono / Qwen3.7 Max (OpenRouter)",
+    provider: "pi",
+    model: "openrouter/qwen/qwen3.7-max",
+  },
+  {
+    id: "pi-qwen3.7-plus",
+    label: "pi-mono / Qwen3.7 Plus (OpenRouter)",
+    provider: "pi",
+    model: "openrouter/qwen/qwen3.7-plus",
+  },
+  {
+    id: "pi-grok-4.3",
+    label: "pi-mono / Grok 4.3 (OpenRouter)",
+    provider: "pi",
+    model: "openrouter/x-ai/grok-4.3",
+  },
+  {
+    // The cache slug really is mistral-medium-3-5 (dashes) while the display
+    // name is "Mistral Medium 3.5" — don't "fix" the slug to dots.
+    id: "pi-mistral-medium-3.5",
+    label: "pi-mono / Mistral Medium 3.5 (OpenRouter)",
+    provider: "pi",
+    model: "openrouter/mistralai/mistral-medium-3-5",
+  },
+  {
+    id: "pi-hy3-preview",
+    label: "pi-mono / Tencent Hy3 preview (OpenRouter)",
+    provider: "pi",
+    model: "openrouter/tencent/hy3-preview",
+  },
+  {
+    // Speed pick: 381 tok/s median in the AA snapshot.
+    id: "pi-step-3.7-flash",
+    label: "pi-mono / Step 3.7 Flash (OpenRouter)",
+    provider: "pi",
+    model: "openrouter/stepfun/step-3.7-flash",
+  },
+  {
+    // Speed pick: Inception's diffusion LM, 745 tok/s median in the AA snapshot.
+    id: "pi-mercury-2",
+    label: "pi-mono / Mercury 2 (OpenRouter)",
+    provider: "pi",
+    model: "openrouter/inception/mercury-2",
+  },
+  {
+    // Twin completion: opencode-gemini-flash-lite predates the pi/opencode
+    // twin convention — same model, pi side.
+    id: "pi-gemini-flash-lite",
+    label: "pi-mono / Gemini 3.1 flash lite (OpenRouter)",
+    provider: "pi",
+    model: "openrouter/google/gemini-3.1-flash-lite",
+  },
   {
     id: "opencode-gemini-flash",
     label: "opencode / Gemini 3 flash (OpenRouter)",
@@ -231,6 +296,57 @@ export const configs: HarnessConfig[] = [
     label: "opencode / Nemotron 3 Ultra (OpenRouter)",
     provider: "opencode",
     model: "openrouter/nvidia/nemotron-3-ultra-550b-a55b",
+  },
+  // Round-9 expansion — opencode twins of the pi- entries above
+  // (pi-gemini-flash-lite has no twin here: opencode-gemini-flash-lite exists).
+  {
+    id: "opencode-minimax-m3",
+    label: "opencode / MiniMax M3 (OpenRouter)",
+    provider: "opencode",
+    model: "openrouter/minimax/minimax-m3",
+  },
+  {
+    id: "opencode-qwen3.7-max",
+    label: "opencode / Qwen3.7 Max (OpenRouter)",
+    provider: "opencode",
+    model: "openrouter/qwen/qwen3.7-max",
+  },
+  {
+    id: "opencode-qwen3.7-plus",
+    label: "opencode / Qwen3.7 Plus (OpenRouter)",
+    provider: "opencode",
+    model: "openrouter/qwen/qwen3.7-plus",
+  },
+  {
+    id: "opencode-grok-4.3",
+    label: "opencode / Grok 4.3 (OpenRouter)",
+    provider: "opencode",
+    model: "openrouter/x-ai/grok-4.3",
+  },
+  {
+    // Dashed slug — see the pi- twin's note.
+    id: "opencode-mistral-medium-3.5",
+    label: "opencode / Mistral Medium 3.5 (OpenRouter)",
+    provider: "opencode",
+    model: "openrouter/mistralai/mistral-medium-3-5",
+  },
+  {
+    id: "opencode-hy3-preview",
+    label: "opencode / Tencent Hy3 preview (OpenRouter)",
+    provider: "opencode",
+    model: "openrouter/tencent/hy3-preview",
+  },
+  {
+    id: "opencode-step-3.7-flash",
+    label: "opencode / Step 3.7 Flash (OpenRouter)",
+    provider: "opencode",
+    model: "openrouter/stepfun/step-3.7-flash",
+  },
+  {
+    id: "opencode-mercury-2",
+    label: "opencode / Mercury 2 (OpenRouter)",
+    provider: "opencode",
+    model: "openrouter/inception/mercury-2",
   },
   {
     id: "codex-5.4-mini",
