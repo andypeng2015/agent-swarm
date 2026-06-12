@@ -79,17 +79,32 @@ describe("workerRuntimeEnv v7 member env (§9.3 frozen merge order)", () => {
     expect(env.SYSTEM_PROMPT).toBe("Be terse.");
   });
 
-  test("default member: no identity keys, AGENT_ROLE=worker, MAX_CONCURRENT_TASKS=1", () => {
+  test("default worker: NO TEMPLATE_ID (a template would rewrite the eval subject's prompt), AGENT_NAME defaults to Worker 0, AGENT_ROLE=worker, MAX_CONCURRENT_TASKS=1", () => {
     process.env.CLAUDE_CODE_OAUTH_TOKEN = "oauth-test";
     const env = workerEnvFor({ id: "claude-haiku", provider: "claude", model: "haiku" });
     expect(env.TEMPLATE_ID).toBeUndefined();
-    expect(env.AGENT_NAME).toBeUndefined();
+    // v7.5 item 7: AGENT_NAME is now always emitted so agents stop registering
+    // under the entrypoint's `worker-<hash>` fallback name.
+    expect(env.AGENT_NAME).toBe("Worker 0");
     expect(env.SYSTEM_PROMPT).toBeUndefined();
     expect(env.AGENT_ROLE).toBe("worker");
     expect(env.MAX_CONCURRENT_TASKS).toBe("1");
   });
 
-  test("lead member: AGENT_ROLE=lead with the entrypoint's lead default MAX_CONCURRENT_TASKS=2", () => {
+  test("default worker name follows the 0-based member index (matches sandbox indices + UI workerLabel)", () => {
+    process.env.CLAUDE_CODE_OAUTH_TOKEN = "oauth-test";
+    const env = workerRuntimeEnv({
+      swarmKey: "k",
+      apiUrl: "https://api.example",
+      agentId: "agent-3",
+      config: { id: "claude-haiku", provider: "claude", model: "haiku" },
+      index: 2,
+    });
+    expect(env.AGENT_NAME).toBe("Worker 2");
+    expect(env.TEMPLATE_ID).toBeUndefined();
+  });
+
+  test("lead member: AGENT_ROLE=lead with the entrypoint's lead default MAX_CONCURRENT_TASKS=2; default TEMPLATE_ID=official/lead, spec.name wins over the Lead default", () => {
     process.env.CLAUDE_CODE_OAUTH_TOKEN = "oauth-test";
     const env = workerRuntimeEnv({
       swarmKey: "k",
@@ -102,6 +117,38 @@ describe("workerRuntimeEnv v7 member env (§9.3 frozen merge order)", () => {
     expect(env.AGENT_ROLE).toBe("lead");
     expect(env.MAX_CONCURRENT_TASKS).toBe("2");
     expect(env.AGENT_NAME).toBe("coordinator");
+    // Lead-only template default (v7.5 item 7): production leads run
+    // official/lead; its agentDefaults are no-ops vs the pinned boot env.
+    expect(env.TEMPLATE_ID).toBe("official/lead");
+  });
+
+  test("default lead ({} spec): TEMPLATE_ID=official/lead, AGENT_NAME=Lead (deterministic even if the registry fetch fails)", () => {
+    process.env.CLAUDE_CODE_OAUTH_TOKEN = "oauth-test";
+    const env = workerRuntimeEnv({
+      swarmKey: "k",
+      apiUrl: "https://api.example",
+      agentId: "agent-lead",
+      config: { id: "claude-sonnet", provider: "claude", model: "sonnet" },
+      role: "lead",
+      index: 1,
+      spec: {},
+    });
+    expect(env.TEMPLATE_ID).toBe("official/lead");
+    expect(env.AGENT_NAME).toBe("Lead");
+  });
+
+  test("explicit spec.template wins over the lead's official/lead default", () => {
+    process.env.CLAUDE_CODE_OAUTH_TOKEN = "oauth-test";
+    const env = workerRuntimeEnv({
+      swarmKey: "k",
+      apiUrl: "https://api.example",
+      agentId: "agent-lead",
+      config: { id: "claude-sonnet", provider: "claude", model: "sonnet" },
+      role: "lead",
+      spec: { template: "researcher" },
+    });
+    expect(env.TEMPLATE_ID).toBe("researcher");
+    expect(env.AGENT_NAME).toBe("Lead");
   });
 
   test("spec.env merges LAST (over config.env)", () => {

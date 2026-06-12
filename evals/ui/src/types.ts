@@ -174,6 +174,47 @@ export interface TaskArtifactJson {
   [key: string]: unknown;
 }
 
+/**
+ * One normalized per-task record from GET /api/attempts/:id/tasks (v7.5 items
+ * 2/5/6 — FROZEN; mirrors evals/src/types.ts AttemptTaskRecord). Every field
+ * degrades to null/[]/false on old rows — render "—" (never break).
+ */
+export interface AttemptTaskJson {
+  id: string;
+  /** Normalized title; null when empty/absent. */
+  title: string | null;
+  /** Swarm task status string; null when unknown ("task-ids" source). */
+  status: string | null;
+  /** Final result/output text (server-clipped); null when absent. */
+  outcome: string | null;
+  /** failureReason (server-clipped); null when absent. */
+  error: string | null;
+  /** Cascade-skipped dependent (v6 §9 semantics) — render distinctly from real errors. */
+  skipped: boolean;
+  /** Task UUIDs this task depended on; [] when none/unknown. */
+  dependsOn: string[];
+  agentId: string | null;
+  /**
+   * Σ priced session-cost rows of this task (same rule as the round-7
+   * per-member roster cost). Null = unpriced / no artifact (v1-era) / live.
+   */
+  costUsd: number | null;
+  tokens: TokenTotalsJson | null;
+}
+
+/**
+ * GET /api/attempts/:id/tasks (v7.5 — FROZEN). `source`: "live" (fresh from
+ * the running stack — costUsd/tokens always null), "tasks-artifact" (stored
+ * tasks.json + session-costs.json), "task-ids" (attempt.taskIds only — no
+ * artifact yet / v1-era rows), or null (nothing known). Records keep
+ * attempt.taskIds creation order; artifact-only extras append after.
+ */
+export interface AttemptTasksResponse {
+  source: "live" | "tasks-artifact" | "task-ids" | null;
+  live: boolean;
+  tasks: AttemptTaskJson[];
+}
+
 export interface PhaseTimingsJson {
   bootMs: number | null;
   seedMs: number | null;

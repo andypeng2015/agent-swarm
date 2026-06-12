@@ -214,6 +214,142 @@ export interface SwarmTask {
   [key: string]: unknown;
 }
 
+// ---- per-task records (v7.5 items 2/5/6 — FROZEN) ----
+
+/**
+ * One normalized per-task record served by GET /api/attempts/:id/tasks
+ * (v7.5 items 2/5/6 — FROZEN). Sources, in precedence order:
+ *   "live"           — fetched from the attempt's still-running stack
+ *                      (?live=1 only; costUsd/tokens are ALWAYS null here);
+ *   "tasks-artifact" — parsed from the stored tasks.json artifact (kind
+ *                      "task"), joined with the session-costs.json artifact
+ *                      for per-task cost/tokens;
+ *   "task-ids"       — attempt.taskIds only (no artifact yet / v1-era rows):
+ *                      one record per id with all-null fields.
+ * Ordering: attempt.taskIds creation order first, then artifact-only extras
+ * in artifact order. Every field degrades to null/[]/false — old rows never
+ * break (back-compat is sacred).
+ */
+export interface AttemptTaskRecord {
+  id: string;
+  /** Normalized title; null when empty/absent. */
+  title: string | null;
+  /** Swarm task status string; null when unknown ("task-ids" source). */
+  status: string | null;
+  /** Final result/output text, server-clipped to 4000 chars; null when absent. */
+  outcome: string | null;
+  /** failureReason, server-clipped to 4000 chars; null when absent. */
+  error: string | null;
+  /** Cascade-skip (stored `skipped` flag, else CASCADE_SKIP_RE on failureReason). */
+  skipped: boolean;
+  /** Task UUIDs this task depended on (native swarm dependsOn); [] when none/unknown. */
+  dependsOn: string[];
+  /** Assigned agent id; null when unknown. */
+  agentId: string | null;
+  /**
+   * Σ totalCostUsd over this task's PRICED session-cost rows (same rule as the
+   * round-7 per-member roster attribution); null when 0 priced rows, when the
+   * session-costs.json artifact is missing (v1-era), or on the live source.
+   */
+  costUsd: number | null;
+  /** Field-wise Σ over the task's cost rows; null when rows carry no token data. */
+  tokens: TokenTotals | null;
+}
+
+export type AttemptTasksSource = "live" | "tasks-artifact" | "task-ids";
+
+/** Response of GET /api/attempts/:id/tasks (v7.5 — FROZEN). */
+export interface AttemptTasksSnapshot {
+  /** Null when the attempt has no taskIds and no tasks artifact. */
+  source: AttemptTasksSource | null;
+  /** True when records were fetched fresh from the live stack (?live=1). */
+  live: boolean;
+  tasks: AttemptTaskRecord[];
+}
+
+/** Structural subset of a swarm session-cost row that cost aggregation reads. */
+export interface CostRowTotals {
+  totalCostUsd: number | null;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  cacheReadTokens: number | null;
+  cacheWriteTokens: number | null;
+  model: string | null;
+}
+
+/**
+ * Per-task cost/token aggregation (v7.5 item 6 — FROZEN). EXACTLY mirrors the
+ * round-7 per-member roster rule (runner buildRosterEntries): costUsd = Σ
+ * totalCostUsd over rows with totalCostUsd !== null (null when none priced);
+ * tokens = field-wise Σ, null when NO row carries any non-null token column;
+ * tokens.model = first non-null row model.
+ */
+export function aggregateCostRows(rows: CostRowTotals[]): {
+  costUsd: number | null;
+  tokens: TokenTotals | null;
+} {
+  const priced = rows.filter((r) => r.totalCostUsd !== null);
+  const hasTokenData = rows.some(
+    (r) =>
+      r.inputTokens !== null ||
+      r.outputTokens !== null ||
+      r.cacheReadTokens !== null ||
+      r.cacheWriteTokens !== null,
+  );
+  return {
+    costUsd: priced.length > 0 ? priced.reduce((s, r) => s + (r.totalCostUsd ?? 0), 0) : null,
+    tokens: hasTokenData
+      ? {
+          model: rows.find((r) => r.model)?.model ?? null,
+          inputTokens: rows.reduce((s, r) => s + (r.inputTokens ?? 0), 0),
+          outputTokens: rows.reduce((s, r) => s + (r.outputTokens ?? 0), 0),
+          cacheReadTokens: rows.reduce((s, r) => s + (r.cacheReadTokens ?? 0), 0),
+          cacheWriteTokens: rows.reduce((s, r) => s + (r.cacheWriteTokens ?? 0), 0),
+        }
+      : null,
+  };
+}
+
+// ---- default boot identity (v7.5 item 7 — FROZEN) ----
+
+/**
+ * Default TEMPLATE_ID for the LEAD member when WorkerSpec.template is unset
+ * (v7.5 item 7 — FROZEN). Namespaced form matches production boots
+ * (docker-compose.example.yml lead service); the registry route also accepts
+ * bare slugs ("lead" → category "official" via parseTemplateId), which is what
+ * WorkerSpec.template's frozen bare-slug validation produces.
+ */
+export const DEFAULT_LEAD_TEMPLATE_ID = "official/lead";
+
+/**
+ * Boot identity defaults per member (v7.5 item 7 — FROZEN rule):
+ * - LEAD: TEMPLATE_ID defaults to {@link DEFAULT_LEAD_TEMPLATE_ID} (the
+ *   official lead profile is what production leads run; its agentDefaults —
+ *   role/isLead/maxTasks — are no-ops because the boot env already pins them);
+ *   AGENT_NAME defaults to "Lead" (deterministic even when the registry fetch
+ *   fails — fetch failure is non-fatal in the worker entrypoint).
+ * - WORKER: NO TEMPLATE_ID default. A worker template would inject its
+ *   soul/identity/tools/claude markdown into the eval SUBJECT's system prompt,
+ *   add capabilities, and execute its setupScript — silently changing eval
+ *   behavior/scores across rounds. The `worker-<hash>` name symptom is purely
+ *   the entrypoint's `${role}-${agentId.slice(0,8)}` fallback, so the fix is
+ *   AGENT_NAME-only: defaults to `Worker <index>` (0-based, matching sandbox
+ *   worker indices and the UI's workerLabel()).
+ * Applied at env-construction time only (workerRuntimeEnv step 4) — persisted
+ * SandboxWorkerInfo.name/agentTemplate keep meaning "what the scenario
+ * AUTHORED" (null for defaults); runtime names land in the roster snapshot.
+ */
+export function defaultMemberIdentity(
+  role: "lead" | "worker",
+  index: number,
+  spec: WorkerSpec,
+): { templateId: string | null; agentName: string } {
+  return {
+    templateId: spec.template ?? (role === "lead" ? DEFAULT_LEAD_TEMPLATE_ID : null),
+    agentName: spec.name ?? (role === "lead" ? "Lead" : `Worker ${index}`),
+  };
+}
+
 export type CostSource = "harness" | "recomputed" | "unpriced";
 
 export interface TokenTotals {

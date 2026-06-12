@@ -3,6 +3,7 @@ import type {
   AttemptDetail,
   AttemptJson,
   AttemptProgressResponse,
+  AttemptTasksResponse,
   ConfigJson,
   CreateRunBody,
   JudgeLiveResponse,
@@ -69,6 +70,19 @@ export function getTranscript(
 ): Promise<TranscriptResponse> {
   const qs = opts?.live ? "?live=1" : "";
   return request(`/api/attempts/${encodeURIComponent(attemptId)}/transcript${qs}`);
+}
+
+/**
+ * Per-task records (v7.5 items 2/5/6 — frozen contract, see AttemptTasksResponse).
+ * `live: true` asks the server to read the still-running stack (same pattern as
+ * the live transcript); it falls back to the stored artifacts on any failure.
+ */
+export function getAttemptTasks(
+  attemptId: string,
+  opts?: { live?: boolean },
+): Promise<AttemptTasksResponse> {
+  const qs = opts?.live ? "?live=1" : "";
+  return request(`/api/attempts/${encodeURIComponent(attemptId)}/tasks${qs}`);
 }
 
 /**

@@ -22,7 +22,16 @@ import { summarizeRun } from "../results.ts";
 import { executeRun, killAllActiveStacks, killRunStacks } from "../runner/index.ts";
 import { type SessionLogRow, SwarmClient } from "../swarm/client.ts";
 import { cleanVersion } from "../swarm/version.ts";
-import type { AttemptRow, RunVersions, SandboxInfo } from "../types.ts";
+import {
+  type AttemptRow,
+  type AttemptTaskRecord,
+  type AttemptTasksSnapshot,
+  aggregateCostRows,
+  CASCADE_SKIP_RE,
+  type CostRowTotals,
+  type RunVersions,
+  type SandboxInfo,
+} from "../types.ts";
 import { type AnalyticsSourceRow, buildAnalytics } from "./analytics.ts";
 
 function json(data: unknown, status = 200): Response {
@@ -90,6 +99,191 @@ async function fetchLiveTranscriptRows(
     rows.push(...(await client.getSessionLogs(taskId)));
   }
   return rows;
+}
+
+// ---- per-task records (v7.5 items 2/5/6 — frozen contract) ----
+
+/** Frozen server-side clip for per-task outcome/error text (v7.5 item 2). */
+const TASK_TEXT_CLIP_CHARS = 4000;
+
+/** Non-empty string clipped to TASK_TEXT_CLIP_CHARS; null otherwise. */
+function clipTaskText(value: unknown): string | null {
+  if (typeof value !== "string" || value.length === 0) return null;
+  return value.length > TASK_TEXT_CLIP_CHARS ? value.slice(0, TASK_TEXT_CLIP_CHARS) : value;
+}
+
+/** All-null record for a task id nothing else is known about (v1-era rows). */
+function emptyTaskRecord(id: string): AttemptTaskRecord {
+  return {
+    id,
+    title: null,
+    status: null,
+    outcome: null,
+    error: null,
+    skipped: false,
+    dependsOn: [],
+    agentId: null,
+    costUsd: null,
+    tokens: null,
+  };
+}
+
+/**
+ * Normalize one swarm task record — a stored tasks.json entry or a live
+ * GET /api/tasks/:id payload — into the frozen AttemptTaskRecord shape (v7.5
+ * items 2/5/6). title = non-empty entry.title; outcome = first non-empty of
+ * entry.result / entry.output (clipped); error = entry.failureReason (clipped);
+ * `skipped` keeps the runner-set flag when present and otherwise re-derives the
+ * R6 cascade-skip classification (CASCADE_SKIP_RE on failureReason). Every
+ * field degrades to null/[]/false; costUsd/tokens start null and are joined by
+ * the caller (never on the live source).
+ */
+function normalizeAttemptTask(entry: Record<string, unknown>, id: string): AttemptTaskRecord {
+  const status = typeof entry.status === "string" && entry.status.length > 0 ? entry.status : null;
+  const failureReason = typeof entry.failureReason === "string" ? entry.failureReason : "";
+  const agentId =
+    (typeof entry.agentId === "string" && entry.agentId.length > 0 ? entry.agentId : null) ??
+    (typeof entry.assignedAgentId === "string" && entry.assignedAgentId.length > 0
+      ? entry.assignedAgentId
+      : null);
+  return {
+    id,
+    title: clipTaskText(entry.title),
+    status,
+    outcome: clipTaskText(entry.result) ?? clipTaskText(entry.output),
+    error: clipTaskText(entry.failureReason),
+    skipped:
+      entry.skipped === true ||
+      (entry.skipped === undefined && status === "failed" && CASCADE_SKIP_RE.test(failureReason)),
+    dependsOn: Array.isArray(entry.dependsOn)
+      ? entry.dependsOn.filter((d): d is string => typeof d === "string")
+      : [],
+    agentId,
+    costUsd: null,
+    tokens: null,
+  };
+}
+
+/** Defensive read of one stored session-cost row into the aggregation subset. */
+function costRowTotals(raw: Record<string, unknown>): CostRowTotals {
+  return {
+    totalCostUsd: numOrNull(raw.totalCostUsd),
+    inputTokens: numOrNull(raw.inputTokens),
+    outputTokens: numOrNull(raw.outputTokens),
+    cacheReadTokens: numOrNull(raw.cacheReadTokens),
+    cacheWriteTokens: numOrNull(raw.cacheWriteTokens),
+    model: typeof raw.model === "string" && raw.model.length > 0 ? raw.model : null,
+  };
+}
+
+/**
+ * Parse the session-costs.json meta artifact (`[{ taskId, rows }]` — the cost
+ * phase's snapshot) into taskId → rows. Missing/malformed artifact → empty
+ * map: per-task cost degrades to null exactly like v1-era attempts.
+ */
+function parseSessionCostsByTask(content: string | null): Map<string, CostRowTotals[]> {
+  const byTask = new Map<string, CostRowTotals[]>();
+  if (!content) return byTask;
+  try {
+    const parsed: unknown = JSON.parse(content);
+    if (!Array.isArray(parsed)) return byTask;
+    for (const item of parsed) {
+      if (item === null || typeof item !== "object") continue;
+      const { taskId, rows } = item as { taskId?: unknown; rows?: unknown };
+      if (typeof taskId !== "string" || taskId.length === 0 || !Array.isArray(rows)) continue;
+      byTask.set(
+        taskId,
+        rows
+          .filter((r): r is Record<string, unknown> => r !== null && typeof r === "object")
+          .map(costRowTotals),
+      );
+    }
+  } catch {
+    // malformed artifact — cost columns degrade to null
+  }
+  return byTask;
+}
+
+/**
+ * Assemble the stored-artifact response of GET /api/attempts/:id/tasks (v7.5
+ * items 2/5/6 — FROZEN precedence after the live source):
+ *   tasks.json present → "tasks-artifact": normalized entries joined with
+ *                        session-costs.json per-task cost (aggregateCostRows —
+ *                        the round-7 per-member rule keyed by single taskId);
+ *   taskIds non-empty  → "task-ids": one all-null record per id;
+ *   else               → { source: null, live: false, tasks: [] }.
+ * Ordering: attempt.taskIds creation order first, artifact-only extras
+ * appended in artifact order. Malformed tasks.json degrades to "task-ids";
+ * Σ per-task cost may be < attempt costUsd on recompute-priced attempts —
+ * allowed (per-task cost is harness-reported, like roster member cost).
+ */
+export function buildAttemptTaskRecords(opts: {
+  taskIds: string[];
+  /** Content of the tasks.json artifact (kind "task"); null when absent. */
+  tasksArtifact: string | null;
+  /** Content of the session-costs.json meta artifact; null when absent. */
+  costsArtifact: string | null;
+}): AttemptTasksSnapshot {
+  let entries: { id: string; entry: Record<string, unknown> }[] | null = null;
+  if (opts.tasksArtifact !== null) {
+    try {
+      const parsed: unknown = JSON.parse(opts.tasksArtifact);
+      if (Array.isArray(parsed)) {
+        entries = parsed
+          .filter((e): e is Record<string, unknown> => e !== null && typeof e === "object")
+          .filter((e) => typeof e.id === "string" && e.id.length > 0)
+          .map((e) => ({ id: e.id as string, entry: e }));
+      }
+    } catch {
+      // malformed tasks.json — degrade to the task-ids source below
+    }
+  }
+  if (entries === null) {
+    if (opts.taskIds.length === 0) return { source: null, live: false, tasks: [] };
+    return { source: "task-ids", live: false, tasks: opts.taskIds.map(emptyTaskRecord) };
+  }
+  const byId = new Map(entries.map((e) => [e.id, e.entry]));
+  const seen = new Set<string>();
+  const records: AttemptTaskRecord[] = [];
+  for (const id of opts.taskIds) {
+    if (seen.has(id)) continue;
+    seen.add(id);
+    const entry = byId.get(id);
+    records.push(entry ? normalizeAttemptTask(entry, id) : emptyTaskRecord(id));
+  }
+  for (const { id, entry } of entries) {
+    if (seen.has(id)) continue;
+    seen.add(id);
+    records.push(normalizeAttemptTask(entry, id));
+  }
+  const costsByTask = parseSessionCostsByTask(opts.costsArtifact);
+  for (const record of records) {
+    const rows = costsByTask.get(record.id);
+    if (!rows || rows.length === 0) continue;
+    const { costUsd, tokens } = aggregateCostRows(rows);
+    record.costUsd = costUsd;
+    record.tokens = tokens;
+  }
+  return { source: "tasks-artifact", live: false, tasks: records };
+}
+
+/**
+ * Fresh per-task records straight from a still-running attempt's stack
+ * (?live=1 — v7.5 frozen): one GET /api/tasks/:id per attempt.taskIds entry.
+ * costUsd/tokens are ALWAYS null on this source; any failure makes the route
+ * fall through to the stored artifacts (same philosophy as the live
+ * transcript). Single-shot reads — the UI polls this endpoint.
+ */
+export async function fetchLiveTaskRecords(
+  sandbox: SandboxInfo,
+  taskIds: string[],
+): Promise<AttemptTaskRecord[]> {
+  const client = new SwarmClient(sandbox.apiUrl, sandbox.swarmKey);
+  const records: AttemptTaskRecord[] = [];
+  for (const id of taskIds) {
+    records.push(normalizeAttemptTask(await client.getTask(id), id));
+  }
+  return records;
 }
 
 /**
@@ -376,6 +570,44 @@ export async function startServer(port = Number(process.env.EVALS_PORT ?? 4801))
           });
         }
         return json({ source: null, harness, rows: null, text: null, live: false });
+      },
+      /**
+       * Per-task records (v7.5 items 2/5/6 — frozen contract). 404 only for an
+       * unknown attempt (matches /transcript). ?live=1 on a still-live attempt
+       * reads the stack directly (costUsd/tokens null on that source); any live
+       * failure falls through to the stored tasks.json + session-costs.json
+       * artifacts. v1-era attempts (no artifacts) degrade to the "task-ids" /
+       * null sources with all-null fields — nothing in the DB is rewritten.
+       */
+      "/api/attempts/:id/tasks": async (req) => {
+        const attempt = await getAttempt(db, req.params.id);
+        if (!attempt) return json({ error: "attempt not found" }, 404);
+        const wantLive = new URL(req.url).searchParams.get("live") === "1";
+        if (wantLive && LIVE_ATTEMPT_STATUSES.has(attempt.status) && attempt.sandbox) {
+          try {
+            const tasks = await withTimeout(
+              fetchLiveTaskRecords(attempt.sandbox, attempt.taskIds),
+              LIVE_FETCH_TIMEOUT_MS,
+            );
+            return json({ source: "live", live: true, tasks } satisfies AttemptTasksSnapshot);
+          } catch {
+            // sandbox dead, unreachable, or slow — fall through to the stored artifacts
+          }
+        }
+        const artifacts = await listArtifacts(db, attempt.id, { withContent: true });
+        const tasksArtifact =
+          artifacts.find((a) => a.kind === "task" && a.name === "tasks.json") ??
+          artifacts.find((a) => a.kind === "task");
+        const costsArtifact = artifacts.find(
+          (a) => a.kind === "meta" && a.name === "session-costs.json",
+        );
+        return json(
+          buildAttemptTaskRecords({
+            taskIds: attempt.taskIds,
+            tasksArtifact: tasksArtifact?.content ?? null,
+            costsArtifact: costsArtifact?.content ?? null,
+          }),
+        );
       },
       "/api/scenarios": () => {
         const registry = loadRegistry();

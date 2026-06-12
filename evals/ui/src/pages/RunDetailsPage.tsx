@@ -1,9 +1,18 @@
-import { Fragment, type ReactNode, useEffect, useMemo, useState } from "react";
+import {
+  Fragment,
+  type ReactNode,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   artifactUrl,
   cancelRun,
   getAttempt,
   getAttemptProgress,
+  getAttemptTasks,
   getJudgeLive,
   getRun,
   resumeRun,
@@ -48,6 +57,8 @@ import type {
   AttemptDetail,
   AttemptJson,
   AttemptProgressResponse,
+  AttemptTaskJson,
+  AttemptTasksResponse,
   CellJson,
   ConfigJson,
   JudgeLiveResponse,
@@ -277,26 +288,62 @@ export default function RunDetailsPage(props: {
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
 
+  // v7.5 items 2/5/6: per-task records (status, outcome/error, dependsOn,
+  // cost) from GET /api/attempts/:id/tasks — polled live alongside the
+  // attempt (4s while unfinished), then ONE final non-live fetch once the
+  // status flips terminal (the deps change re-runs the poll with live:false).
+  // A fetch error (e.g. a server without the endpoint yet) degrades to null
+  // → the pre-v7.5 artifact-parse UI below renders exactly as before.
+  const tasksPoll = usePoll<{ attemptId: string; res: AttemptTasksResponse } | null>(
+    () =>
+      selId === null
+        ? Promise.resolve(null)
+        : getAttemptTasks(selId, { live: attemptUnfinished }).then((res) => ({
+            attemptId: selId,
+            res,
+          })),
+    selId !== null && attemptUnfinished ? 4000 : null,
+    [selId, attemptUnfinished],
+  );
+  const taskRes =
+    tasksPoll.data !== null && tasksPoll.data.attemptId === selId ? tasksPoll.data.res : null;
+  // taskId → record map for the transcript's per-task sub-tab headers.
+  const taskRecords = useMemo<Record<string, AttemptTaskJson> | null>(() => {
+    if (taskRes === null) return null;
+    const out: Record<string, AttemptTaskJson> = {};
+    for (const t of taskRes.tasks) out[t.id] = t;
+    return out;
+  }, [taskRes]);
+
   // tasks.json artifact → per-task title/status/skip flags (v6 §9.5 + v7 §1).
-  // Fetched ONCE here and shared by the attempt summary and the transcript
-  // sub-tabs (the artifact text cache makes refetches free anyway).
+  // FALLBACK ONLY since v7.5: fetched when the tasks endpoint yielded nothing,
+  // so older servers keep exactly the previous behavior (the artifact text
+  // cache makes refetches free anyway).
   const artifacts = useMemo(() => detail?.artifacts ?? [], [detail]);
   const tasksArtifact =
     artifacts.find((a) => a.kind === "task" && a.name === "tasks.json") ??
     artifacts.find((a) => a.kind === "task") ??
     null;
-  const tasksFetched = useArtifactText(tasksArtifact?.id ?? null);
+  const tasksFetched = useArtifactText(taskRes === null ? (tasksArtifact?.id ?? null) : null);
   const taskFlags = useMemo(() => parseTaskFlags(tasksFetched.text), [tasksFetched.text]);
   const taskTitles = useMemo(() => {
     const out: Record<string, string> = {};
+    if (taskRes !== null) {
+      for (const t of taskRes.tasks) if (t.title !== null) out[t.id] = t.title;
+      return out;
+    }
     for (const [id, flag] of taskFlags) if (flag.title !== null) out[id] = flag.title;
     return out;
-  }, [taskFlags]);
+  }, [taskRes, taskFlags]);
   const taskStatuses = useMemo(() => {
     const out: Record<string, TranscriptTaskStatus> = {};
+    if (taskRes !== null) {
+      for (const t of taskRes.tasks) out[t.id] = { status: t.status, skipped: t.skipped };
+      return out;
+    }
     for (const [id, flag] of taskFlags) out[id] = { status: flag.status, skipped: flag.skipped };
     return out;
-  }, [taskFlags]);
+  }, [taskRes, taskFlags]);
 
   // v7 §10.3: Workers-panel task chips jump into the transcript's sub-tab.
   // Requests carry the attempt id so a stale one never crosses attempts.
@@ -510,6 +557,8 @@ export default function RunDetailsPage(props: {
             error={attemptPoll.error}
             config={attempt ? configs.byId(attempt.configId) : null}
             taskFlags={taskFlags}
+            tasks={taskRes !== null && taskRes.tasks.length > 0 ? taskRes.tasks : null}
+            onOpenTask={openTaskInTranscript}
           />
           <WorkersPanel attempt={attempt} onOpenTask={openTaskInTranscript} />
         </div>
@@ -564,6 +613,7 @@ export default function RunDetailsPage(props: {
                   taskIds={attempt?.taskIds}
                   taskTitles={taskTitles}
                   taskStatuses={taskStatuses}
+                  taskRecords={taskRecords}
                   focusTask={focusTask !== null && focusTask.attemptId === selId ? focusTask : null}
                 />
               ) : (
@@ -734,8 +784,14 @@ function AttemptSummary(props: {
   selId: string | null;
   error: string | null;
   config: ConfigJson | null;
-  /** Parsed tasks.json flags — fetched once by the page (v6 §9.5). */
+  /** Parsed tasks.json flags — the pre-v7.5 fallback path (v6 §9.5). */
   taskFlags: Map<string, TaskFlag>;
+  /**
+   * v7.5 items 2/5/6: per-task records in render order (tasks endpoint).
+   * Null (endpoint missing / fetch error / nothing known) → the legacy chips.
+   */
+  tasks: AttemptTaskJson[] | null;
+  onOpenTask: (taskId: string) => void;
 }): ReactNode {
   const { attempt, config, taskFlags } = props;
   if (!attempt) {
@@ -803,14 +859,19 @@ function AttemptSummary(props: {
           <ConfigChip configId={attempt.configId} link />
         </Meta>
       </div>
-      {attempt.taskIds.length > 0 ? (
+      {props.tasks !== null ? (
+        <TaskRows tasks={props.tasks} onOpenTask={props.onOpenTask} />
+      ) : attempt.taskIds.length > 0 ? (
         <div className="rd-tasks">
           <span className="meta-label">Tasks</span>
           {attempt.taskIds.map((taskId) => {
             const flag = taskFlags.get(taskId);
             return (
               <Fragment key={taskId}>
-                <code className="chip rd-mono">{taskId}</code>
+                {/* Item 1: long ids truncate (CSS ellipsis); the title carries the full id. */}
+                <code className="chip rd-mono" title={taskId}>
+                  {taskId}
+                </code>
                 {/* Cascade-failed dependent (v6 §9.5): dim tag, tooltip = raw failureReason. */}
                 {flag?.skipped === true ? (
                   <Tooltip text={flag.failureReason ?? "Skipped (failed dependency)"}>
@@ -854,6 +915,196 @@ function TokensValue(props: { tokens: TokenTotalsJson | null }): ReactNode {
         {fmtTokens(t.cacheReadTokens)} · cacheW {fmtTokens(t.cacheWriteTokens)})
       </span>
     </span>
+  );
+}
+
+// ---- left-panel task rows (v7.5 items 1/2/5/6) ----
+
+/**
+ * Glyph-status conventions for swarm task statuses — mirrors Transcript's
+ * taskTabGlyph (TRANSCRIPT-owned file, not exported). Static glyphs only:
+ * the single-animation rule forbids per-row spinners.
+ */
+function taskRowGlyph(
+  status: string | null,
+  skipped: boolean,
+): { glyph: string; tone: string; label: string } {
+  if (skipped) return { glyph: "⊘", tone: "dim", label: "Skipped (failed dependency)" };
+  const s = (status ?? "").toLowerCase();
+  if (s === "completed" || s === "done") return { glyph: "✓", tone: "green", label: "Completed" };
+  if (s === "failed" || s === "error") return { glyph: "✗", tone: "red", label: "Failed" };
+  if (s === "in_progress" || s === "running") {
+    return { glyph: "◔", tone: "accent", label: "In Progress" };
+  }
+  if (s === "pending" || s === "created" || s === "assigned") {
+    return { glyph: "○", tone: "dim", label: "Pending" };
+  }
+  if (s === "") return { glyph: "•", tone: "neutral", label: "Status unknown" };
+  return { glyph: "•", tone: "neutral", label: s };
+}
+
+/** Dependency reference: "Task n · title" by row position; short id when unknown. */
+function taskRefLabel(depId: string, tasks: AttemptTaskJson[]): string {
+  const idx = tasks.findIndex((t) => t.id === depId);
+  if (idx === -1) return depId.slice(0, 8);
+  const title = tasks[idx].title;
+  return title !== null ? `Task ${String(idx + 1)} · ${title}` : `Task ${String(idx + 1)}`;
+}
+
+/**
+ * Item 5: one row per task — status glyph, clickable label (focuses the
+ * task's transcript sub-tab), dependency indicator, per-task cost (item 6)
+ * and an expandable outcome/error block (item 2). Every field degrades to
+ * "—"/absent on all-null records (v1-era "task-ids" source).
+ */
+function TaskRows(props: {
+  tasks: AttemptTaskJson[];
+  onOpenTask: (taskId: string) => void;
+}): ReactNode {
+  return (
+    <div className="rd-taskrows">
+      <span className="rd-taskrows-label">Tasks</span>
+      {props.tasks.map((t, i) => (
+        <TaskRow key={t.id} task={t} index={i} tasks={props.tasks} onOpenTask={props.onOpenTask} />
+      ))}
+    </div>
+  );
+}
+
+function TaskRow(props: {
+  task: AttemptTaskJson;
+  index: number;
+  tasks: AttemptTaskJson[];
+  onOpenTask: (taskId: string) => void;
+}): ReactNode {
+  const t = props.task;
+  const [open, setOpen] = useState(false);
+  const info = taskRowGlyph(t.status, t.skipped);
+  const hasDetail = t.outcome !== null || t.error !== null;
+
+  const labelTip = [
+    t.id,
+    info.label,
+    t.agentId !== null ? `Agent ${t.agentId}` : null,
+    "Click to open in the transcript",
+  ]
+    .filter((line): line is string => line !== null)
+    .join("\n");
+
+  // Cascade-skipped reads distinctly from real errors (v6 §9 semantics).
+  const depTip = [
+    t.skipped ? "Cascade-skipped — a dependency failed" : null,
+    ...t.dependsOn.map((d) => `Depends on ${taskRefLabel(d, props.tasks)}`),
+  ]
+    .filter((line): line is string => line !== null)
+    .join("\n");
+
+  const tokenTotal =
+    t.tokens === null
+      ? 0
+      : t.tokens.inputTokens +
+        t.tokens.outputTokens +
+        t.tokens.cacheReadTokens +
+        t.tokens.cacheWriteTokens;
+  const costTip =
+    t.costUsd === null
+      ? "Per-task cost not captured"
+      : `Σ session cost for this task${tokenTotal > 0 ? ` · ${fmtTokens(tokenTotal)} tokens` : ""}`;
+
+  return (
+    <>
+      <div className={t.skipped ? "rd-taskrow skipped" : "rd-taskrow"}>
+        <span className={`rd-taskrow-glyph tone-${info.tone}`} role="img" aria-label={info.label}>
+          {info.glyph}
+        </span>
+        <Tooltip block text={labelTip}>
+          <button type="button" className="rd-taskrow-label" onClick={() => props.onOpenTask(t.id)}>
+            Task {props.index + 1}
+            {t.title !== null ? <span className="rd-taskrow-title"> · {t.title}</span> : null}
+          </button>
+        </Tooltip>
+        {t.dependsOn.length > 0 ? (
+          <Tooltip text={depTip}>
+            <span className="rd-taskrow-dep" role="img" aria-label={depTip}>
+              ↳{t.dependsOn.length > 1 ? t.dependsOn.length : ""}
+            </span>
+          </Tooltip>
+        ) : null}
+        <Tooltip text={costTip}>
+          <span className={t.costUsd === null ? "rd-taskrow-cost dim" : "rd-taskrow-cost"}>
+            {fmtCost(t.costUsd)}
+          </span>
+        </Tooltip>
+        {hasDetail ? (
+          <button
+            type="button"
+            className="rd-taskrow-toggle"
+            title={open ? "Hide the outcome/error" : "Show the outcome/error"}
+            onClick={() => setOpen((v) => !v)}
+          >
+            {open ? "▾" : "▸"}
+          </button>
+        ) : null}
+      </div>
+      {open && hasDetail ? (
+        <div className="rd-task-detail">
+          {t.error !== null ? (
+            <RdClamp>
+              <div className={t.skipped ? "rd-task-skip" : "rd-task-error"}>{t.error}</div>
+            </RdClamp>
+          ) : null}
+          {t.outcome !== null ? (
+            <RdClamp>
+              <div className="rd-task-outcome">{t.outcome}</div>
+            </RdClamp>
+          ) : null}
+        </div>
+      ) : null}
+    </>
+  );
+}
+
+/** v7.5 item 2: left-panel clamp threshold (the .sc-clamp pattern, rd- classes). */
+const TASK_CLAMP_MAX_PX = 160;
+
+/**
+ * Clamp + expand — copies ScenariosPage's ClampBox measurement pattern
+ * (scenarios.css is read-only, so the classes live in run-details.css).
+ */
+function RdClamp(props: { children: ReactNode }): ReactNode {
+  const [expanded, setExpanded] = useState(false);
+  const [clampable, setClampable] = useState(false);
+  const boxRef = useRef<HTMLDivElement | null>(null);
+
+  // scrollHeight reports the full content height even while max-height clamps
+  // the box — one measurement rule works in both states.
+  useLayoutEffect(() => {
+    const el = boxRef.current;
+    if (!el) return undefined;
+    const measure = () => setClampable(el.scrollHeight > TASK_CLAMP_MAX_PX + 1);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  const cls = `rd-clamp${expanded ? " expanded" : ""}${clampable ? " clampable" : ""}`;
+  return (
+    <div className="rd-clampwrap">
+      <div ref={boxRef} className={cls}>
+        {props.children}
+      </div>
+      {clampable ? (
+        <button
+          type="button"
+          className="rd-clamp-toggle"
+          onClick={() => setExpanded((e) => !e)}
+          title={expanded ? "Collapse this block" : "Expand the full block"}
+        >
+          {expanded ? "▴ Show less" : "▾ Show more"}
+        </button>
+      ) : null}
+    </div>
   );
 }
 
@@ -1064,16 +1315,18 @@ function MemberSection(props: {
           <SbRow label={`Tasks (${String(e.taskIds.length)})`}>
             {e.taskIds.length > 0 ? (
               <span className="rd-member-tasks">
+                {/* Item 1: chips ellipsize (no left-panel overflow); the portal
+                    tooltip carries the full id. */}
                 {e.taskIds.map((taskId) => (
-                  <button
-                    type="button"
-                    key={taskId}
-                    className="chip rd-task-chip"
-                    title="Open this task in the transcript"
-                    onClick={() => props.onOpenTask(taskId)}
-                  >
-                    {taskId}
-                  </button>
+                  <Tooltip key={taskId} text={`${taskId}\nOpen this task in the transcript`}>
+                    <button
+                      type="button"
+                      className="chip rd-task-chip"
+                      onClick={() => props.onOpenTask(taskId)}
+                    >
+                      {taskId}
+                    </button>
+                  </Tooltip>
                 ))}
               </span>
             ) : (
@@ -1633,7 +1886,9 @@ function LogsTab(props: {
     ) : rows.length === 0 ? (
       <div className="dim rd-not-captured">Empty log</div>
     ) : (
-      <LogLines rows={rows} />
+      // v7.5 item 3: the artifact's raw bytes back the Copy-all affordance;
+      // the live runner stream has no stored text (rawText stays null there).
+      <LogLines rows={rows} rawText={fetched.text} />
     );
   } else if (unfinished) {
     body = (

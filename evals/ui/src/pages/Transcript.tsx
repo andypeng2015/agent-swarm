@@ -4,7 +4,7 @@ import { HarnessIcon } from "../components/HarnessIcon.tsx";
 import { JsonView } from "../components/JsonView.tsx";
 import { Markdown } from "../components/Markdown.tsx";
 import { Spinner } from "../components/Spinner.tsx";
-import { StatusBadge } from "../components/StatusBadge.tsx";
+import { CostBadge, StatusBadge } from "../components/StatusBadge.tsx";
 import { Tooltip } from "../components/Tooltip.tsx";
 import { usePoll } from "../hooks.ts";
 import {
@@ -16,6 +16,7 @@ import {
   type ToolResultBlock,
   type ToolUseBlock,
 } from "../logs-parser/index.ts";
+import type { AttemptTaskJson } from "../types.ts";
 import "./transcript.css";
 
 const THINKING_COLLAPSE = 400;
@@ -160,6 +161,12 @@ export default function Transcript(props: {
   taskTitles?: Record<string, string>;
   /** v7 §1: taskId → status/skip info — drives the sub-tab status glyphs. */
   taskStatuses?: Record<string, TranscriptTaskStatus>;
+  /**
+   * v7.5 items 2/6: taskId → full per-task record (GET /api/attempts/:id/tasks)
+   * — drives the selected sub-tab's header (status chip, outcome/error clamp,
+   * per-task cost). Optional/additive: absent ⇒ no header (pre-v7.5 behavior).
+   */
+  taskRecords?: Record<string, AttemptTaskJson> | null;
   /** v7 §10.3: Workers-panel task chips focus a sub-tab (nonce re-triggers). */
   focusTask?: { taskId: string; nonce: number } | null;
 }): ReactNode {
@@ -201,6 +208,11 @@ export default function Transcript(props: {
     selectedTask !== null && taskTabs !== null && taskTabs.includes(selectedTask)
       ? selectedTask
       : null;
+
+  // v7.5 items 2/6: the full record behind the selected sub-tab — drives the
+  // header below the sticky bar. Absent records (taskRecords null/undefined,
+  // e.g. older servers or v1-era attempts) ⇒ no header (pre-v7.5 behavior).
+  const activeRecord = activeTask !== null ? (props.taskRecords?.[activeTask] ?? null) : null;
 
   // Focus requests from the Workers panel — each nonce applies at most once
   // (the page scopes focusTask to the current attempt, so 0 is a safe baseline).
@@ -266,34 +278,40 @@ export default function Transcript(props: {
   const rowCount = visibleRows?.length ?? 0;
   return (
     <div className="transcript">
-      <Caption harness={data.harness} live={data.live === true}>
-        <span className="t-caption-sep">·</span>
-        <span>{rowCount.toLocaleString()} Events</span>
-        <span className="t-caption-sep">·</span>
-        <span>{(built?.messageCount ?? 0).toLocaleString()} Messages</span>
-        {built && built.unparsedCount > 0 ? (
-          <>
-            <span className="t-caption-sep">·</span>
-            <Tooltip text="Rows the parser could not decode — rendered below as raw text">
-              <span className="t-unparsed">{built.unparsedCount.toLocaleString()} Unparsed</span>
-            </Tooltip>
-          </>
+      {/* v7.5 item 4: caption (Live pulse) + tab row pin to the top of the
+          .rd-tab-content scrollport while the transcript scrolls. */}
+      <div className="tr-stickybar">
+        <Caption harness={data.harness} live={data.live === true}>
+          <span className="t-caption-sep">·</span>
+          <span>{rowCount.toLocaleString()} Events</span>
+          <span className="t-caption-sep">·</span>
+          <span>{(built?.messageCount ?? 0).toLocaleString()} Messages</span>
+          {built && built.unparsedCount > 0 ? (
+            <>
+              <span className="t-caption-sep">·</span>
+              <Tooltip text="Rows the parser could not decode — rendered below as raw text">
+                <span className="t-unparsed">{built.unparsedCount.toLocaleString()} Unparsed</span>
+              </Tooltip>
+            </>
+          ) : null}
+        </Caption>
+        {taskTabs !== null ? (
+          <TaskTabs
+            tabs={taskTabs}
+            active={activeTask}
+            titles={props.taskTitles}
+            statuses={props.taskStatuses}
+            records={props.taskRecords}
+            onSelect={setSelectedTask}
+          />
         ) : null}
-      </Caption>
-      {taskTabs !== null ? (
-        <TaskTabs
-          tabs={taskTabs}
-          active={activeTask}
-          titles={props.taskTitles}
-          statuses={props.taskStatuses}
-          onSelect={setSelectedTask}
-        />
-      ) : null}
+      </div>
+      {activeRecord !== null ? <TaskTabHeader rec={activeRecord} /> : null}
       {rowCount === 0 ? (
         <div className="t-empty dim">
           {activeTask === null
             ? "No events yet"
-            : props.taskStatuses?.[activeTask]?.skipped === true
+            : resolveTaskStatus(activeTask, props.taskRecords, props.taskStatuses)?.skipped === true
               ? "No events for this task — it was skipped (failed dependency)"
               : "No events for this task"}
         </div>
@@ -368,15 +386,32 @@ function clipTitle(s: string): string {
   return s.length > TASK_TITLE_CLIP ? `${s.slice(0, TASK_TITLE_CLIP - 1)}…` : s;
 }
 
-/** Static status glyph per sub-tab (no spinners — single-animation rule). */
-function taskTabGlyph(st: TranscriptTaskStatus | undefined): {
+interface TrTabGlyph {
   glyph: string;
   tone: string;
   label: string;
-} {
-  if (st?.skipped === true)
-    return { glyph: "⊘", tone: "dim", label: "Skipped (failed dependency)" };
-  const s = (st?.status ?? "").toLowerCase();
+}
+
+/**
+ * v7.5 item 4: per-tab status source. The frozen task payload (GET
+ * /api/attempts/:id/tasks via the `taskRecords` prop) wins; the round-7
+ * tasks.json-derived `taskStatuses` map is the fallback. `undefined` means no
+ * record at all (e.g. v1-era attempts) — callers render NO indicator then.
+ */
+function resolveTaskStatus(
+  taskId: string,
+  records: Record<string, AttemptTaskJson> | null | undefined,
+  statuses: Record<string, TranscriptTaskStatus> | undefined,
+): TranscriptTaskStatus | undefined {
+  const rec = records?.[taskId];
+  if (rec !== undefined) return { status: rec.status, skipped: rec.skipped };
+  return statuses?.[taskId];
+}
+
+/** Static status glyph per sub-tab (no spinners — single-animation rule). */
+function taskTabGlyph(st: TranscriptTaskStatus): TrTabGlyph {
+  if (st.skipped) return { glyph: "⊘", tone: "dim", label: "Skipped (failed dependency)" };
+  const s = (st.status ?? "").toLowerCase();
   if (s === "completed" || s === "done") return { glyph: "✓", tone: "green", label: "Completed" };
   if (s === "failed" || s === "error") return { glyph: "✗", tone: "red", label: "Failed" };
   if (s === "in_progress" || s === "running") {
@@ -389,37 +424,86 @@ function taskTabGlyph(st: TranscriptTaskStatus | undefined): {
   return { glyph: "•", tone: "neutral", label: s };
 }
 
+/** Severity rank for the All-tab aggregate — higher is worse. */
+function statusRank(st: TranscriptTaskStatus): number {
+  if (st.skipped) return 2;
+  const s = (st.status ?? "").toLowerCase();
+  if (s === "failed" || s === "error") return 5;
+  if (s === "in_progress" || s === "running") return 4;
+  if (s === "pending" || s === "created" || s === "assigned") return 3;
+  if (s === "completed" || s === "done") return 0;
+  return 1; // unknown status string — worse than completed, better than pending
+}
+
+/**
+ * v7.5 item 4 convention: the All tab shows the WORST known task status
+ * (failed > in-progress > pending > skipped > unknown > completed); when no
+ * task has a known status (records absent — v1-era) it shows no indicator.
+ */
+function aggregateTabGlyph(
+  tabs: string[],
+  resolve: (taskId: string) => TranscriptTaskStatus | undefined,
+): TrTabGlyph | null {
+  let worst: TranscriptTaskStatus | null = null;
+  let worstRank = -1;
+  for (const taskId of tabs) {
+    const st = resolve(taskId);
+    if (st === undefined) continue;
+    const rank = statusRank(st);
+    if (rank > worstRank) {
+      worstRank = rank;
+      worst = st;
+    }
+  }
+  return worst === null ? null : taskTabGlyph(worst);
+}
+
 function TaskTabs(props: {
   tabs: string[];
   active: string | null;
   titles?: Record<string, string>;
   statuses?: Record<string, TranscriptTaskStatus>;
+  /** v7.5: frozen per-task records — preferred status source (see resolveTaskStatus). */
+  records?: Record<string, AttemptTaskJson> | null;
   onSelect: (taskId: string | null) => void;
 }): ReactNode {
+  const resolve = (taskId: string): TranscriptTaskStatus | undefined =>
+    resolveTaskStatus(taskId, props.records, props.statuses);
+  const allGlyph = aggregateTabGlyph(props.tabs, resolve);
   return (
     <div className="t-tasktabs">
       <button
         type="button"
         className={props.active === null ? "t-tasktab selected" : "t-tasktab"}
-        title="All events, including rows without a task id"
+        title={`All events, including rows without a task id${
+          allGlyph ? `\nWorst task status: ${allGlyph.label}` : ""
+        }`}
         onClick={() => props.onSelect(null)}
       >
+        {allGlyph !== null ? (
+          <span className={`t-tasktab-glyph tone-${allGlyph.tone}`} aria-hidden="true">
+            {allGlyph.glyph}
+          </span>
+        ) : null}
         All
       </button>
       {props.tabs.map((taskId, i) => {
-        const glyph = taskTabGlyph(props.statuses?.[taskId]);
+        const st = resolve(taskId);
+        const glyph = st !== undefined ? taskTabGlyph(st) : null;
         const title = props.titles?.[taskId];
         return (
           <button
             type="button"
             key={taskId}
             className={props.active === taskId ? "t-tasktab selected" : "t-tasktab"}
-            title={`${taskId}\n${glyph.label}`}
+            title={glyph !== null ? `${taskId}\n${glyph.label}` : taskId}
             onClick={() => props.onSelect(taskId)}
           >
-            <span className={`t-tasktab-glyph tone-${glyph.tone}`} aria-hidden="true">
-              {glyph.glyph}
-            </span>
+            {glyph !== null ? (
+              <span className={`t-tasktab-glyph tone-${glyph.tone}`} aria-hidden="true">
+                {glyph.glyph}
+              </span>
+            ) : null}
             Task {i + 1}
             {title !== undefined ? (
               <span className="t-tasktab-title"> · {clipTitle(title)}</span>
@@ -427,6 +511,54 @@ function TaskTabs(props: {
           </button>
         );
       })}
+    </div>
+  );
+}
+
+/**
+ * v7.5 items 2/6: header for the SELECTED sub-tab — StatusBadge-style status
+ * chip, outcome/error clamped + expandable (cascade-skipped reads distinctly
+ * from a real error, v6 §9 semantics) and the per-task CostBadge. Every field
+ * degrades to absent/"—" on all-null records ("task-ids" source, v1-era rows).
+ */
+function TaskTabHeader(props: { rec: AttemptTaskJson }): ReactNode {
+  const rec = props.rec;
+  const info = taskTabGlyph({ status: rec.status, skipped: rec.skipped });
+  const statusTip = [rec.id, info.label, rec.agentId !== null ? `Agent ${rec.agentId}` : null]
+    .filter((line): line is string => line !== null)
+    .join("\n");
+  return (
+    <div className="t-taskhead">
+      <div className="t-taskhead-row">
+        <Tooltip text={statusTip}>
+          <span className={`t-taskhead-status tone-${info.tone}`}>
+            <span className="t-tasktab-glyph" aria-hidden="true">
+              {info.glyph}
+            </span>
+            {info.label}
+          </span>
+        </Tooltip>
+        {/* Same labeling as the round-7 member cost: harness-reported Σ. */}
+        <Tooltip text="Harness-reported Σ session cost for this task — a recomputed attempt cost may differ">
+          <span className="t-taskhead-cost">
+            <CostBadge costUsd={rec.costUsd} source={null} />
+          </span>
+        </Tooltip>
+      </div>
+      {rec.error !== null ? (
+        <div className={rec.skipped ? "t-taskhead-detail skip" : "t-taskhead-detail error"}>
+          <div className="t-result-head">
+            {rec.skipped ? "⊘ Skipped (failed dependency)" : "↳ Error"}
+          </div>
+          <ClippedText text={rec.error} clip={ERROR_RESULT_CLIP} />
+        </div>
+      ) : null}
+      {rec.outcome !== null ? (
+        <div className="t-taskhead-detail">
+          <div className="t-result-head">↳ Outcome</div>
+          <ClippedText text={rec.outcome} clip={RESULT_CLIP} />
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -7,7 +7,9 @@
  * the API over its public E2B port proxy URL. Rosters may be heterogeneous
  * (v7 §9/§12): each member boots with its own EFFECTIVE HarnessConfig (cell
  * config unless overridden) and identity envs (TEMPLATE_ID / AGENT_NAME /
- * SYSTEM_PROMPT), and a scenario may add ONE lead member (AGENT_ROLE=lead —
+ * SYSTEM_PROMPT; defaults per v7.5 item 7 — lead → official/lead + "Lead",
+ * workers → AGENT_NAME `Worker <i>` only), and a scenario may add ONE lead
+ * member (AGENT_ROLE=lead —
  * the swarm routes agentId-less tasks to it). Eval tasks are otherwise
  * directly assigned to a worker's agentId.
  */
@@ -23,7 +25,7 @@ import {
   waitForHttpOk,
 } from "../../../src/e2b/dispatch";
 import { redactWithEnv } from "../../../src/e2b/env";
-import type { HarnessConfig, WorkerSpec } from "../types.ts";
+import { defaultMemberIdentity, type HarnessConfig, type WorkerSpec } from "../types.ts";
 import { cleanVersion } from "./version.ts";
 
 const API_PORT = 3013;
@@ -204,7 +206,13 @@ export function apiRuntimeEnv(swarmKey: string): Record<string, string> {
  *      for workers / "2" for the lead — the worker entrypoint's lead default);
  *   2. credentialsForConfig(effectiveConfig) — per-member credential isolation;
  *   3. effectiveConfig.env ?? {};
- *   4. identity envs from the spec: TEMPLATE_ID / AGENT_NAME / SYSTEM_PROMPT;
+ *   4. identity envs via defaultMemberIdentity(role, index, spec) (v7.5
+ *      item 7): TEMPLATE_ID (spec.template, defaulting to official/lead for
+ *      the LEAD only — plain workers get NO template default because a
+ *      template rewrites the eval subject's system prompt), AGENT_NAME
+ *      (spec.name ?? "Lead" / `Worker <index>`, always emitted so agents stop
+ *      registering as the entrypoint's `worker-<hash>` fallback), and
+ *      SYSTEM_PROMPT (spec.systemPrompt, unchanged);
  *   5. spec.env ?? {} (validated non-reserved at registry load).
  */
 export function workerRuntimeEnv(opts: {
@@ -215,12 +223,15 @@ export function workerRuntimeEnv(opts: {
   config: HarnessConfig;
   /** Member role; default "worker". */
   role?: "lead" | "worker";
+  /** 0-based member index (v7.5 item 7 — names the default `Worker <index>`); default 0. */
+  index?: number;
   /** Member identity + extra env (v7 §9); default {}. */
   spec?: WorkerSpec;
 }): Record<string, string> {
   const { config } = opts;
   const role = opts.role ?? "worker";
   const spec = opts.spec ?? {};
+  const identity = defaultMemberIdentity(role, opts.index ?? 0, spec);
   return {
     API_KEY: opts.swarmKey,
     AGENT_SWARM_API_KEY: opts.swarmKey,
@@ -270,10 +281,13 @@ export function workerRuntimeEnv(opts: {
       : {}),
     ...credentialsForConfig(config),
     ...(config.env ?? {}),
-    // Identity envs from the typed spec fields (v7 §9.3 step 4) — these keys
+    // Identity envs (v7 §9.3 step 4, defaults per v7.5 item 7) — these keys
     // are in WORKER_SPEC_RESERVED_ENV, so spec.env can never collide.
-    ...(spec.template ? { TEMPLATE_ID: spec.template } : {}),
-    ...(spec.name ? { AGENT_NAME: spec.name } : {}),
+    // AGENT_NAME is always emitted (deterministic even when the entrypoint's
+    // template fetch fails — that fetch is non-fatal, warn+continue);
+    // TEMPLATE_ID only when the spec set one or the member is the lead.
+    ...(identity.templateId ? { TEMPLATE_ID: identity.templateId } : {}),
+    AGENT_NAME: identity.agentName,
     ...(spec.systemPrompt ? { SYSTEM_PROMPT: spec.systemPrompt } : {}),
     ...(spec.env ?? {}),
   };
@@ -478,6 +492,7 @@ export async function bootStack(opts: {
         agentId,
         config,
         role: member.role,
+        index: member.index,
         spec: member.spec,
       });
       allWorkerEnvs.push(workerEnv);

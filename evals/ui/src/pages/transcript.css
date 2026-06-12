@@ -298,6 +298,24 @@
   margin: 2px 0 2px 16px;
 }
 
+/* ---- sticky header (v7.5 item 4) ----
+   The scroll container is .rd-tab-content (overflow-y: auto, run-details.css);
+   .transcript itself has no overflow, so position: sticky on this wrapper pins
+   it to the tab-content scrollport. Opaque panel bg so rows scroll underneath;
+   padding-bottom + negative margin covers the .transcript 8px flex gap below
+   the bar (otherwise rows would peek through the transparent gap). */
+.tr-stickybar {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--panel);
+  padding-bottom: 8px;
+  margin-bottom: -8px;
+}
+
 /* ---- per-task sub-tabs (v7 §1 — only when rows span >1 task) ---- */
 
 .t-tasktabs {
@@ -342,6 +360,68 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* ---- selected sub-tab header (v7.5 items 2/6) ---- */
+
+.t-taskhead {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-family: var(--font-mono);
+}
+
+.t-taskhead-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11.5px;
+}
+
+.t-taskhead-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.t-taskhead-cost {
+  margin-left: auto;
+}
+
+.t-taskhead-detail {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  padding: 6px 8px;
+  font-size: 11.5px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.t-taskhead-detail pre {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 360px;
+  overflow: auto;
+}
+
+.t-taskhead-detail.error {
+  border-color: color-mix(in srgb, var(--red) 40%, transparent);
+  background: color-mix(in srgb, var(--red) 10%, transparent);
+  color: var(--red);
+}
+
+/* Cascade-skipped reads distinctly from a real error (v6 §9 semantics). */
+.t-taskhead-detail.skip {
+  border-style: dashed;
+  color: var(--dim);
 }
 
 /* ---- shared small toggle ---- */

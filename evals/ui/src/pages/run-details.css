@@ -231,6 +231,217 @@ a.rd-cellsum-row:hover {
   align-items: center;
   gap: 6px;
   flex-wrap: wrap;
+  min-width: 0;
+}
+
+/* Item 1 (fallback chips): long task ids truncate instead of overflowing. */
+.rd-tasks > .chip {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---- left-panel task rows (v7.5 items 1/2/5/6) ---- */
+
+.rd-taskrows {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.rd-taskrows-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--dim);
+  margin-bottom: 2px;
+}
+
+.rd-taskrow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 1px 4px;
+  border-radius: 4px;
+}
+
+.rd-taskrow:hover {
+  background: var(--panel-2);
+}
+
+.rd-taskrow-glyph {
+  flex: none;
+  min-width: 14px;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  cursor: default;
+}
+
+/* The label's Tooltip wrapper is the flex child — it must be shrinkable
+   (min-width: 0) for the button's ellipsis to engage (item 1). */
+.rd-taskrow > .tooltip.block {
+  flex: 1;
+  min-width: 0;
+}
+
+.rd-taskrow-label {
+  display: block;
+  width: 100%;
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rd-taskrow-label:hover {
+  color: var(--accent);
+}
+
+.rd-taskrow.skipped .rd-taskrow-label {
+  color: var(--dim);
+}
+
+.rd-taskrow-title {
+  color: var(--dim);
+}
+
+/* Item 5: dependency indicator — distinct (orange) on cascade-skipped rows. */
+.rd-taskrow-dep {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--dim);
+  cursor: default;
+}
+
+.rd-taskrow.skipped .rd-taskrow-dep {
+  color: var(--orange);
+}
+
+/* Item 6: per-task cost ("—" when null). */
+.rd-taskrow-cost {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text);
+  white-space: nowrap;
+  cursor: default;
+}
+
+.rd-taskrow-cost.dim {
+  color: var(--dim);
+}
+
+.rd-taskrow-toggle {
+  flex: none;
+  background: none;
+  border: none;
+  padding: 0 2px;
+  font: inherit;
+  font-size: 10px;
+  color: var(--dim);
+  cursor: pointer;
+}
+
+.rd-taskrow-toggle:hover {
+  color: var(--text);
+}
+
+/* Item 2: expanded outcome/error detail under a task row. */
+.rd-task-detail {
+  margin: 2px 0 6px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.rd-task-outcome,
+.rd-task-error,
+.rd-task-skip {
+  padding: 6px 8px;
+  border-radius: 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.rd-task-outcome {
+  border: 1px solid var(--border);
+  background: var(--bg);
+}
+
+.rd-task-error {
+  border: 1px solid color-mix(in srgb, var(--red) 40%, transparent);
+  background: color-mix(in srgb, var(--red) 10%, transparent);
+  color: var(--red);
+}
+
+/* Cascade-skipped reads distinctly from a real error (v6 §9 semantics). */
+.rd-task-skip {
+  border: 1px dashed var(--border);
+  color: var(--dim);
+}
+
+/* Clamp + expand — the .sc-clamp pattern under rd- names (scenarios.css is
+   read-only); threshold lives in TASK_CLAMP_MAX_PX (RunDetailsPage.tsx). */
+.rd-clamp {
+  position: relative;
+  max-height: 160px;
+  overflow: hidden;
+}
+
+.rd-clamp.expanded {
+  max-height: none;
+  overflow: visible;
+}
+
+/* bottom fade — only while actually clamped */
+.rd-clamp.clampable:not(.expanded)::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 34px;
+  background: linear-gradient(to bottom, transparent, var(--panel));
+  pointer-events: none;
+}
+
+.rd-clamp-toggle {
+  margin-top: 4px;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 1px 7px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--dim);
+  cursor: pointer;
+}
+
+.rd-clamp-toggle:hover {
+  color: var(--text);
+  background: var(--panel-2);
+}
+
+.rd-clamp-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 .rd-attempt-error {
@@ -385,6 +596,9 @@ a.rd-cellsum-row:hover {
 .rd-member-name {
   font-size: 11.5px;
   color: var(--text);
+  /* Item 1 audit: free-form agent names must not overflow the left panel. */
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .rd-member-lead {
@@ -452,11 +666,17 @@ a.rd-cellsum-row:hover {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
+  min-width: 0;
 }
 
+/* Item 1: long task ids ellipsize inside the left panel — the portal tooltip
+   carries the full id. (.tooltip already has min-width: 0 / max-width: 100%.) */
 .rd-task-chip {
   cursor: pointer;
   color: var(--text);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .rd-task-chip:hover {
