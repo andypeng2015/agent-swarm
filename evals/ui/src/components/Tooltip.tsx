@@ -58,6 +58,19 @@ export function Tooltip(props: {
     };
   }, [anchor, close]);
 
+  // Live tables re-layout under a stationary cursor (new rows pushing the
+  // trigger away) and browsers fire no mouseleave until the pointer moves —
+  // leaving the box stranded over unrelated content. While open, re-validate
+  // that the trigger is still actually hovered/focused.
+  useEffect(() => {
+    if (!anchor) return;
+    const id = window.setInterval(() => {
+      const el = triggerRef.current;
+      if (!el || (!el.matches(":hover") && !el.matches(":focus-within"))) close();
+    }, 300);
+    return () => window.clearInterval(id);
+  }, [anchor, close]);
+
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: passive hover/focus wrapper — the tooltip content is announced via the child's aria-label/role, not by interacting with this span
     <span
