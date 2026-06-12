@@ -30,12 +30,18 @@ export class SwarmClient {
     private readonly apiKey: string,
   ) {}
 
-  private async request<T>(method: string, path: string, body?: unknown): Promise<T> {
+  private async request<T>(
+    method: string,
+    path: string,
+    body?: unknown,
+    headers?: Record<string, string>,
+  ): Promise<T> {
     const res = await fetch(`${this.baseUrl}${path}`, {
       method,
       headers: {
         Authorization: `Bearer ${this.apiKey}`,
         ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
+        ...(headers ?? {}),
       },
       body: body !== undefined ? JSON.stringify(body) : undefined,
     });
@@ -53,18 +59,59 @@ export class SwarmClient {
   async createTask(opts: {
     task: string;
     agentId: string;
+    /** Task UUIDs this task depends on — forwarded verbatim (native swarm-API deps, v6 §9). */
+    dependsOn?: string[];
     outputSchema?: Record<string, unknown>;
   }): Promise<SwarmTask> {
     const res = await this.request<Record<string, unknown>>("POST", "/api/tasks", {
       task: opts.task,
       agentId: opts.agentId,
       source: "api",
+      ...(opts.dependsOn ? { dependsOn: opts.dependsOn } : {}),
       ...(opts.outputSchema ? { outputSchema: opts.outputSchema } : {}),
     });
     const task = unwrapTask(res);
     if (!task.id)
       throw new Error(`task create returned no id: ${JSON.stringify(res).slice(0, 300)}`);
     return normalizeTask(task);
+  }
+
+  /**
+   * Index one memory into the attempt's swarm API (v6 §0.6/§0.7). The server
+   * responds 202 and embeds asynchronously — callers must gate on
+   * {@link searchMemory} before relying on retrieval.
+   */
+  async indexMemory(body: {
+    content: string;
+    name: string;
+    scope: "swarm" | "agent";
+    source: "manual";
+    agentId?: string;
+    tags?: string[];
+  }): Promise<{ queued: boolean; memoryIds: string[] }> {
+    return this.request<{ queued: boolean; memoryIds: string[] }>(
+      "POST",
+      "/api/memory/index",
+      body,
+    );
+  }
+
+  /**
+   * Memory search (readiness probe). The route hard-requires X-Agent-ID —
+   * `agentId` is sent as that header, not in the body.
+   */
+  async searchMemory(opts: {
+    agentId: string;
+    query: string;
+    limit?: number;
+    scope?: "agent" | "swarm" | "all";
+  }): Promise<{ results: { id: string }[] }> {
+    return this.request<{ results: { id: string }[] }>(
+      "POST",
+      "/api/memory/search",
+      { query: opts.query, limit: opts.limit ?? 5, scope: opts.scope ?? "all" },
+      { "X-Agent-ID": opts.agentId },
+    );
   }
 
   async getTask(id: string): Promise<SwarmTask> {

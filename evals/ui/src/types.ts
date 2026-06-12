@@ -56,7 +56,8 @@ export interface TokenTotalsJson {
   cacheWriteTokens: number;
 }
 
-export interface SandboxInfoJson {
+/** Legacy flat sandboxJson (v1) — old rows in existing evals.db files (read-only). */
+export interface SandboxInfoV1Json {
   apiSandboxId: string;
   workerSandboxId: string;
   apiTemplate: string;
@@ -72,6 +73,51 @@ export interface SandboxInfoJson {
   apiVersion?: string | null;
   /** Worker build version (`agent-swarm version` in the worker sandbox). Null/absent = not captured. */
   workerVersion?: string | null;
+}
+
+/** One worker entry of the persisted sandboxJson v2 blob (v6 spec §0.3 — FROZEN). */
+export interface SandboxWorkerInfoJson {
+  index: number;
+  sandboxId: string;
+  template: string;
+  agentId: string;
+  startedAt: string | null;
+  expiresAt: string | null;
+  version: string | null;
+}
+
+/** sandboxJson v2 (v6 spec §0.3 — FROZEN): discriminated by `v: 2` / `workers` array. */
+export interface SandboxInfoV2Json {
+  v: 2;
+  apiSandboxId: string;
+  apiTemplate: string;
+  apiUrl: string;
+  swarmKey: string;
+  domain: string | null;
+  apiStartedAt: string | null;
+  apiVersion: string | null;
+  workers: SandboxWorkerInfoJson[];
+}
+
+/**
+ * Union of both persisted shapes. ALL UI consumers go through
+ * `normalizeSandboxInfo` (lib/sandbox.ts) — no direct field access on the
+ * union outside that file (v6 spec §0.4).
+ */
+export type SandboxInfoJson = SandboxInfoV1Json | SandboxInfoV2Json;
+
+/**
+ * One entry of the tasks.json artifact (kind "task") — only the fields the UI
+ * reads. `skipped` is runner-computed (v6 spec §0.12); rows predating the flag
+ * fall back to testing failureReason against CASCADE_SKIP_RE.
+ */
+export interface TaskArtifactJson {
+  id: string;
+  title?: string;
+  status?: string;
+  failureReason?: string | null;
+  skipped?: boolean;
+  [key: string]: unknown;
 }
 
 export interface PhaseTimingsJson {
@@ -266,12 +312,15 @@ export interface TranscriptResponse {
   live?: boolean;
 }
 
+/** Mirrors SerializedScenario v2 (v6 spec §0.10). */
 export interface ScenarioJson {
   id: string;
   name: string;
   description: string | null;
-  tasks: { title: string; description: string }[];
-  seed: { exec: string[] } | null;
+  /** Number of homogeneous workers booted per attempt (default 1). */
+  workers: number;
+  tasks: { title: string; description: string; worker: number; dependsOn: number[] }[];
+  seed: { exec: string[]; sqlDump: string | null; memories: string[] } | null;
   timeoutMs: number;
   outcome: {
     checks: string[];

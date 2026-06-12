@@ -1,6 +1,6 @@
 import { type ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createRun, listConfigs, listScenarios } from "../api.ts";
-import { ConfigChip } from "../components/ConfigChip.tsx";
+import { ConfigMultiSelect } from "../components/ConfigMultiSelect.tsx";
 import { fuzzyMatch } from "../components/DataTable.tsx";
 import { fmtPerM, fmtTokens } from "../components/format.ts";
 import { ModelChip } from "../components/ModelChip.tsx";
@@ -8,6 +8,7 @@ import { Spinner } from "../components/Spinner.tsx";
 import { InfoTip, Tooltip } from "../components/Tooltip.tsx";
 import { navigate, useModels, usePoll } from "../hooks.ts";
 import type { CreateRunBody } from "../types.ts";
+import "./new-run.css";
 
 function clamp(n: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, Math.round(n)));
@@ -51,12 +52,6 @@ function NewRunForm(props: { onClose: () => void }): ReactNode {
     if (next.has(id)) next.delete(id);
     else next.add(id);
     setScenarioSel(next);
-  };
-  const toggleConfig = (id: string) => {
-    const next = new Set(selConfigs);
-    if (next.has(id)) next.delete(id);
-    else next.add(id);
-    setConfigSel(next);
   };
 
   const matches = useMemo(() => {
@@ -209,18 +204,7 @@ function NewRunForm(props: { onClose: () => void }): ReactNode {
           Configs{" "}
           <InfoTip text="Harness × model under test — every selected config becomes a matrix column" />
         </span>
-        <div className="check-list">
-          {configs.data.map((c) => (
-            <label key={c.id}>
-              <input
-                type="checkbox"
-                checked={selConfigs.has(c.id)}
-                onChange={() => toggleConfig(c.id)}
-              />
-              <ConfigChip configId={c.id} />
-            </label>
-          ))}
-        </div>
+        <ConfigMultiSelect configs={configs.data} selected={selConfigs} onChange={setConfigSel} />
       </div>
 
       <div className="form-row-2">

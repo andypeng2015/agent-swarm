@@ -1,14 +1,15 @@
 /**
- * Boots a full swarm stack (API + one worker) in E2B sandboxes for a single
- * eval attempt, reusing the repo's battle-tested dispatch primitives.
+ * Boots a full swarm stack (API + N homogeneous workers) in E2B sandboxes for
+ * a single eval attempt, reusing the repo's battle-tested dispatch primitives.
  *
- * Topology mirrors `e2b start-stack`: one sandbox per service, the worker
- * reaches the API over its public E2B port proxy URL. No lead — eval tasks are
- * directly assigned to the worker's agentId, which any worker handles alone.
+ * Topology mirrors `e2b start-stack`: one sandbox per service, workers reach
+ * the API over its public E2B port proxy URL. No lead — eval tasks are
+ * directly assigned to a worker's agentId, which that worker handles alone.
  */
 import {
   createSandbox,
   type E2BSandboxInfo,
+  e2bSdkConnectionOptions,
   killSandbox,
   listSandboxes,
   sandboxPortUrl,
@@ -24,20 +25,62 @@ const API_PORT = 3013;
 const API_TEMPLATE = process.env.EVALS_E2B_TEMPLATE_API ?? "agent-swarm-api-latest";
 const WORKER_TEMPLATE = process.env.EVALS_E2B_TEMPLATE_WORKER ?? "agent-swarm-worker-latest";
 
+/** stdout/stderr clip for the SQL-seed import result (matches the runner's SEED_OUTPUT_CLIP). */
+const SQL_SEED_OUTPUT_CLIP = 20_000;
+
+export interface WorkerHandle {
+  /** 0-based index, stable for the attempt's lifetime. */
+  index: number;
+  sandbox: E2BSandboxInfo;
+  /** UUID generated host-side; the worker self-registers under it via AGENT_ID env. */
+  agentId: string;
+  /** `agent-swarm version` output inside this worker's sandbox; null = capture failed. */
+  version: string | null;
+}
+
+export interface SqlSeedResult {
+  fixture: string; // bare filename, e.g. "seeded-history.sql"
+  exitCode: number; // always 0 on a returned StackHandle (non-zero throws in boot)
+  durationMs: number;
+  stdout: string;
+  stderr: string;
+}
+
 export interface StackHandle {
   apiSandbox: E2BSandboxInfo;
-  workerSandbox: E2BSandboxInfo;
+  /** One handle per booted worker, ordered by index. Length === scenario.workers ?? 1. */
+  workers: WorkerHandle[];
   apiUrl: string;
   swarmKey: string;
-  workerAgentId: string;
   /** Swarm API version from the sandbox /health response. Null if capture failed. */
   apiVersion: string | null;
-  /** Worker build version (`agent-swarm version` inside the worker sandbox). Null if capture failed. */
-  workerVersion: string | null;
+  /** Non-null when the scenario seeded the API DB via seed.sqlDump (v6 §1). */
+  sqlSeed: SqlSeedResult | null;
   /** Redact sandbox/env secrets from text before persisting it. */
   redact: (text: string) => string;
-  /** Idempotent teardown of both sandboxes. */
+  /** Idempotent teardown of the API + ALL worker sandboxes. */
   kill: () => Promise<void>;
+}
+
+/**
+ * Pipe each output line through a pure-bash ISO-8601 UTC timestamper (v6 §4).
+ * - stdbuf -oL -eL line-buffers the producer (both images ship coreutils).
+ * - printf '%(...)T' is a bash builtin (no per-line fork); second precision.
+ * - `|| [ -n "$line" ]` flushes a trailing unterminated line at EOF.
+ * - Composes with buildTrackedShell's pipefail: the entrypoint's non-zero exit
+ *   still propagates through the pipeline, so startDetachedProcess's 2s
+ *   liveness poll and launch-failure detection keep working.
+ *
+ * Resulting log-line shape (FROZEN, consumed by the UI's timestamp parser):
+ * `2026-06-11T21:30:05Z <original line>`.
+ */
+export function withLineTimestamps(cmd: string): string {
+  return (
+    `stdbuf -oL -eL ${cmd} 2>&1 | ` +
+    `while IFS= read -r line || [ -n "$line" ]; do ` +
+    `TZ=UTC printf '%(%Y-%m-%dT%H:%M:%SZ)T %s\\n' -1 "$line"; ` +
+    `done`
+  );
 }
 
 function e2bControllerKey(): string {
@@ -92,7 +135,8 @@ export function credentialsForConfig(config: HarnessConfig): Record<string, stri
   return out;
 }
 
-function apiRuntimeEnv(swarmKey: string): Record<string, string> {
+/** Exported for tests. */
+export function apiRuntimeEnv(swarmKey: string): Record<string, string> {
   return {
     API_KEY: swarmKey,
     AGENT_SWARM_API_KEY: swarmKey,
@@ -116,10 +160,18 @@ function apiRuntimeEnv(swarmKey: string): Record<string, string> {
     // stay strictly gated by credentialsForConfig.
     ...(process.env.EMBEDDING_API_KEY ? { EMBEDDING_API_KEY: process.env.EMBEDDING_API_KEY } : {}),
     ...(process.env.OPENAI_API_KEY ? { OPENAI_API_KEY: process.env.OPENAI_API_KEY } : {}),
+    // Pin the embedding dimensions to the vec0 column width (512). Published
+    // API templates ≤ v1.85.0 compute `Number(process.env.EMBEDDING_DIMENSIONS)
+    // ?? 512` = NaN when the env var is unset (NaN is not nullish), so OpenAI
+    // returns full-width 1536-dim vectors that can never match the 512-dim
+    // column — every memory index/search fails with a dimension mismatch.
+    // Explicitly setting 512 makes both old and current templates correct.
+    EMBEDDING_DIMENSIONS: "512",
   };
 }
 
-function workerRuntimeEnv(opts: {
+/** Exported for tests. */
+export function workerRuntimeEnv(opts: {
   swarmKey: string;
   apiUrl: string;
   agentId: string;
@@ -157,6 +209,22 @@ function workerRuntimeEnv(opts: {
       "/sbin",
       "/bin",
     ].join(":"),
+    // Session-summary credential (claude provider only). With ONLY
+    // CLAUDE_CODE_OAUTH_TOKEN in the worker env, the Stop hook's internal-ai
+    // wrapper falls back to shelling out `claude -p` for the session summary;
+    // on published templates that inner session fires the same Stop hook on
+    // exit and recursively spawns further summarizer claudes (~0.5-1GB each)
+    // until the sandbox OOMs and envd stops answering ("worker wedge": next
+    // task stuck in_progress, every exec/file API deadline_exceeded).
+    // OPENROUTER_API_KEY resolves FIRST in the internal-ai credential order,
+    // so the summary becomes one bounded HTTP call instead — and the claude
+    // CLI itself ignores this var, so the harness under test still
+    // authenticates via OAuth alone. The root fix (SKIP_SESSION_SUMMARY=1 in
+    // the spawned claude env, complete-structured.ts) reaches sandboxes with
+    // the next template publish; this injection keeps old templates safe.
+    ...(config.provider === "claude" && process.env.OPENROUTER_API_KEY
+      ? { OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY }
+      : {}),
     ...credentialsForConfig(config),
     ...(config.env ?? {}),
   };
@@ -205,8 +273,12 @@ async function waitForAgentReady(opts: {
 
 export async function bootStack(opts: {
   config: HarnessConfig;
-  /** Groups both sandboxes in e2b listings, e.g. "evals-<runId>". */
+  /** Groups every sandbox of the attempt in e2b listings, e.g. "evals-<runId>". */
   swarmSlug: string;
+  /** Number of homogeneous workers to boot. Default 1. */
+  workers?: number;
+  /** SQL text dump imported into /app/data/agent-swarm-db.sqlite BEFORE the API entrypoint starts. */
+  preBootSql?: { fixture: string; text: string };
   /** Sandbox TTL. Default 1800s. */
   timeoutSec?: number;
   /** Per-service readiness wait. Default 120s API / 180s worker. */
@@ -224,7 +296,10 @@ export async function bootStack(opts: {
   const timeoutSec = opts.timeoutSec ?? 1800;
   const log = opts.log ?? (() => {});
   const swarmKey = `evals-${crypto.randomUUID()}`;
-  const workerAgentId = crypto.randomUUID();
+  const workerCount = opts.workers ?? 1;
+  // One agent id per worker — a shared AGENT_ID would collapse N workers into
+  // one agent row (the entrypoint self-registers via X-Agent-ID: $AGENT_ID).
+  const workerAgentIds = Array.from({ length: workerCount }, () => crypto.randomUUID());
 
   const created: E2BSandboxInfo[] = [];
   let killed = false;
@@ -264,12 +339,56 @@ export async function bootStack(opts: {
     });
     created.push(apiSandbox);
     opts.signal?.throwIfAborted();
+
+    // SQL-dump seeding (v6 §1.2): import BEFORE the API entrypoint starts, so
+    // the server's first boot forward-applies missing migrations onto the
+    // seeded DB and boot-time caches see the seeded rows. envd is independent
+    // of the entrypoint, so exec/file APIs work pre-boot.
+    let sqlSeed: SqlSeedResult | null = null;
+    if (opts.preBootSql) {
+      const { fixture, text } = opts.preBootSql;
+      log(`importing SQL seed ${fixture} (${Buffer.byteLength(text, "utf8")} bytes)`);
+      // Upload via the E2B files API (avoids shell-quoting megabyte heredocs).
+      await sandboxWriteFile(apiSandbox.sandboxID, "/tmp/eval-seed.sql", text);
+      // bun:sqlite's multi-statement db.exec handles a full `.dump` (its own
+      // BEGIN TRANSACTION/COMMIT/PRAGMAs included).
+      const importCmd =
+        `mkdir -p /app/data && bun -e '` +
+        `const { Database } = require("bun:sqlite");` +
+        `const db = new Database("/app/data/agent-swarm-db.sqlite");` +
+        `db.exec(require("fs").readFileSync("/tmp/eval-seed.sql", "utf8"));` +
+        `db.close();` +
+        `' && rm -f /tmp/eval-seed.sql`;
+      const t0 = Date.now();
+      const res = await sandboxExec(apiSandbox.sandboxID, importCmd);
+      const durationMs = Date.now() - t0;
+      if (res.exitCode !== 0) {
+        // Failure = boot failure: the catch below kills all created sandboxes.
+        const detail = redactWithEnv(`${res.stderr}\n${res.stdout}`.trim(), {
+          ...apiEnv,
+          E2B_API_KEY: e2bKey,
+        }).slice(0, 2000);
+        throw new Error(
+          `sql-seed import failed (exit ${res.exitCode}) for fixture ${fixture}: ${detail}`,
+        );
+      }
+      sqlSeed = {
+        fixture,
+        exitCode: 0,
+        durationMs,
+        stdout: res.stdout.slice(0, SQL_SEED_OUTPUT_CLIP),
+        stderr: res.stderr.slice(0, SQL_SEED_OUTPUT_CLIP),
+      };
+      log(`SQL seed imported in ${durationMs}ms`);
+    }
+    opts.signal?.throwIfAborted();
+
     await startDetachedProcess({
       sandbox: apiSandbox,
       apiKey: e2bKey,
       apiBase,
       env: apiEnv,
-      command: "/api-entrypoint.sh",
+      command: withLineTimestamps("/api-entrypoint.sh"),
       role: "api",
       cwd: "/app",
     });
@@ -288,79 +407,91 @@ export async function bootStack(opts: {
     }
     opts.signal?.throwIfAborted();
 
-    log(
-      `creating worker sandbox (template ${WORKER_TEMPLATE}, ${opts.config.provider}${opts.config.model ? ` / ${opts.config.model}` : ""})`,
-    );
-    const workerEnv = workerRuntimeEnv({
-      swarmKey,
-      apiUrl,
-      agentId: workerAgentId,
-      config: opts.config,
-    });
-    const workerSandbox = await createSandbox({
-      apiKey: e2bKey,
-      apiBase,
-      template: WORKER_TEMPLATE,
-      timeoutSec,
-      envVars: workerEnv,
-      metadata: {
-        app: "agent-swarm",
-        launcher: "agent-swarm-e2b",
+    // Boot all workers in parallel — sequential boots add ~1–3 min each
+    // (registration + idle waits). Promise.all rejects on the first failure;
+    // the catch below kills everything created so far (sandboxes are pushed
+    // into `created` synchronously right after creation).
+    const allWorkerEnvs: Record<string, string>[] = [];
+    const bootWorker = async (index: number): Promise<WorkerHandle> => {
+      const agentId = workerAgentIds[index] as string;
+      log(
+        `creating worker ${index} sandbox (template ${WORKER_TEMPLATE}, ${opts.config.provider}${opts.config.model ? ` / ${opts.config.model}` : ""})`,
+      );
+      const workerEnv = workerRuntimeEnv({
+        swarmKey,
+        apiUrl,
+        agentId,
+        config: opts.config,
+      });
+      allWorkerEnvs.push(workerEnv);
+      const workerSandbox = await createSandbox({
+        apiKey: e2bKey,
+        apiBase,
+        template: WORKER_TEMPLATE,
+        timeoutSec,
+        envVars: workerEnv,
+        metadata: {
+          app: "agent-swarm",
+          launcher: "agent-swarm-e2b",
+          role: "worker",
+          swarm: opts.swarmSlug,
+          swarmRole: "worker",
+          workerIndex: String(index),
+          agentId,
+          evals: "true",
+        },
+      });
+      created.push(workerSandbox);
+      opts.signal?.throwIfAborted();
+      await startDetachedProcess({
+        sandbox: workerSandbox,
+        apiKey: e2bKey,
+        apiBase,
+        env: workerEnv,
+        command: withLineTimestamps("/docker-entrypoint.sh"),
         role: "worker",
-        swarm: opts.swarmSlug,
-        swarmRole: "worker",
-        agentId: workerAgentId,
-        evals: "true",
-      },
-    });
-    created.push(workerSandbox);
-    opts.signal?.throwIfAborted();
-    await startDetachedProcess({
-      sandbox: workerSandbox,
-      apiKey: e2bKey,
-      apiBase,
-      env: workerEnv,
-      command: "/docker-entrypoint.sh",
-      role: "worker",
-      cwd: "/workspace",
-    });
-    log("waiting for worker agent registration");
-    opts.signal?.throwIfAborted();
-    await waitForAgentRegistration(apiUrl, workerAgentId, swarmKey, opts.waitMs ?? 180_000);
-    log("waiting for worker to be idle + credentials ready");
-    opts.signal?.throwIfAborted();
-    await waitForAgentReady({
-      apiUrl,
-      swarmKey,
-      agentId: workerAgentId,
-      timeoutMs: 120_000,
-      signal: opts.signal,
-    });
+        cwd: "/workspace",
+      });
+      log(`waiting for worker ${index} agent registration`);
+      opts.signal?.throwIfAborted();
+      await waitForAgentRegistration(apiUrl, agentId, swarmKey, opts.waitMs ?? 180_000);
+      log(`waiting for worker ${index} to be idle + credentials ready`);
+      opts.signal?.throwIfAborted();
+      await waitForAgentReady({
+        apiUrl,
+        swarmKey,
+        agentId,
+        timeoutMs: 120_000,
+        signal: opts.signal,
+      });
+      opts.signal?.throwIfAborted();
+
+      // Worker build version via the compiled CLI (prints "agent-swarm vX.Y.Z";
+      // there is no -V flag — `version` is the subcommand). The CLI restores the
+      // cursor on exit (ESC[?25h) — cleanVersion strips ANSI/control sequences
+      // before extracting, so we store a clean "1.85.0" (v5 spec §5).
+      // Non-fatal → null.
+      let version: string | null = null;
+      try {
+        const res = await sandboxExec(workerSandbox.sandboxID, "agent-swarm version");
+        if (res.exitCode === 0) version = cleanVersion(res.stdout);
+      } catch {
+        // best-effort version capture
+      }
+      return { index, sandbox: workerSandbox, agentId, version };
+    };
+    const workers = await Promise.all(Array.from({ length: workerCount }, (_, i) => bootWorker(i)));
     opts.signal?.throwIfAborted();
 
-    // Worker build version via the compiled CLI (prints "agent-swarm vX.Y.Z";
-    // there is no -V flag — `version` is the subcommand). The CLI restores the
-    // cursor on exit (ESC[?25h) — cleanVersion strips ANSI/control sequences
-    // before extracting, so we store a clean "1.85.0" (v5 spec §5).
-    // Non-fatal → null.
-    let workerVersion: string | null = null;
-    try {
-      const res = await sandboxExec(workerSandbox.sandboxID, "agent-swarm version");
-      if (res.exitCode === 0) workerVersion = cleanVersion(res.stdout);
-    } catch {
-      // best-effort version capture
-    }
-    opts.signal?.throwIfAborted();
-
-    const secretEnv = { ...workerEnv, ...apiEnv, E2B_API_KEY: e2bKey };
+    // Every worker's env joins the secret set — any of them can leak into logs.
+    const secretEnv = Object.assign({}, ...allWorkerEnvs, apiEnv, { E2B_API_KEY: e2bKey });
     return {
       apiSandbox,
-      workerSandbox,
+      workers,
       apiUrl,
       swarmKey,
-      workerAgentId,
       apiVersion,
-      workerVersion,
+      sqlSeed,
       redact: (text: string) => redactWithEnv(text, secretEnv),
       kill,
     };
@@ -368,6 +499,20 @@ export async function bootStack(opts: {
     await kill();
     throw err;
   }
+}
+
+/** Write a file into a sandbox via the E2B files API (no shell quoting limits). */
+async function sandboxWriteFile(sandboxId: string, path: string, content: string): Promise<void> {
+  const { Sandbox } = await import("e2b");
+  const sandbox = await Sandbox.connect(
+    sandboxId,
+    e2bSdkConnectionOptions(
+      e2bControllerKey(),
+      process.env as Record<string, string>,
+      e2bApiBase(),
+    ),
+  );
+  await sandbox.files.write(path, content);
 }
 
 /** Run a shell command inside a sandbox; never throws on non-zero exit. */

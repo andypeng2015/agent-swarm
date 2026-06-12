@@ -50,8 +50,51 @@ Key endpoints: `GET/POST /api/runs`, `POST /api/runs/:id/{resume,cancel}`, `GET 
 
 ## Defining scenarios and configs
 
-- Scenarios live in `scenarios/*.ts` (`Scenario` type): description, optional seeding, initial task(s), and an `outcome` (deterministic `checks`, `llmJudge` and/or `agenticJudge` rubrics, `passThreshold`). Register in `scenarios/index.ts`.
+- Scenarios live in `scenarios/*.ts` (`Scenario` type): description, optional seeding, initial task(s), and an `outcome` (deterministic `checks`, `llmJudge` and/or `agenticJudge` rubrics, `passThreshold`). Register in `scenarios/index.ts` — every scenario is shape-validated at registry load (`validateScenario`; bad definitions fail CLI/server startup with the full violation list).
 - Harness configs live in `configs/index.ts` (`HarnessConfig`): provider (`claude` / `pi` / `codex` / `opencode`), concrete `model` (worker `MODEL_OVERRIDE`) or `modelTier`, plus extra env.
+
+### Seeding (`scenario.seed`)
+
+Seeding runs before the first task is created, in this order:
+
+- `sqlDump` — bare filename of a **full SQLite text dump** (`sqlite3 <db> .dump`) under `scenarios/fixtures/`, imported into the API sandbox's DB **before** the API server first boots (migrations forward-apply on top). The runner validates the fixture host-side before any sandbox exists: it must carry the `_migrations` table with applied rows and stay under 5 MB. Seed reference data only — no `agents` rows, no in-flight tasks, no sessions/locks, and no hand-seeded `agent_memory` rows (use `memories` instead). Conventions + regeneration recipe: [scenarios/fixtures/README.md](./scenarios/fixtures/README.md).
+- `memories` — strings (max 16) indexed as **swarm-scope memories** via the memory API after boot; embeddings are computed server-side, and the runner blocks until every seeded memory is searchable (90 s gate). Requires `EMBEDDING_API_KEY` or `OPENAI_API_KEY` in `evals/.env` — without one the attempt fails loudly at seed time instead of mysteriously at judging time.
+- `exec` — shell commands run in **worker 0's** sandbox after the stack is healthy (and after memories), e.g. to plant workspace files.
+
+### Multi-worker + task routing
+
+- `workers: N` (default 1, max 3) boots N **homogeneous** workers — same harness config; per-worker heterogeneous configs are out of scope.
+- Each task routes to one worker via `worker: i` (default 0). Tasks are still awaited sequentially in index order — multi-worker proves routing/isolation, not concurrency.
+- Grade per-worker side effects with `fileContainsOnWorker(i, path, re)` / `fileAbsentOnWorker(i, path)`; plain `ctx.exec` / `ctx.readFile` (and the agentic judge's tools) stay bound to worker 0.
+
+### Task dependencies (`dependsOn`)
+
+`dependsOn: [indices]` on a task uses **native swarm-API dependencies** (entries must reference strictly earlier tasks — that rule is the cycle check). When any task declares deps, the runner creates ALL tasks upfront and the server holds dependents `pending` until their dependencies complete. A failed / cancelled / timed-out dependency cascade-fails its dependents server-side; the runner classifies those as `skipped` in `tasks.json`, and the attempt grades as a normal model failure (never an infra `error`). Cost/log waits skip skipped tasks.
+
+### Bundled scenarios
+
+| id | proves | workers | needs embedding key |
+|---|---|---|---|
+| `hello-file` | smoke: precise instruction → file side effect (agentic judge) | 1 | – |
+| `quick-reasoning` | minimal reason-and-report loop (LLM judge) | 1 | – |
+| `sql-seeded-history` | `seed.sqlDump` import + agent consuming seeded API history | 1 | – |
+| `memory-seeded-recall` | `seed.memories` → embed → retrieval (the F2 E2E gate) | 1 | yes |
+| `memory-pipeline` | cross-task knowledge flow via memory + `dependsOn` DAG mode | 1 | yes |
+| `two-workers` | multi-worker routing + sandbox isolation | 2 | – |
+| `relay-handoff` | cross-worker handoff through swarm memory (`dependsOn` × `workers`) | 2 | yes |
+| `build-verify-fix` | build → verify/fix dependency chain, deterministic compile-grade check | 1 | – |
+
+### Scenario backlog + tier-ladder recipe
+
+Designs validated but not built (round-6 spec §13.2): `sql-audit-history` (richer sqlDump fixture, count failed deploy tasks via the API), `memory-distractor` (seeded truth vs an in-prompt wrong default; judge grades "retrieved, not guessed"), `cross-worker-invent` (blocked on the agentic judge's `workers[]` toolset — it is worker-0-bound in v1), `chain-depth-3` (plan → implement → review; marginal signal over `build-verify-fix` until judge spend drops).
+
+**Tier ladder** (a run recipe, not a scenario): run the same deterministic chain across price tiers, then read the cost-vs-pass scatter on the analytics page:
+
+```bash
+bun src/cli.ts run --scenarios build-verify-fix \
+  --configs claude-haiku,claude-sonnet,opencode-deepseek-flash,opencode-deepseek-pro,pi-glm-flash,pi-kimi-k2.5 \
+  --attempts 3
+```
 
 Judge model precedence: `scenario.judge.model` > run `--judge-model` > `EVAL_JUDGE_MODEL` > `deepseek/deepseek-v4-pro`.
 

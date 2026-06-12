@@ -81,3 +81,39 @@ export function fileContains(path: string, pattern?: RegExp): DeterministicCheck
     },
   };
 }
+
+/** Like {@link fileContains}, but against ctx.workers[worker] (multi-worker v1, v6 §0.9). */
+export function fileContainsOnWorker(
+  worker: number,
+  path: string,
+  pattern: RegExp,
+): DeterministicCheck {
+  return {
+    name: `file-contains[w${worker}]:${path}`,
+    fn: async (ctx) => {
+      const w = ctx.workers[worker];
+      if (!w) return { pass: false, detail: `worker ${worker} not booted` };
+      const content = await w.readFile(path);
+      if (content === null) return { pass: false, detail: `${path} not found` };
+      if (!pattern.test(content)) {
+        return { pass: false, detail: `${path} does not match ${pattern}` };
+      }
+      return { pass: true, detail: `${path} (${content.length} bytes)` };
+    },
+  };
+}
+
+/** Passes when the file does NOT exist on that worker (isolation proof, v6 §0.9). */
+export function fileAbsentOnWorker(worker: number, path: string): DeterministicCheck {
+  return {
+    name: `file-absent[w${worker}]:${path}`,
+    fn: async (ctx) => {
+      const w = ctx.workers[worker];
+      if (!w) return { pass: false, detail: `worker ${worker} not booted` };
+      const content = await w.readFile(path);
+      return content === null
+        ? { pass: true, detail: `${path} absent` }
+        : { pass: false, detail: `${path} exists (${content.length} bytes)` };
+    },
+  };
+}

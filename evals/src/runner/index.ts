@@ -33,23 +33,205 @@ import {
   sandboxExec,
   sandboxReadFile,
   sweepRunSandboxes,
+  type WorkerHandle,
 } from "../swarm/sandbox.ts";
-import type {
-  AttemptRow,
-  CostSource,
-  DeterministicCheck,
-  HarnessConfig,
-  JudgeContext,
-  JudgeTrace,
-  PhaseTimings,
-  SandboxInfo,
-  Scenario,
-  SwarmTask,
-  TokenTotals,
+import {
+  type AttemptRow,
+  CASCADE_SKIP_RE,
+  type CostSource,
+  type DeterministicCheck,
+  type HarnessConfig,
+  type JudgeContext,
+  type JudgeTrace,
+  type PhaseTimings,
+  type SandboxInfo,
+  type Scenario,
+  type SwarmTask,
+  type TaskSpec,
+  type TokenTotals,
 } from "../types.ts";
 
 const DEFAULT_TASK_TIMEOUT_MS = 10 * 60 * 1000;
 const DEFAULT_MAX_RETRIES = 1; // infra retries per attempt (fresh sandboxes each try)
+
+// ---- sql-dump fixture validation (v6 §1.3 — rules FROZEN) ----
+
+const SQL_DUMP_MAX_BYTES = 5 * 1024 * 1024;
+// A full `sqlite3 <db> .dump` always carries the _migrations table WITH applied
+// rows. A dump missing them would make the migration bootstrapper re-apply 002+
+// onto already-migrated tables at first boot → breakage.
+const SQL_DUMP_MIGRATIONS_DDL_RE = /CREATE TABLE\s+(IF NOT EXISTS\s+)?["'`]?_migrations/i;
+const SQL_DUMP_MIGRATIONS_ROWS_RE = /INSERT INTO\s+["'`]?_migrations/i;
+
+/** Returns the violation reason, or null when the dump text is acceptable. */
+export function validateSqlDumpText(text: string): string | null {
+  const bytes = Buffer.byteLength(text, "utf8");
+  if (bytes > SQL_DUMP_MAX_BYTES) {
+    return `fixture exceeds the 5 MB cap (${bytes} bytes) — fixtures are reference data, not prod DBs`;
+  }
+  if (!SQL_DUMP_MIGRATIONS_DDL_RE.test(text)) {
+    return "dump does not create the _migrations table (use a full `sqlite3 <db> .dump`)";
+  }
+  if (!SQL_DUMP_MIGRATIONS_ROWS_RE.test(text)) {
+    return "dump carries no applied _migrations rows (use a full `sqlite3 <db> .dump`)";
+  }
+  return null;
+}
+
+/**
+ * Host-side fixture load + validation — runs BEFORE any sandbox is created, so
+ * a bad fixture costs zero E2B time. Resolved relative to the evals package
+ * root (import.meta-relative, never process.cwd()).
+ */
+async function loadSqlDumpFixture(name: string): Promise<{ fixture: string; text: string }> {
+  const file = Bun.file(new URL(`../../scenarios/fixtures/${name}`, import.meta.url));
+  if (!(await file.exists())) {
+    throw new Error(`sql-seed fixture not found: scenarios/fixtures/${name}`);
+  }
+  const text = await file.text();
+  const invalid = validateSqlDumpText(text);
+  if (invalid) throw new Error(`sql-seed fixture invalid: ${invalid}`);
+  return { fixture: name, text };
+}
+
+// ---- infra-failure net (v6 §0.13/§12 — FROZEN) ----
+
+export interface InfraFailureSignature {
+  id: string; // stable slug; appears in attempt error messages
+  pattern: RegExp; // tested against task.failureReason of terminal "failed" tasks ONLY
+  hint: string; // appended to the attempt error message
+}
+
+/**
+ * Single registry of known-infrastructure task failures. Rules (v6 §12.3):
+ * match on failureReason ONLY; patterns must be specific enough to never match
+ * a model-caused failure — when in doubt, don't add.
+ */
+export const INFRA_FAILURE_SIGNATURES: InfraFailureSignature[] = [
+  {
+    id: "opencode-spawn-timeout",
+    pattern: /Spawn failed: Timeout waiting for server/i,
+    hint:
+      "opencode server failed to start inside the worker sandbox (cold-start flake; " +
+      "the root-repo OPENCODE_SERVER_TIMEOUT_MS fix reaches sandboxes only with the " +
+      "next release's worker-template publish — this net is the interim + permanent insurance).",
+  },
+];
+
+export class InfraTaskFailureError extends Error {
+  constructor(
+    public readonly signatureId: string,
+    public readonly taskId: string,
+    message: string,
+  ) {
+    super(message);
+    this.name = "InfraTaskFailureError";
+  }
+}
+
+/**
+ * Uniform post-`waitForTask` classification (both creation modes), frozen
+ * order (v6 §9.4): 1) infra-signature check — throws InfraTaskFailureError,
+ * short-circuiting the whole attempt body (no log/cost waits, no judge spend)
+ * and riding the per-attempt retry; 2) cascade-skip classification — a
+ * dependent failed by the server's dependency cascade gets `skipped: true`.
+ */
+export function processTerminalTask<T extends SwarmTask>(
+  task: T,
+  log: (msg: string) => void = () => {},
+): T {
+  const reason = String(task.failureReason ?? "");
+  if (task.status === "failed") {
+    const sig = INFRA_FAILURE_SIGNATURES.find((s) => s.pattern.test(reason));
+    if (sig) {
+      throw new InfraTaskFailureError(
+        sig.id,
+        task.id,
+        `infra failure (${sig.id}): task ${task.id} failed with "${reason.slice(0, 300)}". ${sig.hint}`,
+      );
+    }
+    if (CASCADE_SKIP_RE.test(reason)) {
+      log(`[task] ${task.id} skipped (failed dependency)`);
+      return { ...task, skipped: true };
+    }
+  }
+  return task;
+}
+
+/** Build the persisted sandboxJson v2 blob (v6 §0.3 — shape FROZEN). */
+export function buildSandboxInfo(stack: StackHandle): SandboxInfo {
+  return {
+    v: 2,
+    apiSandboxId: stack.apiSandbox.sandboxID,
+    apiTemplate: stack.apiSandbox.templateID,
+    apiUrl: stack.apiUrl,
+    swarmKey: stack.swarmKey,
+    domain: stack.apiSandbox.domain ?? null,
+    apiStartedAt: stack.apiSandbox.startedAt ?? null,
+    apiVersion: stack.apiVersion,
+    workers: stack.workers.map((w) => ({
+      index: w.index,
+      sandboxId: w.sandbox.sandboxID,
+      template: w.sandbox.templateID,
+      agentId: w.agentId,
+      startedAt: w.sandbox.startedAt ?? null,
+      expiresAt: w.sandbox.endAt ?? w.sandbox.expiresAt ?? null,
+      version: w.version,
+    })),
+  };
+}
+
+// ---- seed.memories readiness gate (v6 §2.3 — FROZEN) ----
+
+const MEMORY_READINESS_TIMEOUT_MS = 90_000;
+const MEMORY_READINESS_POLL_MS = 3_000;
+const MEMORY_SEED_FAILURE_SUFFIX =
+  "memories never became searchable; check EMBEDDING_API_KEY / OPENAI_API_KEY in evals/.env " +
+  "(the API sandbox needs an embedding key for memory scenarios)";
+
+/**
+ * Embedding is async (the index endpoint 202-queues) — poll memory search
+ * until every seeded entry's memoryIds are retrievable. Timeout = attempt
+ * error (fail loudly at seed time, not mysteriously at judging time).
+ * Returns the readiness wall-clock in ms.
+ */
+async function awaitSeededMemoriesSearchable(opts: {
+  client: SwarmClient;
+  /** Worker-0 agent id — the search route hard-requires X-Agent-ID. */
+  agentId: string;
+  entries: { content: string; memoryIds: string[] }[];
+  signal?: AbortSignal;
+}): Promise<number> {
+  const t0 = Date.now();
+  const deadline = t0 + MEMORY_READINESS_TIMEOUT_MS;
+  const pending = new Set(opts.entries.map((_, i) => i));
+  while (pending.size > 0) {
+    opts.signal?.throwIfAborted();
+    for (const i of [...pending]) {
+      const entry = opts.entries[i] as { content: string; memoryIds: string[] };
+      try {
+        const res = await opts.client.searchMemory({
+          agentId: opts.agentId,
+          query: entry.content.slice(0, 120),
+          limit: 5,
+          scope: "all",
+        });
+        if (res.results?.some((r) => entry.memoryIds.includes(r.id))) pending.delete(i);
+      } catch {
+        // transient API blip — keep polling until the deadline
+      }
+    }
+    if (pending.size === 0) break;
+    if (Date.now() >= deadline) {
+      throw new Error(
+        `seed.memories failed: ${pending.size}/${opts.entries.length} seeded memory(ies) not ` +
+          `searchable after ${Math.round(MEMORY_READINESS_TIMEOUT_MS / 1000)}s — ${MEMORY_SEED_FAILURE_SUFFIX}`,
+      );
+    }
+    await Bun.sleep(MEMORY_READINESS_POLL_MS);
+  }
+  return Date.now() - t0;
+}
 
 export interface Registry {
   scenarios: Map<string, Scenario>;
@@ -171,23 +353,35 @@ function mergeJudgeTokens(
 
 const SEED_OUTPUT_CLIP = 20_000;
 
-/** Implicit deterministic check: every scenario task ended `completed`. */
+/**
+ * Implicit deterministic check: every scenario task ended `completed`. The
+ * failure detail separates real failures from cascade-skipped dependents
+ * (v6 §9.4 frozen format: `<n> failed: <titles> · <m> skipped (failed dependency): <titles>`).
+ */
 function tasksCompletedCheck(tasks: SwarmTask[]): DeterministicCheck {
+  const label = (t: SwarmTask): string => {
+    const name = t.title || `task ${t.id}`;
+    const timedOut = (t as { timedOut?: boolean }).timedOut;
+    if (t.status === "failed" && !timedOut) return name;
+    return `${name} (${t.status}${timedOut ? ", timed out" : ""})`;
+  };
   return {
     name: "tasks-completed",
     fn: async () => {
       const bad = tasks.filter((t) => t.status !== "completed");
-      return bad.length === 0
-        ? { pass: true, detail: `${tasks.length} task(s) completed` }
-        : {
-            pass: false,
-            detail: bad
-              .map(
-                (t) =>
-                  `task ${t.id}: ${t.status}${(t as { timedOut?: boolean }).timedOut ? " (timed out)" : ""}`,
-              )
-              .join("; "),
-          };
+      if (bad.length === 0) return { pass: true, detail: `${tasks.length} task(s) completed` };
+      const skipped = bad.filter((t) => t.skipped);
+      const failed = bad.filter((t) => !t.skipped);
+      const parts: string[] = [];
+      if (failed.length > 0) {
+        parts.push(`${failed.length} failed: ${failed.map(label).join(", ")}`);
+      }
+      if (skipped.length > 0) {
+        parts.push(
+          `${skipped.length} skipped (failed dependency): ${skipped.map(label).join(", ")}`,
+        );
+      }
+      return { pass: false, detail: parts.join(" · ") };
     },
   };
 }
@@ -224,12 +418,20 @@ async function runAttemptOnce(opts: {
   // A re-run of an interrupted attempt must not keep half-written results.
   await clearAttemptResults(db, attempt.id);
 
+  // Host-side sqlDump fixture load + validation BEFORE any sandbox exists —
+  // a missing/invalid fixture costs zero E2B time (v6 §1.3).
+  const preBootSql = scenario.seed?.sqlDump
+    ? await loadSqlDumpFixture(scenario.seed.sqlDump)
+    : undefined;
+
   const timings = newPhaseTimings();
   setAttemptPhase(attempt.id, "boot");
   const boot = await timed(() =>
     bootStack({
       config,
       swarmSlug: `evals-${attempt.runId}`,
+      workers: scenario.workers ?? 1,
+      preBootSql,
       timeoutSec,
       signal,
       log: (msg) => log(`[boot] ${msg}`),
@@ -241,108 +443,208 @@ async function runAttemptOnce(opts: {
   const untrack = trackStack(attempt.runId, stack);
   // Written at boot so the live run-details page shows sandbox info while the
   // attempt runs. The swarmKey is deliberately stored/exposed — eval sandboxes
-  // are throwaway.
-  const sandboxInfo: SandboxInfo = {
-    apiSandboxId: stack.apiSandbox.sandboxID,
-    workerSandboxId: stack.workerSandbox.sandboxID,
-    apiTemplate: stack.apiSandbox.templateID,
-    workerTemplate: stack.workerSandbox.templateID,
-    apiUrl: stack.apiUrl,
-    swarmKey: stack.swarmKey,
-    workerAgentId: stack.workerAgentId,
-    domain: stack.workerSandbox.domain ?? null,
-    apiStartedAt: stack.apiSandbox.startedAt ?? null,
-    workerStartedAt: stack.workerSandbox.startedAt ?? null,
-    expiresAt: stack.workerSandbox.endAt ?? stack.workerSandbox.expiresAt ?? null,
-    apiVersion: stack.apiVersion,
-    workerVersion: stack.workerVersion,
-  };
+  // are throwaway. Always the v2 shape (v6 §0.3); the UI normalizes v1 rows.
+  const sandboxInfo = buildSandboxInfo(stack);
   await updateAttempt(db, attempt.id, {
-    sandboxId: stack.workerSandbox.sandboxID,
+    // The scalar column keeps meaning worker 0's sandboxId.
+    sandboxId: stack.workers[0]?.sandbox.sandboxID ?? null,
     apiUrl: stack.apiUrl,
     sandboxJson: JSON.stringify(sandboxInfo),
   });
 
   try {
     const client = new SwarmClient(stack.apiUrl, stack.swarmKey);
-    await markAttemptStart(stack.workerSandbox.sandboxID);
+    await Promise.all(stack.workers.map((w) => markAttemptStart(w.sandbox.sandboxID)));
 
-    if (scenario.seed?.exec?.length) {
+    // Seed-memories record for the artifacts phase (v6 §2.4).
+    let seedMemories: { requested: number; memoryIds: string[]; readinessMs: number } | null = null;
+    if (scenario.seed?.memories?.length || scenario.seed?.exec?.length) {
       signal?.throwIfAborted();
       setAttemptPhase(attempt.id, "seed");
       const seedT0 = Date.now();
-      const seedOutputs: {
-        cmd: string;
-        exitCode: number;
-        durationMs: number;
-        stdout: string;
-        stderr: string;
-      }[] = [];
       try {
-        for (const cmd of scenario.seed.exec) {
-          log(`[seed] ${cmd}`);
-          const cmdT0 = Date.now();
-          const res = await sandboxExec(stack.workerSandbox.sandboxID, cmd);
-          seedOutputs.push({
-            cmd,
-            exitCode: res.exitCode,
-            durationMs: Date.now() - cmdT0,
-            stdout: res.stdout.slice(0, SEED_OUTPUT_CLIP),
-            stderr: res.stderr.slice(0, SEED_OUTPUT_CLIP),
+        // 1. Memories FIRST (v6 §2.2): index all entries, then gate on
+        // searchability — both complete before the first createTask, since
+        // memory injection happens at task-prompt build time on the server.
+        const memories = scenario.seed?.memories ?? [];
+        if (memories.length > 0) {
+          log(`[seed] indexing ${memories.length} memory(ies)`);
+          const entries: { content: string; memoryIds: string[] }[] = [];
+          for (let i = 0; i < memories.length; i++) {
+            const content = memories[i] as string;
+            try {
+              const res = await client.indexMemory({
+                content,
+                name: `seed-memory-${i + 1}`,
+                scope: "swarm",
+                source: "manual",
+                tags: ["eval-seed"],
+              });
+              entries.push({ content, memoryIds: res.memoryIds ?? [] });
+              log(`[seed] seed-memory-${i + 1} queued (${(res.memoryIds ?? []).length} chunk(s))`);
+            } catch (err) {
+              throw new Error(
+                `seed.memories failed: index call for seed-memory-${i + 1} failed ` +
+                  `(${err instanceof Error ? err.message : err}) — ${MEMORY_SEED_FAILURE_SUFFIX}`,
+              );
+            }
+          }
+          const worker0 = stack.workers[0] as WorkerHandle;
+          const readinessMs = await awaitSeededMemoriesSearchable({
+            client,
+            agentId: worker0.agentId,
+            entries,
+            signal,
           });
-          log(`[seed] exit ${res.exitCode} in ${Date.now() - cmdT0}ms`);
-          if (res.exitCode !== 0) {
-            throw new Error(
-              `seed command failed (${res.exitCode}): ${cmd}\n${res.stderr.slice(0, 500)}`,
-            );
+          seedMemories = {
+            requested: memories.length,
+            memoryIds: entries.flatMap((e) => e.memoryIds),
+            readinessMs,
+          };
+          log(`[seed] memories searchable in ${readinessMs}ms`);
+        }
+
+        // 2. Then seed.exec, in WORKER 0's sandbox — exec scripts may want to
+        // assert on the seeded environment.
+        if (scenario.seed?.exec?.length) {
+          const seedOutputs: {
+            cmd: string;
+            exitCode: number;
+            durationMs: number;
+            stdout: string;
+            stderr: string;
+          }[] = [];
+          try {
+            for (const cmd of scenario.seed.exec) {
+              log(`[seed] ${cmd}`);
+              const cmdT0 = Date.now();
+              const res = await sandboxExec(
+                (stack.workers[0] as WorkerHandle).sandbox.sandboxID,
+                cmd,
+              );
+              seedOutputs.push({
+                cmd,
+                exitCode: res.exitCode,
+                durationMs: Date.now() - cmdT0,
+                stdout: res.stdout.slice(0, SEED_OUTPUT_CLIP),
+                stderr: res.stderr.slice(0, SEED_OUTPUT_CLIP),
+              });
+              log(`[seed] exit ${res.exitCode} in ${Date.now() - cmdT0}ms`);
+              if (res.exitCode !== 0) {
+                throw new Error(
+                  `seed command failed (${res.exitCode}): ${cmd}\n${res.stderr.slice(0, 500)}`,
+                );
+              }
+            }
+          } finally {
+            // Written on success AND before a seed-failure throw (retry clears it).
+            await insertArtifact(db, {
+              id: crypto.randomUUID(),
+              attemptId: attempt.id,
+              kind: "meta",
+              name: "seed-output.json",
+              content: stack.redact(JSON.stringify(seedOutputs, null, 2)),
+            });
           }
         }
       } finally {
-        // Written on success AND before a seed-failure throw (retry clears it).
         timings.seedMs = Date.now() - seedT0;
         recordAttemptTimings(attempt.id, timings);
-        await insertArtifact(db, {
-          id: crypto.randomUUID(),
-          attemptId: attempt.id,
-          kind: "meta",
-          name: "seed-output.json",
-          content: stack.redact(JSON.stringify(seedOutputs, null, 2)),
-        });
       }
     }
 
     const tasks: SwarmTask[] = [];
     setAttemptPhase(attempt.id, "tasks");
     const tasksT0 = Date.now();
-    for (const spec of scenario.tasks) {
-      signal?.throwIfAborted();
-      log(`[task] creating "${spec.title}" → agent ${stack.workerAgentId}`);
+    const createdTaskIds: string[] = [];
+
+    const resolveWorker = (spec: TaskSpec): WorkerHandle => {
+      const index = spec.worker ?? 0;
+      const w = stack.workers[index];
+      if (!w) {
+        throw new Error(
+          `task "${spec.title}" references worker ${index} but only ${stack.workers.length} booted`,
+        );
+      }
+      return w;
+    };
+    const createTaskFor = async (spec: TaskSpec): Promise<SwarmTask> => {
+      const w = resolveWorker(spec);
+      const deps = (spec.dependsOn ?? []).map((d) => createdTaskIds[d] as string);
+      log(
+        `[task] creating "${spec.title}" → worker ${w.index} (${w.agentId})` +
+          (deps.length > 0 ? ` deps=[${deps.map((d) => d.slice(0, 8)).join(", ")}]` : ""),
+      );
+      // agentId is NEVER omitted — an unassigned task routes to a lead, and
+      // eval stacks have no lead (the task would rot unclaimed until timeout).
       const created = await client.createTask({
         task: `${spec.title}\n\n${spec.description}`,
-        agentId: stack.workerAgentId,
+        agentId: w.agentId,
+        ...(deps.length > 0 ? { dependsOn: deps } : {}),
       });
-      log(`[task] created ${created.id} — waiting (timeout ${Math.round(taskTimeoutMs / 1000)}s)`);
+      createdTaskIds.push(created.id);
+      return created;
+    };
+    const awaitTask = async (id: string): Promise<SwarmTask> => {
       const taskT0 = Date.now();
-      const final = await client.waitForTask(created.id, {
+      const final = await client.waitForTask(id, {
         timeoutMs: taskTimeoutMs,
-        onStatus: (s) => log(`[task] ${created.id} -> ${s}`),
+        onStatus: (s) => log(`[task] ${id} -> ${s}`),
         signal,
       });
-      timings.perTask.push({ taskId: created.id, ms: Date.now() - taskT0 });
+      timings.perTask.push({ taskId: id, ms: Date.now() - taskT0 });
       recordAttemptTimings(attempt.id, timings);
-      tasks.push(final);
+      // Frozen order (v6 §9.4): infra net first (throws), then skip classification.
+      return processTerminalTask(final, log);
+    };
+
+    if (scenario.tasks.some((t) => t.dependsOn?.length)) {
+      // DAG mode (v6 §9.3): create ALL tasks upfront with native dependsOn —
+      // the server holds dependents `pending` until their deps complete, and
+      // cascade-fails them when a dep fails/cancels/times out. Await in index
+      // order; deps point at earlier indices, so an awaited task's deps are
+      // already terminal.
+      log(`[task] dependency mode: creating ${scenario.tasks.length} task(s) upfront`);
+      const createdTasks: SwarmTask[] = [];
+      for (const spec of scenario.tasks) {
+        signal?.throwIfAborted();
+        createdTasks.push(await createTaskFor(spec));
+      }
+      // Ids are all known upfront — persist them before the long awaits.
+      await updateAttempt(db, attempt.id, { taskIds: createdTaskIds });
+      for (const created of createdTasks) {
+        signal?.throwIfAborted();
+        log(`[task] waiting for ${created.id} (timeout ${Math.round(taskTimeoutMs / 1000)}s)`);
+        tasks.push(await awaitTask(created.id));
+      }
+    } else {
+      // Sequential mode — today's loop: create task i → wait → create i+1.
+      for (const spec of scenario.tasks) {
+        signal?.throwIfAborted();
+        const created = await createTaskFor(spec);
+        log(
+          `[task] created ${created.id} — waiting (timeout ${Math.round(taskTimeoutMs / 1000)}s)`,
+        );
+        tasks.push(await awaitTask(created.id));
+      }
     }
     timings.tasksMs = Date.now() - tasksT0;
     recordAttemptTimings(attempt.id, timings);
     await updateAttempt(db, attempt.id, { taskIds: tasks.map((t) => t.id) });
 
+    // Skipped tasks never produced a session — exclude them from the log and
+    // cost waits (v6 §9.4 frozen); they STAY in tasks/taskIds/tasks.json.
+    const activeTasks = tasks.filter((t) => !t.skipped);
+
     // Gather gradeable outputs (logs lag completion — wait for a stable count).
     signal?.throwIfAborted();
     setAttemptPhase(attempt.id, "log-capture");
-    log(`[logs] waiting for stable session logs (${tasks.length} task(s))`);
+    log(`[logs] waiting for stable session logs (${activeTasks.length} task(s))`);
     const logCapture = await timed(async () =>
       (
-        await Promise.all(tasks.map((t) => client.getStableSessionLogs(t.id, undefined, signal)))
+        await Promise.all(
+          activeTasks.map((t) => client.getStableSessionLogs(t.id, undefined, signal)),
+        )
       ).flat(),
     );
     let logRows = logCapture.result;
@@ -360,10 +662,10 @@ async function runAttemptOnce(opts: {
     setAttemptPhase(attempt.id, "cost");
     const oauthSubscription = config.provider === "claude" && !!process.env.CLAUDE_CODE_OAUTH_TOKEN;
     if (oauthSubscription) log("[cost] claude subscription (OAuth) — skipping priced-row wait");
-    else log(`[cost] waiting for stable session-cost rows (${tasks.length} task(s))`);
+    else log(`[cost] waiting for stable session-cost rows (${activeTasks.length} task(s))`);
     const costWait = timed(() =>
       Promise.all(
-        tasks.map(async (task) => ({
+        activeTasks.map(async (task) => ({
           taskId: task.id,
           rows: oauthSubscription
             ? await client.getSessionCosts(task.id).catch(() => [] as SessionCostRow[])
@@ -372,38 +674,49 @@ async function runAttemptOnce(opts: {
       ),
     );
 
-    // Harness session files — captured before judging so cost recompute can reuse
-    // them. Runs concurrently with the cost wait: the collection execs the WORKER
-    // sandbox, cost rows come from the API sandbox, and sessionFiles is first
-    // consumed after the join below. Timing attribution stays per-phase (costMs =
-    // cost-wait wall, artifactsMs += collection wall), so phases may overlap.
-    let sessionFiles: Awaited<ReturnType<typeof collectHarnessSessionFiles>> = {
-      files: [],
-      listing: [],
-    };
-    const collectWait = timed(() =>
-      collectHarnessSessionFiles(stack.workerSandbox.sandboxID, config.provider),
-    ).then(
-      (collect) => {
-        sessionFiles = collect.result;
-        timings.artifactsMs = (timings.artifactsMs ?? 0) + collect.ms;
-      },
-      (err: unknown) => {
-        log(
-          `[artifacts] harness session capture failed: ${err instanceof Error ? err.message : err}`,
-        );
-      },
-    );
+    // Harness session files — captured per worker before judging so cost
+    // recompute can reuse them. Runs concurrently with the cost wait: the
+    // collection execs the WORKER sandboxes, cost rows come from the API
+    // sandbox, and sessionFilesByWorker is first consumed after the join below.
+    // Timing attribution stays per-phase (costMs = cost-wait wall, artifactsMs
+    // += collection wall), so phases may overlap. Per-worker collection
+    // failures stay non-fatal (log + continue).
+    let sessionFilesByWorker: ({ index: number } & Awaited<
+      ReturnType<typeof collectHarnessSessionFiles>
+    >)[] = [];
+    const collectWait = timed(async () => {
+      const collected: typeof sessionFilesByWorker = [];
+      for (const w of stack.workers) {
+        try {
+          const result = await collectHarnessSessionFiles(w.sandbox.sandboxID, config.provider);
+          collected.push({ index: w.index, ...result });
+        } catch (err) {
+          log(
+            `[artifacts] harness session capture failed (worker ${w.index}): ${err instanceof Error ? err.message : err}`,
+          );
+        }
+      }
+      return collected;
+    }).then((collect) => {
+      sessionFilesByWorker = collect.result;
+      timings.artifactsMs = (timings.artifactsMs ?? 0) + collect.ms;
+    });
     const [costCapture] = await Promise.all([costWait, collectWait]);
     const costRowsByTask = costCapture.result;
     const allRows = costRowsByTask.flatMap((t) => t.rows);
     let costMs = costCapture.ms;
     recordAttemptTimings(attempt.id, timings);
+    // In-memory union across workers (raw paths) — correct at attempt
+    // granularity for the recompute fallback: each task ran on exactly one
+    // worker and files are disjoint across sandboxes.
+    const sessionFileUnion = sessionFilesByWorker.flatMap((w) => w.files);
 
     // The cost wait gave late log batches time to flush — re-fetch once and keep
     // the larger set (fixes transcripts losing their tail to the 30s stability cap).
     const refetch = await timed(async () =>
-      (await Promise.all(tasks.map((t) => client.getSessionLogs(t.id).catch(() => [])))).flat(),
+      (
+        await Promise.all(activeTasks.map((t) => client.getSessionLogs(t.id).catch(() => [])))
+      ).flat(),
     );
     timings.logCaptureMs += refetch.ms;
     recordAttemptTimings(attempt.id, timings);
@@ -427,7 +740,7 @@ async function runAttemptOnce(opts: {
           provider: config.provider,
           configModel: config.model ?? null,
           logRows,
-          sessionFiles: sessionFiles.files,
+          sessionFiles: sessionFileUnion,
         }),
       );
       costMs += recompute.ms;
@@ -463,12 +776,22 @@ async function runAttemptOnce(opts: {
       if (c !== null) judgeCostUsd = (judgeCostUsd ?? 0) + c;
     };
 
+    // One judge-context entry per booted worker; top-level exec/readFile stay
+    // ALIASES of worker 0 (back-compat for existing checks + the agentic judge).
+    const ctxWorkers = stack.workers.map((w) => ({
+      index: w.index,
+      agentId: w.agentId,
+      exec: (cmd: string) => sandboxExec(w.sandbox.sandboxID, cmd),
+      readFile: (path: string) => sandboxReadFile(w.sandbox.sandboxID, path),
+    }));
+    const worker0Ctx = ctxWorkers[0] as (typeof ctxWorkers)[number];
     const ctx: JudgeContext = {
       tasks,
       transcript,
-      exec: (cmd) => sandboxExec(stack.workerSandbox.sandboxID, cmd),
-      readFile: (path) => sandboxReadFile(stack.workerSandbox.sandboxID, path),
+      exec: worker0Ctx.exec,
+      readFile: worker0Ctx.readFile,
       apiGet: (path) => client.get(path),
+      workers: ctxWorkers,
     };
 
     const checks = [tasksCompletedCheck(tasks), ...(scenario.outcome.checks ?? [])];
@@ -660,26 +983,49 @@ async function runAttemptOnce(opts: {
         content: stack.redact(jsonl).slice(0, 2_000_000),
       });
     }
-    // The harness's own raw session files (collected pre-judging above).
-    for (const file of sessionFiles.files) {
-      await insertArtifact(db, {
-        id: crypto.randomUUID(),
-        attemptId: attempt.id,
-        kind: "harness-session",
-        name: file.path + (file.truncated ? " (truncated)" : ""),
-        content: stack.redact(file.content),
-      });
+    // The harness's own raw session files (collected pre-judging above),
+    // namespaced per worker (v6 §0.5: `worker-<i>/<absolute path>`).
+    for (const workerFiles of sessionFilesByWorker) {
+      for (const file of workerFiles.files) {
+        await insertArtifact(db, {
+          id: crypto.randomUUID(),
+          attemptId: attempt.id,
+          kind: "harness-session",
+          name: `worker-${workerFiles.index}/${file.path.replace(/^\//, "")}${file.truncated ? " (truncated)" : ""}`,
+          content: stack.redact(file.content),
+        });
+      }
+      if (workerFiles.listing.length > 0) {
+        await insertArtifact(db, {
+          id: crypto.randomUUID(),
+          attemptId: attempt.id,
+          kind: "meta",
+          name: `worker-${workerFiles.index}/session-files.json`,
+          content: stack.redact(JSON.stringify(workerFiles.listing, null, 2)),
+        });
+      }
     }
-    if (sessionFiles.files.length > 0) {
-      log(`[artifacts] captured ${sessionFiles.files.length} harness session file(s)`);
+    if (sessionFileUnion.length > 0) {
+      log(`[artifacts] captured ${sessionFileUnion.length} harness session file(s)`);
     }
-    if (sessionFiles.listing.length > 0) {
+    // SQL-seed import record (v6 §1.3) — only when the scenario seeded a dump.
+    if (stack.sqlSeed) {
       await insertArtifact(db, {
         id: crypto.randomUUID(),
         attemptId: attempt.id,
         kind: "meta",
-        name: "session-files.json",
-        content: stack.redact(JSON.stringify(sessionFiles.listing, null, 2)),
+        name: "sql-seed-output.json",
+        content: stack.redact(JSON.stringify(stack.sqlSeed, null, 2)),
+      });
+    }
+    // Memory-seed record (v6 §2.4) — only when memories were seeded.
+    if (seedMemories) {
+      await insertArtifact(db, {
+        id: crypto.randomUUID(),
+        attemptId: attempt.id,
+        kind: "meta",
+        name: "seed-memories.json",
+        content: stack.redact(JSON.stringify(seedMemories, null, 2)),
       });
     }
     await insertArtifact(db, {
@@ -689,18 +1035,22 @@ async function runAttemptOnce(opts: {
       name: "tasks.json",
       content: stack.redact(JSON.stringify(tasks, null, 2)),
     });
-    const workerLog = await sandboxExec(
-      stack.workerSandbox.sandboxID,
-      "tail -n 2000 /tmp/agent-swarm-e2b-worker.log",
-    ).catch(() => null);
-    if (workerLog?.stdout) {
-      await insertArtifact(db, {
-        id: crypto.randomUUID(),
-        attemptId: attempt.id,
-        kind: "sandbox-log",
-        name: "worker.log",
-        content: stack.redact(workerLog.stdout),
-      });
+    // Entrypoint logs: one artifact per worker — ALWAYS indexed naming, even
+    // for a single worker (v6 §0.5; legacy rows keep `worker.log` → worker 0).
+    for (const w of stack.workers) {
+      const workerLog = await sandboxExec(
+        w.sandbox.sandboxID,
+        "tail -n 2000 /tmp/agent-swarm-e2b-worker.log",
+      ).catch(() => null);
+      if (workerLog?.stdout) {
+        await insertArtifact(db, {
+          id: crypto.randomUUID(),
+          attemptId: attempt.id,
+          kind: "sandbox-log",
+          name: `worker-${w.index}.log`,
+          content: stack.redact(workerLog.stdout),
+        });
+      }
     }
     const apiLog = await sandboxExec(
       stack.apiSandbox.sandboxID,
@@ -802,7 +1152,15 @@ async function runAttemptWithRetry(opts: {
       });
       return;
     } catch (err) {
-      const message = err instanceof Error ? (err.stack ?? err.message) : String(err);
+      // Infra-net errors persist the frozen §0.13 message verbatim (it must
+      // START with "infra failure (<signatureId>)"); everything else keeps the
+      // stack for debuggability.
+      const message =
+        err instanceof InfraTaskFailureError
+          ? err.message
+          : err instanceof Error
+            ? (err.stack ?? err.message)
+            : String(err);
       log(`[error] ${message.split("\n")[0]}`);
       // Leak guard: boot failures throw before runAttemptOnce's inner finally can
       // run, so the progress entry may still be live. Idempotent — [] once cleared.

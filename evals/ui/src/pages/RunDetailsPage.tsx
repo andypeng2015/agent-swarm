@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, type ReactNode, useEffect, useMemo, useState } from "react";
 import {
   artifactUrl,
   cancelRun,
@@ -21,6 +21,8 @@ import {
   fmtScore,
   humanizeKey,
 } from "../components/format.ts";
+import { JsonView } from "../components/JsonView.tsx";
+import { LogLines, type ParsedLogRow, parseLogText, stripAnsi } from "../components/LogLines.tsx";
 import { Matrix } from "../components/Matrix.tsx";
 import { ModelChip } from "../components/ModelChip.tsx";
 import { PrettyView } from "../components/PrettyView.tsx";
@@ -33,6 +35,7 @@ import {
 } from "../components/StatusBadge.tsx";
 import { InfoTip, Tooltip } from "../components/Tooltip.tsx";
 import { navigate, useConfigs, usePoll } from "../hooks.ts";
+import { type NormalizedSandboxInfo, normalizeSandboxInfo, workerLabel } from "../lib/sandbox.ts";
 import type {
   ArtifactMetaJson,
   AttemptDetail,
@@ -43,9 +46,9 @@ import type {
   JudgeTraceJson,
   JudgmentJson,
   PhaseTimingsJson,
-  ProgressLogLevelJson,
   RunDetail,
   SandboxInfoJson,
+  TaskArtifactJson,
 } from "../types.ts";
 import JudgeTrace from "./JudgeTrace.tsx";
 import Transcript from "./Transcript.tsx";
@@ -460,6 +463,7 @@ export default function RunDetailsPage(props: {
             selId={selId}
             error={attemptPoll.error}
             config={attempt ? configs.byId(attempt.configId) : null}
+            artifacts={artifacts}
           />
           <SandboxPanel attempt={attempt} />
         </div>
@@ -551,13 +555,57 @@ function Meta(props: { label: string; title?: string; children: ReactNode }): Re
   );
 }
 
+/**
+ * Duplicates evals/src/types.ts CASCADE_SKIP_RE (v6 spec §0.12 — FROZEN source
+ * string). Fallback skip classification for tasks.json rows predating the
+ * runner-computed `skipped` flag.
+ */
+const CASCADE_SKIP_RE = /^Blocked dependency [0-9a-f]{8} was /;
+
+interface TaskFlag {
+  skipped: boolean;
+  failureReason: string | null;
+}
+
+/** tasks.json artifact text → taskId → skip info (v6 §9.5). */
+function parseTaskFlags(text: string | null): Map<string, TaskFlag> {
+  const map = new Map<string, TaskFlag>();
+  if (text === null) return map;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return map;
+  }
+  if (!Array.isArray(parsed)) return map;
+  for (const entry of parsed as TaskArtifactJson[]) {
+    if (typeof entry !== "object" || entry === null || typeof entry.id !== "string") continue;
+    const failureReason = typeof entry.failureReason === "string" ? entry.failureReason : null;
+    const skipped =
+      entry.skipped === true ||
+      (entry.skipped === undefined &&
+        entry.status === "failed" &&
+        CASCADE_SKIP_RE.test(failureReason ?? ""));
+    map.set(entry.id, { skipped, failureReason });
+  }
+  return map;
+}
+
 function AttemptSummary(props: {
   attempt: AttemptJson | null;
   selId: string | null;
   error: string | null;
   config: ConfigJson | null;
+  artifacts: ArtifactMetaJson[];
 }): ReactNode {
   const { attempt, config } = props;
+  // tasks.json artifact → per-task skip flags (hooks must run unconditionally).
+  const tasksArtifact =
+    props.artifacts.find((a) => a.kind === "task" && a.name === "tasks.json") ??
+    props.artifacts.find((a) => a.kind === "task") ??
+    null;
+  const tasksFetched = useArtifactText(tasksArtifact?.id ?? null);
+  const taskFlags = useMemo(() => parseTaskFlags(tasksFetched.text), [tasksFetched.text]);
   if (!attempt) {
     return (
       <div className="panel">
@@ -623,11 +671,20 @@ function AttemptSummary(props: {
       {attempt.taskIds.length > 0 ? (
         <div className="rd-tasks">
           <span className="meta-label">Tasks</span>
-          {attempt.taskIds.map((taskId) => (
-            <code className="chip rd-mono" key={taskId}>
-              {taskId}
-            </code>
-          ))}
+          {attempt.taskIds.map((taskId) => {
+            const flag = taskFlags.get(taskId);
+            return (
+              <Fragment key={taskId}>
+                <code className="chip rd-mono">{taskId}</code>
+                {/* Cascade-failed dependent (v6 §9.5): dim tag, tooltip = raw failureReason. */}
+                {flag?.skipped === true ? (
+                  <Tooltip text={flag.failureReason ?? "Skipped (failed dependency)"}>
+                    <span className="chip dim">skipped</span>
+                  </Tooltip>
+                ) : null}
+              </Fragment>
+            );
+          })}
         </div>
       ) : null}
       {attempt.error ? <div className="rd-attempt-error">{attempt.error}</div> : null}
@@ -678,28 +735,17 @@ function TimingsTab(props: {
   return <div className="dim rd-not-captured">Timings not captured (older run)</div>;
 }
 
-// ---- sandbox panel (item 14: PrettyView with Raw JSON toggle) ----
-
-const SANDBOX_LABELS: Record<string, string> = {
-  swarmKey: "Swarm API Key",
-  apiSandboxId: "API Sandbox",
-  workerSandboxId: "Worker Sandbox",
-  workerAgentId: "Worker Agent",
-  apiVersion: "API Version",
-  workerVersion: "Worker Version",
-};
-
-function monoRenderer(value: unknown): ReactNode {
-  return <code className="rd-mono">{String(value)}</code>;
-}
+// ---- sandbox panel (item 14 + v6 §3.4: API block + per-worker blocks via the
+//      normalizer; the Raw toggle shows the stored blob — v1 or v2 — verbatim) ----
 
 function SandboxPanel(props: { attempt: AttemptJson | null }): ReactNode {
   const sandbox = props.attempt?.sandbox ?? null;
+  const info = useMemo(() => normalizeSandboxInfo(sandbox), [sandbox]);
   return (
     <div className="panel">
       <div className="panel-title">Sandbox</div>
-      {sandbox ? (
-        <SandboxView sandbox={sandbox} />
+      {sandbox !== null && info !== null ? (
+        <SandboxView raw={sandbox} info={info} />
       ) : props.attempt && isUnfinished(props.attempt.status) ? (
         <div className="dim rd-not-captured">Sandbox not booted yet</div>
       ) : (
@@ -709,27 +755,106 @@ function SandboxPanel(props: { attempt: AttemptJson | null }): ReactNode {
   );
 }
 
-function SandboxView(props: { sandbox: SandboxInfoJson }): ReactNode {
+function SandboxView(props: { raw: SandboxInfoJson; info: NormalizedSandboxInfo }): ReactNode {
+  const { info } = props;
+  const [showRaw, setShowRaw] = useState(false);
   return (
-    <PrettyView
-      value={props.sandbox}
-      rawLabel="Sandbox"
-      labels={SANDBOX_LABELS}
-      renderers={{
-        swarmKey: (v) => <CopyCode text={String(v)} />,
-        apiSandboxId: monoRenderer,
-        workerSandboxId: monoRenderer,
-        workerAgentId: monoRenderer,
-        apiUrl: (v) => (
-          <>
-            <a className="entity-link" href={String(v)} target="_blank" rel="noreferrer">
-              {String(v)}
-            </a>{" "}
-            <InfoTip text="Dead after sandbox teardown" />
-          </>
-        ),
-      }}
-    />
+    <div className="pv">
+      <div className="pv-bar">
+        <button
+          type="button"
+          className="pv-toggle"
+          onClick={() => setShowRaw((v) => !v)}
+          title={showRaw ? "Switch to the humanized view" : "Show the stored blob verbatim"}
+        >
+          {showRaw ? "≡ Pretty" : "{ } Raw"}
+        </button>
+      </div>
+      {showRaw ? (
+        <JsonView value={props.raw} collapseDepth={2} label="Sandbox" />
+      ) : (
+        <div className="pv-rows">
+          <div className="pv-section">
+            <div className="pv-section-title">API</div>
+            <div className="pv-section-body">
+              <div className="pv-rows">
+                <SbRow label="API Sandbox">
+                  <SbMono value={info.apiSandboxId} />
+                </SbRow>
+                <SbRow label="Template">
+                  <SbMono value={info.apiTemplate} />
+                </SbRow>
+                <SbRow label="API URL">
+                  <a className="entity-link" href={info.apiUrl} target="_blank" rel="noreferrer">
+                    {info.apiUrl}
+                  </a>{" "}
+                  <InfoTip text="Dead after sandbox teardown" />
+                </SbRow>
+                <SbRow label="Swarm API Key">
+                  <CopyCode text={info.swarmKey} />
+                </SbRow>
+                <SbRow label="API Version">
+                  <SbMono value={info.apiVersion} />
+                </SbRow>
+                <SbRow label="Started">
+                  <SbDate value={info.apiStartedAt} />
+                </SbRow>
+              </div>
+            </div>
+          </div>
+          {info.workers.map((w) => (
+            <div className="pv-section" key={w.index}>
+              <div className="pv-section-title">{workerLabel(w.index, info.workers.length)}</div>
+              <div className="pv-section-body">
+                <div className="pv-rows">
+                  <SbRow label="Sandbox">
+                    <SbMono value={w.sandboxId} />
+                  </SbRow>
+                  <SbRow label="Agent">
+                    <SbMono value={w.agentId} />
+                  </SbRow>
+                  <SbRow label="Template">
+                    <SbMono value={w.template} />
+                  </SbRow>
+                  <SbRow label="Version">
+                    <SbMono value={w.version} />
+                  </SbRow>
+                  <SbRow label="Started">
+                    <SbDate value={w.startedAt} />
+                  </SbRow>
+                  <SbRow label="Expires">
+                    <SbDate value={w.expiresAt} />
+                  </SbRow>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SbRow(props: { label: string; children: ReactNode }): ReactNode {
+  return (
+    <div className="pv-row">
+      <div className="pv-key">{props.label}</div>
+      <div className="pv-val">{props.children}</div>
+    </div>
+  );
+}
+
+function SbMono(props: { value: string | null }): ReactNode {
+  if (props.value === null) return <span className="dim">—</span>;
+  return <code className="rd-mono">{props.value}</code>;
+}
+
+function SbDate(props: { value: string | null }): ReactNode {
+  if (props.value === null) return <span className="dim">—</span>;
+  return (
+    <span title={props.value}>
+      {fmtDate(props.value)} <span className="dim">· {fmtAgo(props.value)}</span>
+    </span>
   );
 }
 
@@ -943,78 +1068,28 @@ function JudgmentRaw(props: { raw: string }): ReactNode {
   );
 }
 
-// ---- logs tab (items 10 + 14: runner/worker/api logs, live runner stream) ----
+// ---- logs tab (items 10 + 14 + v6 §3.4/§5: runner / per-worker / api sub-tabs,
+//      live runner stream, shared LogLines display contract) ----
 
-type LogSource = "runner" | "worker" | "api";
+type LogSource = "runner" | "api" | `worker-${number}`;
 
-const LOG_SOURCE_LABELS: Record<LogSource, string> = {
-  runner: "Runner",
-  worker: "Worker",
-  api: "API",
-};
-
-interface LogRow {
-  ts: string | null;
-  level: ProgressLogLevelJson;
-  message: string;
-}
-
-/** runner.log line shape (v4 spec §2.2): "ISO [level] line". */
-const RUNNER_LINE_RE = /^(\S+) \[(info|warn|error)\] (.*)$/;
-
-/** Pino-ish JSON log line → leveled row; null when the line is not JSON. */
-function jsonLogRow(line: string): LogRow | null {
-  if (!line.startsWith("{")) return null;
-  let obj: Record<string, unknown>;
-  try {
-    const parsed: unknown = JSON.parse(line);
-    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return null;
-    obj = parsed as Record<string, unknown>;
-  } catch {
-    return null;
+/**
+ * Worker sub-tab indices: from the normalized sandbox blob when present,
+ * falling back to distinct `worker(-i)?.log` artifact names (legacy
+ * `worker.log` maps to worker 0). At least [0], so a Worker tab always exists.
+ */
+function workerLogIndices(attempt: AttemptJson | null, artifacts: ArtifactMetaJson[]): number[] {
+  const info = normalizeSandboxInfo(attempt?.sandbox ?? null);
+  if (info !== null && info.workers.length > 0) return info.workers.map((w) => w.index);
+  const found = new Set<number>();
+  for (const a of artifacts) {
+    if (a.kind !== "sandbox-log" || a.name === null) continue;
+    const m = /^worker(?:-(\d+))?\.log$/.exec(a.name);
+    if (m !== null) found.add(m[1] === undefined ? 0 : Number(m[1]));
   }
-  let level: ProgressLogLevelJson = "info";
-  const rawLevel = obj.level;
-  if (typeof rawLevel === "number") {
-    level = rawLevel >= 50 ? "error" : rawLevel >= 40 ? "warn" : "info";
-  } else if (rawLevel === "error" || rawLevel === "fatal") {
-    level = "error";
-  } else if (rawLevel === "warn" || rawLevel === "warning") {
-    level = "warn";
-  }
-  const time = obj.time ?? obj.ts ?? obj.timestamp;
-  const ts =
-    typeof time === "number"
-      ? new Date(time).toISOString()
-      : typeof time === "string"
-        ? time
-        : null;
-  const msg = obj.msg ?? obj.message;
-  return { ts, level, message: typeof msg === "string" && msg.length > 0 ? msg : line };
+  if (found.size === 0) return [0];
+  return [...found].sort((a, b) => a - b);
 }
-
-function parseLogLine(line: string): LogRow {
-  const m = RUNNER_LINE_RE.exec(line);
-  if (m) return { ts: m[1], level: m[2] as ProgressLogLevelJson, message: m[3] };
-  return jsonLogRow(line) ?? { ts: null, level: "info", message: line };
-}
-
-function pad2(n: number): string {
-  return String(n).padStart(2, "0");
-}
-
-function fmtLogTs(ts: string | null): string {
-  if (ts === null) return "";
-  const d = new Date(ts);
-  if (Number.isNaN(d.getTime())) return "";
-  return `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
-}
-
-const LOG_LEVEL_GLYPHS: Record<ProgressLogLevelJson, string> = {
-  info: "·",
-  warn: "⚠",
-  error: "✗",
-};
 
 /** Artifact text cache — artifacts are immutable blobs, fetch each at most once. */
 const artifactTextCache = new Map<string, string>();
@@ -1070,6 +1145,7 @@ function useArtifactText(id: string | null): {
   return state.id === id ? state : { text: null, error: null, loading: id !== null };
 }
 
+/** Frozen lookup rules (v6 §3.4): worker-0 falls back to the legacy `worker.log` name. */
 function findLogArtifact(
   artifacts: ArtifactMetaJson[],
   source: LogSource,
@@ -1081,8 +1157,16 @@ function findLogArtifact(
       null
     );
   }
-  const name = source === "worker" ? "worker.log" : "api.log";
-  return artifacts.find((a) => a.kind === "sandbox-log" && a.name === name) ?? null;
+  if (source === "api") {
+    return artifacts.find((a) => a.kind === "sandbox-log" && a.name === "api.log") ?? null;
+  }
+  const index = Number(source.slice("worker-".length));
+  return (
+    artifacts.find((a) => a.kind === "sandbox-log" && a.name === `worker-${index}.log`) ??
+    (index === 0
+      ? (artifacts.find((a) => a.kind === "sandbox-log" && a.name === "worker.log") ?? null)
+      : null)
+  );
 }
 
 function LogsTab(props: {
@@ -1093,36 +1177,37 @@ function LogsTab(props: {
   const { attempt, artifacts, progress } = props;
   const [source, setSource] = useState<LogSource>("runner");
 
+  const workerIndices = useMemo(() => workerLogIndices(attempt, artifacts), [attempt, artifacts]);
+  const sources = useMemo<LogSource[]>(
+    () => ["runner", ...workerIndices.map((i): LogSource => `worker-${i}`), "api"],
+    [workerIndices],
+  );
+  // A selection that disappears (attempt switch, fewer workers) falls back to Runner.
+  const active: LogSource = sources.includes(source) ? source : "runner";
+
+  const sourceLabel = (s: LogSource): string =>
+    s === "runner"
+      ? "Runner"
+      : s === "api"
+        ? "API"
+        : workerLabel(Number(s.slice("worker-".length)), workerIndices.length);
+
   const unfinished = attempt !== null && isUnfinished(attempt.status);
   // Live runner stream (item 14) while the registry has the attempt; the
   // persisted runner.log artifact takes over once the attempt finishes.
-  const liveRunner = source === "runner" && unfinished && progress?.active === true;
-  const artifact = attempt !== null && !liveRunner ? findLogArtifact(artifacts, source) : null;
+  const liveRunner = active === "runner" && unfinished && progress?.active === true;
+  const artifact = attempt !== null && !liveRunner ? findLogArtifact(artifacts, active) : null;
   const fetched = useArtifactText(artifact?.id ?? null);
 
   const liveLog = liveRunner ? (progress?.log ?? []) : null;
-  const rows = useMemo<LogRow[]>(() => {
+  const rows = useMemo<ParsedLogRow[]>(() => {
     if (liveLog !== null) {
-      return liveLog.map((l) => ({ ts: l.ts, level: l.level, message: l.line }));
+      // Live rows arrive structured (ts + level); ANSI strip still applies at render (§5).
+      return liveLog.map((l) => ({ ts: l.ts, level: l.level, text: stripAnsi(l.line) }));
     }
     if (fetched.text === null) return [];
-    const lines = fetched.text.split("\n");
-    while (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
-    return lines.map(parseLogLine);
+    return parseLogText(fetched.text);
   }, [liveLog, fetched.text]);
-
-  // Auto-scroll pinned to the bottom while live — only when already at the bottom.
-  const bodyRef = useRef<HTMLDivElement>(null);
-  const pinnedRef = useRef(true);
-  const onScroll = () => {
-    const el = bodyRef.current;
-    if (el) pinnedRef.current = el.scrollTop + el.clientHeight >= el.scrollHeight - 24;
-  };
-  useEffect(() => {
-    const el = bodyRef.current;
-    if (el === null || !liveRunner || rows.length === 0) return;
-    if (pinnedRef.current) el.scrollTop = el.scrollHeight;
-  }, [rows, liveRunner]);
 
   if (!attempt) return <div className="dim">No attempt selected</div>;
 
@@ -1134,11 +1219,7 @@ function LogsTab(props: {
           <Spinner label="Waiting for runner output…" />
         </div>
       ) : (
-        <div className="rd-log-body" ref={bodyRef} onScroll={onScroll}>
-          {rows.map((row, i) => (
-            <LogLineRow row={row} key={`${String(i)}:${row.ts ?? ""}`} />
-          ))}
-        </div>
+        <LogLines rows={rows} live />
       );
   } else if (artifact !== null) {
     body = fetched.loading ? (
@@ -1150,11 +1231,7 @@ function LogsTab(props: {
     ) : rows.length === 0 ? (
       <div className="dim rd-not-captured">Empty log</div>
     ) : (
-      <div className="rd-log-body" ref={bodyRef} onScroll={onScroll}>
-        {rows.map((row, i) => (
-          <LogLineRow row={row} key={`${String(i)}:${row.ts ?? ""}`} />
-        ))}
-      </div>
+      <LogLines rows={rows} />
     );
   } else if (unfinished) {
     body = (
@@ -1165,11 +1242,11 @@ function LogsTab(props: {
   } else {
     body = (
       <div className="dim rd-not-captured">
-        {source === "runner"
+        {active === "runner"
           ? "Runner log not captured (older run)"
-          : source === "worker"
-            ? "Worker log not captured"
-            : "API log not captured"}
+          : active === "api"
+            ? "API log not captured"
+            : `${sourceLabel(active)} log not captured`}
       </div>
     );
   }
@@ -1177,43 +1254,18 @@ function LogsTab(props: {
   return (
     <div className="rd-logs">
       <div className="rd-log-sources">
-        {(["runner", "worker", "api"] as const).map((s) => (
+        {sources.map((s) => (
           <button
             type="button"
             key={s}
-            className={source === s ? "btn rd-log-src selected" : "btn rd-log-src"}
+            className={active === s ? "btn rd-log-src selected" : "btn rd-log-src"}
             onClick={() => setSource(s)}
           >
-            {LOG_SOURCE_LABELS[s]}
+            {sourceLabel(s)}
           </button>
         ))}
       </div>
       {body}
-    </div>
-  );
-}
-
-function LogLineRow(props: { row: LogRow }): ReactNode {
-  const { row } = props;
-  const [expanded, setExpanded] = useState(false);
-  return (
-    <div className={`rd-log-row level-${row.level}`}>
-      <span className="rd-log-ts">{fmtLogTs(row.ts)}</span>
-      <span
-        className={`rd-log-glyph level-${row.level}`}
-        role="img"
-        aria-label={row.level === "info" ? "Info" : row.level === "warn" ? "Warning" : "Error"}
-      >
-        {LOG_LEVEL_GLYPHS[row.level]}
-      </span>
-      <button
-        type="button"
-        className={expanded ? "rd-log-msg expanded" : "rd-log-msg"}
-        title={expanded ? undefined : row.message}
-        onClick={() => setExpanded((v) => !v)}
-      >
-        {row.message}
-      </button>
     </div>
   );
 }

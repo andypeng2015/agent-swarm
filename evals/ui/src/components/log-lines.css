@@ -1,0 +1,87 @@
+/* LogLines — shared log renderer (v6 spec §5). Self-contained: only ll-* classes. */
+
+.ll-body {
+  overflow-y: auto;
+  max-height: calc(100vh - 430px);
+  min-height: 160px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  padding: 6px 8px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.ll-row {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+  padding: 1px 0;
+  border-radius: 3px;
+}
+
+/* Timestamp column (dim mono, fixed width) — present only when ≥1 row parses a ts. */
+.ll-row.with-ts {
+  grid-template-columns: 58px 14px minmax(0, 1fr);
+}
+
+.ll-row:hover {
+  background: var(--panel-2);
+}
+
+.ll-ts {
+  color: var(--dim);
+  white-space: nowrap;
+  cursor: default;
+}
+
+/* 1-char level flag: E (red) / W (amber) / · (dim); banner rows get no flag. */
+.ll-flag {
+  text-align: center;
+  color: var(--dim);
+  line-height: 1.5;
+  cursor: default;
+}
+
+.ll-flag.level-error {
+  color: var(--red);
+}
+
+.ll-flag.level-warn {
+  color: var(--orange);
+}
+
+/* one log line — single-line ellipsis, click to expand to pre-wrap */
+.ll-msg {
+  display: block;
+  width: 100%;
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ll-msg.expanded {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.ll-row.level-error .ll-msg {
+  color: var(--red);
+}
+
+.ll-row.level-warn .ll-msg {
+  color: var(--orange);
+}
+
+.ll-row.level-banner .ll-msg {
+  color: var(--dim);
+}

@@ -103,8 +103,20 @@ function computeRunVersions(attempts: AttemptRow[]): RunVersions {
   for (const attempt of attempts) {
     const apiVersion = cleanVersion(attempt.sandbox?.apiVersion);
     if (apiVersion !== null && !api.includes(apiVersion)) api.push(apiVersion);
-    const workerVersion = cleanVersion(attempt.sandbox?.workerVersion);
-    if (workerVersion !== null && !worker.includes(workerVersion)) worker.push(workerVersion);
+    // Legacy v1 blobs store a flat `workerVersion`; sandboxJson v2 stores
+    // per-worker `workers[].version` (cast keeps both readable — old DB rows
+    // are v1, the SandboxInfo type is v2-only).
+    const raw = attempt.sandbox as {
+      workerVersion?: string | null;
+      workers?: { version?: string | null }[];
+    } | null;
+    const workerVersions = Array.isArray(raw?.workers)
+      ? raw.workers.map((w) => w?.version)
+      : [raw?.workerVersion];
+    for (const value of workerVersions) {
+      const workerVersion = cleanVersion(value);
+      if (workerVersion !== null && !worker.includes(workerVersion)) worker.push(workerVersion);
+    }
   }
   return { api, worker };
 }
@@ -113,8 +125,13 @@ function computeRunVersions(attempts: AttemptRow[]): RunVersions {
  * Analytics source query (v5 spec §1.1 — columns frozen). json_valid guards
  * keep malformed/empty JSON columns from failing the whole aggregation —
  * they degrade to NULL like every other missing field on old rows.
+ *
+ * worker_version reads BOTH sandboxJson shapes (v6 spec §0.3): legacy v1 blobs
+ * store a flat `workerVersion`; v2 blobs store per-worker `workers[].version`
+ * (worker 0 is representative — workers are homogeneous within an attempt).
+ * Mirrors computeRunVersions() above.
  */
-const ANALYTICS_SQL = `
+export const ANALYTICS_SQL = `
   SELECT a.run_id, a.scenario_id, a.config_id, a.status, a.score, a.cost_usd, a.cost_source,
          a.judge_cost_usd, a.duration_ms,
          CASE WHEN json_valid(a.tokens_json)
@@ -122,7 +139,10 @@ const ANALYTICS_SQL = `
          CASE WHEN json_valid(a.sandbox_json)
               THEN json_extract(a.sandbox_json, '$.apiVersion') END  AS api_version,
          CASE WHEN json_valid(a.sandbox_json)
-              THEN json_extract(a.sandbox_json, '$.workerVersion') END AS worker_version,
+              THEN COALESCE(
+                json_extract(a.sandbox_json, '$.workerVersion'),
+                json_extract(a.sandbox_json, '$.workers[0].version')
+              ) END AS worker_version,
          r.name AS run_name, r.created_at AS run_created_at
   FROM attempts a JOIN eval_runs r ON r.id = a.run_id
   ORDER BY r.created_at ASC, a.attempt_index ASC`;

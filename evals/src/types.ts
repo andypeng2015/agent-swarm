@@ -28,13 +28,27 @@ export interface HarnessConfig {
 export interface TaskSpec {
   title: string;
   description: string;
+  /** Index of the worker this task is assigned to. Default 0. Must be < Scenario.workers. */
+  worker?: number;
+  /**
+   * Indices of tasks this task depends on (native swarm-API dependsOn, v6 §9).
+   * Every entry must be < this task's own index (validateScenario, v6 §0.11).
+   * Absent/empty = no dependencies.
+   */
+  dependsOn?: number[];
 }
 
 export interface ScenarioSeed {
-  /** Shell commands run inside the sandbox after the stack is healthy. */
+  /** Shell commands run inside worker 0's sandbox after the stack is healthy. */
   exec?: string[];
-  /** Memories to inject for the worker under test before tasks start. */
+  /** Memories indexed into the swarm API (scope "swarm") before tasks start. */
   memories?: string[];
+  /**
+   * Filename of a SQLite text dump under evals/scenarios/fixtures/, imported into
+   * the API sandbox DB BEFORE the API server first boots. Bare filename only
+   * (no path separators), must end in ".sql". Example: "seeded-history.sql".
+   */
+  sqlDump?: string;
 }
 
 export interface LlmJudgeSpec {
@@ -87,6 +101,16 @@ export interface Scenario {
   outcome: OutcomeSpec;
   /** Per-attempt wall clock budget. Default 10 minutes. */
   timeoutMs?: number;
+  /** Number of homogeneous workers to boot for each attempt. Default 1. Max 3. */
+  workers?: number;
+}
+
+/** Per-worker sandbox access exposed to judges (multi-worker v1, v6 §0.8). */
+export interface JudgeWorkerContext {
+  index: number;
+  agentId: string;
+  exec: (cmd: string) => Promise<{ exitCode: number; stdout: string; stderr: string }>;
+  readFile: (path: string) => Promise<string | null>;
 }
 
 /** What judges can see: the swarm API of the attempt's stack + sandbox access. */
@@ -95,13 +119,22 @@ export interface JudgeContext {
   tasks: SwarmTask[];
   /** Flattened transcript/session-log text for the worker under test. */
   transcript: string;
-  /** Run a shell command inside the attempt's sandbox (e.g. inspect /workspace). */
+  /** Run a shell command inside worker 0's sandbox (alias of workers[0].exec). */
   exec: (cmd: string) => Promise<{ exitCode: number; stdout: string; stderr: string }>;
-  /** Read a file from the sandbox; returns null when missing. */
+  /** Read a file from worker 0's sandbox (alias of workers[0].readFile); null when missing. */
   readFile: (path: string) => Promise<string | null>;
   /** Raw authenticated GET against the attempt's swarm API. */
   apiGet: (path: string) => Promise<unknown>;
+  /** One entry per booted worker, ascending index. */
+  workers: JudgeWorkerContext[];
 }
+
+/**
+ * Matches root src/be/db.ts cascadeFailDependents(): `Blocked dependency <uuid8> was <status>`.
+ * Applied to task.failureReason when status === "failed" to classify cascade-failed
+ * dependents as "skipped" (v6 §0.12 — FROZEN; the UI duplicates this source string).
+ */
+export const CASCADE_SKIP_RE = /^Blocked dependency [0-9a-f]{8} was /;
 
 /** Minimal shape of a swarm task as the eval system consumes it. */
 export interface SwarmTask {
@@ -111,6 +144,10 @@ export interface SwarmTask {
   status: string;
   result?: string | null;
   assignedAgentId?: string | null;
+  /** Server-populated on failed tasks. */
+  failureReason?: string | null;
+  /** Runner-computed: status === "failed" && CASCADE_SKIP_RE.test(failureReason ?? ""). */
+  skipped?: boolean;
   [key: string]: unknown;
 }
 
@@ -124,23 +161,38 @@ export interface TokenTotals {
   cacheWriteTokens: number;
 }
 
-/** Everything known about the attempt's E2B stack. Taras explicitly OK'd storing the swarm API key. */
+/** One worker entry of the persisted sandboxJson v2 blob (v6 §0.3 — FROZEN). */
+export interface SandboxWorkerInfo {
+  index: number;
+  sandboxId: string;
+  template: string;
+  agentId: string;
+  startedAt: string | null;
+  expiresAt: string | null; // sandbox endAt/expiresAt
+  /** Worker build version (`agent-swarm version` in this worker's sandbox). Null = not captured. */
+  version: string | null;
+}
+
+/**
+ * Everything known about the attempt's E2B stack — sandboxJson v2, the only
+ * shape new code writes (v6 §0.3 — FROZEN). Old DB rows carry the legacy v1
+ * flat shape (workerSandboxId/workerAgentId/...); the runner only ever writes
+ * this, never reads it back, so the v1/v2 normalization lives UI-side.
+ * HARD INVARIANT: `swarmKey` and `apiUrl` stay top-level and unrenamed — the
+ * evals API server reads them out of the stored blob for live transcripts.
+ * Taras explicitly OK'd storing the swarm API key.
+ */
 export interface SandboxInfo {
+  v: 2;
   apiSandboxId: string;
-  workerSandboxId: string;
   apiTemplate: string;
-  workerTemplate: string;
   apiUrl: string;
   swarmKey: string;
-  workerAgentId: string;
   domain: string | null;
   apiStartedAt: string | null;
-  workerStartedAt: string | null;
-  expiresAt: string | null; // worker sandbox endAt/expiresAt
-  /** Swarm API version from the sandbox /health response. Null/absent (older attempts) = not captured. */
-  apiVersion?: string | null;
-  /** Worker build version (`agent-swarm version` in the worker sandbox). Null/absent = not captured. */
-  workerVersion?: string | null;
+  /** Swarm API version from the sandbox /health response. Null = not captured. */
+  apiVersion: string | null;
+  workers: SandboxWorkerInfo[];
 }
 
 /** Per-phase wall-clock timings in ms. All nullable (phase may not have run). */

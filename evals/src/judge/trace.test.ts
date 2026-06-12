@@ -171,6 +171,7 @@ describe("runChecks trace assembly", () => {
     exec: async () => ({ exitCode: 0, stdout: "", stderr: "" }),
     readFile: async () => null,
     apiGet: async () => ({}),
+    workers: [],
   };
   const checks = [
     { name: "passes", fn: async () => ({ pass: true, detail: "all good" }) },
