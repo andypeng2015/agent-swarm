@@ -8,6 +8,7 @@ import type {
   CreateRunBody,
   JudgeLiveResponse,
   ModelsResponse,
+  PresetJson,
   RunDetail,
   RunListItem,
   ScenarioJson,
@@ -119,6 +120,11 @@ export function getScenario(
 
 export function listConfigs(): Promise<ConfigJson[]> {
   return request("/api/configs");
+}
+
+/** Quick-run config presets (v7.7 item 1 — frozen contract, see PresetJson). */
+export function listPresets(): Promise<PresetJson[]> {
+  return request("/api/presets");
 }
 
 export function getModels(): Promise<ModelsResponse> {

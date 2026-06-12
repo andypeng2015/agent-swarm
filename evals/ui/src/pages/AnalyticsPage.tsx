@@ -21,7 +21,7 @@ import { HarnessIcon } from "../components/HarnessIcon.tsx";
 import { ModelChip } from "../components/ModelChip.tsx";
 import { Spinner } from "../components/Spinner.tsx";
 import { InfoTip } from "../components/Tooltip.tsx";
-import { useModels, usePoll } from "../hooks.ts";
+import { useConfigs, useModels, usePoll } from "../hooks.ts";
 import type {
   AnalyticsCell,
   AnalyticsFilterOptions,
@@ -51,6 +51,28 @@ function tokensTitle(t: AnalyticsTokenSums): string {
     `in ${fmtTokens(t.inputTokens)} · out ${fmtTokens(t.outputTokens)} · ` +
     `cacheR ${fmtTokens(t.cacheReadTokens)} · cacheW ${fmtTokens(t.cacheWriteTokens)} · ` +
     `over ${t.tokenAttempts} token-bearing attempts`
+  );
+}
+
+/**
+ * MultiSelect search haystack for a config option (round 9 item 3): the raw id
+ * plus the same pretty name ConfigChip renders (resolved model name → config
+ * label → raw model), so typing a model name matches the pretty chip.
+ */
+function useConfigSearchText(): (id: string) => string {
+  const { byId } = useConfigs();
+  const { resolve } = useModels();
+  return useCallback(
+    (id: string) => {
+      const config = byId(id);
+      if (config === null) return id;
+      const name =
+        config.model === null
+          ? (config.label ?? "Default Model")
+          : (resolve(config.model)?.name ?? config.label ?? config.model);
+      return `${id} ${name}`;
+    },
+    [byId, resolve],
   );
 }
 
@@ -264,6 +286,7 @@ function HighlightCard(props: {
   resolve: (id: string | null) => { name: string } | null;
 }): ReactNode {
   const { def, models, resolve } = props;
+  // `attempts` rides along for the round-9 bar hover tooltip (item 5).
   const bars = useMemo<MiniBar[]>(() => {
     const dir = def.dir === "asc" ? 1 : -1;
     return [...models]
@@ -277,6 +300,7 @@ function HighlightCard(props: {
         label: resolve(m.model)?.name ?? m.model,
         value: v,
         color: colorForGroup(m.vendor ?? "(unknown)", VENDOR_COLORS),
+        attempts: m.attempts,
       }));
   }, [def, models, resolve]);
 
@@ -316,6 +340,7 @@ const SERIES_CAP = 8;
 
 function TrendsSection(props: { series: AnalyticsSeries[] }): ReactNode {
   const { series } = props;
+  const configSearchText = useConfigSearchText();
   // null = uninitialized → default to the single best (scenario, config) pair.
   const [pickedScenarios, setPickedScenarios] = useState<string[] | null>(null);
   const [pickedConfigs, setPickedConfigs] = useState<string[] | null>(null);
@@ -388,6 +413,7 @@ function TrendsSection(props: { series: AnalyticsSeries[] }): ReactNode {
               selected={cfgSel}
               onChange={setPickedConfigs}
               renderOption={(o) => <ConfigChip configId={o} />}
+              searchText={configSearchText}
             />
             <Seg
               options={TREND_ORDER.map((k) => ({ key: k, label: TREND_METRICS[k].label }))}
@@ -1111,6 +1137,7 @@ function PageHead(props: {
   onConfigIds: (next: string[]) => void;
 }): ReactNode {
   const { data } = props;
+  const configSearchText = useConfigSearchText();
   const attempts = useMemo(
     () => data.matrix.reduce((acc, c) => acc + c.attempts, 0),
     [data.matrix],
@@ -1134,6 +1161,7 @@ function PageHead(props: {
           selected={props.fConfigIds}
           onChange={props.onConfigIds}
           renderOption={(o) => <ConfigChip configId={o} />}
+          searchText={configSearchText}
         />
         {active > 0 ? (
           <button

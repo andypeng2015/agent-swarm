@@ -319,9 +319,13 @@
   position: sticky;
   top: 0;
   z-index: 30;
+  /* v7.7 item 7: ONE row — caption left, task pills right (pills wrap within
+     their own cluster when cramped), expand-all toggle at the far end. */
   display: flex;
-  flex-direction: column;
-  gap: 8px;
+  flex-direction: row;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 10px;
   background: var(--panel);
   padding-top: 10px;
   margin-top: -10px;
@@ -329,14 +333,29 @@
   margin-bottom: -8px;
 }
 
+.tr-stickybar > .t-caption {
+  flex: 1 1 auto;
+}
+
+/* The pill row's old bottom border now closes the whole single-row bar. */
+.tr-stickybar.has-tabs {
+  border-bottom: 1px solid var(--border);
+}
+
+/* v7.7 item 6: expand/collapse-all for tool outputs (far right of the bar). */
+.t-bulk {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
 /* ---- per-task sub-tabs (v7 §1 — only when rows span >1 task) ---- */
 
 .t-tasktabs {
   display: flex;
   flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 4px;
-  padding-bottom: 6px;
-  border-bottom: 1px solid var(--border);
 }
 
 .t-tasktab {
@@ -375,7 +394,35 @@
   white-space: nowrap;
 }
 
-/* ---- selected sub-tab header (v7.5 items 2/6) ---- */
+/* v7.7 item 7: inline pill economics (cost · duration · tokens). */
+.t-tasktab-meta {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Dim footnote inside the chip hover cards (DAG-lifetime / totals caveats). */
+.t-chip-note {
+  margin-top: 3px;
+  font-size: 10px;
+  line-height: 1.35;
+  color: var(--dim);
+}
+
+/* ---- selected sub-tab outcome block (v7.5 items 2/6 + v7.7 item 8) ----
+   Sticky wrapper pins the card flush under the single-row sticky bar
+   (--tr-bar-h is measured by Transcript via ResizeObserver — the bar's height
+   varies with pill wrap). Opaque panel paint + the same gap-swallowing
+   negative margin trick as .tr-stickybar, so scrolled rows never peek through
+   the flex gap below the pinned card. z-index sits under the bar (30). */
+
+.t-taskhead-sticky {
+  position: sticky;
+  top: var(--tr-bar-h, 46px);
+  z-index: 29;
+  background: var(--panel);
+  padding-bottom: 8px;
+  margin-bottom: -8px;
+}
 
 .t-taskhead {
   display: flex;
@@ -383,9 +430,36 @@
   gap: 6px;
   background: var(--panel-2);
   border: 1px solid var(--border);
+  border-left-width: 3px;
   border-radius: 6px;
   padding: 6px 8px;
   font-family: var(--font-mono);
+}
+
+/* Item 8: status-toned card treatment — opaque mixes (the card is sticky). */
+.t-taskhead.card-green {
+  border-left-color: var(--green);
+  background: color-mix(in oklab, var(--green) 7%, var(--panel-2));
+}
+
+.t-taskhead.card-red {
+  border-left-color: var(--red);
+  background: color-mix(in oklab, var(--red) 7%, var(--panel-2));
+}
+
+.t-taskhead.card-accent {
+  border-left-color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 7%, var(--panel-2));
+}
+
+.t-taskhead.card-dim {
+  border-left-color: var(--dim);
+}
+
+.t-taskhead-chevron {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  flex: none;
 }
 
 .t-taskhead-row {
@@ -458,4 +532,37 @@
 .t-toggle:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
+}
+
+/* ---- live follow button (v7.7 item 6) ----
+   Zero-height sticky wrapper at the end of the flow: the pill pins 10px above
+   the scrollport bottom while disengaged, floating over the streaming rows
+   (translateY lifts it out of the zero-height box). */
+
+.t-follow-wrap {
+  position: sticky;
+  bottom: 10px;
+  z-index: 25;
+  height: 0;
+  display: flex;
+  justify-content: center;
+  overflow: visible;
+}
+
+.t-follow {
+  transform: translateY(-100%);
+  background: var(--panel-2);
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  padding: 4px 12px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgb(0 0 0 / 30%);
+  white-space: nowrap;
+}
+
+.t-follow:hover {
+  background: color-mix(in oklab, var(--accent) 12%, var(--panel-2));
 }

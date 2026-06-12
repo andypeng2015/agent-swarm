@@ -69,6 +69,16 @@ export function useContainerWidth(): [RefObject<HTMLDivElement | null>, number] 
   return [ref, width];
 }
 
+/**
+ * Left margin sized to the widest rendered y tick (round-9 §4 clipping audit):
+ * estimator chars*6.2px + 14px (6px tick gap + breathing room), floored at
+ * `min` so short ticks keep the legacy layout.
+ */
+export function leftMarginFor(tickLabels: string[], min: number): number {
+  const chars = Math.max(0, ...tickLabels.map((t) => t.length));
+  return Math.max(min, chars * 6.2 + 14);
+}
+
 /** ~n nice tick values spanning [min, max] (1/2/5 steps). */
 export function niceTicks(min: number, max: number, n = 4): number[] {
   if (!Number.isFinite(min) || !Number.isFinite(max)) return [];

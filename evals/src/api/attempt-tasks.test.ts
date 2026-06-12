@@ -74,6 +74,9 @@ describe("buildAttemptTaskRecords — tasks-artifact source", () => {
         agentId: "agent-1",
         costUsd: null, // no session-costs.json
         tokens: null,
+        createdAt: "2026-06-12T13:32:52.211Z", // v7.7 item 7: verbatim passthrough
+        finishedAt: null,
+        durationMs: null, // no finishedAt → null
       },
     ]);
   });
@@ -184,8 +187,74 @@ describe("buildAttemptTaskRecords — tasks-artifact source", () => {
       agentId: null,
       costUsd: null,
       tokens: null,
+      createdAt: null,
+      finishedAt: null,
+      durationMs: null,
     });
     expect(res.tasks[1]?.status).toBe("completed");
+  });
+});
+
+describe("buildAttemptTaskRecords — task timestamps + durationMs (v7.7 item 7, frozen)", () => {
+  test("both timestamps present and ordered → durationMs = finishedAt − createdAt", () => {
+    const res = build({
+      taskIds: [T1],
+      tasks: [
+        artifactEntry({
+          createdAt: "2026-06-12T13:32:52.211Z",
+          finishedAt: "2026-06-12T13:34:04.211Z",
+        }),
+      ],
+    });
+    expect(res.tasks[0]?.createdAt).toBe("2026-06-12T13:32:52.211Z");
+    expect(res.tasks[0]?.finishedAt).toBe("2026-06-12T13:34:04.211Z");
+    expect(res.tasks[0]?.durationMs).toBe(72_000);
+  });
+
+  test("finishedAt before createdAt → durationMs null, timestamps still pass through", () => {
+    const res = build({
+      taskIds: [T1],
+      tasks: [
+        artifactEntry({
+          createdAt: "2026-06-12T13:34:04.211Z",
+          finishedAt: "2026-06-12T13:32:52.211Z",
+        }),
+      ],
+    });
+    expect(res.tasks[0]?.createdAt).toBe("2026-06-12T13:34:04.211Z");
+    expect(res.tasks[0]?.finishedAt).toBe("2026-06-12T13:32:52.211Z");
+    expect(res.tasks[0]?.durationMs).toBeNull();
+  });
+
+  test("zero-length span is a valid duration (diff >= 0 rule)", () => {
+    const ts = "2026-06-12T13:32:52.211Z";
+    const res = build({ taskIds: [T1], tasks: [artifactEntry({ createdAt: ts, finishedAt: ts })] });
+    expect(res.tasks[0]?.durationMs).toBe(0);
+  });
+
+  test("unparseable timestamp passes through verbatim (never reformatted) with null duration", () => {
+    const res = build({
+      taskIds: [T1],
+      tasks: [artifactEntry({ createdAt: "not-a-date", finishedAt: "2026-06-12T13:34:04.211Z" })],
+    });
+    expect(res.tasks[0]?.createdAt).toBe("not-a-date");
+    expect(res.tasks[0]?.finishedAt).toBe("2026-06-12T13:34:04.211Z");
+    expect(res.tasks[0]?.durationMs).toBeNull();
+  });
+
+  test("empty-string / non-string timestamps degrade to null", () => {
+    const res = build({
+      taskIds: [T1, T2],
+      tasks: [
+        artifactEntry({ id: T1, createdAt: "", finishedAt: "" }),
+        artifactEntry({ id: T2, createdAt: 1765546372211, finishedAt: null }),
+      ],
+    });
+    for (const rec of res.tasks) {
+      expect(rec.createdAt).toBeNull();
+      expect(rec.finishedAt).toBeNull();
+      expect(rec.durationMs).toBeNull();
+    }
   });
 });
 
@@ -305,6 +374,9 @@ describe("buildAttemptTaskRecords — back-compat degradation (v1-era rows)", ()
           agentId: null,
           costUsd: null,
           tokens: null,
+          createdAt: null,
+          finishedAt: null,
+          durationMs: null,
         },
         {
           id: T2,
@@ -317,6 +389,9 @@ describe("buildAttemptTaskRecords — back-compat degradation (v1-era rows)", ()
           agentId: null,
           costUsd: null,
           tokens: null,
+          createdAt: null,
+          finishedAt: null,
+          durationMs: null,
         },
       ],
     });
@@ -383,6 +458,8 @@ describe("fetchLiveTaskRecords (?live=1 source)", () => {
           output: id === T1 ? "partial output" : null,
           dependsOn: id === T2 ? [T1] : [],
           agentId: "agent-live",
+          // live payloads carry the same task timestamps (v7.7 item 7)
+          createdAt: id === T1 ? "2026-06-12T14:00:00.000Z" : undefined,
         }),
         { status: 200, headers: { "Content-Type": "application/json" } },
       );
@@ -405,6 +482,9 @@ describe("fetchLiveTaskRecords (?live=1 source)", () => {
         agentId: "agent-live",
         costUsd: null,
         tokens: null,
+        createdAt: "2026-06-12T14:00:00.000Z",
+        finishedAt: null, // still running
+        durationMs: null,
       },
       {
         id: T2,
@@ -417,6 +497,9 @@ describe("fetchLiveTaskRecords (?live=1 source)", () => {
         agentId: "agent-live",
         costUsd: null,
         tokens: null,
+        createdAt: null,
+        finishedAt: null,
+        durationMs: null,
       },
     ]);
   });

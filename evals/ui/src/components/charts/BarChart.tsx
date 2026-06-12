@@ -1,5 +1,11 @@
 import { type ReactNode, useMemo, useState } from "react";
-import { fmtCompact, niceTicks, seriesColor, useContainerWidth } from "./chart-utils.ts";
+import {
+  fmtCompact,
+  leftMarginFor,
+  niceTicks,
+  seriesColor,
+  useContainerWidth,
+} from "./chart-utils.ts";
 import "./charts.css";
 
 export interface BarGroup {
@@ -9,7 +15,9 @@ export interface BarGroup {
   values: (number | null)[];
 }
 
-const V_MARGIN = { top: 10, right: 12, bottom: 24, left: 46 };
+// Round-9 §4: no fixed left margin — it derives from the widest y tick.
+const V_MARGIN = { top: 10, right: 12, bottom: 24 };
+const V_MIN_MARGIN_LEFT = 46;
 const H_LABEL_W = 150;
 const H_VALUE_W = 64;
 const H_BAR_H = 14;
@@ -141,13 +149,18 @@ export function BarChart(props: {
 
   // vertical (grouped columns)
   const height = props.height ?? DEFAULT_HEIGHT;
-  const innerW = Math.max(10, width - V_MARGIN.left - V_MARGIN.right);
+  // Round-9 §4: left margin sized to the widest rendered y tick.
+  const yTicks = niceTicks(0, scaleMax, 4);
+  const marginLeft = leftMarginFor(
+    yTicks.map((t) => format(t)),
+    V_MIN_MARGIN_LEFT,
+  );
+  const innerW = Math.max(10, width - marginLeft - V_MARGIN.right);
   const innerH = Math.max(10, height - V_MARGIN.top - V_MARGIN.bottom);
   const sy = (v: number) => V_MARGIN.top + (1 - v / scaleMax) * innerH;
   const band = innerW / props.groups.length;
   const barW = Math.min(40, (band * 0.8) / seriesCount);
   const groupW = barW * seriesCount;
-  const yTicks = niceTicks(0, scaleMax, 4);
 
   return (
     <div className="chart" ref={ref}>
@@ -158,25 +171,25 @@ export function BarChart(props: {
             <g key={`y${t}`}>
               <line
                 className="chart-grid-line"
-                x1={V_MARGIN.left}
-                x2={V_MARGIN.left + innerW}
+                x1={marginLeft}
+                x2={marginLeft + innerW}
                 y1={sy(t)}
                 y2={sy(t)}
               />
-              <text className="chart-tick" x={V_MARGIN.left - 6} y={sy(t) + 3} textAnchor="end">
+              <text className="chart-tick" x={marginLeft - 6} y={sy(t) + 3} textAnchor="end">
                 {format(t)}
               </text>
             </g>
           ))}
           <line
             className="chart-axis-line"
-            x1={V_MARGIN.left}
-            x2={V_MARGIN.left + innerW}
+            x1={marginLeft}
+            x2={marginLeft + innerW}
             y1={V_MARGIN.top + innerH}
             y2={V_MARGIN.top + innerH}
           />
           {props.groups.map((group, gi) => {
-            const center = V_MARGIN.left + band * gi + band / 2;
+            const center = marginLeft + band * gi + band / 2;
             const label =
               group.label.length > Math.max(4, Math.floor(band / 7))
                 ? `${group.label.slice(0, Math.max(3, Math.floor(band / 7) - 1))}…`

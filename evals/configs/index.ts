@@ -79,6 +79,15 @@ export const configs: HarnessConfig[] = [
     model: "openrouter/google/gemini-3-flash-preview",
   },
   {
+    // v7.7 item 1: frontier-preset member. The preview slug IS the OpenRouter
+    // id (modelsdev openrouter section: "Gemini 3.1 Pro Preview", priced) —
+    // the bare gemini-3.1-pro id is a different, non-OpenRouter entry.
+    id: "pi-gemini-pro",
+    label: "pi-mono / Gemini 3.1 Pro Preview (OpenRouter)",
+    provider: "pi",
+    model: "openrouter/google/gemini-3.1-pro-preview",
+  },
+  {
     id: "pi-glm-flash",
     label: "pi-mono / GLM 4.7 flash (OpenRouter)",
     provider: "pi",

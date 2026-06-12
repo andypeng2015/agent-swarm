@@ -192,6 +192,23 @@ function checksTabInfo(
   const judges = judgments.filter((j) => j.kind !== "deterministic");
   const passed = checks.filter((j) => j.pass).length;
   const label = checks.length > 0 ? `Checks ${passed}/${checks.length}` : "Checks";
+  // Tri-state derived from ALL checks (deterministic + judge + agentic), not just
+  // judges: ✓ all passed, ✗ any failed, ! mixed/pending (incl. while judging).
+  let stateIcon: ReactNode = null;
+  if (judgments.length > 0 || judging) {
+    const anyFail = judgments.some((j) => !j.pass);
+    const allPass = judgments.length > 0 && judgments.every((j) => j.pass);
+    const [glyph, tone, word] = anyFail
+      ? ["✗", "tone-red", "failed"]
+      : allPass && !judging
+        ? ["✓", "tone-green", "passed"]
+        : ["!", "tone-yellow", "pending"];
+    stateIcon = (
+      <span className={`rd-tab-checkstate ${tone}`} role="img" aria-label={`checks ${word}`}>
+        {glyph}
+      </span>
+    );
+  }
   const titleParts: string[] = [
     checks.length > 0
       ? `${passed} of ${checks.length} checks passed`
@@ -223,6 +240,7 @@ function checksTabInfo(
   return {
     node: (
       <>
+        {stateIcon}
         {label}
         {suffix !== null ? <span className="rd-tab-judges">{suffix}</span> : null}
       </>
@@ -640,6 +658,15 @@ export default function RunDetailsPage(props: {
                   taskTitles={taskTitles}
                   taskStatuses={taskStatuses}
                   taskRecords={taskRecords}
+                  totals={
+                    attempt
+                      ? {
+                          costUsd: attempt.costUsd,
+                          durationMs: attempt.durationMs,
+                          tokens: attempt.tokens,
+                        }
+                      : null
+                  }
                   focusTask={focusTask !== null && focusTask.attemptId === selId ? focusTask : null}
                 />
               ) : (

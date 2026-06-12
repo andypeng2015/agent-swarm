@@ -373,6 +373,23 @@ table.data .align-center {
   flex-direction: column;
 }
 
+/* type-ahead search (round 9 item 3) — sticky so long option lists scroll
+   underneath; negative margins counter the panel's 4px padding */
+.ms-search {
+  position: sticky;
+  top: -4px;
+  z-index: 1;
+  margin: -4px -4px 4px;
+  padding: 6px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+}
+
+.ms-search input {
+  width: 100%;
+  box-sizing: border-box;
+}
+
 .ms-option {
   display: flex;
   align-items: center;
@@ -384,7 +401,8 @@ table.data .align-center {
   user-select: none;
 }
 
-.ms-option:hover {
+.ms-option:hover,
+.ms-option.highlighted {
   background: var(--panel-2);
 }
 
@@ -444,6 +462,10 @@ table.data .align-center {
 
 .tone-red {
   color: var(--red);
+}
+
+.tone-yellow {
+  color: var(--yellow);
 }
 
 .tone-accent {

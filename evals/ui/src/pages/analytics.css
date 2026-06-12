@@ -111,6 +111,18 @@
   min-width: 0;
 }
 
+/* round 9 item 5: identical card heights — the grid row already stretches all
+   three panels; the flex column pins title/sub to the top and pushes the chart
+   to the bottom so the bars share one baseline regardless of text wrapping. */
+.an-highlight {
+  display: flex;
+  flex-direction: column;
+}
+
+.an-highlight .chart {
+  margin-top: auto;
+}
+
 @media (max-width: 900px) {
   .an-highlights {
     grid-template-columns: minmax(0, 1fr);

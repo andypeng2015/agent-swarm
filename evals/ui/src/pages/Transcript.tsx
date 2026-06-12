@@ -1,5 +1,15 @@
-import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import {
+  createContext,
+  type ReactNode,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { getTranscript } from "../api.ts";
+import { fmtCost, fmtDate, fmtDuration, fmtTokens } from "../components/format.ts";
 import { HarnessIcon } from "../components/HarnessIcon.tsx";
 import { JsonView } from "../components/JsonView.tsx";
 import { Markdown } from "../components/Markdown.tsx";
@@ -16,7 +26,7 @@ import {
   type ToolResultBlock,
   type ToolUseBlock,
 } from "../logs-parser/index.ts";
-import type { AttemptTaskJson } from "../types.ts";
+import type { AttemptTaskJson, TokenTotalsJson } from "../types.ts";
 import "./transcript.css";
 
 const THINKING_COLLAPSE = 400;
@@ -24,6 +34,29 @@ const THINKING_COLLAPSE = 400;
 const RESULT_CLIP = 700;
 const ERROR_RESULT_CLIP = 2_000;
 const RAW_CLIP = 2_000;
+/** v7.7 item 6: distance (px) from the scrollport bottom that still counts as "pinned". */
+const FOLLOW_THRESHOLD = 48;
+
+/**
+ * v7.7 item 6: expand/collapse-all signal for tool outputs. Each ResultBody
+ * applies the latest nonce once, then local per-item toggles take over again.
+ * Nothing persists across reloads (by design — keep it simple).
+ */
+interface BulkSignal {
+  mode: "expand" | "collapse";
+  nonce: number;
+}
+
+const ResultBulkContext = createContext<BulkSignal>({ mode: "collapse", nonce: 0 });
+
+/** Nearest scrollable ancestor — in practice .rd-tab-content (run-details.css). */
+function findScrollParent(el: HTMLElement | null): HTMLElement | null {
+  for (let cur = el?.parentElement ?? null; cur !== null; cur = cur.parentElement) {
+    const oy = getComputedStyle(cur).overflowY;
+    if (oy === "auto" || oy === "scroll") return cur;
+  }
+  return null;
+}
 
 interface MetaLine {
   key: string;
@@ -152,6 +185,16 @@ export interface TranscriptTaskStatus {
   skipped: boolean;
 }
 
+/**
+ * v7.7 item 7: attempt totals behind the All pill. costUsd is the attempt's
+ * RECOMPUTE-PRICED total — it may exceed Σ harness-reported task costs.
+ */
+export interface TranscriptTotals {
+  costUsd: number | null;
+  durationMs: number | null;
+  tokens: TokenTotalsJson | null;
+}
+
 export default function Transcript(props: {
   attemptId: string;
   live?: boolean;
@@ -167,6 +210,11 @@ export default function Transcript(props: {
    * per-task cost). Optional/additive: absent ⇒ no header (pre-v7.5 behavior).
    */
   taskRecords?: Record<string, AttemptTaskJson> | null;
+  /**
+   * v7.7 item 7: attempt totals for the All pill's inline metrics + hover.
+   * Null/absent (older callers) ⇒ the All pill renders exactly as before.
+   */
+  totals?: TranscriptTotals | null;
   /** v7 §10.3: Workers-panel task chips focus a sub-tab (nonce re-triggers). */
   focusTask?: { taskId: string; nonce: number } | null;
 }): ReactNode {
@@ -239,6 +287,84 @@ export default function Transcript(props: {
     [visibleRows],
   );
 
+  // v7.7 item 6: expand/collapse-all for tool outputs (see ResultBulkContext).
+  const [bulk, setBulk] = useState<BulkSignal>({ mode: "collapse", nonce: 0 });
+
+  const hasBar = data?.source === "raw-session-logs";
+  const rowCount = visibleRows?.length ?? 0;
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const barRef = useRef<HTMLDivElement | null>(null);
+
+  // v7.7 item 8: the sticky outcome block pins flush under the sticky bar,
+  // whose height varies (pill wrap, unparsed badge) — measure it into
+  // --tr-bar-h on the transcript root so CSS can use it as the sticky top.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: re-attach when the raw branch (and thus the bar ref) renders
+  useLayoutEffect(() => {
+    const root = rootRef.current;
+    const bar = barRef.current;
+    if (root === null || bar === null) return undefined;
+    const apply = () => {
+      root.style.setProperty("--tr-bar-h", `${String(bar.offsetHeight)}px`);
+    };
+    apply();
+    const observer = new ResizeObserver(apply);
+    observer.observe(bar);
+    return () => observer.disconnect();
+  }, [hasBar]);
+
+  // ---- v7.7 item 6: live auto-scroll ----
+  // While live, stay pinned to the scrollport bottom as rows stream in; a user
+  // scroll-up disengages, the floating Follow button (or scrolling back down)
+  // re-engages. followRef mirrors the state for the scroll handler.
+  const followRef = useRef(true);
+  const [follow, setFollow] = useState(true);
+  const seenRows = useRef(0);
+  const [newRows, setNewRows] = useState(0);
+  const prevTask = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!live || !hasBar) return undefined;
+    const sc = findScrollParent(rootRef.current);
+    if (sc === null) return undefined;
+    const onScroll = () => {
+      const near = sc.scrollHeight - sc.scrollTop - sc.clientHeight < FOLLOW_THRESHOLD;
+      if (near !== followRef.current) {
+        followRef.current = near;
+        setFollow(near);
+      }
+    };
+    sc.addEventListener("scroll", onScroll, { passive: true });
+    return () => sc.removeEventListener("scroll", onScroll);
+  }, [live, hasBar]);
+
+  // Pin BEFORE paint (useLayoutEffect) so appends never flash off-bottom.
+  useLayoutEffect(() => {
+    if (!live || !hasBar) return;
+    const taskChanged = prevTask.current !== activeTask;
+    prevTask.current = activeTask;
+    if (followRef.current) {
+      const sc = findScrollParent(rootRef.current);
+      if (sc !== null) sc.scrollTop = sc.scrollHeight;
+      seenRows.current = rowCount;
+      setNewRows(0);
+    } else if (taskChanged) {
+      // a tab switch resets the "new rows since disengage" baseline
+      seenRows.current = rowCount;
+      setNewRows(0);
+    } else {
+      setNewRows(Math.max(0, rowCount - seenRows.current));
+    }
+  }, [live, hasBar, rowCount, activeTask]);
+
+  const engageFollow = () => {
+    followRef.current = true;
+    setFollow(true);
+    const sc = findScrollParent(rootRef.current);
+    if (sc !== null) sc.scrollTop = sc.scrollHeight;
+    seenRows.current = rowCount;
+    setNewRows(0);
+  };
+
   if (!data) {
     return (
       <div className="transcript">
@@ -275,12 +401,12 @@ export default function Transcript(props: {
     );
   }
 
-  const rowCount = visibleRows?.length ?? 0;
   return (
-    <div className="transcript">
-      {/* v7.5 item 4: caption (Live pulse) + tab row pin to the top of the
+    <div className="transcript" ref={rootRef}>
+      {/* v7.5 item 4 + v7.7 item 7: ONE sticky row — caption (Live pulse) left,
+          task pills right, expand-all at the far end — pinned to the top of the
           .rd-tab-content scrollport while the transcript scrolls. */}
-      <div className="tr-stickybar">
+      <div className={taskTabs !== null ? "tr-stickybar has-tabs" : "tr-stickybar"} ref={barRef}>
         <Caption harness={data.harness} live={data.live === true}>
           <span className="t-caption-sep">·</span>
           <span>{rowCount.toLocaleString()} Events</span>
@@ -302,11 +428,32 @@ export default function Transcript(props: {
             titles={props.taskTitles}
             statuses={props.taskStatuses}
             records={props.taskRecords}
+            totals={props.totals}
             onSelect={setSelectedTask}
           />
         ) : null}
+        {rowCount > 0 ? (
+          <button
+            type="button"
+            className="t-toggle t-bulk"
+            title={
+              bulk.mode === "expand"
+                ? "Collapse every tool output/result"
+                : "Expand every tool output/result"
+            }
+            onClick={() =>
+              setBulk((b) => ({
+                mode: b.mode === "expand" ? "collapse" : "expand",
+                nonce: b.nonce + 1,
+              }))
+            }
+          >
+            {bulk.mode === "expand" ? "⊟ Collapse Outputs" : "⊞ Expand Outputs"}
+          </button>
+        ) : null}
       </div>
-      {activeRecord !== null ? <TaskTabHeader rec={activeRecord} /> : null}
+      {/* keyed by task so the item-8 collapse state resets per sub-tab */}
+      {activeRecord !== null ? <TaskTabHeader rec={activeRecord} key={activeTask} /> : null}
       {rowCount === 0 ? (
         <div className="t-empty dim">
           {activeTask === null
@@ -316,34 +463,43 @@ export default function Transcript(props: {
               : "No events for this task"}
         </div>
       ) : null}
-      {built?.entries.map((entry) => {
-        switch (entry.kind) {
-          case "divider": {
-            return (
-              <div className="t-divider" key={entry.key}>
-                — Iteration {entry.iteration} —
-              </div>
-            );
+      <ResultBulkContext.Provider value={bulk}>
+        {built?.entries.map((entry) => {
+          switch (entry.kind) {
+            case "divider": {
+              return (
+                <div className="t-divider" key={entry.key}>
+                  — Iteration {entry.iteration} —
+                </div>
+              );
+            }
+            case "metas": {
+              return <MetaGroup lines={entry.lines} key={entry.key} />;
+            }
+            case "raw": {
+              return <RawRow cli={entry.cli} content={entry.content} key={entry.key} />;
+            }
+            default: {
+              return (
+                <MessageCard
+                  msg={entry.msg}
+                  resultById={built.resultById}
+                  callIds={built.callIds}
+                  key={entry.key}
+                />
+              );
+            }
           }
-          case "metas": {
-            return <MetaGroup lines={entry.lines} key={entry.key} />;
-          }
-          case "raw": {
-            return <RawRow cli={entry.cli} content={entry.content} key={entry.key} />;
-          }
-          default: {
-            return (
-              <MessageCard
-                msg={entry.msg}
-                resultById={built.resultById}
-                callIds={built.callIds}
-                key={entry.key}
-              />
-            );
-          }
-        }
-      })}
+        })}
+      </ResultBulkContext.Provider>
       {live ? <Footer /> : null}
+      {live && !follow ? (
+        <div className="t-follow-wrap">
+          <button type="button" className="t-follow" onClick={engageFollow}>
+            ↓ Follow{newRows > 0 ? ` · ${newRows.toLocaleString()} new` : ""}
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -458,6 +614,124 @@ function aggregateTabGlyph(
   return worst === null ? null : taskTabGlyph(worst);
 }
 
+// ---- v7.7 item 7: chip economics (LOCAL formatters by frozen contract —
+// the shared components/format.ts stays untouched). Inline pill segments are
+// COMPACT; the hover card carries the full-precision breakdown. Duration is
+// the task-record createdAt→finishedAt span — i.e. the task LIFETIME: DAG
+// dependents are created upfront, so their span includes dependency-pending
+// time (accepted + documented in the hover note). ----
+
+/** "<$0.01" | "$0.02" — null in, null out (segment omitted). */
+function chipCost(usd: number | null): string | null {
+  if (usd === null || Number.isNaN(usd)) return null;
+  return usd < 0.005 ? "<$0.01" : `$${usd.toFixed(2)}`;
+}
+
+/** Compact no-space duration: "41s" / "1m12s" / "2h05m" — null in, null out. */
+function chipDuration(ms: number | null): string | null {
+  if (ms === null || !Number.isFinite(ms)) return null;
+  const totalSec = Math.round(ms / 1000);
+  if (totalSec < 60) return `${String(totalSec)}s`;
+  const min = Math.floor(totalSec / 60);
+  if (min < 60) return `${String(min)}m${String(totalSec % 60).padStart(2, "0")}s`;
+  return `${String(Math.floor(min / 60))}h${String(min % 60).padStart(2, "0")}m`;
+}
+
+/** input + output + cacheRead + cacheWrite; null when no token record. */
+function tokensSum(t: TokenTotalsJson | null): number | null {
+  if (t === null) return null;
+  return t.inputTokens + t.outputTokens + t.cacheReadTokens + t.cacheWriteTokens;
+}
+
+/** fmtTokens of the sum with the trailing ".0" trimmed ("356.0k" → "356k"). */
+function chipTokens(t: TokenTotalsJson | null): string | null {
+  const sum = tokensSum(t);
+  if (sum === null) return null;
+  return fmtTokens(sum).replace(/\.0(?=[kM]$)/, "");
+}
+
+/**
+ * Non-null inline segments in frozen order (cost · duration · tokens).
+ * Null = NO metric known — the pill renders exactly as pre-v7.7 (back-compat).
+ */
+function chipSegments(m: TranscriptTotals): string[] | null {
+  const segs = [chipCost(m.costUsd), chipDuration(m.durationMs), chipTokens(m.tokens)].filter(
+    (s): s is string => s !== null,
+  );
+  return segs.length === 0 ? null : segs;
+}
+
+/** "in 12.3k · out 4.1k · cacheR 301k · cacheW 38.2k" | "—". */
+function tokensBreakdown(t: TokenTotalsJson | null): string {
+  if (t === null) return "—";
+  return `in ${fmtTokens(t.inputTokens)} · out ${fmtTokens(t.outputTokens)} · cacheR ${fmtTokens(
+    t.cacheReadTokens,
+  )} · cacheW ${fmtTokens(t.cacheWriteTokens)}`;
+}
+
+function ChipCardRow(props: { label: string; children: ReactNode }): ReactNode {
+  return (
+    <div className="tip-card-row">
+      <span className="tip-card-label">{props.label}</span>
+      <span className="tip-card-value">{props.children}</span>
+    </div>
+  );
+}
+
+/** Item 7 hover breakdown for one task pill — "—" for every null field. */
+function TaskChipCard(props: { rec: AttemptTaskJson; taskNo: number }): ReactNode {
+  const rec = props.rec;
+  const info = taskTabGlyph({ status: rec.status, skipped: rec.skipped });
+  return (
+    <div className="tip-card">
+      <div className="tip-card-title">
+        Task {props.taskNo}
+        {rec.title !== null ? ` · ${rec.title}` : ""}
+      </div>
+      <ChipCardRow label="Id">
+        <code>{rec.id}</code>
+      </ChipCardRow>
+      <ChipCardRow label="Status">
+        <span className={`tone-${info.tone}`}>
+          {info.glyph} {info.label}
+        </span>
+      </ChipCardRow>
+      <ChipCardRow label="Cost">{fmtCost(rec.costUsd)}</ChipCardRow>
+      <ChipCardRow label="Duration">{fmtDuration(rec.durationMs ?? null)}</ChipCardRow>
+      <ChipCardRow label="Tokens">{tokensBreakdown(rec.tokens)}</ChipCardRow>
+      <ChipCardRow label="Model">{rec.tokens?.model ?? "—"}</ChipCardRow>
+      <ChipCardRow label="Agent">{rec.agentId ?? "—"}</ChipCardRow>
+      <ChipCardRow label="Created">{fmtDate(rec.createdAt ?? null)}</ChipCardRow>
+      <ChipCardRow label="Finished">{fmtDate(rec.finishedAt ?? null)}</ChipCardRow>
+      {(rec.durationMs ?? null) !== null ? (
+        <div className="t-chip-note">
+          Duration = task lifetime (created → finished); dependents include dependency-pending time.
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/** Item 7 hover breakdown for the All pill — attempt totals, not Σ task costs. */
+function AllChipCard(props: { totals: TranscriptTotals; statusLabel: string | null }): ReactNode {
+  return (
+    <div className="tip-card">
+      <div className="tip-card-title">All tasks · attempt totals</div>
+      {props.statusLabel !== null ? (
+        <ChipCardRow label="Status">Worst task: {props.statusLabel}</ChipCardRow>
+      ) : null}
+      <ChipCardRow label="Cost">{fmtCost(props.totals.costUsd)}</ChipCardRow>
+      <ChipCardRow label="Duration">{fmtDuration(props.totals.durationMs)}</ChipCardRow>
+      <ChipCardRow label="Tokens">{tokensBreakdown(props.totals.tokens)}</ChipCardRow>
+      <ChipCardRow label="Model">{props.totals.tokens?.model ?? "—"}</ChipCardRow>
+      <div className="t-chip-note">
+        Attempt totals — recompute-priced; may exceed Σ harness-reported task costs. Includes rows
+        without a task id.
+      </div>
+    </div>
+  );
+}
+
 function TaskTabs(props: {
   tabs: string[];
   active: string | null;
@@ -465,100 +739,181 @@ function TaskTabs(props: {
   statuses?: Record<string, TranscriptTaskStatus>;
   /** v7.5: frozen per-task records — preferred status source (see resolveTaskStatus). */
   records?: Record<string, AttemptTaskJson> | null;
+  /** v7.7 item 7: attempt totals behind the All pill; null/absent = plain pill. */
+  totals?: TranscriptTotals | null;
   onSelect: (taskId: string | null) => void;
 }): ReactNode {
   const resolve = (taskId: string): TranscriptTaskStatus | undefined =>
     resolveTaskStatus(taskId, props.records, props.statuses);
+  const glyphFor = (taskId: string): TrTabGlyph | null => {
+    const st = resolve(taskId);
+    return st !== undefined ? taskTabGlyph(st) : null;
+  };
   const allGlyph = aggregateTabGlyph(props.tabs, resolve);
+  const totals = props.totals ?? null;
+  const allSegs = totals !== null ? chipSegments(totals) : null;
+  const allButton = (
+    <button
+      type="button"
+      className={props.active === null ? "t-tasktab selected" : "t-tasktab"}
+      title={
+        allSegs === null
+          ? `All events, including rows without a task id${
+              allGlyph ? `\nWorst task status: ${allGlyph.label}` : ""
+            }`
+          : undefined
+      }
+      onClick={() => props.onSelect(null)}
+    >
+      {allGlyph !== null ? (
+        <span className={`t-tasktab-glyph tone-${allGlyph.tone}`} aria-hidden="true">
+          {allGlyph.glyph}
+        </span>
+      ) : null}
+      All
+      {allSegs !== null ? <span className="t-tasktab-meta"> · {allSegs.join(" · ")}</span> : null}
+    </button>
+  );
   return (
     <div className="t-tasktabs">
-      <button
-        type="button"
-        className={props.active === null ? "t-tasktab selected" : "t-tasktab"}
-        title={`All events, including rows without a task id${
-          allGlyph ? `\nWorst task status: ${allGlyph.label}` : ""
-        }`}
-        onClick={() => props.onSelect(null)}
-      >
-        {allGlyph !== null ? (
-          <span className={`t-tasktab-glyph tone-${allGlyph.tone}`} aria-hidden="true">
-            {allGlyph.glyph}
-          </span>
-        ) : null}
-        All
-      </button>
-      {props.tabs.map((taskId, i) => {
-        const st = resolve(taskId);
-        const glyph = st !== undefined ? taskTabGlyph(st) : null;
-        const title = props.titles?.[taskId];
-        return (
-          <button
-            type="button"
-            key={taskId}
-            className={props.active === taskId ? "t-tasktab selected" : "t-tasktab"}
-            title={glyph !== null ? `${taskId}\n${glyph.label}` : taskId}
-            onClick={() => props.onSelect(taskId)}
-          >
-            {glyph !== null ? (
-              <span className={`t-tasktab-glyph tone-${glyph.tone}`} aria-hidden="true">
-                {glyph.glyph}
-              </span>
-            ) : null}
-            Task {i + 1}
-            {title !== undefined ? (
-              <span className="t-tasktab-title"> · {clipTitle(title)}</span>
-            ) : null}
-          </button>
-        );
-      })}
+      {allSegs !== null && totals !== null ? (
+        <Tooltip wide text={<AllChipCard totals={totals} statusLabel={allGlyph?.label ?? null} />}>
+          {allButton}
+        </Tooltip>
+      ) : (
+        allButton
+      )}
+      {props.tabs.map((taskId, i) => (
+        <TaskTabPill
+          key={taskId}
+          taskId={taskId}
+          taskNo={i + 1}
+          selected={props.active === taskId}
+          glyph={glyphFor(taskId)}
+          title={props.titles?.[taskId]}
+          rec={props.records?.[taskId]}
+          onSelect={props.onSelect}
+        />
+      ))}
     </div>
   );
 }
 
+/** One task pill — item 7 inline economics + rich hover when a record exists. */
+function TaskTabPill(props: {
+  taskId: string;
+  taskNo: number;
+  selected: boolean;
+  glyph: TrTabGlyph | null;
+  title: string | undefined;
+  rec: AttemptTaskJson | undefined;
+  onSelect: (taskId: string | null) => void;
+}): ReactNode {
+  const { taskId, glyph, title, rec } = props;
+  const segs =
+    rec !== undefined
+      ? chipSegments({
+          costUsd: rec.costUsd,
+          durationMs: rec.durationMs ?? null,
+          tokens: rec.tokens,
+        })
+      : null;
+  const button = (
+    <button
+      type="button"
+      className={props.selected ? "t-tasktab selected" : "t-tasktab"}
+      // a record carries the rich hover card instead — no double tooltip
+      title={
+        rec === undefined ? (glyph !== null ? `${taskId}\n${glyph.label}` : taskId) : undefined
+      }
+      onClick={() => props.onSelect(taskId)}
+    >
+      {glyph !== null ? (
+        <span className={`t-tasktab-glyph tone-${glyph.tone}`} aria-hidden="true">
+          {glyph.glyph}
+        </span>
+      ) : null}
+      Task {props.taskNo}
+      {segs !== null ? (
+        // metrics REPLACE the inline title (it moves into the hover card)
+        <span className="t-tasktab-meta"> · {segs.join(" · ")}</span>
+      ) : title !== undefined ? (
+        <span className="t-tasktab-title"> · {clipTitle(title)}</span>
+      ) : null}
+    </button>
+  );
+  // Back-compat sacred: no record (pre-v7.5 server / v1-era) ⇒ the exact
+  // pre-v7.7 pill incl. its native title tooltip.
+  if (rec === undefined) return button;
+  return (
+    <Tooltip wide text={<TaskChipCard rec={rec} taskNo={props.taskNo} />}>
+      {button}
+    </Tooltip>
+  );
+}
+
 /**
- * v7.5 items 2/6: header for the SELECTED sub-tab — StatusBadge-style status
- * chip, outcome/error clamped + expandable (cascade-skipped reads distinctly
- * from a real error, v6 §9 semantics) and the per-task CostBadge. Every field
- * degrades to absent/"—" on all-null records ("task-ids" source, v1-era rows).
+ * v7.5 items 2/6 + v7.7 item 8: outcome block for the SELECTED sub-tab —
+ * sticky flush under the single-row sticky bar (top = measured --tr-bar-h),
+ * collapsible (default expanded with the details clamped as before; collapsed
+ * = status + cost one-liner), and tinted by status tone so it reads as the
+ * task's OUTCOME, not another gray transcript bubble. Cascade-skipped still
+ * reads distinctly from a real error (v6 §9 semantics); every field degrades
+ * to absent/"—" on all-null records ("task-ids" source, v1-era rows).
  */
 function TaskTabHeader(props: { rec: AttemptTaskJson }): ReactNode {
   const rec = props.rec;
+  const [open, setOpen] = useState(true);
   const info = taskTabGlyph({ status: rec.status, skipped: rec.skipped });
   const statusTip = [rec.id, info.label, rec.agentId !== null ? `Agent ${rec.agentId}` : null]
     .filter((line): line is string => line !== null)
     .join("\n");
+  const hasDetail = rec.error !== null || rec.outcome !== null;
   return (
-    <div className="t-taskhead">
-      <div className="t-taskhead-row">
-        <Tooltip text={statusTip}>
-          <span className={`t-taskhead-status tone-${info.tone}`}>
-            <span className="t-tasktab-glyph" aria-hidden="true">
-              {info.glyph}
+    <div className="t-taskhead-sticky">
+      <div className={`t-taskhead card-${info.tone}`}>
+        <div className="t-taskhead-row">
+          {hasDetail ? (
+            <button
+              type="button"
+              className="t-toggle t-taskhead-chevron"
+              aria-expanded={open}
+              title={open ? "Collapse outcome" : "Expand outcome"}
+              onClick={() => setOpen(!open)}
+            >
+              {open ? "▾" : "▸"}
+            </button>
+          ) : null}
+          <Tooltip text={statusTip}>
+            <span className={`t-taskhead-status tone-${info.tone}`}>
+              <span className="t-tasktab-glyph" aria-hidden="true">
+                {info.glyph}
+              </span>
+              {info.label}
             </span>
-            {info.label}
-          </span>
-        </Tooltip>
-        {/* Same labeling as the round-7 member cost: harness-reported Σ. */}
-        <Tooltip text="Harness-reported Σ session cost for this task — a recomputed attempt cost may differ">
-          <span className="t-taskhead-cost">
-            <CostBadge costUsd={rec.costUsd} source={null} />
-          </span>
-        </Tooltip>
-      </div>
-      {rec.error !== null ? (
-        <div className={rec.skipped ? "t-taskhead-detail skip" : "t-taskhead-detail error"}>
-          <div className="t-result-head">
-            {rec.skipped ? "⊘ Skipped (failed dependency)" : "↳ Error"}
+          </Tooltip>
+          {/* Same labeling as the round-7 member cost: harness-reported Σ. */}
+          <Tooltip text="Harness-reported Σ session cost for this task — a recomputed attempt cost may differ">
+            <span className="t-taskhead-cost">
+              <CostBadge costUsd={rec.costUsd} source={null} />
+            </span>
+          </Tooltip>
+        </div>
+        {open && rec.error !== null ? (
+          <div className={rec.skipped ? "t-taskhead-detail skip" : "t-taskhead-detail error"}>
+            <div className="t-result-head">
+              {rec.skipped ? "⊘ Skipped (failed dependency)" : "↳ Error"}
+            </div>
+            <ClippedText text={rec.error} clip={ERROR_RESULT_CLIP} />
           </div>
-          <ClippedText text={rec.error} clip={ERROR_RESULT_CLIP} />
-        </div>
-      ) : null}
-      {rec.outcome !== null ? (
-        <div className="t-taskhead-detail">
-          <div className="t-result-head">↳ Outcome</div>
-          <ClippedText text={rec.outcome} clip={RESULT_CLIP} />
-        </div>
-      ) : null}
+        ) : null}
+        {open && rec.outcome !== null ? (
+          <div className="t-taskhead-detail">
+            <div className="t-result-head">↳ Outcome</div>
+            <ClippedText text={rec.outcome} clip={RESULT_CLIP} />
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -775,15 +1130,37 @@ function ClippedText(props: { text: string; clip?: number }): ReactNode {
   );
 }
 
+/**
+ * v7.7 item 6: tool outputs collapse by DEFAULT (they dominate the view);
+ * errors stay visible. The sticky bar's expand/collapse-all signal overrides
+ * the local state once per nonce, then per-item toggles take over again.
+ */
 function ResultBody(props: { result: ToolResultBlock }): ReactNode {
   const { result } = props;
+  const bulk = useContext(ResultBulkContext);
+  // a freshly streamed-in result must NOT apply an older bulk signal on mount
+  const applied = useRef(bulk.nonce);
+  const [open, setOpen] = useState(result.isError);
+  useEffect(() => {
+    if (bulk.nonce === applied.current) return;
+    applied.current = bulk.nonce;
+    setOpen(bulk.mode === "expand");
+  }, [bulk]);
   if (!result.content) {
     return <div className="t-tool-result dim">(Empty result)</div>;
   }
   return (
     <div className={`t-tool-result${result.isError ? " error" : ""}`}>
-      <div className="t-result-head">↳ {result.isError ? "Error" : "Result"}</div>
-      <ClippedText text={result.content} clip={result.isError ? ERROR_RESULT_CLIP : RESULT_CLIP} />
+      <button type="button" className="t-toggle t-result-toggle" onClick={() => setOpen(!open)}>
+        {open ? "▾" : "▸"} {result.isError ? "Error" : "Result"} (
+        {result.content.length.toLocaleString()} chars)
+      </button>
+      {open ? (
+        <ClippedText
+          text={result.content}
+          clip={result.isError ? ERROR_RESULT_CLIP : RESULT_CLIP}
+        />
+      ) : null}
     </div>
   );
 }

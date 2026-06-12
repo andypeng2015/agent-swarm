@@ -1,6 +1,12 @@
 import { type MouseEvent, type ReactNode, useMemo, useState } from "react";
 import { fmtDate } from "../format.ts";
-import { fmtCompact, niceTicks, seriesColor, useContainerWidth } from "./chart-utils.ts";
+import {
+  fmtCompact,
+  leftMarginFor,
+  niceTicks,
+  seriesColor,
+  useContainerWidth,
+} from "./chart-utils.ts";
 import "./charts.css";
 
 export interface LinePoint {
@@ -24,8 +30,12 @@ export interface ChartMarker {
   color?: string;
 }
 
-const MARGIN = { top: 26, right: 14, bottom: 22, left: 46 };
+// Round-9 §4: no fixed left margin — it derives from the widest y tick.
+const MARGIN = { top: 26, right: 14, bottom: 22 };
+const MIN_MARGIN_LEFT = 46;
 const DEFAULT_HEIGHT = 220;
+/** 9px mono glyph-width estimate for the marker labels. */
+const MARKER_CHAR_W = 5.4;
 
 interface Hover {
   /** Snapped data x. */
@@ -98,12 +108,17 @@ export function LineChart(props: {
     );
   }
 
-  const innerW = Math.max(10, width - MARGIN.left - MARGIN.right);
+  // Round-9 §4: left margin sized to the widest rendered y tick.
+  const yTicks = niceTicks(layout.y0, layout.y1, 4);
+  const marginLeft = leftMarginFor(
+    yTicks.map((t) => yFormat(t)),
+    MIN_MARGIN_LEFT,
+  );
+  const innerW = Math.max(10, width - marginLeft - MARGIN.right);
   const innerH = Math.max(10, height - MARGIN.top - MARGIN.bottom);
-  const sx = (x: number) => MARGIN.left + ((x - layout.x0) / (layout.x1 - layout.x0)) * innerW;
+  const sx = (x: number) => marginLeft + ((x - layout.x0) / (layout.x1 - layout.x0)) * innerW;
   const sy = (y: number) => MARGIN.top + (1 - (y - layout.y0) / (layout.y1 - layout.y0)) * innerH;
 
-  const yTicks = niceTicks(layout.y0, layout.y1, 4);
   const xTickCount = Math.max(2, Math.min(6, Math.floor(innerW / 110)));
   const xTicks = Array.from(
     { length: xTickCount },
@@ -114,7 +129,7 @@ export function LineChart(props: {
     if (layout.snapXs.length === 0) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const px = e.clientX - rect.left;
-    const dataX = layout.x0 + ((px - MARGIN.left) / innerW) * (layout.x1 - layout.x0);
+    const dataX = layout.x0 + ((px - marginLeft) / innerW) * (layout.x1 - layout.x0);
     let nearest = layout.snapXs[0];
     for (const x of layout.snapXs) {
       if (Math.abs(x - dataX) < Math.abs(nearest - dataX)) nearest = x;
@@ -151,12 +166,12 @@ export function LineChart(props: {
             <g key={`y${t}`}>
               <line
                 className="chart-grid-line"
-                x1={MARGIN.left}
-                x2={MARGIN.left + innerW}
+                x1={marginLeft}
+                x2={marginLeft + innerW}
                 y1={sy(t)}
                 y2={sy(t)}
               />
-              <text className="chart-tick" x={MARGIN.left - 6} y={sy(t) + 3} textAnchor="end">
+              <text className="chart-tick" x={marginLeft - 6} y={sy(t) + 3} textAnchor="end">
                 {yFormat(t)}
               </text>
             </g>
@@ -164,8 +179,8 @@ export function LineChart(props: {
           {/* x axis + ticks */}
           <line
             className="chart-axis-line"
-            x1={MARGIN.left}
-            x2={MARGIN.left + innerW}
+            x1={marginLeft}
+            x2={marginLeft + innerW}
             y1={MARGIN.top + innerH}
             y2={MARGIN.top + innerH}
           />
@@ -184,7 +199,9 @@ export function LineChart(props: {
           {markers.map((m, i) => {
             const px = sx(m.x);
             const color = m.color ?? "var(--dim)";
-            const onRight = px > MARGIN.left + innerW * 0.8;
+            // Round-9 §4.6: flip the anchor when the start-anchored label
+            // would run past the right svg edge (estimated glyph width).
+            const onRight = px + 4 + m.label.length * MARKER_CHAR_W > width - 2;
             return (
               <g key={`m${m.x}-${m.label}`}>
                 <line

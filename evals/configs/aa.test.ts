@@ -33,13 +33,14 @@ describe("AA mapping completeness (v7.6 item D, frozen)", () => {
     expect(mapped.size + unmatched.size).toBe(configs.length);
   });
 
-  test("frozen counts: 18 matched, 8 unmatched, 13 distinct AA rows", () => {
-    expect(Object.keys(CONFIG_AA_ROWS).length).toBe(18);
+  test("frozen counts: 19 matched, 8 unmatched, 14 distinct AA rows", () => {
+    expect(Object.keys(CONFIG_AA_ROWS).length).toBe(19);
     expect(Object.keys(AA_UNMATCHED_CONFIG_IDS).length).toBe(8);
-    // 13, not the brief's "12": Haiku, Sonnet 4.6 (max), Opus 4.8 (max), Opus 4.7 (max),
-    // Fable 5, DS Flash (High), DS Pro (High), Gemini 3.5 Flash, Qwen3 Coder Next,
-    // gpt-oss-120b (high), Gemini 3.1 Flash-Lite, GPT-5.4 mini (medium), GPT-5.5 (medium).
-    expect(new Set(Object.values(CONFIG_AA_ROWS).map((m) => m.sourceRow)).size).toBe(13);
+    // 14: Haiku, Sonnet 4.6 (max), Opus 4.8 (max), Opus 4.7 (max), Fable 5,
+    // DS Flash (High), DS Pro (High), Gemini 3.5 Flash, Gemini 3.1 Pro Preview
+    // (v7.7 item 1), Qwen3 Coder Next, gpt-oss-120b (high),
+    // Gemini 3.1 Flash-Lite, GPT-5.4 mini (medium), GPT-5.5 (medium).
+    expect(new Set(Object.values(CONFIG_AA_ROWS).map((m) => m.sourceRow)).size).toBe(14);
   });
 
   test("every sourceRow exists in the TSV", () => {
@@ -68,6 +69,9 @@ describe("AA mapping completeness (v7.6 item D, frozen)", () => {
     expect(getAaForConfig("pi-qwen-coder")?.matchedVariant).toBeNull();
     expect(getAaForConfig("opencode-qwen-coder")?.matchedVariant).toBeNull();
     expect(getAaForConfig("opencode-gemini-flash-lite")?.matchedVariant).toBeNull();
+    // v7.7 item 1: "Preview" is the model identity (the catalog model IS the
+    // preview slug), not a serving variant — the snapshot's only 3.1 Pro row.
+    expect(getAaForConfig("pi-gemini-pro")?.matchedVariant).toBeNull();
     // Variant/effort picks document their justification.
     for (const id of ["claude-haiku", "claude-sonnet", "pi-deepseek-flash", "codex-5.5"]) {
       expect(getAaForConfig(id)?.matchedVariant).toBeTruthy();
@@ -99,6 +103,21 @@ describe("AA TSV parse rules (frozen)", () => {
       medianTokensPerS: 62,
       latencyFirstChunkS: 109.12,
       totalResponseS: 117.15,
+      provisional: false,
+    });
+  });
+
+  test("spot-check: pi-gemini-pro joins the Gemini 3.1 Pro Preview row (v7.7 item 1)", () => {
+    expect(getAaForConfig("pi-gemini-pro")).toEqual({
+      sourceRow: "Gemini 3.1 Pro Preview",
+      matchedVariant: null,
+      contextWindow: "1M",
+      creator: "Google",
+      intelligenceIndex: 57,
+      blendedUsdPer1M: 1.74,
+      medianTokensPerS: 125,
+      latencyFirstChunkS: 25.81,
+      totalResponseS: 29.8,
       provisional: false,
     });
   });

@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test";
+import { configs } from "../configs/index.ts";
+import { CONFIG_PRESETS, expandPresetSelection } from "../configs/presets.ts";
 import { serializeConfig, serializeScenario, validateScenario } from "./registry.ts";
 import type { Scenario } from "./types.ts";
 
@@ -225,6 +227,79 @@ describe("serializeScenario — workerSpecs + lead (v7 §9/§12)", () => {
       envKeys: [],
     });
     expect(JSON.stringify(s)).not.toContain("value");
+  });
+});
+
+describe("CONFIG_PRESETS (v7.7 item 1 — frozen contract)", () => {
+  test("display order is frozen: frontier, oss, claude-family, budget", () => {
+    expect(CONFIG_PRESETS.map((p) => p.id)).toEqual(["frontier", "oss", "claude-family", "budget"]);
+  });
+
+  test("preset ids are unique; configIds non-empty with no internal duplicates", () => {
+    const ids = CONFIG_PRESETS.map((p) => p.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    for (const preset of CONFIG_PRESETS) {
+      expect(preset.configIds.length).toBeGreaterThan(0);
+      expect(new Set(preset.configIds).size).toBe(preset.configIds.length);
+      expect(preset.label.trim().length).toBeGreaterThan(0);
+      expect(preset.description.trim().length).toBeGreaterThan(0);
+    }
+  });
+
+  test("every preset config id resolves in the catalog", () => {
+    const catalog = new Set(configs.map((c) => c.id));
+    for (const preset of CONFIG_PRESETS) {
+      for (const id of preset.configIds) {
+        expect(catalog.has(id)).toBe(true);
+      }
+    }
+  });
+
+  test("frontier carries the new pi-gemini-pro config", () => {
+    expect(CONFIG_PRESETS.find((p) => p.id === "frontier")?.configIds).toContain("pi-gemini-pro");
+  });
+});
+
+describe("expandPresetSelection — CLI --preset expansion (v7.7 item 1)", () => {
+  test("single preset expands to exactly its configIds", () => {
+    expect(expandPresetSelection(["budget"], [])).toEqual([
+      "claude-haiku",
+      "pi-deepseek-flash",
+      "pi-gemini-flash",
+      "codex-5.4-mini",
+    ]);
+  });
+
+  test("presets expand in flag order, then explicit ids; dedupe keeps first occurrence", () => {
+    const out = expandPresetSelection(["budget", "frontier"], ["codex-5.4", "claude-haiku"]);
+    expect(out).toEqual([
+      // budget first (flag order)…
+      "claude-haiku",
+      "pi-deepseek-flash",
+      "pi-gemini-flash",
+      "codex-5.4-mini",
+      // …then frontier minus nothing (no overlap with budget)…
+      "claude-fable",
+      "claude-opus",
+      "claude-sonnet",
+      "pi-deepseek-pro",
+      "pi-gemini-pro",
+      "codex-5.5",
+      // …then explicit --configs extras; the duplicate claude-haiku is dropped.
+      "codex-5.4",
+    ]);
+  });
+
+  test("overlapping presets dedupe across each other (oss ∩ frontier = pi-deepseek-pro)", () => {
+    const out = expandPresetSelection(["frontier", "oss"], []);
+    expect(out.filter((id) => id === "pi-deepseek-pro")).toHaveLength(1);
+    expect(new Set(out).size).toBe(out.length);
+  });
+
+  test("unknown preset throws the frozen error before anything else", () => {
+    expect(() => expandPresetSelection(["nope"], [])).toThrow(
+      'unknown preset "nope" (available: frontier, oss, claude-family, budget)',
+    );
   });
 });
 

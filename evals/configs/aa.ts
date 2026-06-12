@@ -178,6 +178,8 @@ export const CONFIG_AA_ROWS: Record<string, { sourceRow: string; matchedVariant:
         '"(medium)"/"(minimal)" effort variants are rejected. Note: AA has no Gemini-3-Flash ' +
         "row; the catalog model is gemini-3-flash-preview.",
     },
+    // [II 57] — exact name match; the catalog model is the preview slug; no variant siblings.
+    "pi-gemini-pro": { sourceRow: "Gemini 3.1 Pro Preview", matchedVariant: null },
     // pi-glm-flash → UNMATCHED (TSV has only GLM-5.x rows; never borrow newer-model numbers).
     // [II 28] — exact name match, no variants.
     "pi-qwen-coder": { sourceRow: "Qwen3 Coder Next", matchedVariant: null },

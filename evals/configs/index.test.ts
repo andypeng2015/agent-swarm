@@ -5,8 +5,8 @@ import { configs, DEFAULT_CONFIG_IDS } from "./index.ts";
 const NAMING_RE = /^(claude|pi|opencode|codex)-[a-z0-9][a-z0-9.-]*$/;
 
 describe("config catalog invariants (v6 §0.14 / §10)", () => {
-  test("catalog has exactly 26 entries (12 legacy + 14 new, §10.1)", () => {
-    expect(configs.length).toBe(26);
+  test("catalog has exactly 27 entries (12 legacy + 14 round-6 + pi-gemini-pro, v7.7 item 1)", () => {
+    expect(configs.length).toBe(27);
   });
 
   test("ids are unique", () => {
@@ -56,5 +56,15 @@ describe("config catalog invariants (v6 §0.14 / §10)", () => {
       expect(c.model).toBeDefined();
       expect(c.model?.startsWith("openrouter/")).toBe(true);
     }
+  });
+
+  test("pi-gemini-pro (v7.7 item 1) pins the verified OpenRouter preview slug", () => {
+    const c = configs.find((entry) => entry.id === "pi-gemini-pro");
+    expect(c).toEqual({
+      id: "pi-gemini-pro",
+      label: "pi-mono / Gemini 3.1 Pro Preview (OpenRouter)",
+      provider: "pi",
+      model: "openrouter/google/gemini-3.1-pro-preview",
+    });
   });
 });

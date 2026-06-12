@@ -1,5 +1,5 @@
 import { type ReactNode, useMemo, useState } from "react";
-import { fmtCompact, niceTicks, useContainerWidth } from "./chart-utils.ts";
+import { fmtCompact, leftMarginFor, niceTicks, useContainerWidth } from "./chart-utils.ts";
 import "./charts.css";
 
 /**
@@ -25,34 +25,82 @@ export interface ScatterPoint {
 }
 
 /**
- * Shaded "most attractive quadrant" (à la artificialanalysis.ai): the corner
- * region past the MEDIAN split of the plotted points on both axes.
- * Round-8 spec §C4 (additive): `worst` also shades the diagonally-opposite
- * quadrant red with its own corner caption.
+ * Shaded "most attractive" corner band (à la artificialanalysis.ai).
+ * Round-9 §2 (FROZEN — props unchanged from the v7/round-8 shape): the bands
+ * anchor to the RENDERED axis ranges — each is a corner rect of exactly
+ * 25% × 25% of the inner plot in screen space, independent of the point
+ * distribution (the round-8 median split is gone). `x`/`y` pick the best
+ * corner: x "low" → left edge, "high" → right; y "high" → top, "low" → bottom.
  */
 export interface ScatterQuadrant {
   x: "low" | "high";
   y: "low" | "high";
   /** Corner caption. Default "most attractive quadrant". */
   label?: string;
-  /** Also shade the diagonally-opposite median-split quadrant red. */
+  /** Also shade the diagonally-opposite 25%×25% corner red. */
   worst?: boolean;
-  /** Corner caption for the worst quadrant. Default "least attractive". */
+  /** Corner caption for the worst band. Default "least attractive". */
   worstLabel?: string;
 }
 
-const MARGIN = { top: 14, right: 16, bottom: 34, left: 52 };
+const MARGIN = { top: 14, right: 16, bottom: 34 };
+const MIN_MARGIN_LEFT = 52;
 const DEFAULT_HEIGHT = 280;
-
-function median(sorted: number[]): number {
-  const mid = Math.floor(sorted.length / 2);
-  return sorted.length % 2 === 1
-    ? (sorted[mid] as number)
-    : ((sorted[mid - 1] as number) + (sorted[mid] as number)) / 2;
-}
+/** Round-9 §2 (FROZEN): bands span 25% of each rendered axis range. */
+const BAND_FRACTION = 0.25;
+const DEFAULT_BEST_LABEL = "most attractive quadrant";
+const DEFAULT_WORST_LABEL = "least attractive";
 
 function flipSide(side: "low" | "high"): "low" | "high" {
   return side === "low" ? "high" : "low";
+}
+
+interface BandRect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/**
+ * Corner-anchored 25%×25% band rect in screen space, derived from the SAME
+ * post-padding domains that drive sx/sy — so the band is independent of the
+ * point distribution (round-9 §2 — FROZEN geometry).
+ */
+function bandRect(
+  qx: "low" | "high",
+  qy: "low" | "high",
+  left: number,
+  top: number,
+  innerW: number,
+  innerH: number,
+): BandRect {
+  const w = innerW * BAND_FRACTION;
+  const h = innerH * BAND_FRACTION;
+  return {
+    x: qx === "low" ? left : left + innerW - w,
+    y: qy === "high" ? top : top + innerH - h,
+    w,
+    h,
+  };
+}
+
+/**
+ * Caption anchored in the band's outer corner (the chart-boundary corner),
+ * extending INWARD: anchor start on left bands / end on right bands. A long
+ * caption may extend past a narrow band into the plot — never past the svg
+ * edge (round-9 §2/§4.8).
+ */
+function bandCaption(
+  rect: BandRect,
+  qx: "low" | "high",
+  qy: "low" | "high",
+): { x: number; y: number; anchor: "start" | "end" } {
+  return {
+    x: qx === "low" ? rect.x + 6 : rect.x + rect.w - 6,
+    y: qy === "high" ? rect.y + 12 : rect.y + rect.h - 5,
+    anchor: qx === "low" ? "start" : "end",
+  };
 }
 
 interface LabelBox {
@@ -86,20 +134,48 @@ function boxHitsCircle(box: LabelBox, cx: number, cy: number, r: number): boolea
 }
 
 /**
+ * Estimated boxes of the band captions (same w = chars*6.2+4, h = 12
+ * estimator as point labels) — seeded into placeLabels' `taken` list so the
+ * captions are collision-safe (round-9 §2 — FROZEN).
+ */
+function captionBoxes(
+  quadrant: ScatterQuadrant,
+  left: number,
+  top: number,
+  innerW: number,
+  innerH: number,
+): LabelBox[] {
+  const make = (qx: "low" | "high", qy: "low" | "high", text: string): LabelBox =>
+    labelBox(
+      bandCaption(bandRect(qx, qy, left, top, innerW, innerH), qx, qy),
+      text.length * 6.2 + 4,
+    );
+  const boxes = [make(quadrant.x, quadrant.y, quadrant.label ?? DEFAULT_BEST_LABEL)];
+  if (quadrant.worst === true) {
+    boxes.push(
+      make(flipSide(quadrant.x), flipSide(quadrant.y), quadrant.worstLabel ?? DEFAULT_WORST_LABEL),
+    );
+  }
+  return boxes;
+}
+
+/**
  * Greedy collision-aware label placement (round-8 spec §C1 — FROZEN): points
  * are processed by radius desc (≈ attempts desc, important labels win) with
  * candidate anchors right → left → above → below of the dot. A candidate is
  * rejected when its estimated box (w = chars*6.2+4, h = 12) intersects an
  * already-placed label box, any dot circle, or leaves the inner chart bounds.
  * When all four candidates fail, the label is hidden — the dot keeps the
- * nearest-point hover tooltip as recourse.
+ * nearest-point hover tooltip as recourse. Round-9 §2: the `taken` list is
+ * pre-seeded with the band caption boxes so captions stay readable.
  */
 function placeLabels(
   dots: { key: string; label: string; cx: number; cy: number; r: number }[],
   bounds: LabelBox,
+  reserved: LabelBox[],
 ): Map<string, PlacedLabel> {
   const placed = new Map<string, PlacedLabel>();
-  const taken: LabelBox[] = [];
+  const taken: LabelBox[] = [...reserved];
   const order = [...dots].sort((a, b) => b.r - a.r);
   for (const d of order) {
     const w = d.label.length * 6.2 + 4;
@@ -129,9 +205,10 @@ function placeLabels(
 
 /**
  * XY scatter chart (v7 spec §C2 — FROZEN props; round-8 §C1/§C4 additive
- * extensions: worst quadrant, yDomain, collision-aware labels). Hand-rolled
- * theme-aware SVG, no deps: median-split quadrant shading, per-group legend,
- * nearest-point hover tooltip, optional inline dot labels for small datasets.
+ * extensions: worst band, yDomain, collision-aware labels). Hand-rolled
+ * theme-aware SVG, no deps: axis-range-anchored 25% corner bands (round-9 §2),
+ * per-group legend, nearest-point hover tooltip, optional inline dot labels
+ * for small datasets.
  */
 export function ScatterChart(props: {
   points: ScatterPoint[];
@@ -167,8 +244,8 @@ export function ScatterChart(props: {
       const d = (hi - lo) * 0.08;
       return [lo - d, hi + d];
     };
-    const xs = pts.map((p) => p.x).sort((a, b) => a - b);
-    const ys = pts.map((p) => p.y).sort((a, b) => a - b);
+    const xs = pts.map((p) => p.x);
+    const ys = pts.map((p) => p.y);
     const [x0, x1] = pad(Math.min(...xs), Math.max(...xs));
     let y0: number;
     let y1: number;
@@ -179,21 +256,35 @@ export function ScatterChart(props: {
       y0 = Math.min(0, y0raw);
       y1 = y1pad;
     }
-    return { pts, x0, x1, y0, y1, xMed: median(xs), yMed: median(ys) };
+    return { pts, x0, x1, y0, y1 };
   }, [props.points, yDomain]);
+
+  // Round-9 §4: left margin sized to the widest rendered y tick — strings
+  // like "$0.0350" / "1h 05m" used to clip past the fixed 52px margin.
+  const marginLeft =
+    layout === null
+      ? MIN_MARGIN_LEFT
+      : leftMarginFor(
+          niceTicks(layout.y0, layout.y1).map((t) => yFormat(t)),
+          MIN_MARGIN_LEFT,
+        );
 
   const labelPlacements = useMemo(() => {
     if (props.showLabels !== true || layout === null || width === 0) return null;
     const { pts, x0, x1, y0, y1 } = layout;
-    const innerW = Math.max(40, width - MARGIN.left - MARGIN.right);
+    const innerW = Math.max(40, width - marginLeft - MARGIN.right);
     const innerH = Math.max(40, height - MARGIN.top - MARGIN.bottom);
-    const sx = (v: number) => MARGIN.left + ((v - x0) / (x1 - x0)) * innerW;
+    const sx = (v: number) => marginLeft + ((v - x0) / (x1 - x0)) * innerW;
     const sy = (v: number) => MARGIN.top + innerH - ((v - y0) / (y1 - y0)) * innerH;
+    const quadrant = props.quadrant ?? null;
+    const reserved =
+      quadrant === null ? [] : captionBoxes(quadrant, marginLeft, MARGIN.top, innerW, innerH);
     return placeLabels(
       pts.map((p) => ({ key: p.key, label: p.label, cx: sx(p.x), cy: sy(p.y), r: p.r ?? 5 })),
-      { x: MARGIN.left, y: MARGIN.top, w: innerW, h: innerH },
+      { x: marginLeft, y: MARGIN.top, w: innerW, h: innerH },
+      reserved,
     );
-  }, [props.showLabels, layout, width, height]);
+  }, [props.showLabels, props.quadrant, layout, width, height, marginLeft]);
 
   if (width === 0 || layout === null) {
     return (
@@ -203,36 +294,36 @@ export function ScatterChart(props: {
     );
   }
 
-  const { pts, x0, x1, y0, y1, xMed, yMed } = layout;
-  const innerW = Math.max(40, width - MARGIN.left - MARGIN.right);
+  const { pts, x0, x1, y0, y1 } = layout;
+  const innerW = Math.max(40, width - marginLeft - MARGIN.right);
   const innerH = Math.max(40, height - MARGIN.top - MARGIN.bottom);
-  const sx = (v: number) => MARGIN.left + ((v - x0) / (x1 - x0)) * innerW;
+  const sx = (v: number) => marginLeft + ((v - x0) / (x1 - x0)) * innerW;
   const sy = (v: number) => MARGIN.top + innerH - ((v - y0) / (y1 - y0)) * innerH;
 
-  // Quadrant rects: from the median split lines to the matching corner.
-  const quadrantRect = (qx: "low" | "high", qy: "low" | "high") => ({
-    x: qx === "low" ? MARGIN.left : sx(xMed),
-    w: qx === "low" ? sx(xMed) - MARGIN.left : MARGIN.left + innerW - sx(xMed),
-    y: qy === "high" ? MARGIN.top : sy(yMed),
-    h: qy === "high" ? sy(yMed) - MARGIN.top : MARGIN.top + innerH - sy(yMed),
-  });
-  // Caption sits in the rect corner that touches the chart boundary corner
-  // (away from the median cross).
-  const quadrantCaption = (
-    rect: { x: number; y: number; w: number; h: number },
-    qx: "low" | "high",
-    qy: "low" | "high",
-  ) => ({
-    x: qx === "low" ? rect.x + 6 : rect.x + rect.w - 6,
-    y: qy === "high" ? rect.y + 12 : rect.y + rect.h - 5,
-    anchor: (qx === "low" ? "start" : "end") as "start" | "end",
-  });
   const quadrant = props.quadrant ?? null;
-  const quadRect = quadrant === null ? null : quadrantRect(quadrant.x, quadrant.y);
-  const worstRect =
-    quadrant === null || quadrant.worst !== true
-      ? null
-      : quadrantRect(flipSide(quadrant.x), flipSide(quadrant.y));
+  const bands =
+    quadrant === null
+      ? []
+      : [
+          {
+            cls: "chart-quadrant",
+            capCls: "chart-quadrant-label",
+            qx: quadrant.x,
+            qy: quadrant.y,
+            text: quadrant.label ?? DEFAULT_BEST_LABEL,
+          },
+          ...(quadrant.worst === true
+            ? [
+                {
+                  cls: "chart-quadrant worst",
+                  capCls: "chart-quadrant-label worst",
+                  qx: flipSide(quadrant.x),
+                  qy: flipSide(quadrant.y),
+                  text: quadrant.worstLabel ?? DEFAULT_WORST_LABEL,
+                },
+              ]
+            : []),
+        ];
 
   const groups: { name: string; color: string }[] = [];
   for (const p of pts) {
@@ -265,64 +356,28 @@ export function ScatterChart(props: {
         onMouseMove={onMove}
         onMouseLeave={() => setHoverKey(null)}
       >
-        {quadrant !== null && quadRect !== null && quadRect.w > 0 && quadRect.h > 0
-          ? (() => {
-              const cap = quadrantCaption(quadRect, quadrant.x, quadrant.y);
-              return (
-                <>
-                  <rect
-                    className="chart-quadrant"
-                    x={quadRect.x}
-                    y={quadRect.y}
-                    width={quadRect.w}
-                    height={quadRect.h}
-                  />
-                  <text
-                    className="chart-quadrant-label"
-                    x={cap.x}
-                    y={cap.y}
-                    textAnchor={cap.anchor}
-                  >
-                    {quadrant.label ?? "most attractive quadrant"}
-                  </text>
-                </>
-              );
-            })()
-          : null}
-        {quadrant !== null && worstRect !== null && worstRect.w > 0 && worstRect.h > 0
-          ? (() => {
-              const cap = quadrantCaption(worstRect, flipSide(quadrant.x), flipSide(quadrant.y));
-              return (
-                <>
-                  <rect
-                    className="chart-quadrant worst"
-                    x={worstRect.x}
-                    y={worstRect.y}
-                    width={worstRect.w}
-                    height={worstRect.h}
-                  />
-                  <text
-                    className="chart-quadrant-label worst"
-                    x={cap.x}
-                    y={cap.y}
-                    textAnchor={cap.anchor}
-                  >
-                    {quadrant.worstLabel ?? "least attractive"}
-                  </text>
-                </>
-              );
-            })()
-          : null}
+        {bands.map((b) => {
+          const rect = bandRect(b.qx, b.qy, marginLeft, MARGIN.top, innerW, innerH);
+          const cap = bandCaption(rect, b.qx, b.qy);
+          return (
+            <g key={b.cls}>
+              <rect className={b.cls} x={rect.x} y={rect.y} width={rect.w} height={rect.h} />
+              <text className={b.capCls} x={cap.x} y={cap.y} textAnchor={cap.anchor}>
+                {b.text}
+              </text>
+            </g>
+          );
+        })}
         {niceTicks(y0, y1).map((t) => (
           <g key={`y${t}`}>
             <line
               className="chart-grid-line"
-              x1={MARGIN.left}
-              x2={MARGIN.left + innerW}
+              x1={marginLeft}
+              x2={marginLeft + innerW}
               y1={sy(t)}
               y2={sy(t)}
             />
-            <text className="chart-tick" x={MARGIN.left - 6} y={sy(t) + 3} textAnchor="end">
+            <text className="chart-tick" x={marginLeft - 6} y={sy(t) + 3} textAnchor="end">
               {yFormat(t)}
             </text>
           </g>
@@ -340,15 +395,15 @@ export function ScatterChart(props: {
         ))}
         <line
           className="chart-axis-line"
-          x1={MARGIN.left}
-          x2={MARGIN.left + innerW}
+          x1={marginLeft}
+          x2={marginLeft + innerW}
           y1={MARGIN.top + innerH}
           y2={MARGIN.top + innerH}
         />
         {props.xLabel ? (
           <text
             className="chart-axis-label"
-            x={MARGIN.left + innerW / 2}
+            x={marginLeft + innerW / 2}
             y={height - 4}
             textAnchor="middle"
           >
@@ -394,29 +449,34 @@ export function ScatterChart(props: {
           ))}
         </div>
       ) : null}
-      {hovered !== null ? (
-        <div
-          className="chart-tip"
-          style={{
-            left: Math.min(sx(hovered.x) + 10, width - 160),
-            top: Math.max(4, sy(hovered.y) - 14),
-          }}
-        >
-          {hovered.tip ?? (
-            <>
-              <div className="chart-tip-title">{hovered.label}</div>
-              <div className="chart-tip-row">
-                <span>{props.xLabel ?? "x"}</span>
-                <span className="chart-tip-value">{xFormat(hovered.x)}</span>
+      {hovered !== null
+        ? (() => {
+            const px = sx(hovered.x);
+            const top = Math.max(4, sy(hovered.y) - 14);
+            return (
+              <div
+                className="chart-tip"
+                // Round-9 §4: flip to the dot's left near the right edge
+                // instead of clamping against a hardcoded tip width.
+                style={px > width * 0.62 ? { right: width - px + 10, top } : { left: px + 10, top }}
+              >
+                {hovered.tip ?? (
+                  <>
+                    <div className="chart-tip-title">{hovered.label}</div>
+                    <div className="chart-tip-row">
+                      <span>{props.xLabel ?? "x"}</span>
+                      <span className="chart-tip-value">{xFormat(hovered.x)}</span>
+                    </div>
+                    <div className="chart-tip-row">
+                      <span>{props.yLabel ?? "y"}</span>
+                      <span className="chart-tip-value">{yFormat(hovered.y)}</span>
+                    </div>
+                  </>
+                )}
               </div>
-              <div className="chart-tip-row">
-                <span>{props.yLabel ?? "y"}</span>
-                <span className="chart-tip-value">{yFormat(hovered.y)}</span>
-              </div>
-            </>
-          )}
-        </div>
-      ) : null}
+            );
+          })()
+        : null}
     </div>
   );
 }

@@ -58,6 +58,26 @@ export interface AaBenchmark {
   provisional: boolean;
 }
 
+/**
+ * Named quick-run config set (v7.7 item 1 — FROZEN shape). Definitions live in
+ * evals/configs/presets.ts (`CONFIG_PRESETS`, display order); served verbatim
+ * as GET /api/presets. Registry test enforces: ids unique, configIds non-empty,
+ * and every configIds entry resolves in the catalog. CLI `--preset <id>`
+ * (repeatable) expands to config ids — union with explicit `--configs`, deduped
+ * keeping first occurrence, presets first in flag order. UI preset buttons
+ * REPLACE the new-run selection (same semantics as the frozen "Defaults" chip).
+ */
+export interface ConfigPreset {
+  /** Stable slug used by `--preset` and the UI buttons ("frontier"). */
+  id: string;
+  /** Button caption ("Frontier"). */
+  label: string;
+  /** One-line blurb for the button tooltip. */
+  description: string;
+  /** Catalog config ids (HarnessConfig.id); every entry must resolve. */
+  configIds: string[];
+}
+
 export interface TaskSpec {
   title: string;
   description: string;
@@ -287,6 +307,24 @@ export interface AttemptTaskRecord {
   costUsd: number | null;
   /** Field-wise Σ over the task's cost rows; null when rows carry no token data. */
   tokens: TokenTotals | null;
+  // ---- v7.7 item 7 amendment (FROZEN): task economics for the sub-tab chips.
+  // Typed OPTIONAL purely for pre-round-9 payload compatibility — the round-9
+  // server ALWAYS populates them (null when unknown). Source of record: the
+  // swarm task record's own timestamps (`createdAt` / `finishedAt` on stored
+  // tasks.json entries AND live GET /api/tasks/:id payloads — verified present
+  // on both; there is NO claimedAt/startedAt on swarm tasks). NOT the runner's
+  // PhaseTimings.perTask wait spans (those measure marginal await time, not
+  // task lifetime). DAG caveat (documented, accepted): dependents are created
+  // upfront, so their span includes dependency-pending time.
+  /** Raw task-record `createdAt` ISO string (passed through, never reformatted); null when absent ("task-ids" source, v1-era). */
+  createdAt?: string | null;
+  /** Raw task-record `finishedAt` ISO string; null while running / when absent. */
+  finishedAt?: string | null;
+  /**
+   * Server-computed `Date.parse(finishedAt) - Date.parse(createdAt)`; null
+   * unless BOTH parse to finite numbers and the difference is >= 0.
+   */
+  durationMs?: number | null;
 }
 
 export type AttemptTasksSource = "live" | "tasks-artifact" | "task-ids";

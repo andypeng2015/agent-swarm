@@ -200,6 +200,17 @@ export interface AttemptTaskJson {
    */
   costUsd: number | null;
   tokens: TokenTotalsJson | null;
+  // ---- v7.7 item 7 amendment (FROZEN; mirrors AttemptTaskRecord): task
+  // economics for the sub-tab chips. Optional = pre-round-9 server payloads;
+  // the round-9 server always populates (null when unknown). Render rule:
+  // null/absent → omit the chip segment ("—" in the hover breakdown); v1-era
+  // all-null records render the pill exactly as today.
+  /** Raw task-record `createdAt` ISO string; null when unknown. */
+  createdAt?: string | null;
+  /** Raw task-record `finishedAt` ISO string; null while running / unknown. */
+  finishedAt?: string | null;
+  /** Server-computed finishedAt − createdAt in ms; null unless both parse and diff >= 0. */
+  durationMs?: number | null;
 }
 
 /**
@@ -475,6 +486,20 @@ export interface ConfigJson {
   isDefault: boolean;
   /** v7.6 item D: AA benchmark block; null/absent = unmatched config (render nothing). */
   aa?: AaBenchmarkJson | null;
+}
+
+/**
+ * Named quick-run config set from GET /api/presets (v7.7 item 1 — FROZEN;
+ * mirrors evals/src/types.ts ConfigPreset). Display order = response order.
+ * The new-run preset buttons REPLACE the selection with the preset's ids ∩
+ * the fetched catalog (unknown ids dropped; empty intersection = disabled
+ * button) — same replace semantics as the frozen "Defaults" chip.
+ */
+export interface PresetJson {
+  id: string;
+  label: string;
+  description: string;
+  configIds: string[];
 }
 
 export interface ModelJson {

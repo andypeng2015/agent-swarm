@@ -1,5 +1,6 @@
 import { parseArgs } from "node:util";
 import { DEFAULT_CONFIG_IDS } from "../configs/index.ts";
+import { CONFIG_PRESETS, expandPresetSelection } from "../configs/presets.ts";
 import { DEFAULT_SCENARIO_IDS } from "../scenarios/index.ts";
 import { getDb, initDb } from "./db/client.ts";
 import { createRun, getRun, listAttempts, listRuns, resetErrorAttempts } from "./db/queries.ts";
@@ -31,7 +32,7 @@ function installSignalHandlers(): AbortController {
 const HELP = `swarm evals — scenario x harness-config evaluation matrix on E2B
 
 Usage:
-  bun src/cli.ts run [--name <n>] [--scenarios a,b] [--configs x,y] [--attempts 1] [--concurrency 2] [--max-retries 1] [--judge-model <openrouter-id>]
+  bun src/cli.ts run [--name <n>] [--scenarios a,b] [--configs x,y] [--preset <id>]… [--attempts 1] [--concurrency 2] [--max-retries 1] [--judge-model <openrouter-id>]
   bun src/cli.ts resume <runId>      # continue an interrupted/failed run (safe retry)
   bun src/cli.ts list                # list runs
   bun src/cli.ts show <runId>        # print result matrix
@@ -39,11 +40,32 @@ Usage:
   bun src/cli.ts registry            # list available scenarios + configs
 
 Defaults: scenarios=${DEFAULT_SCENARIO_IDS.join(",")} configs=${DEFAULT_CONFIG_IDS.join(",")}
+Presets (--preset, repeatable; see run --help): ${CONFIG_PRESETS.map((p) => p.id).join(", ")}
 
 Env: E2B_API_KEY (required), OPENROUTER_API_KEY (judge + pi/opencode workers),
      CLAUDE_CODE_OAUTH_TOKEN (claude workers), OPENAI_API_KEY (codex workers),
      EVAL_JUDGE_MODEL, EVALS_DB_SYNC_URL + EVALS_DB_AUTH_TOKEN (Turso embedded
      replica — required unless EVALS_DB_PATH names a plain local file)`;
+
+const RUN_HELP = `Usage: bun src/cli.ts run [options]
+
+Options:
+  --name <n>             optional display name for the run
+  --scenarios a,b        scenario ids (default: ${DEFAULT_SCENARIO_IDS.join(",")})
+  --configs x,y          config ids (default: ${DEFAULT_CONFIG_IDS.join(",")})
+  --preset <id>          named config set, repeatable; presets expand in flag
+                         order ahead of --configs ids, deduped keeping the
+                         first occurrence (neither flag → the default configs)
+  --attempts <n>         attempts per scenario × config cell (default 1)
+  --concurrency <n>      parallel attempts, one sandbox stack each (default 2)
+  --max-retries <n>      retries per errored attempt (default 1)
+  --judge-model <id>     OpenRouter judge model override
+  --help                 show this help
+
+Presets:
+${CONFIG_PRESETS.map(
+  (p) => `  ${p.id.padEnd(15)}${p.description}\n${" ".repeat(17)}→ ${p.configIds.join(", ")}`,
+).join("\n")}`;
 
 function parseCsv(value: string | undefined, fallback: string[]): string[] {
   if (!value) return fallback;
@@ -60,15 +82,28 @@ async function cmdRun(argv: string[]): Promise<void> {
       name: { type: "string" },
       scenarios: { type: "string" },
       configs: { type: "string" },
+      preset: { type: "string", multiple: true },
+      help: { type: "boolean" },
       attempts: { type: "string", default: "1" },
       concurrency: { type: "string", default: "2" },
       "max-retries": { type: "string", default: "1" },
       "judge-model": { type: "string" },
     },
   });
+  if (values.help) {
+    console.log(RUN_HELP);
+    return;
+  }
   const registry = loadRegistry();
   const scenarioIds = parseCsv(values.scenarios, DEFAULT_SCENARIO_IDS);
-  const configIds = parseCsv(values.configs, DEFAULT_CONFIG_IDS);
+  // v7.7 item 1: presets expand in flag order ahead of explicit --configs ids,
+  // deduped keeping the first occurrence. Unknown presets throw here — before
+  // any DB write. Neither flag → the unchanged DEFAULT_CONFIG_IDS fallback.
+  const presetIds = values.preset ?? [];
+  const configIds =
+    presetIds.length === 0
+      ? parseCsv(values.configs, DEFAULT_CONFIG_IDS)
+      : expandPresetSelection(presetIds, parseCsv(values.configs, []));
   for (const id of scenarioIds) {
     if (!registry.scenarios.has(id))
       throw new Error(`unknown scenario "${id}" (see: bun src/cli.ts registry)`);

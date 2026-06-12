@@ -1,5 +1,6 @@
 import { join, normalize, sep } from "node:path";
 import { DEFAULT_CONFIG_IDS } from "../../configs/index.ts";
+import { CONFIG_PRESETS } from "../../configs/presets.ts";
 import { getClaudeAliasMap, listOpenrouterModels } from "../cost/pricing.ts";
 import { getDb, initDb } from "../db/client.ts";
 import {
@@ -126,7 +127,29 @@ function emptyTaskRecord(id: string): AttemptTaskRecord {
     agentId: null,
     costUsd: null,
     tokens: null,
+    createdAt: null,
+    finishedAt: null,
+    durationMs: null,
   };
+}
+
+/** Raw task-record timestamp: passed through verbatim (never reformatted); null when absent. */
+function taskTimestamp(value: unknown): string | null {
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+/**
+ * Frozen item-7 duration rule (v7.7): `Date.parse(finishedAt) -
+ * Date.parse(createdAt)`, null unless BOTH parse to finite numbers and the
+ * difference is >= 0.
+ */
+function taskDurationMs(createdAt: string | null, finishedAt: string | null): number | null {
+  if (createdAt === null || finishedAt === null) return null;
+  const start = Date.parse(createdAt);
+  const end = Date.parse(finishedAt);
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return null;
+  const diff = end - start;
+  return diff >= 0 ? diff : null;
 }
 
 /**
@@ -137,7 +160,10 @@ function emptyTaskRecord(id: string): AttemptTaskRecord {
  * `skipped` keeps the runner-set flag when present and otherwise re-derives the
  * R6 cascade-skip classification (CASCADE_SKIP_RE on failureReason). Every
  * field degrades to null/[]/false; costUsd/tokens start null and are joined by
- * the caller (never on the live source).
+ * the caller (never on the live source). v7.7 item 7 (frozen): the task's own
+ * `createdAt`/`finishedAt` timestamps pass through verbatim (present on both
+ * stored tasks.json entries and live GET /api/tasks/:id payloads) with the
+ * server-computed durationMs — see taskDurationMs above for the null rules.
  */
 function normalizeAttemptTask(entry: Record<string, unknown>, id: string): AttemptTaskRecord {
   const status = typeof entry.status === "string" && entry.status.length > 0 ? entry.status : null;
@@ -147,6 +173,8 @@ function normalizeAttemptTask(entry: Record<string, unknown>, id: string): Attem
     (typeof entry.assignedAgentId === "string" && entry.assignedAgentId.length > 0
       ? entry.assignedAgentId
       : null);
+  const createdAt = taskTimestamp(entry.createdAt);
+  const finishedAt = taskTimestamp(entry.finishedAt);
   return {
     id,
     title: clipTaskText(entry.title),
@@ -162,6 +190,9 @@ function normalizeAttemptTask(entry: Record<string, unknown>, id: string): Attem
     agentId,
     costUsd: null,
     tokens: null,
+    createdAt,
+    finishedAt,
+    durationMs: taskDurationMs(createdAt, finishedAt),
   };
 }
 
@@ -653,6 +684,8 @@ export async function startServer(port = Number(process.env.EVALS_PORT ?? 4801))
           })),
         );
       },
+      /** Quick-run config presets (v7.7 item 1) — static catalog data, validated by registry.test.ts. */
+      "/api/presets": () => json(CONFIG_PRESETS),
       "/api/models": async () => {
         const models = await listOpenrouterModels();
         // v7 §8: frozen claude alias map (fable → claude-fable-5, …) so the UI

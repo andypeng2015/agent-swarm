@@ -7,6 +7,9 @@
 
 .chart svg {
   display: block;
+  /* round-9 §4 (clipping audit): never clip chart text at the svg box —
+     margins are sized so nothing *should* escape; this is the safety net. */
+  overflow: visible;
 }
 
 .chart-empty {
@@ -61,7 +64,11 @@
   font-size: 11px;
   line-height: 1.5;
   box-shadow: 0 6px 20px rgb(0 0 0 / 30%);
-  white-space: nowrap;
+  /* round-9 §4: wrap instead of overflowing past the chart edge (replaces the
+     old hardcoded-width position clamp; charts also flip the tip side). */
+  max-width: 280px;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .chart-tip-title {
@@ -79,6 +86,12 @@
   font-family: var(--font-mono);
   margin-left: auto;
   padding-left: 10px;
+}
+
+/* a lone value row (mini-bar hover card) stays left-aligned under the title */
+.chart-tip-row .chart-tip-value:only-child {
+  margin-left: 0;
+  padding-left: 0;
 }
 
 .chart-dot {
@@ -227,6 +240,13 @@ table.heat th.heat-corner {
 
 .chart-minibar {
   opacity: 0.92;
+}
+
+/* round-9 §5: visible per-bar hover state (brighter fill + outline) */
+.chart-minibar.hover {
+  opacity: 1;
+  stroke: var(--text);
+  stroke-width: 1;
 }
 
 .chart-minibar-value {

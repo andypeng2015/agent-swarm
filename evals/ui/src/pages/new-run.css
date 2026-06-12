@@ -216,3 +216,54 @@
 .cms-chip-x:hover {
   color: var(--red);
 }
+
+/*
+ * ---- v7.7 item 1: one-click preset buttons ----
+ * Row above the ConfigMultiSelect; pill style mirrors .cms-defaults (the
+ * frozen "Defaults" chip these buttons share their replace semantics with).
+ */
+
+.preset-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.preset-btn {
+  padding: 3px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--panel-2);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.preset-btn:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* Disabled = empty catalog intersection. pointer-events: none lets the
+   wrapping Tooltip span keep receiving hover for the explanatory tip. */
+.preset-btn:disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+/* ---- preset hover card (rendered inside the portal .tip-box) ---- */
+
+.preset-tip {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  text-align: left;
+}
+
+.preset-tip-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+}

@@ -65,9 +65,20 @@ export function fuzzyMatch(query: string, haystack: string): boolean {
 
 const EDGE = 8;
 
+/** Option count at which the dropdown grows a type-ahead search input (item 3 —
+ *  the ~4-option harness dropdown stays input-free). */
+const SEARCH_THRESHOLD = 8;
+
 /**
  * Multi-select dropdown filter: button showing "Label · n ▾", portal panel with
  * checkboxes (viewport-aware, escapes any container). Empty selection = no filter.
+ *
+ * Round 9 (item 3): panels with >= 8 options get a type-ahead search input —
+ * auto-focused on open, fuzzy-filtering live (against `searchText`, default the
+ * raw option string), ArrowUp/ArrowDown + Enter toggle a highlighted option,
+ * Escape clears a non-empty query first and closes on the second press.
+ * Selected-but-unmatched options hide while filtering; the button count badge
+ * stays authoritative.
  */
 export function MultiSelect(props: {
   label: string;
@@ -75,16 +86,34 @@ export function MultiSelect(props: {
   selected: string[];
   onChange: (next: string[]) => void;
   renderOption?: (option: string) => ReactNode;
+  /** Fuzzy haystack per option — default the option string itself. Callers with
+   *  pretty-printed entries (e.g. ConfigChip) add the resolved label/model so
+   *  typing a model name matches the chip. */
+  searchText?: (option: string) => string;
 }): ReactNode {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+  const [query, setQuery] = useState("");
+  const [highlight, setHighlight] = useState(-1); // index into `visible`; -1 = none
   const btnRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const highlightRef = useRef<HTMLLabelElement>(null);
 
   const close = useCallback(() => {
     setOpen(false);
     setPos(null);
+    setQuery("");
+    setHighlight(-1);
   }, []);
+
+  const searchable = props.options.length >= SEARCH_THRESHOLD;
+  const trimmed = query.trim();
+  const haystackOf = props.searchText;
+  const visible = useMemo(() => {
+    if (!searchable || trimmed.length === 0) return props.options;
+    return props.options.filter((o) => fuzzyMatch(trimmed, haystackOf ? haystackOf(o) : o));
+  }, [searchable, trimmed, props.options, haystackOf]);
 
   useLayoutEffect(() => {
     if (!open || !btnRef.current || !panelRef.current) return;
@@ -96,6 +125,28 @@ export function MultiSelect(props: {
     setPos({ left, top: Math.max(EDGE, top) });
   }, [open]);
 
+  // Focus the search only once the panel is positioned — it mounts at
+  // visibility:hidden and hidden elements refuse focus.
+  useEffect(() => {
+    if (open && pos !== null) inputRef.current?.focus();
+  }, [open, pos]);
+
+  // Keep the keyboard-highlighted option in view inside the scrolling panel.
+  useEffect(() => {
+    if (highlight >= 0) highlightRef.current?.scrollIntoView({ block: "nearest" });
+  }, [highlight]);
+
+  const { selected, onChange } = props;
+  const toggle = useCallback(
+    (option: string) => {
+      const next = selected.includes(option)
+        ? selected.filter((o) => o !== option)
+        : [...selected, option];
+      onChange(next);
+    },
+    [selected, onChange],
+  );
+
   useEffect(() => {
     if (!open) return;
     const onDown = (e: MouseEvent) => {
@@ -104,7 +155,28 @@ export function MultiSelect(props: {
       close();
     };
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") close();
+      if (e.key === "Escape") {
+        // Non-empty query: first Escape clears the search and keeps the panel
+        // open; an empty-query Escape closes it (the pre-round-9 behavior).
+        if (trimmed.length > 0) {
+          setQuery("");
+          setHighlight(-1);
+        } else {
+          close();
+        }
+      } else if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setHighlight((h) => Math.min(h + 1, visible.length - 1));
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setHighlight((h) => Math.max(h - 1, 0));
+      } else if (e.key === "Enter") {
+        const target = visible[highlight];
+        if (target !== undefined) {
+          e.preventDefault();
+          toggle(target);
+        }
+      }
     };
     document.addEventListener("mousedown", onDown);
     document.addEventListener("keydown", onKey);
@@ -112,14 +184,7 @@ export function MultiSelect(props: {
       document.removeEventListener("mousedown", onDown);
       document.removeEventListener("keydown", onKey);
     };
-  }, [open, close]);
-
-  const toggle = (option: string) => {
-    const next = props.selected.includes(option)
-      ? props.selected.filter((o) => o !== option)
-      : [...props.selected, option];
-    props.onChange(next);
-  };
+  }, [open, close, trimmed, visible, highlight, toggle]);
 
   const active = props.selected.length > 0;
   return (
@@ -146,9 +211,33 @@ export function MultiSelect(props: {
                   : { left: -9999, top: -9999, visibility: "hidden" }
               }
             >
+              {searchable ? (
+                <div className="ms-search">
+                  <input
+                    ref={inputRef}
+                    type="search"
+                    placeholder={`Search ${props.label.toLowerCase()}…`}
+                    aria-label={`Search ${props.label} options`}
+                    value={query}
+                    onChange={(e) => {
+                      setQuery(e.target.value);
+                      // Typing pre-highlights the best (first) match so Enter
+                      // toggles it straight away; clearing drops the highlight.
+                      setHighlight(e.target.value.trim().length > 0 ? 0 : -1);
+                    }}
+                  />
+                </div>
+              ) : null}
               {props.options.length === 0 ? <div className="ms-empty dim">No options</div> : null}
-              {props.options.map((option) => (
-                <label className="ms-option" key={option}>
+              {props.options.length > 0 && visible.length === 0 ? (
+                <div className="ms-empty dim">No options match</div>
+              ) : null}
+              {visible.map((option, i) => (
+                <label
+                  className={i === highlight ? "ms-option highlighted" : "ms-option"}
+                  key={option}
+                  ref={i === highlight ? highlightRef : undefined}
+                >
                   <input
                     type="checkbox"
                     checked={props.selected.includes(option)}

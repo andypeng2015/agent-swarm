@@ -1,5 +1,6 @@
 import { type ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { createRun, listConfigs, listScenarios } from "../api.ts";
+import { createRun, listConfigs, listPresets, listScenarios } from "../api.ts";
+import { ConfigChip } from "../components/ConfigChip.tsx";
 import { ConfigMultiSelect } from "../components/ConfigMultiSelect.tsx";
 import { fuzzyMatch } from "../components/DataTable.tsx";
 import { fmtPerM, fmtTokens } from "../components/format.ts";
@@ -7,7 +8,7 @@ import { ModelChip } from "../components/ModelChip.tsx";
 import { Spinner } from "../components/Spinner.tsx";
 import { InfoTip, Tooltip } from "../components/Tooltip.tsx";
 import { navigate, useModels, usePoll } from "../hooks.ts";
-import type { CreateRunBody } from "../types.ts";
+import type { CreateRunBody, PresetJson } from "../types.ts";
 import "./new-run.css";
 
 function clamp(n: number, min: number, max: number): number {
@@ -22,9 +23,37 @@ interface MenuPos {
   width: number;
 }
 
+/**
+ * Hover card for a preset button (v7.7 item 1): the description plus the
+ * configs a click would select — `ids` is preset.configIds ∩ the fetched
+ * catalog, so drifted (removed) ids never render. Empty intersection pairs
+ * with a disabled button and explains why instead of listing chips.
+ */
+function PresetTip(props: { preset: PresetJson; ids: string[] }): ReactNode {
+  return (
+    <div className="preset-tip">
+      <div>{props.preset.description}</div>
+      {props.ids.length === 0 ? (
+        <div className="dim">
+          None of this preset's configs exist in the current catalog — nothing to select.
+        </div>
+      ) : (
+        <div className="preset-tip-chips">
+          {props.ids.map((id) => (
+            <ConfigChip key={id} configId={id} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function NewRunForm(props: { onClose: () => void }): ReactNode {
   const scenarios = usePoll(listScenarios, null, []);
   const configs = usePoll(listConfigs, null, []);
+  // v7.7 item 1: quick-run presets. A fetch failure leaves data null → the
+  // preset row is simply absent and the dialog works exactly as before.
+  const presets = usePoll(listPresets, null, []);
   const models = useModels();
 
   const [name, setName] = useState("");
@@ -45,6 +74,7 @@ function NewRunForm(props: { onClose: () => void }): ReactNode {
   const selScenarios = scenarioSel ?? new Set(firstScenario !== undefined ? [firstScenario] : []);
   const selConfigs =
     configSel ?? new Set((configs.data ?? []).filter((c) => c.isDefault).map((c) => c.id));
+  const catalogIds = useMemo(() => new Set((configs.data ?? []).map((c) => c.id)), [configs.data]);
   const judge = judgeModel ?? models.defaultJudgeModel ?? "";
 
   const toggleScenario = (id: string) => {
@@ -204,6 +234,29 @@ function NewRunForm(props: { onClose: () => void }): ReactNode {
           Configs{" "}
           <InfoTip text="Harness × model under test — every selected config becomes a matrix column" />
         </span>
+        {/* v7.7 item 1: one-click preset buttons. Click REPLACES the selection
+            with preset.configIds ∩ catalog — same semantics as the frozen
+            "Defaults" chip (idempotent quick-run set; union manually after). */}
+        {presets.data !== null && presets.data.length > 0 ? (
+          <div className="preset-row">
+            {presets.data.map((preset) => {
+              // catalog drift: unknown ids dropped client-side
+              const ids = preset.configIds.filter((id) => catalogIds.has(id));
+              return (
+                <Tooltip key={preset.id} wide text={<PresetTip preset={preset} ids={ids} />}>
+                  <button
+                    type="button"
+                    className="preset-btn"
+                    disabled={ids.length === 0}
+                    onClick={() => setConfigSel(new Set(ids))}
+                  >
+                    {preset.label}
+                  </button>
+                </Tooltip>
+              );
+            })}
+          </div>
+        ) : null}
         <ConfigMultiSelect configs={configs.data} selected={selConfigs} onChange={setConfigSel} />
       </div>
 
