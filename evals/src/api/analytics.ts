@@ -21,6 +21,13 @@
  *     historical rows and config-model fallbacks group identically;
  *   - rollups by harness (registry provider; configId-prefix fallback) and by
  *     model vendor (vendorOfModelKey), plus one scatter point per model key.
+ *
+ * v7.6 §C3 (frozen): an optional AnalyticsFilter narrows the source rows
+ * BEFORE aggregation — per-model / per-vendor / scatter aggregates cannot be
+ * recomputed client-side from the pre-aggregated cells (mean-of-means error).
+ * filterOptions is computed over ALL input rows first so the filter bar keeps
+ * every option visible while a filter is active; unknown filter values match
+ * nothing (empty aggregates, never an error).
  */
 
 import { resolveClaudeAlias } from "../cost/model-alias.ts";
@@ -28,6 +35,8 @@ import type { Registry } from "../runner/index.ts";
 import { cleanVersion } from "../swarm/version.ts";
 import type {
   AnalyticsCell,
+  AnalyticsFilter,
+  AnalyticsFilterOptions,
   AnalyticsGroupRollup,
   AnalyticsModel,
   AnalyticsResponse,
@@ -335,11 +344,46 @@ function sortGroups(groups: Map<string, GroupAcc>): AnalyticsGroupRollup[] {
 }
 
 export function buildAnalytics(
-  rows: AnalyticsSourceRow[],
+  sourceRows: AnalyticsSourceRow[],
   registry: Registry,
   /** v7 §8 claude alias map (getClaudeAliasMap()); {} degrades to raw keys. */
   aliasMap: Record<string, string> = {},
+  /**
+   * v7.6 §C3 (frozen): row kept iff (configIds unset/empty OR row.configId ∈
+   * configIds) AND (harnesses unset/empty OR harnessKey(row.configId) ∈
+   * harnesses). The §7.1 harnessKey rule means removed-config history filters
+   * correctly via the configId-prefix fallback.
+   */
+  filter?: AnalyticsFilter | null,
 ): AnalyticsResponse {
+  // filterOptions over ALL rows BEFORE filtering (first-seen order) — the bar
+  // keeps every option visible while a filter is active.
+  const filterOptions: AnalyticsFilterOptions = { harnesses: [], configIds: [] };
+  for (const row of sourceRows) {
+    const harness = harnessKey(row.configId, registry);
+    if (!filterOptions.harnesses.includes(harness)) filterOptions.harnesses.push(harness);
+    if (!filterOptions.configIds.includes(row.configId)) filterOptions.configIds.push(row.configId);
+  }
+
+  const harnessSet =
+    filter !== undefined && filter !== null && filter.harnesses.length > 0
+      ? new Set(filter.harnesses)
+      : null;
+  const configSet =
+    filter !== undefined && filter !== null && filter.configIds.length > 0
+      ? new Set(filter.configIds)
+      : null;
+  const rows =
+    harnessSet === null && configSet === null
+      ? sourceRows
+      : sourceRows.filter(
+          (row) =>
+            (configSet === null || configSet.has(row.configId)) &&
+            (harnessSet === null || harnessSet.has(harnessKey(row.configId, registry))),
+        );
+  // appliedFilter = the filter when any axis is non-empty, else null.
+  const appliedFilter = harnessSet !== null || configSet !== null ? (filter ?? null) : null;
+
   const scenarioIds: string[] = [];
   const configIds: string[] = [];
   const cells = new Map<string, CellAcc>();
@@ -577,5 +621,7 @@ export function buildAnalytics(
     harnesses: sortGroups(harnessGroups),
     vendors: sortGroups(vendorGroups),
     scatter,
+    filterOptions,
+    appliedFilter,
   };
 }

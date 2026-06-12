@@ -1,6 +1,6 @@
 # Swarm Evals
 
-Evaluation harness for agent-swarm: runs a **scenario × harness-config matrix** against real swarm stacks deployed in **E2B sandboxes**, grades outcomes with **deterministic checks + LLM/agentic judges** (OpenRouter via the AI SDK), and stores results in **libsql** (local file by default, Turso-pluggable).
+Evaluation harness for agent-swarm: runs a **scenario × harness-config matrix** against real swarm stacks deployed in **E2B sandboxes**, grades outcomes with **deterministic checks + LLM/agentic judges** (OpenRouter via the AI SDK), and stores results in **Turso** (libsql embedded replica — local WAL file synced with the remote primary; see [Database](#database)).
 
 ## How it works
 
@@ -45,7 +45,7 @@ bun src/cli.ts serve                          # UI on http://localhost:4801
 bun src/cli.ts run --scenarios memory-seeded-recall --configs claude-haiku
 ```
 
-It requires `EMBEDDING_API_KEY` or `OPENAI_API_KEY` in `evals/.env` (the API sandbox embeds the seeded memory server-side); without one the attempt fails loudly at seed time. The former `hello-file` / `quick-reasoning` dummies were removed from the registry — historical runs referencing them still render everywhere (the scenario detail page falls back to an "unregistered scenario" view).
+It requires `EMBEDDING_API_KEY` in `evals/.env` (the API sandbox embeds the seeded memory server-side; the `OPENAI_API_KEY` fallback is no longer injected); without it the attempt fails loudly at seed time. The former `hello-file` / `quick-reasoning` dummies were removed from the registry — historical runs referencing them still render everywhere (the scenario detail page falls back to an "unregistered scenario" view).
 
 ### UI (`serve`)
 
@@ -68,7 +68,7 @@ Key endpoints: `GET/POST /api/runs`, `POST /api/runs/:id/{resume,cancel}`, `GET 
 Seeding runs before the first task is created, in this order:
 
 - `sqlDump` — bare filename of a **full SQLite text dump** (`sqlite3 <db> .dump`) under `scenarios/fixtures/`, imported into the API sandbox's DB **before** the API server first boots (migrations forward-apply on top). The runner validates the fixture host-side before any sandbox exists: it must carry the `_migrations` table with applied rows and stay under 5 MB. Seed reference data only — no `agents` rows, no in-flight tasks, no sessions/locks, and no hand-seeded `agent_memory` rows (use `memories` instead). Conventions + regeneration recipe: [scenarios/fixtures/README.md](./scenarios/fixtures/README.md).
-- `memories` — strings (max 16) indexed as **swarm-scope memories** via the memory API after boot; embeddings are computed server-side, and the runner blocks until every seeded memory is searchable (90 s gate). Requires `EMBEDDING_API_KEY` or `OPENAI_API_KEY` in `evals/.env` — without one the attempt fails loudly at seed time instead of mysteriously at judging time.
+- `memories` — strings (max 16) indexed as **swarm-scope memories** via the memory API after boot; embeddings are computed server-side, and the runner blocks until every seeded memory is searchable (90 s gate). Requires `EMBEDDING_API_KEY` in `evals/.env` (the `OPENAI_API_KEY` fallback is no longer injected) — without it the attempt fails loudly at seed time instead of mysteriously at judging time.
 - `exec` — shell commands run in **worker 0's** sandbox after the stack is healthy (and after memories), e.g. to plant workspace files.
 
 ### Worker configuration, rosters + task routing
@@ -117,6 +117,15 @@ Judge model precedence: `scenario.judge.model` > run `--judge-model` > `EVAL_JUD
 
 Scoring per cell: **best@n** (any attempt passed), pass@1, best/avg judge score, total cost, avg duration. Cost is **always tracked** via a fallback chain: harness-reported session-cost rows (`costSource: "harness"`) → recomputed from per-message token usage × the models.dev pricing snapshot (`"recomputed"`) → tagged `"unpriced"` with any extracted tokens still stored. **Token usage is tracked universally**: when harness-priced rows carry no token columns, the recompute extractor still runs (tokens only — cost/source untouched), so every attempt with parseable harness output stores `tokens_json`. On heterogeneous rosters the extractor runs per member (each member's provider/model/session files) and results merge.
 
+## Database
+
+The DB of record is the Turso database `swarm-evals-local`, accessed through a **libsql embedded replica**: a local WAL file at `evals/evals-replica.db` (gitignored, disposable — rebuilt by sync) whose writes forward synchronously to the remote primary. `initDb()` syncs on boot, pulls in the background every 60 s, and asserts the replica is in WAL mode. Configuration is explicit — with no env set, `bun src/cli.ts serve` fails with a clear error instead of silently creating an empty DB:
+
+- `EVALS_DB_SYNC_URL` + `EVALS_DB_AUTH_TOKEN` (both in `evals/.env`) → embedded replica against Turso (the normal mode).
+- `EVALS_DB_PATH` → plain local libsql file, no sync (offline/dev escape hatch).
+
+The old `evals/evals.db` (+ `-wal`/`-shm`) is a **frozen backup** of the pre-Turso data — never delete or write to it; new code can no longer open it because the implicit `file:evals.db` default was removed.
+
 ## Env
 
 | Var | Purpose |
@@ -124,18 +133,19 @@ Scoring per cell: **best@n** (any attempt passed), pass@1, best/avg judge score,
 | `E2B_API_KEY` | sandbox creation (required) |
 | `OPENROUTER_API_KEY` | judges + pi/opencode workers |
 | `CLAUDE_CODE_OAUTH_TOKEN` / `ANTHROPIC_API_KEY` | claude workers |
-| `OPENAI_API_KEY` | codex workers; also forwarded into the API sandbox for memory embeddings |
-| `EMBEDDING_API_KEY` | optional override for API-sandbox memory embeddings (falls back to `OPENAI_API_KEY`) |
+| `OPENAI_API_KEY` | codex workers |
+| `EMBEDDING_API_KEY` | API-sandbox memory embeddings — **required for memory seeding**; the `OPENAI_API_KEY` fallback is no longer injected (`EMBEDDING_MODEL` / `EMBEDDING_API_BASE_URL` pass through when set) |
 | `EVAL_JUDGE_MODEL` | default judge model |
-| `TURSO_DATABASE_URL` + `TURSO_AUTH_TOKEN` | remote DB instead of local `evals.db` |
-| `EVALS_DB_PATH`, `EVALS_PORT` | local overrides |
+| `EVALS_DB_SYNC_URL` + `EVALS_DB_AUTH_TOKEN` | Turso embedded replica (DB of record — see [Database](#database)) |
+| `EVALS_DB_PATH` | plain local DB file instead (offline/dev escape hatch) |
+| `EVALS_PORT` | serve port override |
 | `EVALS_E2B_TEMPLATE_API` / `EVALS_E2B_TEMPLATE_WORKER` | template overrides (default `agent-swarm-{api,worker}-latest`) |
 
 ## Notes
 
-- Deploying the dashboard+runner somewhere persistent is deliberately deferred — it is local-first; a small custom Docker image (bun + this dir + a volume for `evals.db`) is the likely shape.
+- Deploying the dashboard+runner somewhere persistent is deliberately deferred — it is local-first; data already lives in Turso, so a small custom Docker image (bun + this dir + the `EVALS_DB_*` env) is the likely shape.
 - Stray sandboxes carry `metadata.launcher=agent-swarm-e2b`; sweep everything with `bun run src/cli.tsx e2b kill --all` from the repo root (per-run sweeps happen automatically on resume).
 - Worker parked in `waiting_for_credentials` fails the attempt fast with the credential detail — usually a missing provider key for that config.
-- The API sandbox runs with `NODE_ENV=production` and gets `EMBEDDING_API_KEY` / `OPENAI_API_KEY` (when set in the evals env) so server-side memory embeddings work; workers still only receive the credentials their harness needs. Attempts recorded before version capture render the version fields as not captured.
+- The API sandbox runs with `NODE_ENV=production` and gets `EMBEDDING_API_KEY` (+ `EMBEDDING_MODEL` / `EMBEDDING_API_BASE_URL` when set in the evals env) so server-side memory embeddings work; workers still only receive the credentials their harness needs. Attempts recorded before version capture render the version fields as not captured.
 - Claude subscription (OAuth) sessions produce no priced cost rows — their cost is recomputed from token usage × models.dev pricing (`costSource: "recomputed"`); pi/codex report cost directly (`"harness"`).
 - Known harness finding: opencode workers on E2B intermittently fail with `Spawn failed: Timeout waiting for server to start after 5000ms` (opencode-internal server boot timeout, surfaced via runner.ts "Spawn failed").

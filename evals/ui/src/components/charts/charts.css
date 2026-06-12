@@ -160,18 +160,45 @@ table.heat td.heat-cell.empty {
   text-align: center;
 }
 
+/* v7.6 §C2: first (row-name) column sticky on horizontal scroll. Opaque panel
+   background + an inset right hairline (collapsed borders don't travel with
+   sticky cells); z-index above the value cells, corner one higher still. */
+table.heat th.heat-rowhead,
+table.heat th.heat-corner {
+  position: sticky;
+  left: 0;
+  background: var(--panel);
+  box-shadow: inset -1px 0 0 var(--border);
+}
+
+table.heat th.heat-rowhead {
+  z-index: 1;
+}
+
+table.heat th.heat-corner {
+  z-index: 2;
+}
+
 /* ---- scatter chart (v7 spec §C2) ---- */
 
+/* round-8 spec §C4: clearly visible green/red tints + larger corner captions */
 .chart-quadrant {
-  fill: var(--green);
-  opacity: 0.07;
+  fill: color-mix(in srgb, var(--green) 12%, transparent);
+}
+
+.chart-quadrant.worst {
+  fill: color-mix(in srgb, var(--red) 12%, transparent);
 }
 
 .chart-quadrant-label {
   fill: var(--green);
-  font-size: 9.5px;
+  font-size: 11px;
+  font-weight: 600;
   font-family: var(--font-mono);
-  opacity: 0.85;
+}
+
+.chart-quadrant-label.worst {
+  fill: var(--red);
 }
 
 .chart-axis-label {

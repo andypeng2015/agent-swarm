@@ -24,6 +24,7 @@ import { InfoTip } from "../components/Tooltip.tsx";
 import { useModels, usePoll } from "../hooks.ts";
 import type {
   AnalyticsCell,
+  AnalyticsFilterOptions,
   AnalyticsGroupRollup,
   AnalyticsModel,
   AnalyticsResponse,
@@ -379,12 +380,14 @@ function TrendsSection(props: { series: AnalyticsSeries[] }): ReactNode {
               options={scenarioOptions}
               selected={scenSel}
               onChange={setPickedScenarios}
+              renderOption={(o) => <span className="an-opt-id">{o}</span>}
             />
             <MultiSelect
               label="Config"
               options={configOptions}
               selected={cfgSel}
               onChange={setPickedConfigs}
+              renderOption={(o) => <ConfigChip configId={o} />}
             />
             <Seg
               options={TREND_ORDER.map((k) => ({ key: k, label: TREND_METRICS[k].label }))}
@@ -451,9 +454,11 @@ function TrendsSection(props: { series: AnalyticsSeries[] }): ReactNode {
   );
 }
 
-// ---- section 2: Efficiency — score vs tokens scatter (v7 §7.3, screenshot 6) ----
+// ---- section 2: Efficiency — score vs tokens scatter (v7 §7.3, screenshot 6;
+// round-8 §C4: X selector Tokens|Price|Time, worst quadrant, yDomain "fit") ----
 
 type ScatterYKey = "score" | "passRate";
+type ScatterXKey = "tokens" | "price" | "duration";
 type ColorByKey = "harness" | "vendor";
 
 const SCATTER_Y: Record<
@@ -468,19 +473,54 @@ const SCATTER_Y: Record<
   passRate: { label: "Pass Rate", value: (p) => p.passRate, format: fmtPct },
 };
 
+/** X-axis options (round-8 spec §C4 — FROZEN keys). All lower-is-better, so the
+ * attractive quadrant stays x:"low" / y:"high" for every axis. */
+const SCATTER_X: Record<
+  ScatterXKey,
+  {
+    /** Seg + section-title label. */
+    label: string;
+    axisLabel: string;
+    value: (p: AnalyticsScatterPoint) => number | null;
+    format: (v: number) => string;
+  }
+> = {
+  tokens: {
+    label: "Tokens",
+    axisLabel: "Avg total tokens per attempt",
+    value: (p) => p.avgTotalTokens,
+    format: (v) => fmtTokens(Math.round(v)),
+  },
+  price: {
+    label: "Price",
+    axisLabel: "Avg cost per attempt",
+    value: (p) => p.avgCostUsd,
+    format: (v) => fmtCost(v),
+  },
+  duration: {
+    label: "Time",
+    axisLabel: "Avg duration per attempt",
+    value: (p) => p.avgDurationMs,
+    format: (v) => fmtDuration(v),
+  },
+};
+
 const SCATTER_LABEL_CAP = 14;
 
 function EfficiencySection(props: { scatter: AnalyticsScatterPoint[] }): ReactNode {
   const [yKey, setYKey] = useState<ScatterYKey>("score");
+  const [xKey, setXKey] = useState<ScatterXKey>("tokens");
   const [colorBy, setColorBy] = useState<ColorByKey>("vendor");
   const { resolve } = useModels();
   const yDef = SCATTER_Y[yKey];
+  const xDef = SCATTER_X[xKey];
 
   const points = useMemo<ScatterPoint[]>(
     () =>
       props.scatter.flatMap((p) => {
         const y = yDef.value(p);
-        if (p.avgTotalTokens === null || y === null) return [];
+        const x = xDef.value(p);
+        if (x === null || y === null) return [];
         const group = colorBy === "harness" ? (p.harnesses[0] ?? "(unknown)") : p.vendor;
         const color = colorForGroup(group, colorBy === "harness" ? HARNESS_COLORS : VENDOR_COLORS);
         const label = resolve(p.model)?.name ?? p.model;
@@ -488,7 +528,7 @@ function EfficiencySection(props: { scatter: AnalyticsScatterPoint[] }): ReactNo
           {
             key: p.model,
             label,
-            x: p.avgTotalTokens,
+            x,
             y,
             color,
             group,
@@ -515,6 +555,10 @@ function EfficiencySection(props: { scatter: AnalyticsScatterPoint[] }): ReactNo
                   <span className="chart-tip-value">{fmtCost(p.avgCostUsd)}</span>
                 </div>
                 <div className="chart-tip-row">
+                  <span>Avg Duration</span>
+                  <span className="chart-tip-value">{fmtDuration(p.avgDurationMs)}</span>
+                </div>
+                <div className="chart-tip-row">
                   <span>Attempts</span>
                   <span className="chart-tip-value">{p.attempts}</span>
                 </div>
@@ -523,15 +567,25 @@ function EfficiencySection(props: { scatter: AnalyticsScatterPoint[] }): ReactNo
           },
         ];
       }),
-    [props.scatter, yDef, colorBy, resolve],
+    [props.scatter, yDef, xDef, colorBy, resolve],
   );
 
   return (
     <div className="panel">
       <SectionHead
-        title="Efficiency — Score vs Tokens"
-        tip="One dot per model: quality on the y axis against mean total tokens (input + output + cache read + cache write) per attempt on the x axis. Dot size scales with attempts; the shaded corner is the most attractive quadrant — high quality at low token spend."
+        title={`Efficiency — ${yKey === "score" ? "Score" : "Pass Rate"} vs ${xDef.label}`}
+        tip="One dot per model: quality on the y axis against the selected spend metric (avg tokens, cost, or duration per attempt) on the x axis — lower is always better on x. Dot size scales with attempts. The green corner is the most attractive quadrant (high quality, low spend) and the red corner the least attractive; the y axis zooms to the plotted range so tightly clustered values (e.g. scores near 1.0) stay readable."
       >
+        <span className="an-seg-label dim">X</span>
+        <Seg
+          options={[
+            { key: "tokens" as const, label: "Tokens" },
+            { key: "price" as const, label: "Price" },
+            { key: "duration" as const, label: "Time" },
+          ]}
+          value={xKey}
+          onChange={setXKey}
+        />
         <span className="an-seg-label dim">Y</span>
         <Seg
           options={[
@@ -554,13 +608,16 @@ function EfficiencySection(props: { scatter: AnalyticsScatterPoint[] }): ReactNo
       <ScatterChart
         points={points}
         height={300}
-        xLabel="Avg total tokens per attempt"
+        xLabel={xDef.axisLabel}
         yLabel={yDef.label}
-        xFormat={(v) => fmtTokens(Math.round(v))}
+        xFormat={xDef.format}
         yFormat={yDef.format}
-        quadrant={{ x: "low", y: "high", label: "most attractive quadrant" }}
+        quadrant={{ x: "low", y: "high", label: "most attractive quadrant", worst: true }}
+        // §C4 differentiation choice: "fit" y-domain — Score and Pass Rate each
+        // zoom to their own [min,max], so near-1.0 clusters spread apart.
+        yDomain="fit"
         showLabels={points.length <= SCATTER_LABEL_CAP}
-        emptyText="No token-bearing graded attempts yet — v7 runs capture tokens for every attempt"
+        emptyText="No graded attempts with this metric yet — v7 runs capture tokens for every attempt"
       />
     </div>
   );
@@ -1029,18 +1086,72 @@ function RollupSection(props: {
 
 // ---- page ----
 
-function PageHead(props: { data: AnalyticsResponse; onRefresh: () => void }): ReactNode {
+/**
+ * Pre-filter option lists for the global filter bar (v7.6 §C3). Stale cached
+ * payloads without filterOptions degrade to the (filtered-row) configIds plus
+ * the §7.1 configId-prefix rule for harness keys.
+ */
+function filterOptionsOf(data: AnalyticsResponse): AnalyticsFilterOptions {
+  if (data.filterOptions !== undefined) return data.filterOptions;
+  const harnesses: string[] = [];
+  for (const id of data.configIds) {
+    const prefix = id.split("-")[0] ?? "";
+    const harness = prefix.length > 0 ? prefix : "(unknown)";
+    if (!harnesses.includes(harness)) harnesses.push(harness);
+  }
+  return { harnesses, configIds: data.configIds };
+}
+
+function PageHead(props: {
+  data: AnalyticsResponse;
+  onRefresh: () => void;
+  fHarnesses: string[];
+  fConfigIds: string[];
+  onHarnesses: (next: string[]) => void;
+  onConfigIds: (next: string[]) => void;
+}): ReactNode {
   const { data } = props;
   const attempts = useMemo(
     () => data.matrix.reduce((acc, c) => acc + c.attempts, 0),
     [data.matrix],
   );
+  const options = useMemo(() => filterOptionsOf(data), [data]);
+  const active = props.fHarnesses.length + props.fConfigIds.length;
   return (
     <div className="an-head">
       <h2 className="an-title">Analytics</h2>
+      <div className="an-filters">
+        <MultiSelect
+          label="Harness"
+          options={options.harnesses}
+          selected={props.fHarnesses}
+          onChange={props.onHarnesses}
+          renderOption={(o) => <HarnessIcon harness={o} showLabel />}
+        />
+        <MultiSelect
+          label="Config"
+          options={options.configIds}
+          selected={props.fConfigIds}
+          onChange={props.onConfigIds}
+          renderOption={(o) => <ConfigChip configId={o} />}
+        />
+        {active > 0 ? (
+          <button
+            type="button"
+            className="an-filter-clear"
+            title="Clear the global filters — every section is currently narrowed to the selection"
+            onClick={() => {
+              props.onHarnesses([]);
+              props.onConfigIds([]);
+            }}
+          >
+            ✕ {active} {active === 1 ? "filter" : "filters"}
+          </button>
+        ) : null}
+      </div>
       <span className="an-meta dim" title={data.generatedAt}>
         {attempts} attempts · {data.scenarioIds.length} scenarios × {data.configIds.length} configs
-        · generated {fmtAgo(data.generatedAt)}
+        {active > 0 ? " · filtered" : ""} · generated {fmtAgo(data.generatedAt)}
       </span>
       <button type="button" className="btn" onClick={props.onRefresh}>
         ↻ Refresh
@@ -1057,9 +1168,21 @@ function PageHead(props: { data: AnalyticsResponse; onRefresh: () => void }): Re
  * Models (now with Duration/Accuracy metrics + Tokens), and harness/vendor
  * rollups. Single fetch + manual refresh; every section degrades to an explicit
  * empty state over partial/pre-v7 data (no NaN, ever).
+ *
+ * v7.6 §C3: the sticky page header carries a global harness + config filter,
+ * applied SERVER-SIDE — every section below re-aggregates over the filtered
+ * attempts (per-model means cannot be recomputed from pre-aggregated cells).
+ * Filter state is component state only (empty = all); usePoll keeps the prior
+ * payload on screen while a filter refetch is in flight (no flash).
  */
 export default function AnalyticsPage(): ReactNode {
-  const analytics = usePoll(getAnalytics, null, []);
+  const [fHarnesses, setFHarnesses] = useState<string[]>([]);
+  const [fConfigIds, setFConfigIds] = useState<string[]>([]);
+  const analytics = usePoll(
+    () => getAnalytics({ harnesses: fHarnesses, configIds: fConfigIds }),
+    null,
+    [fHarnesses.join(","), fConfigIds.join(",")],
+  );
 
   if (analytics.data === null) {
     return analytics.error !== null ? (
@@ -1073,7 +1196,14 @@ export default function AnalyticsPage(): ReactNode {
 
   return (
     <>
-      <PageHead data={analytics.data} onRefresh={analytics.refresh} />
+      <PageHead
+        data={analytics.data}
+        onRefresh={analytics.refresh}
+        fHarnesses={fHarnesses}
+        fConfigIds={fConfigIds}
+        onHarnesses={setFHarnesses}
+        onConfigIds={setFConfigIds}
+      />
       <HighlightsSection models={analytics.data.models} />
       <TrendsSection series={analytics.data.series} />
       <EfficiencySection scatter={analytics.data.scatter ?? []} />

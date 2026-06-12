@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { serializeScenario, validateScenario } from "./registry.ts";
+import { serializeConfig, serializeScenario, validateScenario } from "./registry.ts";
 import type { Scenario } from "./types.ts";
 
 /** Minimal valid scenario; tests override single fields to isolate one rule. */
@@ -225,5 +225,27 @@ describe("serializeScenario — workerSpecs + lead (v7 §9/§12)", () => {
       envKeys: [],
     });
     expect(JSON.stringify(s)).not.toContain("value");
+  });
+});
+
+describe("serializeConfig — AA benchmark block (v7.6 item D)", () => {
+  test("matched catalog config carries the joined aa block", () => {
+    const s = serializeConfig({ id: "claude-fable", provider: "claude", model: "claude-fable-5" });
+    expect(s.aa?.sourceRow).toBe("Claude Fable 5 (with fallback)");
+    expect(s.aa?.intelligenceIndex).toBe(65);
+    expect(s.aa?.provisional).toBe(false);
+  });
+
+  test("unmatched catalog config and non-catalog ids serialize aa as null", () => {
+    expect(
+      serializeConfig({ id: "claude-opus-4.6", provider: "claude", model: "claude-opus-4-6" }).aa,
+    ).toBeNull();
+    expect(serializeConfig({ id: "custom-x", provider: "claude" }).aa).toBeNull();
+  });
+
+  test("aa block is JSON-safe (no env values, survives a round-trip)", () => {
+    const s = serializeConfig({ id: "pi-deepseek-flash", provider: "pi", model: "x" });
+    expect(JSON.parse(JSON.stringify(s))).toEqual(s);
+    expect(s.aa?.medianTokensPerS).toBeNull(); // "--" cells stay null through the join
   });
 });

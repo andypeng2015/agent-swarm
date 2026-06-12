@@ -334,7 +334,7 @@ export function buildRosterEntries(opts: {
 const MEMORY_READINESS_TIMEOUT_MS = 90_000;
 const MEMORY_READINESS_POLL_MS = 3_000;
 const MEMORY_SEED_FAILURE_SUFFIX =
-  "memories never became searchable; check EMBEDDING_API_KEY / OPENAI_API_KEY in evals/.env " +
+  "memories never became searchable; check EMBEDDING_API_KEY in evals/.env " +
   "(the API sandbox needs an embedding key for memory scenarios)";
 
 /**

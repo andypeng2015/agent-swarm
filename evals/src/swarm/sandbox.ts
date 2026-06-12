@@ -183,19 +183,21 @@ export function apiRuntimeEnv(swarmKey: string): Record<string, string> {
     JIRA_DISABLE: "true",
     LINEAR_DISABLE: "true",
     AGENTMAIL_DISABLE: "true",
-    // Server-side memory embeddings: without a key, POST /api/memory/search
-    // silently returns {results: []} (EMBEDDING_API_KEY falls back to
-    // OPENAI_API_KEY server-side). API sandbox ONLY — worker provider creds
-    // stay strictly gated by credentialsForConfig.
+    // Server-side memory embeddings — EMBEDDING_*-differentiated (v7.6 §A2).
+    // The API resolves EMBEDDING_API_KEY ?? OPENAI_API_KEY (src/be/memory/
+    // providers/openai-embedding.ts); we pass EMBEDDING_* explicitly and no
+    // longer forward OPENAI_API_KEY as the embedding fallback (evals/.env sets
+    // EMBEDDING_API_KEY). Without a key, POST /api/memory/search silently
+    // returns {results: []} — but memory-seeded attempts still fail loudly at
+    // the runner's seed-searchability gate. API sandbox ONLY — worker provider
+    // creds stay strictly gated by credentialsForConfig. The former
+    // EMBEDDING_DIMENSIONS="512" pin (≤1.85-template NaN workaround) is gone:
+    // 1.97.0 templates default the dimension server-side.
     ...(process.env.EMBEDDING_API_KEY ? { EMBEDDING_API_KEY: process.env.EMBEDDING_API_KEY } : {}),
-    ...(process.env.OPENAI_API_KEY ? { OPENAI_API_KEY: process.env.OPENAI_API_KEY } : {}),
-    // Pin the embedding dimensions to the vec0 column width (512). Published
-    // API templates ≤ v1.85.0 compute `Number(process.env.EMBEDDING_DIMENSIONS)
-    // ?? 512` = NaN when the env var is unset (NaN is not nullish), so OpenAI
-    // returns full-width 1536-dim vectors that can never match the 512-dim
-    // column — every memory index/search fails with a dimension mismatch.
-    // Explicitly setting 512 makes both old and current templates correct.
-    EMBEDDING_DIMENSIONS: "512",
+    ...(process.env.EMBEDDING_MODEL ? { EMBEDDING_MODEL: process.env.EMBEDDING_MODEL } : {}),
+    ...(process.env.EMBEDDING_API_BASE_URL
+      ? { EMBEDDING_API_BASE_URL: process.env.EMBEDDING_API_BASE_URL }
+      : {}),
   };
 }
 
@@ -263,22 +265,6 @@ export function workerRuntimeEnv(opts: {
       "/sbin",
       "/bin",
     ].join(":"),
-    // Session-summary credential (claude provider only). With ONLY
-    // CLAUDE_CODE_OAUTH_TOKEN in the worker env, the Stop hook's internal-ai
-    // wrapper falls back to shelling out `claude -p` for the session summary;
-    // on published templates that inner session fires the same Stop hook on
-    // exit and recursively spawns further summarizer claudes (~0.5-1GB each)
-    // until the sandbox OOMs and envd stops answering ("worker wedge": next
-    // task stuck in_progress, every exec/file API deadline_exceeded).
-    // OPENROUTER_API_KEY resolves FIRST in the internal-ai credential order,
-    // so the summary becomes one bounded HTTP call instead — and the claude
-    // CLI itself ignores this var, so the harness under test still
-    // authenticates via OAuth alone. The root fix (SKIP_SESSION_SUMMARY=1 in
-    // the spawned claude env, complete-structured.ts) reaches sandboxes with
-    // the next template publish; this injection keeps old templates safe.
-    ...(config.provider === "claude" && process.env.OPENROUTER_API_KEY
-      ? { OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY }
-      : {}),
     ...credentialsForConfig(config),
     ...(config.env ?? {}),
     // Identity envs (v7 §9.3 step 4, defaults per v7.5 item 7) — these keys

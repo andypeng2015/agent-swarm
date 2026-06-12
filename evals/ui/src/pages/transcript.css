@@ -5,6 +5,12 @@
   flex-direction: column;
   gap: 8px;
   min-width: 0;
+  /* v7.6 §B1: the tabs↔content gap lives HERE (not on .rd-tab-content) so the
+     sticky stack's containing block starts at the very top of the scrollport —
+     a padded scroll container would hold the bar 10px down (transparent strip
+     above it showing scrolled rows). The stickybar pulls itself over this
+     padding with a negative margin and repaints it opaquely. */
+  padding-top: 10px;
 }
 
 .t-caption {
@@ -298,20 +304,27 @@
   margin: 2px 0 2px 16px;
 }
 
-/* ---- sticky header (v7.5 item 4) ----
+/* ---- sticky header (v7.5 item 4 + v7.6 §B1) ----
    The scroll container is .rd-tab-content (overflow-y: auto, run-details.css);
    .transcript itself has no overflow, so position: sticky on this wrapper pins
-   it to the tab-content scrollport. Opaque panel bg so rows scroll underneath;
-   padding-bottom + negative margin covers the .transcript 8px flex gap below
-   the bar (otherwise rows would peek through the transparent gap). */
+   it to the tab-content scrollport. One sticky STACK: the bar owns the Live
+   pulse + caption + task pills together. Opaque panel bg so rows scroll
+   underneath; negative margins + matching padding swallow both the
+   .transcript padding-top above (v7.6 §B1 — no transparent strip over the
+   pinned bar) and the 8px flex gap below (rows would peek through otherwise).
+   z-index sits above every message-row/timestamp paint order inside the
+   scrollport; .rd-right isolates this stacking context (run-details.css) so
+   it can never escape above the page-level .rd-top header. */
 .tr-stickybar {
   position: sticky;
   top: 0;
-  z-index: 5;
+  z-index: 30;
   display: flex;
   flex-direction: column;
   gap: 8px;
   background: var(--panel);
+  padding-top: 10px;
+  margin-top: -10px;
   padding-bottom: 8px;
   margin-bottom: -8px;
 }

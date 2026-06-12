@@ -1,19 +1,77 @@
+import { join } from "node:path";
 import { type Client, createClient } from "@libsql/client";
 
+/**
+ * Local embedded-replica file — always `evals/evals-replica.db` regardless of
+ * cwd (gitignored). The old `evals/evals.db` is a FROZEN BACKUP of pre-Turso
+ * data: new code must never open it, which is why there is no implicit
+ * `file:evals.db` default below.
+ */
+export const REPLICA_PATH = join(import.meta.dir, "../../evals-replica.db");
+
 let client: Client | null = null;
+let isReplica = false;
 
 /**
- * libsql client. Local file by default; set TURSO_DATABASE_URL (+
- * TURSO_AUTH_TOKEN) to point at a Turso database instead.
+ * libsql client (module-cached). Env resolution, in precedence order:
+ *
+ * 1. `EVALS_DB_SYNC_URL` set → Turso **embedded replica**: local WAL file at
+ *    {@link REPLICA_PATH} + background pull every 60 s; every write is
+ *    forwarded synchronously to the Turso primary (read-your-writes locally).
+ *    Requires `EVALS_DB_AUTH_TOKEN`.
+ * 2. else `EVALS_DB_PATH` set → plain local file client, no sync (explicit
+ *    offline/dev escape hatch; `:memory:` and `file:` URLs pass through).
+ * 3. else → throw. Never silently create an empty default DB.
  */
 export function getDb(): Client {
   if (client) return client;
-  const url = process.env.TURSO_DATABASE_URL ?? `file:${process.env.EVALS_DB_PATH ?? "evals.db"}`;
-  client = createClient({
-    url,
-    authToken: process.env.TURSO_AUTH_TOKEN,
-  });
-  return client;
+
+  const syncUrl = process.env.EVALS_DB_SYNC_URL;
+  if (syncUrl) {
+    const authToken = process.env.EVALS_DB_AUTH_TOKEN;
+    if (!authToken) {
+      throw new Error("EVALS_DB_SYNC_URL is set but EVALS_DB_AUTH_TOKEN is missing");
+    }
+    client = createClient({
+      url: `file:${REPLICA_PATH}`,
+      syncUrl,
+      authToken,
+      syncInterval: 60,
+    });
+    isReplica = true;
+    return client;
+  }
+
+  const localPath = process.env.EVALS_DB_PATH;
+  if (localPath) {
+    const url =
+      localPath === ":memory:" || localPath.startsWith("file:") ? localPath : `file:${localPath}`;
+    client = createClient({ url });
+    isReplica = false;
+    return client;
+  }
+
+  throw new Error(
+    "evals DB is not configured: set EVALS_DB_SYNC_URL + EVALS_DB_AUTH_TOKEN " +
+      "(Turso embedded replica — see evals/.env) or EVALS_DB_PATH " +
+      "(plain local file, offline/dev escape hatch)",
+  );
+}
+
+/**
+ * Test-only: drop the module-cached client so changed env vars take effect on
+ * the next getDb() call.
+ */
+export function resetDbForTests(): void {
+  if (client) {
+    try {
+      client.close();
+    } catch {
+      // already closed
+    }
+  }
+  client = null;
+  isReplica = false;
 }
 
 const SCHEMA = `
@@ -80,6 +138,10 @@ CREATE INDEX IF NOT EXISTS idx_artifacts_attempt ON artifacts(attempt_id);
 
 export async function initDb(): Promise<Client> {
   const db = getDb();
+  // Replica: pull remote state BEFORE any DDL so CREATE-IF-NOT-EXISTS runs
+  // against the synced schema (idempotent DDL then forwards to the primary
+  // each boot — harmless).
+  if (isReplica) await db.sync();
   for (const stmt of SCHEMA.split(";")
     .map((s) => s.trim())
     .filter(Boolean)) {
@@ -91,6 +153,18 @@ export async function initDb(): Promise<Client> {
     } catch {
       // column already exists
     }
+  }
+  if (isReplica) {
+    // Embedded replicas must run WAL locally; anything else means the native
+    // binding fell back to a non-replica build. Fail loudly.
+    const res = await db.execute("PRAGMA journal_mode");
+    const mode = String(res.rows[0]?.journal_mode ?? "");
+    if (mode !== "wal") {
+      throw new Error(`evals replica is not in WAL mode (journal_mode=${mode || "unknown"})`);
+    }
+    // Boot visibility: which local file backs the Turso replica (path only —
+    // never the sync URL or auth token).
+    console.log(`evals DB: Turso embedded replica at ${REPLICA_PATH} (wal, sync every 60s)`);
   }
   return db;
 }

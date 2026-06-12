@@ -125,9 +125,25 @@ export function getModels(): Promise<ModelsResponse> {
   return request("/api/models");
 }
 
-/** Pre-aggregated analytics (v5 spec §1 — implemented server-side by WP-AAPI). */
-export function getAnalytics(): Promise<AnalyticsResponse> {
-  return request("/api/analytics");
+/**
+ * Pre-aggregated analytics (v5 spec §1). v7.6 §C3: optional global filter —
+ * serialized as CSV query params (`harnesses`, `configs`), omitted when
+ * empty/absent. The server filters source rows BEFORE aggregation and echoes
+ * `appliedFilter`; `filterOptions` always carries the pre-filter option lists.
+ */
+export function getAnalytics(filter?: {
+  harnesses?: string[];
+  configIds?: string[];
+}): Promise<AnalyticsResponse> {
+  const params = new URLSearchParams();
+  if (filter?.harnesses !== undefined && filter.harnesses.length > 0) {
+    params.set("harnesses", filter.harnesses.join(","));
+  }
+  if (filter?.configIds !== undefined && filter.configIds.length > 0) {
+    params.set("configs", filter.configIds.join(","));
+  }
+  const qs = params.size > 0 ? `?${params.toString()}` : "";
+  return request(`/api/analytics${qs}`);
 }
 
 export function artifactUrl(id: string, opts?: { download?: boolean }): string {

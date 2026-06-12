@@ -160,6 +160,24 @@
   cursor: pointer;
 }
 
+/* The ConfigChip's Tooltip wrapper must shrink so the chip name ellipsizes. */
+.cms-row > .tooltip {
+  min-width: 0;
+}
+
+/* v7.6 §C5: dim raw config id after the pretty chip (judge model-menu
+   convention) — right-aligned, ellipsized, hidden from the chip's own hover. */
+.cms-row-id {
+  margin-left: auto;
+  flex-shrink: 1;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* ---- selected chips under the trigger (always-visible selection record) ---- */
 
 .cms-selected {

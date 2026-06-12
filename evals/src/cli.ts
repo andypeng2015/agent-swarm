@@ -42,7 +42,8 @@ Defaults: scenarios=${DEFAULT_SCENARIO_IDS.join(",")} configs=${DEFAULT_CONFIG_I
 
 Env: E2B_API_KEY (required), OPENROUTER_API_KEY (judge + pi/opencode workers),
      CLAUDE_CODE_OAUTH_TOKEN (claude workers), OPENAI_API_KEY (codex workers),
-     EVAL_JUDGE_MODEL, TURSO_DATABASE_URL/TURSO_AUTH_TOKEN (else local evals.db)`;
+     EVAL_JUDGE_MODEL, EVALS_DB_SYNC_URL + EVALS_DB_AUTH_TOKEN (Turso embedded
+     replica — required unless EVALS_DB_PATH names a plain local file)`;
 
 function parseCsv(value: string | undefined, fallback: string[]): string[] {
   if (!value) return fallback;

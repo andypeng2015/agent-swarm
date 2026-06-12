@@ -60,7 +60,9 @@ export function HeatTable(props: {
     <table className="heat">
       <thead>
         <tr>
-          <th />
+          {/* v7.6 §C2: row-header column sticks on horizontal scroll; the
+              corner cell sits one z-level above the row headers. */}
+          <th className="heat-corner" />
           {props.cols.map((col) => (
             <th key={col.key}>{col.label}</th>
           ))}
@@ -69,7 +71,7 @@ export function HeatTable(props: {
       <tbody>
         {props.rows.map((row, ri) => (
           <tr key={row.key}>
-            <th>{row.label}</th>
+            <th className="heat-rowhead">{row.label}</th>
             {props.cols.map((col, ci) => {
               const data = grid[ri][ci];
               if (data === null) {

@@ -1,3 +1,4 @@
+import { getAaForConfig } from "../configs/aa.ts";
 import { configs } from "../configs/index.ts";
 import { scenarios } from "../scenarios/index.ts";
 import type { Registry } from "./runner/index.ts";
@@ -265,5 +266,7 @@ export function serializeConfig(c: HarnessConfig) {
     model: c.model ?? null,
     modelTier: c.modelTier ?? null,
     envKeys: c.env ? Object.keys(c.env) : [],
+    /** v7.6 item D: AA benchmark block; null = unmatched (UI renders nothing). */
+    aa: getAaForConfig(c.id),
   };
 }

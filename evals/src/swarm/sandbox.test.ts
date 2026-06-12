@@ -2,7 +2,15 @@ import { afterEach, describe, expect, test } from "bun:test";
 import type { HarnessConfig } from "../types.ts";
 import { apiRuntimeEnv, workerRuntimeEnv } from "./sandbox.ts";
 
-const ENV_KEYS = ["OPENROUTER_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY"] as const;
+const ENV_KEYS = [
+  "OPENROUTER_API_KEY",
+  "CLAUDE_CODE_OAUTH_TOKEN",
+  "ANTHROPIC_API_KEY",
+  "OPENAI_API_KEY",
+  "EMBEDDING_API_KEY",
+  "EMBEDDING_MODEL",
+  "EMBEDDING_API_BASE_URL",
+] as const;
 const saved: Record<string, string | undefined> = {};
 for (const k of ENV_KEYS) saved[k] = process.env[k];
 
@@ -22,21 +30,14 @@ function workerEnvFor(config: HarnessConfig): Record<string, string> {
   });
 }
 
-describe("workerRuntimeEnv session-summary credential injection", () => {
-  test("claude provider + OPENROUTER_API_KEY in controller env → injected (breaks the claude -p summarizer recursion on published templates)", () => {
+describe("workerRuntimeEnv credential gating (v7.6 §A2 — interim claude OPENROUTER injection removed)", () => {
+  test("claude provider + OPENROUTER_API_KEY in controller env → NOT injected (1.97.0 templates ship the SKIP_SESSION_SUMMARY root fix; the summarizer-recursion guard is gone)", () => {
     process.env.OPENROUTER_API_KEY = "or-test-key";
     process.env.CLAUDE_CODE_OAUTH_TOKEN = "oauth-test";
     const env = workerEnvFor({ id: "claude-haiku", provider: "claude", model: "haiku" });
-    expect(env.OPENROUTER_API_KEY).toBe("or-test-key");
+    expect(env.OPENROUTER_API_KEY).toBeUndefined();
     // Harness credential gating unchanged: OAuth token still present.
     expect(env.CLAUDE_CODE_OAUTH_TOKEN).toBe("oauth-test");
-  });
-
-  test("claude provider without OPENROUTER_API_KEY → no injection, OAuth-only env", () => {
-    delete process.env.OPENROUTER_API_KEY;
-    process.env.CLAUDE_CODE_OAUTH_TOKEN = "oauth-test";
-    const env = workerEnvFor({ id: "claude-haiku", provider: "claude", model: "haiku" });
-    expect(env.OPENROUTER_API_KEY).toBeUndefined();
   });
 
   test("non-claude provider with anthropic-prefixed model → OPENROUTER_API_KEY NOT injected (credential gating stays config-driven)", () => {
@@ -51,8 +52,8 @@ describe("workerRuntimeEnv session-summary credential injection", () => {
     expect(env.ANTHROPIC_API_KEY).toBe("ant-test-key");
   });
 
-  test("config.env wins over the injected key", () => {
-    process.env.OPENROUTER_API_KEY = "or-test-key";
+  test("config.env can still supply OPENROUTER_API_KEY explicitly (merge order intact)", () => {
+    delete process.env.OPENROUTER_API_KEY;
     process.env.CLAUDE_CODE_OAUTH_TOKEN = "oauth-test";
     const env = workerEnvFor({
       id: "claude-haiku",
@@ -192,12 +193,36 @@ describe("workerRuntimeEnv v7 member env (§9.3 frozen merge order)", () => {
   });
 });
 
-describe("apiRuntimeEnv", () => {
-  test("pins EMBEDDING_DIMENSIONS to the 512-dim vec0 column width", () => {
-    // Published API templates ≤ v1.85.0 compute Number(undefined) ?? 512 = NaN
-    // (NaN is not nullish) → 1536-dim embeddings → every memory index/search
-    // fails with a dimension mismatch. The explicit pin keeps old AND new
-    // templates correct.
-    expect(apiRuntimeEnv("k").EMBEDDING_DIMENSIONS).toBe("512");
+describe("apiRuntimeEnv embedding envs (v7.6 §A2 — EMBEDDING_*-differentiated)", () => {
+  test("no EMBEDDING_DIMENSIONS pin (≤1.85-template NaN workaround removed; 1.97.0 defaults the dimension server-side)", () => {
+    expect(apiRuntimeEnv("k").EMBEDDING_DIMENSIONS).toBeUndefined();
+  });
+
+  test("EMBEDDING_API_KEY / EMBEDDING_MODEL / EMBEDDING_API_BASE_URL pass through when set", () => {
+    process.env.EMBEDDING_API_KEY = "emb-test-key";
+    process.env.EMBEDDING_MODEL = "text-embedding-3-small";
+    process.env.EMBEDDING_API_BASE_URL = "https://embed.example/v1";
+    const env = apiRuntimeEnv("k");
+    expect(env.EMBEDDING_API_KEY).toBe("emb-test-key");
+    expect(env.EMBEDDING_MODEL).toBe("text-embedding-3-small");
+    expect(env.EMBEDDING_API_BASE_URL).toBe("https://embed.example/v1");
+  });
+
+  test("unset EMBEDDING_* envs are omitted (no empty-string keys)", () => {
+    delete process.env.EMBEDDING_API_KEY;
+    delete process.env.EMBEDDING_MODEL;
+    delete process.env.EMBEDDING_API_BASE_URL;
+    const env = apiRuntimeEnv("k");
+    expect(env.EMBEDDING_API_KEY).toBeUndefined();
+    expect(env.EMBEDDING_MODEL).toBeUndefined();
+    expect(env.EMBEDDING_API_BASE_URL).toBeUndefined();
+  });
+
+  test("OPENAI_API_KEY is NOT forwarded to the API sandbox (embeddings no longer rely on the server-side OPENAI_API_KEY fallback)", () => {
+    process.env.OPENAI_API_KEY = "oa-test-key";
+    process.env.EMBEDDING_API_KEY = "emb-test-key";
+    const env = apiRuntimeEnv("k");
+    expect(env.OPENAI_API_KEY).toBeUndefined();
+    expect(env.EMBEDDING_API_KEY).toBe("emb-test-key");
   });
 });

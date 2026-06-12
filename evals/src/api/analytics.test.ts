@@ -633,6 +633,142 @@ describe("buildAnalytics — scatter (v7 §7.2/§11)", () => {
   });
 });
 
+describe("buildAnalytics — global filter (v7.6 §C3)", () => {
+  /** pi ×2 (one run each), claude ×1, plus a removed config ("ghost-" prefix). */
+  const FILTER_ROWS: AnalyticsSourceRow[] = [
+    row({ configId: "pi-deepseek", runId: "run-a", score: 0.2, costUsd: 1 }),
+    row({
+      configId: "pi-deepseek",
+      runId: "run-b",
+      runCreatedAt: "2026-06-02T00:00:00.000Z",
+      score: 0.4,
+      costUsd: 3,
+      status: "failed",
+    }),
+    row({ scenarioId: "s2", configId: "claude-haiku", runId: "run-a", score: 1.0, costUsd: 5 }),
+    row({ scenarioId: "s2", configId: "ghost-config", runId: "run-a", tokenModel: "mystery" }),
+  ];
+
+  test("no filter / empty axes → unfiltered aggregation, appliedFilter null, options filled", () => {
+    for (const res of [
+      buildAnalytics(FILTER_ROWS, registry, ALIASES),
+      buildAnalytics(FILTER_ROWS, registry, ALIASES, null),
+      buildAnalytics(FILTER_ROWS, registry, ALIASES, { harnesses: [], configIds: [] }),
+    ]) {
+      expect(res.appliedFilter).toBeNull();
+      expect(res.matrix.reduce((acc, c) => acc + c.attempts, 0)).toBe(4);
+      // first-seen order over ALL source rows
+      expect(res.filterOptions).toEqual({
+        harnesses: ["pi", "claude", "ghost"],
+        configIds: ["pi-deepseek", "claude-haiku", "ghost-config"],
+      });
+    }
+  });
+
+  test("harness filter re-aggregates every section over the kept rows", () => {
+    const filter = { harnesses: ["pi"], configIds: [] };
+    const res = buildAnalytics(FILTER_ROWS, registry, ALIASES, filter);
+    expect(res.appliedFilter).toEqual(filter);
+    expect(res.scenarioIds).toEqual(["s1"]);
+    expect(res.configIds).toEqual(["pi-deepseek"]);
+    expect(res.matrix).toHaveLength(1);
+    expect(res.matrix[0]!.attempts).toBe(2);
+    expect(res.matrix[0]!.totalCostUsd).toBeCloseTo(4);
+    expect(res.models.map((m) => m.model)).toEqual(["deepseek/deepseek-chat"]);
+    expect(res.models[0]!.avgScore).toBeCloseTo(0.3); // (0.2 + 0.4) / 2 — pi rows only
+    expect(res.series).toHaveLength(1);
+    expect(res.series[0]!.points).toHaveLength(2);
+    expect(res.harnesses!.map((h) => h.group)).toEqual(["pi"]);
+    expect(res.vendors!.map((v) => v.group)).toEqual(["deepseek"]);
+    expect(res.scatter!.map((p) => p.model)).toEqual(["deepseek/deepseek-chat"]);
+  });
+
+  test("harness filter reaches removed configs via the configId-prefix fallback", () => {
+    const res = buildAnalytics(FILTER_ROWS, registry, ALIASES, {
+      harnesses: ["ghost"],
+      configIds: [],
+    });
+    expect(res.configIds).toEqual(["ghost-config"]);
+    expect(res.matrix).toHaveLength(1);
+    expect(res.models.map((m) => m.model)).toEqual(["mystery"]);
+    expect(res.harnesses!.map((h) => h.group)).toEqual(["ghost"]);
+  });
+
+  test("config filter recomputes per-model aggregates across configs (no mean-of-means)", () => {
+    const rows = [
+      row({ configId: "pi-deepseek", tokenModel: "m1", score: 0.2 }),
+      row({ configId: "claude-tier", tokenModel: "m1", score: 1.0 }),
+    ];
+    const unfiltered = buildAnalytics(rows, registry, ALIASES);
+    expect(unfiltered.models[0]!.avgScore).toBeCloseTo(0.6);
+    const res = buildAnalytics(rows, registry, ALIASES, {
+      harnesses: [],
+      configIds: ["claude-tier"],
+    });
+    expect(res.models.map((m) => m.model)).toEqual(["m1"]);
+    expect(res.models[0]!.avgScore).toBeCloseTo(1.0); // per-attempt over the kept rows only
+    expect(res.models[0]!.attempts).toBe(1);
+    expect(res.harnesses!.map((h) => h.group)).toEqual(["claude"]);
+  });
+
+  test("combined axes AND together", () => {
+    const keep = buildAnalytics(FILTER_ROWS, registry, ALIASES, {
+      harnesses: ["pi"],
+      configIds: ["pi-deepseek"],
+    });
+    expect(keep.matrix[0]!.attempts).toBe(2);
+    // configId matches but its harness is "pi", not "claude" → nothing survives.
+    const cross = buildAnalytics(FILTER_ROWS, registry, ALIASES, {
+      harnesses: ["claude"],
+      configIds: ["pi-deepseek"],
+    });
+    expect(cross.matrix).toEqual([]);
+    expect(cross.models).toEqual([]);
+    expect(cross.series).toEqual([]);
+    expect(cross.harnesses).toEqual([]);
+    expect(cross.vendors).toEqual([]);
+    expect(cross.scatter).toEqual([]);
+    expect(cross.appliedFilter).toEqual({ harnesses: ["claude"], configIds: ["pi-deepseek"] });
+  });
+
+  test("unknown filter values match nothing — empty aggregates, never an error", () => {
+    const res = buildAnalytics(FILTER_ROWS, registry, ALIASES, {
+      harnesses: ["nope"],
+      configIds: ["never-existed"],
+    });
+    expect(res.matrix).toEqual([]);
+    expect(res.scenarioIds).toEqual([]);
+    expect(res.configIds).toEqual([]);
+    expect(nonFinitePaths(res)).toEqual([]);
+  });
+
+  test("filterOptions stays complete (first-seen order) while a filter is active", () => {
+    const res = buildAnalytics(FILTER_ROWS, registry, ALIASES, {
+      harnesses: ["claude"],
+      configIds: [],
+    });
+    expect(res.configIds).toEqual(["claude-haiku"]); // filtered-row semantics
+    expect(res.filterOptions).toEqual({
+      harnesses: ["pi", "claude", "ghost"],
+      configIds: ["pi-deepseek", "claude-haiku", "ghost-config"],
+    });
+  });
+
+  test("filtered payload survives JSON.stringify with no NaN/Infinity anywhere", () => {
+    const messy = [
+      ...FILTER_ROWS,
+      row({ configId: "pi-deepseek", status: "error" }),
+      row({ configId: "pi-deepseek", costUsd: 0, durationMs: 0, score: 0 }),
+      row({ configId: "pi-deepseek", tokenInput: Number.NaN as unknown as number }),
+    ];
+    const res = buildAnalytics(messy, registry, ALIASES, { harnesses: ["pi"], configIds: [] });
+    expect(nonFinitePaths(res)).toEqual([]);
+    const text = JSON.stringify(res);
+    expect(text).not.toContain("NaN");
+    expect(text).not.toContain("Infinity");
+  });
+});
+
 describe("buildAnalytics — no NaN/Infinity anywhere (hard rule)", () => {
   test("messy mixed fixture (old rows, zero denominators, garbage) stays finite", () => {
     const res = buildAnalytics(

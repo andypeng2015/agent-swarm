@@ -442,6 +442,29 @@ export interface ScenarioJson {
   };
 }
 
+/**
+ * Artificial Analysis benchmark block on a catalog config (v7.6 item D —
+ * mirrors evals/src/types.ts AaBenchmark). Null fields = "--" in the source
+ * TSV; `provisional` = a numeric cell carried the trailing-"*" marker (keep
+ * the number, flag it). Render "—" for nulls; configs without a block render
+ * nothing (absent/null `ConfigJson.aa`).
+ */
+export interface AaBenchmarkJson {
+  /** Exact AA row name this config maps to (incl. "(variant 2)" suffixes). */
+  sourceRow: string;
+  /** Why this AA variant matches how the harness runs the model; null = no variants. */
+  matchedVariant: string | null;
+  /** Raw display string ("1M", "922k"); null when unknown. */
+  contextWindow: string | null;
+  creator: string | null;
+  intelligenceIndex: number | null;
+  blendedUsdPer1M: number | null;
+  medianTokensPerS: number | null;
+  latencyFirstChunkS: number | null;
+  totalResponseS: number | null;
+  provisional: boolean;
+}
+
 export interface ConfigJson {
   id: string;
   label: string | null;
@@ -450,6 +473,8 @@ export interface ConfigJson {
   modelTier: string | null;
   envKeys: string[];
   isDefault: boolean;
+  /** v7.6 item D: AA benchmark block; null/absent = unmatched config (render nothing). */
+  aa?: AaBenchmarkJson | null;
 }
 
 export interface ModelJson {
@@ -640,6 +665,23 @@ export interface AnalyticsSeries {
   versionEvents: AnalyticsVersionEvent[];
 }
 
+/**
+ * Global analytics filter (v7.6 §C3 — mirrors evals/src/types.ts). Sent as
+ * `harnesses` / `configs` CSV query params on GET /api/analytics; the server
+ * filters source rows BEFORE aggregation (client-side filtering cannot
+ * re-derive model/vendor/scatter aggregates). Empty array = no filter.
+ */
+export interface AnalyticsFilter {
+  harnesses: string[];
+  configIds: string[];
+}
+
+/** Pre-filter option lists for the global filter bar (v7.6 §C3). */
+export interface AnalyticsFilterOptions {
+  harnesses: string[];
+  configIds: string[];
+}
+
 export interface AnalyticsResponse {
   generatedAt: string;
   scenarioIds: string[];
@@ -653,4 +695,8 @@ export interface AnalyticsResponse {
   vendors?: AnalyticsGroupRollup[];
   /** v7 §7/§11: one point per model key (scatter: accuracy vs tokens). */
   scatter?: AnalyticsScatterPoint[];
+  /** v7.6 §C3: distinct harness/config options over ALL rows (pre-filter). Absent on old cached payloads. */
+  filterOptions?: AnalyticsFilterOptions;
+  /** v7.6 §C3: the filter the server applied; null/absent = unfiltered. */
+  appliedFilter?: AnalyticsFilter | null;
 }

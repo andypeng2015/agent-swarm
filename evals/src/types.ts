@@ -25,6 +25,39 @@ export interface HarnessConfig {
   env?: Record<string, string>;
 }
 
+/**
+ * Artificial Analysis benchmark block for one catalog config (v7.6 item D —
+ * FROZEN shape). Source of record: evals/configs/aa-benchmarks-2026-06-12.tsv
+ * (transcribed from artificialanalysis.ai). Lives in a sibling module
+ * (evals/configs/aa.ts) keyed by config id — HarnessConfig itself stays
+ * untouched; serializeConfig() merges `aa` into the /api/configs payload.
+ * Unmatched configs simply have no entry (UI renders nothing).
+ *
+ * Parse rules (frozen): TSV cell "--" → null; a numeric cell with a trailing
+ * "*" (e.g. "35*") keeps the number and sets `provisional: true` on the block;
+ * contextWindow/creator stay raw display strings ("1M", "922k"). "(variant 2)"
+ * suffixes mark the lower-intelligence-index duplicate of an AA reasoning /
+ * non-reasoning pair — `sourceRow` is the exact TSV `model` cell incl. any
+ * such suffix, and `matchedVariant` documents WHY that row matches how the
+ * eval harness actually runs the model.
+ */
+export interface AaBenchmark {
+  /** Exact TSV `model` cell this config maps to (incl. "(variant 2)" suffixes). */
+  sourceRow: string;
+  /** Variant-choice note ("max — Claude Code thinking on by default", …); null when the row has no variants. */
+  matchedVariant: string | null;
+  /** Raw context-window display string ("1M", "922k", "256k"); null when "--". */
+  contextWindow: string | null;
+  creator: string | null;
+  intelligenceIndex: number | null;
+  blendedUsdPer1M: number | null;
+  medianTokensPerS: number | null;
+  latencyFirstChunkS: number | null;
+  totalResponseS: number | null;
+  /** True when any numeric cell carried the trailing-"*" provisional marker. */
+  provisional: boolean;
+}
+
 export interface TaskSpec {
   title: string;
   description: string;
@@ -833,6 +866,32 @@ export interface AnalyticsSeries {
   versionEvents: AnalyticsVersionEvent[];
 }
 
+/**
+ * Global analytics filter (v7.6 §C3 — FROZEN). Applied SERVER-SIDE on
+ * GET /api/analytics (query params `harnesses` + `configs`, CSV): the source
+ * rows are filtered BEFORE buildAnalytics so every section (matrix, models,
+ * series, rollups, scatter, highlights) re-aggregates correctly — per-model /
+ * per-vendor aggregates cannot be recomputed client-side from the
+ * pre-aggregated cells. Empty array = no filter on that axis. A row is kept
+ * iff its configId ∈ configIds (when set) AND its harness key — the §7.1
+ * harnessKey() rule (registry provider, configId-prefix fallback) —
+ * ∈ harnesses (when set).
+ */
+export interface AnalyticsFilter {
+  harnesses: string[];
+  configIds: string[];
+}
+
+/**
+ * Filter-bar option lists (v7.6 §C3) — distinct harness keys / config ids over
+ * ALL source rows BEFORE filtering (first-seen order), so the bar keeps every
+ * option visible while a filter is active.
+ */
+export interface AnalyticsFilterOptions {
+  harnesses: string[];
+  configIds: string[];
+}
+
 export interface AnalyticsResponse {
   generatedAt: string;
   /** Every scenario id seen in attempts, first-seen order. */
@@ -850,6 +909,10 @@ export interface AnalyticsResponse {
   vendors?: AnalyticsGroupRollup[];
   /** v7 §7/§11: one point per model key (scatter: accuracy vs tokens). */
   scatter?: AnalyticsScatterPoint[];
+  /** v7.6 §C3: pre-filter option lists. Optional for old cached payloads; the v7.6 server always fills it. */
+  filterOptions?: AnalyticsFilterOptions;
+  /** v7.6 §C3: the filter the server applied; null/absent = unfiltered. */
+  appliedFilter?: AnalyticsFilter | null;
 }
 
 /** Distinct cleaned versions across one run's attempts (runs list, v5 spec §1.5). */

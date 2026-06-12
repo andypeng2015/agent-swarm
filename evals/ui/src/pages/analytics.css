@@ -1,12 +1,20 @@
 /* WP-AUI — analytics page (v5 spec §3 + v7 spec §6.2/§7.3). Shared tokens/classes
    live in styles.css; chart styles live in components/charts/charts.css. */
 
+/* v7.6 §C3: page header (title + global filter bar) sticks right below the
+   app header. z-index 15 < .app-header's 20; opaque page bg so scrolled panels
+   never bleed through. The padding/margin pair keeps the original offsets. */
 .an-head {
+  position: sticky;
+  top: var(--app-header-h, 41px);
+  z-index: 15;
+  background: var(--bg);
   display: flex;
   align-items: center;
   gap: 12px;
   flex-wrap: wrap;
-  margin-bottom: 12px;
+  padding: 8px 0;
+  margin: -8px 0 4px;
 }
 
 .an-title {
@@ -21,6 +29,39 @@
 
 .an-head .btn {
   margin-left: auto;
+}
+
+/* ---- global filter bar (v7.6 §C3) ---- */
+
+.an-filters {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.an-filter-clear {
+  background: none;
+  border: none;
+  padding: 3px 6px;
+  border-radius: 6px;
+  color: var(--accent);
+  font-family: var(--font-sans);
+  font-size: 11.5px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.an-filter-clear:hover {
+  background: color-mix(in oklab, var(--accent), transparent 88%);
+}
+
+/* trends scenario option entries (C5 — config entries reuse ConfigChip) */
+.an-opt-id {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .an-error {

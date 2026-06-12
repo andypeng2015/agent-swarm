@@ -50,16 +50,27 @@
   margin-top: 16px;
 }
 
-/* Left and right columns scroll independently below the fixed header (item 17). */
+/* Left and right columns scroll independently below the fixed header (item 17).
+   v7.6 §B1 advisory: --rd-top-h is the MEASURED .rd-top height (ResizeObserver
+   in RunDetailsPage sets it on .rd-body) — the columns always fit the viewport
+   below the sticky header, so the right-panel sticky stack stays in view even
+   when .rd-top outgrows the old fixed-240px assumption (cell band, errors).
+   42px app header + 16px .rd-body margin + 16px bottom gap = 74px; the 166px
+   fallback reproduces the historical 240px before the first measurement. */
 .rd-body > .scroll-col,
 .rd-body > .rd-right {
-  --scroll-col-max: calc(100vh - 240px);
+  --scroll-col-max: calc(100vh - 74px - var(--rd-top-h, 166px));
 }
 
 /* Item 5 (v4 §8): the tab bar lives OUTSIDE the scroll container, pinned at the
    very top of the right pane. The pane itself never scrolls (overflow hidden);
-   only .rd-tab-content does — scrolled content can never bleed above the tabs. */
+   only .rd-tab-content does — scrolled content can never bleed above the tabs.
+   v7.6 §B1: position + z-index make the pane its own stacking context, so the
+   transcript stickybar's raised z-index (transcript.css) stays contained and
+   can never paint above the page-level .rd-top sticky header (z-index 10). */
 .rd-right {
+  position: relative;
+  z-index: 0;
   display: flex;
   flex-direction: column;
   max-height: var(--scroll-col-max);
@@ -73,10 +84,19 @@
   background: var(--panel);
 }
 
+/* v7.6 §B1: NO padding-top here — a padded scroll container would hold the
+   transcript stickybar 10px below the scrollport top (sticky can't leave its
+   containing block), leaving a transparent strip where scrolled rows bleed
+   through. The 10px tabs↔content gap moved into .transcript / .rd-tab-pad. */
 .rd-tab-content {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+}
+
+/* Restores the tabs↔content spacing for the non-transcript tabs (the
+   transcript carries its own — see .transcript in transcript.css). */
+.rd-tab-pad {
   padding-top: 10px;
 }
 
@@ -345,6 +365,22 @@ a.rd-cellsum-row:hover {
   color: var(--dim);
 }
 
+/* v7.6 §B2: per-task token total — compact like the cost, breakdown on hover
+   (mirrors the attempt Tokens row); dim "—" when not captured (live source). */
+.rd-taskrow-tokens {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--dim);
+  white-space: nowrap;
+  cursor: default;
+}
+
+.rd-taskrow-tokens.dim {
+  color: var(--dim);
+  opacity: 0.6;
+}
+
 .rd-taskrow-toggle {
   flex: none;
   background: none;
@@ -367,6 +403,50 @@ a.rd-cellsum-row:hover {
   flex-direction: column;
   gap: 4px;
   min-width: 0;
+}
+
+/* v7.6 §B2: per-block copy affordance — hover-revealed button in the top-right
+   corner of each outcome/error block (copies the FULL stored text). */
+.rd-task-blockwrap {
+  position: relative;
+  min-width: 0;
+}
+
+.rd-task-blockwrap > .rd-task-copy {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  z-index: 1;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+
+.rd-task-blockwrap:hover > .rd-task-copy,
+.rd-task-blockwrap > .rd-task-copy:focus-visible,
+.rd-task-blockwrap > .rd-task-copy.copied {
+  opacity: 1;
+}
+
+.rd-task-copy {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--dim);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.rd-task-copy:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+.rd-task-copy.copied {
+  color: var(--accent);
+  border-color: var(--accent);
 }
 
 .rd-task-outcome,

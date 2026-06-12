@@ -365,6 +365,29 @@ export default function RunDetailsPage(props: {
     if (!active) setCancelRequested(false);
   }, [active]);
 
+  // v7.6 §B1 advisory: .rd-top's height varies (cell band, long names, action
+  // errors) — measure it into --rd-top-h on .rd-body so CSS can size both
+  // columns to always fit the viewport below the sticky header, keeping the
+  // right panel's tab row + transcript sticky stack fully in view (the old
+  // fixed calc assumed a 240px header budget). Re-runs once `run` loads
+  // (the refs only attach then); the observer tracks growth afterwards.
+  const topRef = useRef<HTMLDivElement | null>(null);
+  const bodyRef = useRef<HTMLDivElement | null>(null);
+  const runLoaded = run !== null;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: re-attach once `run` loads — the refs only exist after the early-return stops rendering the loading panel
+  useLayoutEffect(() => {
+    const top = topRef.current;
+    const body = bodyRef.current;
+    if (top === null || body === null) return undefined;
+    const apply = () => {
+      body.style.setProperty("--rd-top-h", `${String(top.offsetHeight)}px`);
+    };
+    apply();
+    const observer = new ResizeObserver(apply);
+    observer.observe(top);
+    return () => observer.disconnect();
+  }, [runLoaded]);
+
   if (!run) {
     return (
       <div className="panel">
@@ -437,7 +460,7 @@ export default function RunDetailsPage(props: {
   return (
     <>
       {confirmDialog}
-      <div className="panel rd-top">
+      <div className="panel rd-top" ref={topRef}>
         <div className="rd-title-row">
           <a className="rd-back" href="#/runs">
             ← Runs
@@ -513,7 +536,7 @@ export default function RunDetailsPage(props: {
         ) : null}
       </div>
 
-      <div className="layout-30-70 rd-body">
+      <div className="layout-30-70 rd-body" ref={bodyRef}>
         <div className="rd-left scroll-col">
           <div className="panel">
             <div className="panel-title">Matrix</div>
@@ -604,6 +627,9 @@ export default function RunDetailsPage(props: {
             </button>
           </div>
           <div className="rd-tab-content">
+            {/* v7.6 §B1: the transcript renders bare — it owns its 10px top gap
+                so its sticky stack starts at the scrollport top; every other
+                tab body gets the spacing back via the .rd-tab-pad wrapper. */}
             {tab === "transcript" ? (
               selId ? (
                 <Transcript
@@ -617,29 +643,33 @@ export default function RunDetailsPage(props: {
                   focusTask={focusTask !== null && focusTask.attemptId === selId ? focusTask : null}
                 />
               ) : (
-                <div className="dim">No attempt selected</div>
+                <div className="dim rd-tab-pad">No attempt selected</div>
               )
-            ) : tab === "checks" ? (
-              <ChecksTab attempt={attempt} judgments={judgments} live={judgeLive} />
-            ) : tab === "timings" ? (
-              <TimingsTab attempt={attempt} progress={progress} />
-            ) : tab === "logs" ? (
-              <LogsTab attempt={attempt} artifacts={artifacts} progress={progress} />
             ) : (
-              <>
-                <DataTable
-                  rows={artifacts}
-                  columns={ASSET_COLUMNS}
-                  rowKey={(row) => row.id}
-                  emptyText="No artifacts yet"
-                  searchPlaceholder="Search artifacts…"
-                />
-                {artifacts.length === 0 && attemptUnfinished ? (
-                  <div className="rd-stage">
-                    <Spinner label="Artifacts land as the attempt progresses…" />
-                  </div>
-                ) : null}
-              </>
+              <div className="rd-tab-pad">
+                {tab === "checks" ? (
+                  <ChecksTab attempt={attempt} judgments={judgments} live={judgeLive} />
+                ) : tab === "timings" ? (
+                  <TimingsTab attempt={attempt} progress={progress} />
+                ) : tab === "logs" ? (
+                  <LogsTab attempt={attempt} artifacts={artifacts} progress={progress} />
+                ) : (
+                  <>
+                    <DataTable
+                      rows={artifacts}
+                      columns={ASSET_COLUMNS}
+                      rowKey={(row) => row.id}
+                      emptyText="No artifacts yet"
+                      searchPlaceholder="Search artifacts…"
+                    />
+                    {artifacts.length === 0 && attemptUnfinished ? (
+                      <div className="rd-stage">
+                        <Spinner label="Artifacts land as the attempt progresses…" />
+                      </div>
+                    ) : null}
+                  </>
+                )}
+              </div>
             )}
           </div>
         </div>
@@ -1011,6 +1041,17 @@ function TaskRow(props: {
       ? "Per-task cost not captured"
       : `Σ session cost for this task${tokenTotal > 0 ? ` · ${fmtTokens(tokenTotal)} tokens` : ""}`;
 
+  // v7.6 §B2: compact per-task token total — hover carries the breakdown in
+  // the attempt-Tokens-row format. Null/zero (live source, v1-era rows) ⇒ "—".
+  const tokensTip =
+    t.tokens === null || tokenTotal === 0
+      ? "Per-task tokens not captured (live attempts report them once finished)"
+      : `${fmtTokens(tokenTotal)} (in ${fmtTokens(t.tokens.inputTokens)} · out ${fmtTokens(
+          t.tokens.outputTokens,
+        )} · cacheR ${fmtTokens(t.tokens.cacheReadTokens)} · cacheW ${fmtTokens(
+          t.tokens.cacheWriteTokens,
+        )})`;
+
   return (
     <>
       <div className={t.skipped ? "rd-taskrow skipped" : "rd-taskrow"}>
@@ -1030,6 +1071,15 @@ function TaskRow(props: {
             </span>
           </Tooltip>
         ) : null}
+        <Tooltip text={tokensTip}>
+          <span
+            className={
+              t.tokens === null || tokenTotal === 0 ? "rd-taskrow-tokens dim" : "rd-taskrow-tokens"
+            }
+          >
+            {t.tokens === null || tokenTotal === 0 ? "—" : fmtTokens(tokenTotal)}
+          </span>
+        </Tooltip>
         <Tooltip text={costTip}>
           <span className={t.costUsd === null ? "rd-taskrow-cost dim" : "rd-taskrow-cost"}>
             {fmtCost(t.costUsd)}
@@ -1048,19 +1098,46 @@ function TaskRow(props: {
       </div>
       {open && hasDetail ? (
         <div className="rd-task-detail">
+          {/* v7.6 §B2: expand shows the FULL stored text (the server's 4000-char
+              clip stands); the copy button takes the whole block verbatim. */}
           {t.error !== null ? (
-            <RdClamp>
-              <div className={t.skipped ? "rd-task-skip" : "rd-task-error"}>{t.error}</div>
-            </RdClamp>
+            <div className="rd-task-blockwrap">
+              <RdCopy text={t.error} what={t.skipped ? "skip reason" : "error"} />
+              <RdClamp>
+                <div className={t.skipped ? "rd-task-skip" : "rd-task-error"}>{t.error}</div>
+              </RdClamp>
+            </div>
           ) : null}
           {t.outcome !== null ? (
-            <RdClamp>
-              <div className="rd-task-outcome">{t.outcome}</div>
-            </RdClamp>
+            <div className="rd-task-blockwrap">
+              <RdCopy text={t.outcome} what="outcome" />
+              <RdClamp>
+                <div className="rd-task-outcome">{t.outcome}</div>
+              </RdClamp>
+            </div>
           ) : null}
         </div>
       ) : null}
     </>
+  );
+}
+
+/** v7.6 §B2: copies a task's full stored outcome/error text (hover-revealed). */
+function RdCopy(props: { text: string; what: string }): ReactNode {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      type="button"
+      className={copied ? "rd-task-copy copied" : "rd-task-copy"}
+      title={`Copy the full ${props.what} text`}
+      onClick={() => {
+        void navigator.clipboard.writeText(props.text);
+        setCopied(true);
+        window.setTimeout(() => setCopied(false), 1200);
+      }}
+    >
+      {copied ? "✓ Copied" : "⧉ Copy"}
+    </button>
   );
 }
 

@@ -15,9 +15,12 @@ export interface MiniBar {
   color?: string;
 }
 
-const MARGIN = { top: 16, bottom: 34 };
+// Bottom margin sized for the slanted name labels (round-8 spec §C1 — no cut
+// labels: room + rotation + <title> full-name hover, never clip mid-word
+// without tooltip recourse).
+const MARGIN = { top: 16, bottom: 56 };
 const DEFAULT_HEIGHT = 170;
-const MAX_LABEL_CHARS = 14;
+const MAX_LABEL_CHARS = 18;
 
 /**
  * Vertical mini bar chart for the analytics highlights row (à la the
@@ -82,7 +85,7 @@ export function MiniBarChart(props: {
               </text>
               <text
                 className="chart-minibar-label"
-                transform={`translate(${cx} ${MARGIN.top + innerH + 10}) rotate(-28)`}
+                transform={`translate(${cx} ${MARGIN.top + innerH + 10}) rotate(-35)`}
                 textAnchor="end"
               >
                 {label}

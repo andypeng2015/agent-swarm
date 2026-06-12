@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { createClient } from "@libsql/client";
-import { ANALYTICS_SQL } from "./server.ts";
+import { ANALYTICS_SQL, parseFilterCsv } from "./server.ts";
 
 /**
  * ANALYTICS_SQL extracts worker_version straight out of attempts.sandbox_json.
@@ -100,6 +100,24 @@ describe("ANALYTICS_SQL worker_version extraction", () => {
     expect(rows[3]!.worker_version).toBeNull(); // malformed JSON → json_valid guard
     expect(rows[4]!.worker_version).toBeNull(); // sandbox_json never written
     db.close();
+  });
+});
+
+/**
+ * v7.6 §C3 frozen wire rule for the /api/analytics `harnesses` / `configs`
+ * query params: split on ",", trim, drop empties, dedupe; absent → [].
+ */
+describe("parseFilterCsv (v7.6 §C3)", () => {
+  test("absent param → empty (no filter on that axis)", () => {
+    expect(parseFilterCsv(null)).toEqual([]);
+  });
+
+  test("splits, trims, drops empties, dedupes — first occurrence wins", () => {
+    expect(parseFilterCsv("pi, claude")).toEqual(["pi", "claude"]);
+    expect(parseFilterCsv(" pi ,, claude ,pi,")).toEqual(["pi", "claude"]);
+    expect(parseFilterCsv("")).toEqual([]);
+    expect(parseFilterCsv(" , ,")).toEqual([]);
+    expect(parseFilterCsv("claude-haiku")).toEqual(["claude-haiku"]);
   });
 });
 

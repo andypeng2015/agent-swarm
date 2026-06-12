@@ -238,6 +238,10 @@ export function ConfigMultiSelect(props: {
                             onChange={() => toggleOne(c.id)}
                           />
                           <ConfigChip configId={c.id} />
+                          {/* v7.6 §C5: dim raw id alongside the pretty chip
+                              (judge model-menu convention) — disambiguates
+                              configs that resolve to the same model name. */}
+                          <span className="cms-row-id dim">{c.id}</span>
                         </label>
                       ))
                     : null}

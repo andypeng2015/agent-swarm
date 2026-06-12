@@ -39,3 +39,31 @@
 .cfg-loading {
   margin-top: 8px;
 }
+
+/* v7.6 item D — Artificial Analysis benchmark columns + hover card. */
+
+.cfg-aa-num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Provisional-measurement marker ("35*" in the source TSV). */
+.cfg-aa-prov {
+  color: var(--accent);
+  margin-left: 1px;
+  font-weight: 600;
+}
+
+/* Variant-choice note inside the AA tip card (why this AA row matches us). */
+.cfg-aa-variant {
+  color: var(--dim);
+  font-size: 11px;
+  margin: 2px 0 6px;
+  max-width: 320px;
+}
+
+.cfg-aa-source {
+  color: var(--dim);
+  font-size: 10px;
+  margin-top: 6px;
+}

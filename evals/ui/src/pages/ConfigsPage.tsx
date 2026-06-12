@@ -1,5 +1,6 @@
 import { type ReactNode, useMemo } from "react";
 import { listConfigs, listRuns } from "../api.ts";
+import { ConfigChip } from "../components/ConfigChip.tsx";
 import { type Column, DataTable } from "../components/DataTable.tsx";
 import { EntityLink } from "../components/EntityLink.tsx";
 import { fmtCost, fmtScore } from "../components/format.ts";
@@ -9,28 +10,211 @@ import { PrettyView } from "../components/PrettyView.tsx";
 import { Spinner } from "../components/Spinner.tsx";
 import { InfoTip, Tooltip } from "../components/Tooltip.tsx";
 import { navigate, usePoll } from "../hooks.ts";
-import type { ConfigJson, RunListItem } from "../types.ts";
+import type { AaBenchmarkJson, ConfigJson, RunListItem } from "../types.ts";
 import "./configs.css";
 
+/* ---- Artificial Analysis columns (v7.6 item D) ---------------------------- */
+
+const AA_SOURCE = "Artificial Analysis, 2026-06-12 snapshot";
+
+function dim(text = "—"): ReactNode {
+  return <span className="dim">{text}</span>;
+}
+
+/** "1M" / "922k" → tokens, for sorting the raw context-window display string. */
+function ctxWindowSortValue(v: string | null): number | null {
+  if (v === null) return null;
+  const m = /^(\d+(?:\.\d+)?)([kM])$/.exec(v);
+  if (!m) return null;
+  return Number(m[1]) * (m[2] === "M" ? 1_000_000 : 1_000);
+}
+
+function ProvisionalStar(): ReactNode {
+  return (
+    <span className="cfg-aa-prov" title="Provisional AA measurement">
+      *
+    </span>
+  );
+}
+
+/** Portal hover card for every AA cell: source row + variant note + all metrics. */
+function AaTipCard(props: { aa: AaBenchmarkJson }): ReactNode {
+  const aa = props.aa;
+  const row = (label: string, value: ReactNode) => (
+    <div className="tip-card-row">
+      <span className="tip-card-label">{label}</span>
+      <span className="tip-card-value">{value}</span>
+    </div>
+  );
+  const num = (v: number | null, fmt: (n: number) => string) => (v === null ? dim() : fmt(v));
+  return (
+    <div className="tip-card">
+      <div className="tip-card-title">AA · {aa.sourceRow}</div>
+      {aa.matchedVariant !== null ? (
+        <div className="cfg-aa-variant">{aa.matchedVariant}</div>
+      ) : null}
+      {row("Creator", aa.creator ?? dim())}
+      {row("Context Window", aa.contextWindow ?? dim())}
+      {row(
+        "Intelligence",
+        aa.intelligenceIndex === null ? (
+          dim()
+        ) : (
+          <>
+            {aa.intelligenceIndex}
+            {aa.provisional ? <ProvisionalStar /> : null}
+          </>
+        ),
+      )}
+      {row(
+        "Blended $/1M",
+        num(aa.blendedUsdPer1M, (n) => `$${n.toFixed(2)}`),
+      )}
+      {row(
+        "Median Tok/s",
+        num(aa.medianTokensPerS, (n) => String(n)),
+      )}
+      {row(
+        "First Chunk",
+        num(aa.latencyFirstChunkS, (n) => `${n.toFixed(2)}s`),
+      )}
+      {row(
+        "Total Response",
+        num(aa.totalResponseS, (n) => `${n.toFixed(2)}s`),
+      )}
+      {aa.provisional ? <div className="cfg-aa-variant">* provisional measurement</div> : null}
+      <div className="cfg-aa-source">{AA_SOURCE}</div>
+    </div>
+  );
+}
+
+/** AA metric column: right-aligned, sorted on the metric, AaTipCard on hover. */
+function aaColumn(opts: {
+  key: string;
+  header: string;
+  headerTip: string;
+  width: string;
+  sortValue: (aa: AaBenchmarkJson) => number | null;
+  render: (aa: AaBenchmarkJson) => ReactNode;
+}): Column<ConfigJson> {
+  return {
+    key: opts.key,
+    header: opts.header,
+    headerTip: `${opts.headerTip} (${AA_SOURCE})`,
+    width: opts.width,
+    align: "right",
+    sortValue: (c) => (c.aa ? opts.sortValue(c.aa) : null),
+    tooltip: (c) => (c.aa ? <AaTipCard aa={c.aa} /> : null),
+    // Unmatched configs (no aa block) render nothing but a dim dash.
+    render: (c) => (c.aa ? opts.render(c.aa) : dim()),
+  };
+}
+
+const aaColumns: Column<ConfigJson>[] = [
+  aaColumn({
+    key: "aaIntel",
+    header: "Intel",
+    headerTip: "Intelligence index",
+    width: "62px",
+    sortValue: (aa) => aa.intelligenceIndex,
+    render: (aa) =>
+      aa.intelligenceIndex === null ? (
+        dim()
+      ) : (
+        <span className="cfg-aa-num">
+          {aa.intelligenceIndex}
+          {aa.provisional ? <ProvisionalStar /> : null}
+        </span>
+      ),
+  }),
+  aaColumn({
+    key: "aaBlended",
+    header: "$/1M",
+    headerTip: "Blended USD per 1M tokens",
+    width: "70px",
+    sortValue: (aa) => aa.blendedUsdPer1M,
+    render: (aa) =>
+      aa.blendedUsdPer1M === null ? (
+        dim()
+      ) : (
+        <span className="cfg-aa-num">${aa.blendedUsdPer1M.toFixed(2)}</span>
+      ),
+  }),
+  aaColumn({
+    key: "aaTokS",
+    header: "Tok/s",
+    headerTip: "Median output tokens per second",
+    width: "62px",
+    sortValue: (aa) => aa.medianTokensPerS,
+    render: (aa) =>
+      aa.medianTokensPerS === null ? (
+        dim()
+      ) : (
+        <span className="cfg-aa-num">{aa.medianTokensPerS}</span>
+      ),
+  }),
+  aaColumn({
+    key: "aaTtfc",
+    header: "TTFC",
+    headerTip: "Latency to first answer chunk, seconds",
+    width: "66px",
+    sortValue: (aa) => aa.latencyFirstChunkS,
+    render: (aa) =>
+      aa.latencyFirstChunkS === null ? (
+        dim()
+      ) : (
+        <span className="cfg-aa-num">{aa.latencyFirstChunkS.toFixed(1)}s</span>
+      ),
+  }),
+  aaColumn({
+    key: "aaE2e",
+    header: "E2E",
+    headerTip: "Total response time, seconds",
+    width: "66px",
+    sortValue: (aa) => aa.totalResponseS,
+    render: (aa) =>
+      aa.totalResponseS === null ? (
+        dim()
+      ) : (
+        <span className="cfg-aa-num">{aa.totalResponseS.toFixed(1)}s</span>
+      ),
+  }),
+  aaColumn({
+    key: "aaCtx",
+    header: "Ctx",
+    headerTip: "Context window",
+    width: "56px",
+    sortValue: (aa) => ctxWindowSortValue(aa.contextWindow),
+    render: (aa) =>
+      aa.contextWindow === null ? dim() : <span className="cfg-aa-num">{aa.contextWindow}</span>,
+  }),
+];
+
+/* ---- Configs list ---------------------------------------------------------- */
+
+// Tier and Env Keys columns are deliberately absent: the catalog contract
+// (configs/index.test.ts) forbids both on every entry, so they were constant
+// "—"/0 noise. Both still show in the hover card and on the detail page.
 const configColumns: Column<ConfigJson>[] = [
   {
-    key: "id",
-    header: "Id",
-    width: "190px",
-    searchText: (c) => c.id,
-    // Self-referential on this page — plain chip; the row click opens the detail.
-    render: (c) => <span className="chip">{c.id}</span>,
+    key: "config",
+    header: "Config",
+    width: "200px",
+    sortValue: (c) => c.id,
+    searchText: (c) => `${c.id} ${c.label ?? ""}`,
+    // C5: pretty entry; the raw id lives in the ConfigChip hover card.
+    render: (c) => <ConfigChip configId={c.id} />,
   },
   {
     key: "label",
     header: "Label",
     searchText: (c) => c.label ?? "",
-    render: (c) => c.label ?? <span className="dim">—</span>,
+    render: (c) => c.label ?? dim(),
   },
   {
     key: "harness",
     header: "Harness",
-    width: "130px",
+    width: "120px",
     sortValue: (c) => c.provider,
     filterOptions: (rows) => [...new Set(rows.map((c) => c.provider))].sort(),
     filterValue: (c) => c.provider,
@@ -41,39 +225,17 @@ const configColumns: Column<ConfigJson>[] = [
   {
     key: "model",
     header: "Model",
-    width: "190px",
+    width: "170px",
     sortValue: (c) => c.model,
     searchText: (c) => c.model ?? "",
     titleText: (c) => c.model ?? "Harness default model",
     render: (c) => <ModelChip model={c.model} />,
   },
-  {
-    key: "tier",
-    header: "Tier",
-    width: "72px",
-    sortValue: (c) => c.modelTier,
-    render: (c) => c.modelTier ?? <span className="dim">—</span>,
-  },
-  {
-    key: "envKeys",
-    header: "Env Keys",
-    headerTip: "Env values stay server-side — only key names are exposed",
-    width: "80px",
-    align: "right",
-    sortValue: (c) => c.envKeys.length,
-    render: (c) =>
-      c.envKeys.length === 0 ? (
-        <span className="dim">0</span>
-      ) : (
-        <Tooltip text={c.envKeys.join("\n")}>
-          <span>{c.envKeys.length}</span>
-        </Tooltip>
-      ),
-  },
+  ...aaColumns,
   {
     key: "default",
     header: "Default",
-    width: "72px",
+    width: "64px",
     align: "center",
     sortValue: (c) => (c.isDefault ? 0 : 1),
     titleText: (c) =>
@@ -84,7 +246,7 @@ const configColumns: Column<ConfigJson>[] = [
           ✓
         </span>
       ) : (
-        <span className="dim">—</span>
+        dim()
       ),
   },
 ];
@@ -102,7 +264,7 @@ function ConfigList(): ReactNode {
           columns={configColumns}
           rowKey={(c) => c.id}
           onRowClick={(c) => navigate(`#/configs/${c.id}`)}
-          defaultSort={{ key: "id", dir: "asc" }}
+          defaultSort={{ key: "config", dir: "asc" }}
           searchPlaceholder="Search configs…"
           emptyText="No configs registered"
         />
@@ -264,10 +426,25 @@ function ConfigDetail(props: { configId: string }): ReactNode {
           <PrettyView
             value={config}
             rawLabel="config"
-            labels={{ provider: "Harness", isDefault: "Default" }}
+            labels={{
+              provider: "Harness",
+              isDefault: "Default",
+              aa: "Artificial Analysis (2026-06-12)",
+              sourceRow: "Source Row",
+              matchedVariant: "Matched Variant",
+              contextWindow: "Context Window",
+              intelligenceIndex: "Intelligence Index",
+              blendedUsdPer1M: "Blended $ / 1M Tokens",
+              medianTokensPerS: "Median Tokens/s",
+              latencyFirstChunkS: "First Chunk (s)",
+              totalResponseS: "Total Response (s)",
+            }}
             renderers={{
               provider: (v) => <HarnessIcon harness={typeof v === "string" ? v : null} showLabel />,
               model: (v) => <ModelChip model={typeof v === "string" ? v : null} />,
+              blendedUsdPer1M: (v) => (typeof v === "number" ? `$${v.toFixed(2)}` : dim()),
+              latencyFirstChunkS: (v) => (typeof v === "number" ? `${v.toFixed(2)}s` : dim()),
+              totalResponseS: (v) => (typeof v === "number" ? `${v.toFixed(2)}s` : dim()),
             }}
           />
         </div>

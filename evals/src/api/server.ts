@@ -23,6 +23,7 @@ import { executeRun, killAllActiveStacks, killRunStacks } from "../runner/index.
 import { type SessionLogRow, SwarmClient } from "../swarm/client.ts";
 import { cleanVersion } from "../swarm/version.ts";
 import {
+  type AnalyticsFilter,
   type AttemptRow,
   type AttemptTaskRecord,
   type AttemptTasksSnapshot,
@@ -357,6 +358,20 @@ function numOrNull(v: unknown): number | null {
 }
 
 /**
+ * CSV filter query param (v7.6 §C3 — frozen wire rule): split on ",", trim,
+ * drop empties, dedupe. Absent param → [] (no filter on that axis).
+ */
+export function parseFilterCsv(value: string | null): string[] {
+  if (value === null) return [];
+  const out: string[] = [];
+  for (const part of value.split(",")) {
+    const trimmed = part.trim();
+    if (trimmed.length > 0 && !out.includes(trimmed)) out.push(trimmed);
+  }
+  return out;
+}
+
+/**
  * Attempt rows embedded in API responses always carry `workers` (v7 §10.2):
  * the per-member roster snapshot when captured, explicit null on pre-v7 rows
  * (the UI then falls back to the sandboxJson worker entries).
@@ -647,10 +662,20 @@ export async function startServer(port = Number(process.env.EVALS_PORT ?? 4801))
       },
       /**
        * Pre-aggregated analytics (v5 spec §1 — frozen contract). One SQL pass
-       * over attempts × eval_runs, shaped by the pure buildAnalytics(). No
-       * query params in v5 — the client filters from the embedded data.
+       * over attempts × eval_runs, shaped by the pure buildAnalytics().
+       *
+       * v7.6 §C3 (frozen wire contract): optional `harnesses` and `configs`
+       * query params (CSV — split on ",", trim, drop empties, dedupe) narrow
+       * the source rows BEFORE aggregation, so every section re-aggregates
+       * over the filtered rows. Unknown values match nothing (empty
+       * aggregates, no error); no params → the unfiltered v5 behavior.
        */
-      "/api/analytics": async () => {
+      "/api/analytics": async (req) => {
+        const params = new URL(req.url).searchParams;
+        const filter: AnalyticsFilter = {
+          harnesses: parseFilterCsv(params.get("harnesses")),
+          configIds: parseFilterCsv(params.get("configs")),
+        };
         const res = await db.execute(ANALYTICS_SQL);
         const rows: AnalyticsSourceRow[] = res.rows.map((r) => ({
           runId: r.run_id as string,
@@ -675,7 +700,7 @@ export async function startServer(port = Number(process.env.EVALS_PORT ?? 4801))
         }));
         // v7 §7.1/§8: historical bare-alias model keys group under the latest
         // concrete family id — same map the UI receives on /api/models.
-        return json(buildAnalytics(rows, loadRegistry(), await getClaudeAliasMap()));
+        return json(buildAnalytics(rows, loadRegistry(), await getClaudeAliasMap(), filter));
       },
       "/api/artifacts/:id": async (req) => {
         const artifact = await getArtifact(db, req.params.id);

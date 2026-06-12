@@ -1,15 +1,16 @@
 import type { ReactNode } from "react";
 import { useConfigs, useModels } from "../hooks.ts";
-import type { ConfigJson } from "../types.ts";
+import type { AaBenchmarkJson, ConfigJson } from "../types.ts";
 import { HarnessIcon } from "./HarnessIcon.tsx";
 import { Tooltip } from "./Tooltip.tsx";
 
 /**
  * Reusable config rendering (v4 item 13), analogous to ModelChip: harness icon
  * + pretty model name, with a hover card carrying the full config info (id,
- * label, provider, model, tier, env keys, isDefault). Data comes from the
- * cached useConfigs() catalog; ids missing from the registry (removed config /
- * older run) gracefully fall back to the raw id.
+ * label, provider, model, tier, env keys, isDefault — plus the Artificial
+ * Analysis highlight rows when the catalog carries an `aa` block, v7.6 item D).
+ * Data comes from the cached useConfigs() catalog; ids missing from the
+ * registry (removed config / older run) gracefully fall back to the raw id.
  */
 export function ConfigChip(props: {
   configId: string;
@@ -96,7 +97,48 @@ function ConfigCard(props: { config: ConfigJson; modelName: string }): ReactNode
       <CardRow label="Default">
         {c.isDefault ? <span className="tone-green">✓</span> : <span className="dim">—</span>}
       </CardRow>
+      {c.aa ? <AaHighlightRows aa={c.aa} /> : null}
     </div>
+  );
+}
+
+/**
+ * Artificial Analysis highlights (v7.6 item D) — appended to the hover card
+ * only when the catalog matched this config to an AA row; absent block renders
+ * nothing. Full metrics + variant note live on the configs page / detail view.
+ */
+function AaHighlightRows(props: { aa: AaBenchmarkJson }): ReactNode {
+  const aa = props.aa;
+  return (
+    <>
+      <CardRow label="AA Intel">
+        {aa.intelligenceIndex !== null ? (
+          <>
+            {aa.intelligenceIndex}
+            {aa.provisional ? (
+              <span className="tone-accent" title="Provisional AA measurement">
+                *
+              </span>
+            ) : null}
+          </>
+        ) : (
+          <span className="dim">—</span>
+        )}
+      </CardRow>
+      <CardRow label="AA $/1M">
+        {aa.blendedUsdPer1M !== null ? (
+          `$${aa.blendedUsdPer1M.toFixed(2)}`
+        ) : (
+          <span className="dim">—</span>
+        )}
+      </CardRow>
+      <CardRow label="AA Tok/s">
+        {aa.medianTokensPerS !== null ? aa.medianTokensPerS : <span className="dim">—</span>}
+      </CardRow>
+      <CardRow label="AA Source">
+        <span className="dim">{aa.sourceRow}</span>
+      </CardRow>
+    </>
   );
 }
 
