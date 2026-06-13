@@ -3,9 +3,9 @@ date: 2026-06-12T00:00:00+02:00
 author: Taras
 topic: "Evals scenario catalog redesign for score discrimination"
 tags: [brainstorm, evals, scoring, scenarios, judges]
-status: in-progress
+status: complete
 exploration_type: problem
-last_updated: 2026-06-12
+last_updated: 2026-06-13
 last_updated_by: Claude
 ---
 
@@ -101,20 +101,123 @@ Yes — the judge should have access to **all** workers, and ("important!") its 
 
 **Insights:** Scope now includes runner work, not just schema + scenarios: judge toolset over the full `ctx.workers` roster (read files / exec per worker) + a roster manifest injected into the judge's system prompt. This unblocks v6's `cross-worker-invent` and makes judge-fed dimensions viable for multi-worker/lead scenarios. The roster data already exists (`AttemptRow.workers` / WorkerRosterEntry).
 
+### Q: Which capability domains should the first batch cover?
+All four: (1) Code build/debug/fix, (2) Memory + distractors, (3) Multi-worker coordination, (4) Data/API investigation.
+
+**Insights:** With 5–8 scenarios and 4 domains, that's 1–2 scenarios per domain spanning easy→hard. The soft dimensions from the brief (instruction-following, communication) aren't separate domains — they weave in as judge-fed dimensions across scenarios (e.g. report quality on the investigation scenario, constraint adherence on the code scenario).
+
+### Q: Per-attempt cost ceiling for the heaviest scenarios?
+~$1–2 at the deep end; easy scenarios stay ≤$0.25. Calibration sweep for an 8-scenario batch lands around $30–60.
+
+**Insights:** Enough headroom for multi-worker chains + agentic judges on hard scenarios. Cost ceilings become per-scenario metadata (also feeds the opt-in efficiency dimension's budget).
+
 ## Synthesis
 
 ### Key Decisions
-- [Filled after exploration]
 
-### Open Questions
-- [Filled after exploration]
+1. **Tiered grading everywhere** — both deterministic checks and judges become graded, not binary. `CheckResult` gains `score?: number` (omitted → derived from `pass`).
+2. **Gates + threshold pass semantics** — checks split into *gates* (binary must-pass: "did the scenario fundamentally happen") and *graded* components. `passed = allGatesPass && score ≥ passThreshold`. Score is always computed and stored, even on gate failure.
+3. **Named weighted dimensions** are the composition unit: `score = Σ wᵢ·dimᵢ / Σ wᵢ`. Each dimension is fed by graded deterministic checks OR a judge rubric (llm or agentic). Ladders live *inside* dimensions as ordered subgoal checks.
+4. **Fixed core taxonomy + custom**: `correctness`, `completeness`, `efficiency`, `instruction-following`, `communication` aggregate cross-scenario in analytics; custom dimension names allowed, scoped to their scenario.
+5. **Efficiency = deterministic, opt-in** — computed from attempt `costUsd`/tokens/duration vs a per-scenario budget; no judge. Weight 0/omitted by default.
+6. **Judge cost is a soft constraint** — design driver is signal quality per dimension, not judge spend. Deterministic preferred where more *reliable*, not because cheaper.
+7. **Clean-slate catalog** — the existing 7 scenarios are deleted (too easy), mined for machinery (seeding, rosters, relay, exec checks). New batch covers all 4 domains: code build/debug/fix, memory + distractors, multi-worker coordination, data/API investigation.
+8. **Agentic judge extension is in scope** — judge gets tools over the full `ctx.workers` roster plus a system-prompt manifest of available workers and their roles (names, templates, lead vs member).
+9. **Calibration run gates shipping** — each new scenario × frontier + budget anchor configs × 3 attempts; ship only if anchors separate by ~≥0.2. Spread numbers get recorded as the scenario's baseline.
+10. **Cost ceilings**: ≤$0.25/attempt easy, ~$1–2 deep end; ceilings stored as scenario metadata (doubles as the efficiency-dimension budget).
+
+### Proposed OutcomeSpec v2 (sketch)
+
+```ts
+interface OutcomeSpec {
+  gates?: DeterministicCheck[];        // binary must-pass
+  dimensions?: DimensionSpec[];        // weighted, graded
+  passThreshold?: number;              // applies to weighted score (configurable per scenario; default 0.75)
+  // v1 fields (checks / llmJudge / agenticJudge) normalized internally:
+  // checks → gates; llmJudge/agenticJudge → single dimension weight 1
+}
+
+interface DimensionSpec {
+  name: CoreDimension | (string & {}); // core enum validated, custom allowed
+  weight: number;
+  checks?: GradedCheck[];              // fn returns CheckResult { pass, score? } (+ optional per-check weight)
+  judge?: { rubric: string; model?: string; agentic?: boolean; maxSteps?: number };
+}
+```
+
+Storage: `judgments` gains nullable `dimension` + `weight` columns (kind stays `'llm' | 'deterministic'`); per-judgment rows are the source of truth for dimension breakdowns (attempt-level rollup deferred — future migration if analytics queries need it). Old rows have NULLs → render exactly as today.
+
+### Grading semantics (review additions)
+
+- **Graded check contract**: a graded check returns `score ∈ [0,1]` (plus optional detail); the stored `pass` is derived (`score ≥ 1` → full credit). Dimension score = weighted average of member check scores (per-check `weight`, default 1).
+- **Failure semantics**: a graded check that *throws* scores 0 (counts against the config — its sandbox state caused it). A judge **infra** failure (after the existing agentic→llm fallback) marks the attempt `error` and excludes it from analytics — never silently scored 0, so judge flake can't masquerade as a bad config.
+- **Ship-gate formula (calibration)**: frontier anchors = claude (opus), codex (gpt-5-5); budget anchors = pi (haiku, deepseek flash, grok build, gemini 3 flash). Gate: `mean(frontier avg) − mean(budget avg) ≥ 0.2` per scenario, each anchor averaged over 3 attempts; borderline gaps (0.1–0.3) get +2 attempts before the verdict.
+- **Core dimension definitions** (keep rubrics consistent cross-scenario): *correctness* = outputs/answers are right; *completeness* = all subgoals/parts addressed; *efficiency* = resource use vs budget; *instruction-following* = constraints and required formats respected; *communication* = clarity, specificity, and citation quality of reports/updates.
+- **Non-goal (v2)**: per-dimension pass thresholds — only the global `passThreshold` exists.
+
+### First batch sketch (7 scenarios, easy→hard)
+
+| # | Scenario | Domain | Workers | Grading | Cost/attempt | Expected spread (budget→frontier) |
+|---|---|---|---|---|---|---|
+| 1 | `sql-audit` — seeded DB ~30 tasks + red herrings; graded questions (count → which → cross-reference anomaly) | Data/API | 1 | correctness: answer-key checks per question; communication: judge on final report | ~$0.15–0.3 | 0.4 → 0.9 |
+| 2 | `memory-distractor` — seeded ground-truth memories; prompt embeds plausible-wrong defaults; facts of graded obscurity | Memory | 1 | correctness: per-fact checks; custom `retrieval-fidelity`: agentic judge verifies retrieved-not-guessed | ~$0.15 | 0.3 → 0.85 |
+| 3 | `bug-ladder` — seeded repo, 4–5 bugs of graded difficulty (typo → logic → edge case → subtle), each with own test group | Code | 1 | correctness: fraction of test groups green; instruction-following: tests-unmodified check + constraint adherence; efficiency: vs $0.5 budget (first end-to-end exercise of the dimension) | ~$0.3–0.5 | 0.35 → 0.9 |
+| 4 | `cross-worker-invent` — worker A invents value (UUID); B, C must obtain via communication, not guessing | Multi-worker | 3 | correctness: per-hop propagation checks; custom `provenance`: agentic judge cross-checks all workers' sandboxes | ~$0.3–0.5 | 0.3 → 0.8 |
+| 5 | `relay-pipeline` — graded successor of relay-handoff: chained transforms where each stage's fidelity is independently checkable | Multi-worker | 2–3 | correctness per stage (chained deps = natural partial credit); completeness | ~$0.3 | 0.4 → 0.9 |
+| 6 | `plan-implement-review` — lead decomposes 3-task chain: plan → implement → review-with-citations | Multi-worker + Code | lead + 2–3 | correctness: stage subgoals; communication: judge grades review specificity (cites real lines); instruction-following | ~$1–2 | 0.3 → 0.8 |
+| 7 | `distributed-audit` (stretch) — investigation sharded across workers, lead merges into one report | Data + Multi-worker | lead + 2 | completeness: shard coverage checks; correctness: merged answer key; communication: judge on report | ~$1 | 0.25 → 0.75 |
+
+Notes: scenarios 4 and 5 overlap deliberately but grade different things — 4 grades *provenance* (value obtained via communication, not guessed), 5 grades *transformation fidelity* along the chain. Deep scenarios (6, 7) need a raised `timeoutMs`.
+
+### Resolved during review (2026-06-13)
+
+- **Deleted scenarios / old attempts**: no tombstones needed — old attempts can simply be deleted; the eval DB is local. Removes the "must keep rendering" constraint for the old catalog's attempts.
+- **Judge variance**: simple first — single judge call per dimension; N-sample/median can come later if soft dimensions prove noisy.
+- **Dimension breakdown storage**: per-judgment rows only for now (nullable `dimension` + `weight` columns); attempt-level rollup is a future migration if analytics queries need it.
+- **`passThreshold`**: configurable per scenario; default **0.75**.
+- **Calibration anchor configs**: claude (opus) + codex (gpt-5-5), and pi (haiku, deepseek flash, grok build, gemini 3 flash) — 6 anchors first; opencode and other variants later. Note: 6 anchors × 3 attempts raises sweep cost vs the 2–3-anchor estimate (~$60–180 for the full batch at the deep end).
+
+### Resolved during review — follow-up
+
+- **Anti-gaming**: becomes a design-time checklist applied to **every** new scenario (not just distractor ones): (1) distractors genuinely plausible, (2) ground truth not derivable from the prompt alone, (3) checks not satisfiable by echoing the prompt or guessing, (4) grading criteria not leaked to the worker. The calibration sweep then verifies empirically — a gameable scenario shows up as everyone acing it and fails the ≥0.2 spread gate.
 
 ### Constraints Identified
-- [Filled after exploration]
+
+- Eval DB is local/disposable — old attempts for deleted scenarios get purged rather than preserved; new judgment/attempt columns stay nullable so any retained v1 rows render unchanged.
+- Scenarios self-contained in E2B sandboxes (seeding machinery: sqlDump, memories, repo fixtures).
+- Round 9 (UI/analytics) is in flight — this lands as its own round after; analytics additions (per-dimension views, saturation flags) must layer on round-9 surfaces, not fork them.
+- Agentic judge is worker-0-bound today — extension is a prerequisite for scenarios 4, 6, 7.
+- `judgments.kind` has a CHECK constraint (`'llm' | 'deterministic'`) — keep kinds stable, add columns instead.
 
 ### Core Requirements
-- [Filled after exploration]
+
+1. OutcomeSpec v2: gates + weighted dimensions (checks or judge per dimension), `CheckResult.score`, back-compat normalization of v1 specs.
+2. Runner: weighted aggregation, score-on-gate-failure, per-dimension judgment persistence.
+3. Agentic judge: full-roster tools + worker-roles manifest in system prompt + access to task records/session transcripts (required by the communication dimensions in scenarios 1, 6, 7).
+4. Efficiency dimension: deterministic scoring vs per-scenario budget metadata.
+5. Catalog: delete 7 old scenarios and purge their stored attempts (local DB), add the 7-scenario batch above.
+6. Analytics: per-dimension breakdown (core taxonomy), attempt score now meaningful as a continuous rank signal.
+7. Calibration sweep tooling/recipe + documented per-scenario baseline spreads; ship gate = anchors separate by ~≥0.2. Anchor set: claude (opus), codex (gpt-5-5), pi (haiku / deepseek flash / grok build / gemini 3 flash).
+8. Anti-gaming design checklist applied to every scenario (plausible distractors; truth not derivable from prompt; checks not satisfiable by echo/guess; grading criteria not leaked to workers).
 
 ## Next Steps
 
-- [Handoff decision: research, plan, or parked]
+- ~~`/review` critique pass on this document~~ — done 2026-06-13, findings auto-applied (see Review Errata).
+- Convert into an implementation round via `/desplega:create-plan` with this brainstorm as input context.
+
+## Review Errata
+
+_Reviewed: 2026-06-13 by Claude (auto-apply mode)_
+
+### Applied
+
+- [x] **Failure semantics were undefined** — specified: graded check throws → score 0; judge infra failure (post-fallback) → attempt `error`, excluded from analytics. (→ Grading semantics)
+- [x] **Graded-check `pass`/`score` relationship was undefined** — specified: `score ∈ [0,1]`, stored `pass` derived as `score ≥ 1`; dimension = weighted avg of member checks. (→ Grading semantics)
+- [x] **Ship gate was imprecise with 6 anchors** — specified frontier/budget partition and `mean(frontier) − mean(budget) ≥ 0.2` formula, +2 attempts for borderline gaps. (→ Grading semantics)
+- [x] **Efficiency dimension wasn't exercised by any batch scenario** — added to `bug-ladder` (vs $0.5 budget). (→ batch table row 3)
+- [x] **Communication dimensions need judge access to transcripts/task records**, not just sandbox FS — added to Core Requirement 3.
+- [x] **Core dimensions lacked definitions** (rubric drift risk across scenarios) — added one-liners. (→ Grading semantics)
+- [x] `passThreshold` inconsistency: code sketch said "~0.6" while the review resolution set 0.75 — aligned to 0.75.
+- [x] Storage paragraph contradicted the review resolution (mentioned attempt-level rollup JSON as part of v2) — aligned to per-judgment rows only, rollup deferred.
+- [x] Scenario 4 vs 5 overlap justified explicitly; noted raised `timeoutMs` for deep scenarios 6–7. (→ note under batch table)
+- [x] Declared explicit v2 non-goal: per-dimension pass thresholds (prevents plan scope creep).
