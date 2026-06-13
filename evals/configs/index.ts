@@ -217,6 +217,58 @@ export const configs: HarnessConfig[] = [
     provider: "pi",
     model: "openrouter/google/gemini-3.1-flash-lite",
   },
+  // Round-10 leaderboard additions (Hermes Agent + OpenClaw agent-usage
+  // top-20s, 2026-06): models with heavy real-world agent usage missing from
+  // the catalog. Every slug verified against src/be/modelsdev-cache.json
+  // openrouter section with tool_call: true; ":free" variants skipped.
+  // Skipped from the same leaderboard cut as superseded by catalog entries:
+  // Step 3.5 Flash (step-3.7-flash), Gemini 2.5 Flash / Flash Lite
+  // (gemini-3-flash-preview / gemini-3.1-flash-lite), GLM 4.5 Air
+  // (glm-4.7-flash / glm-5.1), MiniMax M2.5 (already present).
+  {
+    // xAI's coding/build-focused line — distinct model from Grok 4.3.
+    id: "pi-grok-build-0.1",
+    label: "pi-mono / Grok Build 0.1 (OpenRouter)",
+    provider: "pi",
+    model: "openrouter/x-ai/grok-build-0.1",
+  },
+  {
+    // OpenRouter's own stealth/alpha model (#1 on Hermes Agent by tokens) —
+    // the vendor segment really is "openrouter", hence the doubled prefix.
+    id: "pi-owl-alpha",
+    label: "pi-mono / Owl Alpha (OpenRouter)",
+    provider: "pi",
+    model: "openrouter/openrouter/owl-alpha",
+  },
+  {
+    id: "pi-gemini-3.5-flash",
+    label: "pi-mono / Gemini 3.5 Flash (OpenRouter)",
+    provider: "pi",
+    model: "openrouter/google/gemini-3.5-flash",
+  },
+  {
+    // Paid slug, not the ":free" twin — free-tier rate limits would starve runs.
+    id: "pi-nemotron-3-super",
+    label: "pi-mono / Nemotron 3 Super (OpenRouter)",
+    provider: "pi",
+    model: "openrouter/nvidia/nemotron-3-super-120b-a12b",
+  },
+  {
+    // Previously skipped as superseded by M3, but top-8 by usage on both
+    // leaderboards — usage earns it a slot alongside M2.5/M3.
+    id: "pi-minimax-m2.7",
+    label: "pi-mono / MiniMax M2.7 (OpenRouter)",
+    provider: "pi",
+    model: "openrouter/minimax/minimax-m2.7",
+  },
+  {
+    // Previously skipped for the 3.7 line, but carries 189B tokens/month of
+    // agent usage — kept alongside qwen3.7-plus.
+    id: "pi-qwen3.6-plus",
+    label: "pi-mono / Qwen3.6 Plus (OpenRouter)",
+    provider: "pi",
+    model: "openrouter/qwen/qwen3.6-plus",
+  },
   {
     id: "opencode-gemini-flash",
     label: "opencode / Gemini 3 flash (OpenRouter)",
@@ -347,6 +399,45 @@ export const configs: HarnessConfig[] = [
     label: "opencode / Mercury 2 (OpenRouter)",
     provider: "opencode",
     model: "openrouter/inception/mercury-2",
+  },
+  // Round-10 leaderboard additions — opencode twins of the pi- entries above.
+  {
+    id: "opencode-grok-build-0.1",
+    label: "opencode / Grok Build 0.1 (OpenRouter)",
+    provider: "opencode",
+    model: "openrouter/x-ai/grok-build-0.1",
+  },
+  {
+    // Doubled prefix is correct — see the pi- twin's note.
+    id: "opencode-owl-alpha",
+    label: "opencode / Owl Alpha (OpenRouter)",
+    provider: "opencode",
+    model: "openrouter/openrouter/owl-alpha",
+  },
+  {
+    id: "opencode-gemini-3.5-flash",
+    label: "opencode / Gemini 3.5 Flash (OpenRouter)",
+    provider: "opencode",
+    model: "openrouter/google/gemini-3.5-flash",
+  },
+  {
+    // Paid slug, not the ":free" twin — free-tier rate limits would starve runs.
+    id: "opencode-nemotron-3-super",
+    label: "opencode / Nemotron 3 Super (OpenRouter)",
+    provider: "opencode",
+    model: "openrouter/nvidia/nemotron-3-super-120b-a12b",
+  },
+  {
+    id: "opencode-minimax-m2.7",
+    label: "opencode / MiniMax M2.7 (OpenRouter)",
+    provider: "opencode",
+    model: "openrouter/minimax/minimax-m2.7",
+  },
+  {
+    id: "opencode-qwen3.6-plus",
+    label: "opencode / Qwen3.6 Plus (OpenRouter)",
+    provider: "opencode",
+    model: "openrouter/qwen/qwen3.6-plus",
   },
   {
     id: "codex-5.4-mini",

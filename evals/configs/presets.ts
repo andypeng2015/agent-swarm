@@ -60,6 +60,10 @@ export const CONFIG_PRESETS: ConfigPreset[] = [
       // Grok 4.3, Mistral Medium 3.5 and Mercury 2 are open_weights: false).
       "pi-hy3-preview",
       "pi-step-3.7-flash",
+      // Round-10 leaderboard additions: the open-weight pair (Gemini 3.5 Flash,
+      // Qwen3.6 Plus, Grok Build 0.1 and Owl Alpha are open_weights: false).
+      "pi-nemotron-3-super",
+      "pi-minimax-m2.7",
       "opencode-deepseek-flash",
       "opencode-deepseek-pro",
       "opencode-kimi-k2.5",
@@ -73,6 +77,9 @@ export const CONFIG_PRESETS: ConfigPreset[] = [
       "opencode-nemotron-3-ultra",
       "opencode-hy3-preview",
       "opencode-step-3.7-flash",
+      // Round-10 leaderboard additions — opencode twins.
+      "opencode-nemotron-3-super",
+      "opencode-minimax-m2.7",
     ],
   },
   {

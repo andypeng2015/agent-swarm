@@ -282,6 +282,9 @@ describe("CONFIG_PRESETS (v7.7 item 1 — frozen contract)", () => {
       // Round-9 open-weight additions.
       "hy3-preview",
       "step-3.7-flash",
+      // Round-10 leaderboard additions (open_weights: true).
+      "nemotron-3-super",
+      "minimax-m2.7",
     ]) {
       expect(oss).toContain(`pi-${short}`);
       expect(oss).toContain(`opencode-${short}`);
@@ -290,8 +293,19 @@ describe("CONFIG_PRESETS (v7.7 item 1 — frozen contract)", () => {
     for (const id of ["pi-kimi-k2.5", "pi-minimax-m2.5", "opencode-kimi-k2.5"]) {
       expect(oss).toContain(id);
     }
-    // open_weights: false additions stay out of oss (round-9 proprietary lift).
-    for (const short of ["minimax-m3", "qwen3.7-max", "qwen3.7-plus", "grok-4.3", "mercury-2"]) {
+    // open_weights: false additions stay out of oss (round-9 proprietary lift +
+    // round-10 leaderboard additions).
+    for (const short of [
+      "minimax-m3",
+      "qwen3.7-max",
+      "qwen3.7-plus",
+      "grok-4.3",
+      "mercury-2",
+      "grok-build-0.1",
+      "owl-alpha",
+      "gemini-3.5-flash",
+      "qwen3.6-plus",
+    ]) {
       expect(oss).not.toContain(`pi-${short}`);
     }
   });

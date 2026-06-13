@@ -246,6 +246,21 @@ export const CONFIG_AA_ROWS: Record<string, { sourceRow: string; matchedVariant:
     "pi-mercury-2": { sourceRow: "Mercury 2", matchedVariant: null },
     // [II 34] — same row as the opencode twin (twin completion).
     "pi-gemini-flash-lite": { sourceRow: "Gemini 3.1 Flash-Lite", matchedVariant: null },
+    // Round-10 leaderboard additions below (AA snapshot 2026-06-12).
+    // pi-grok-build-0.1 / pi-owl-alpha → UNMATCHED (no rows in the TSV).
+    // [II 55] — exact name match; same row pi-gemini-flash spec-pins, now joined natively.
+    "pi-gemini-3.5-flash": {
+      sourceRow: "Gemini 3.5 Flash",
+      matchedVariant:
+        "Default row — OpenRouter serves the default config, so the " +
+        '"(medium)"/"(minimal)" effort variants are rejected.',
+    },
+    // [II 36] — unique row ("Nemotron 3 Ultra"/"Nano" are different models, not variants).
+    "pi-nemotron-3-super": { sourceRow: "NVIDIA Nemotron 3 Super", matchedVariant: null },
+    // [II 50] — exact name match; MiniMax-M3 is a different model, not a variant.
+    "pi-minimax-m2.7": { sourceRow: "MiniMax-M2.7", matchedVariant: null },
+    // [II 50] — exact name match (Qwen3.6 27B / 35B A3B are different models, not variants).
+    "pi-qwen3.6-plus": { sourceRow: "Qwen3.6 Plus", matchedVariant: null },
     // Same rows as the pi- twins: identical OpenRouter model ids.
     "opencode-gemini-flash": {
       sourceRow: "Gemini 3.5 Flash",
@@ -312,6 +327,16 @@ export const CONFIG_AA_ROWS: Record<string, { sourceRow: string; matchedVariant:
     },
     "opencode-step-3.7-flash": { sourceRow: "Step 3.7 Flash", matchedVariant: null },
     "opencode-mercury-2": { sourceRow: "Mercury 2", matchedVariant: null },
+    // Round-10 leaderboard additions — same rows/justifications as the pi- twins above.
+    "opencode-gemini-3.5-flash": {
+      sourceRow: "Gemini 3.5 Flash",
+      matchedVariant:
+        "Default row — OpenRouter serves the default config, so the " +
+        '"(medium)"/"(minimal)" effort variants are rejected.',
+    },
+    "opencode-nemotron-3-super": { sourceRow: "NVIDIA Nemotron 3 Super", matchedVariant: null },
+    "opencode-minimax-m2.7": { sourceRow: "MiniMax-M2.7", matchedVariant: null },
+    "opencode-qwen3.6-plus": { sourceRow: "Qwen3.6 Plus", matchedVariant: null },
     // [II 38] — effort matching; "(xhigh)" [49] and bare "GPT-5.4 mini" [23] rejected.
     "codex-5.4-mini": {
       sourceRow: "GPT-5.4 mini (medium)",
@@ -344,6 +369,12 @@ export const AA_UNMATCHED_CONFIG_IDS: Record<string, string> = {
   "pi-kimi-k2.5": "TSV has Kimi K2.6 only — no K2.5",
   "opencode-kimi-k2.5": "TSV has Kimi K2.6 only — no K2.5",
   "codex-5.4": "TSV has no plain GPT-5.4 rows — only mini/nano",
+  // Round-10 leaderboard additions.
+  "pi-grok-build-0.1": "no Grok Build row in the 2026-06-12 snapshot — only Grok 4.3 effort rows",
+  "opencode-grok-build-0.1":
+    "no Grok Build row in the 2026-06-12 snapshot — only Grok 4.3 effort rows",
+  "pi-owl-alpha": "no Owl Alpha row — AA does not benchmark the OpenRouter stealth model",
+  "opencode-owl-alpha": "no Owl Alpha row — AA does not benchmark the OpenRouter stealth model",
 };
 
 /** Joined blocks, built eagerly so a mapping → missing-row typo fails at import. */
