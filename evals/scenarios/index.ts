@@ -2,16 +2,21 @@ import type { Scenario } from "../src/types.ts";
 import { bugLadder } from "./bug-ladder.ts";
 import { crossWorkerInvent } from "./cross-worker-invent.ts";
 import { distributedAudit } from "./distributed-audit.ts";
+import { failureRecovery, failureRecoveryMixed } from "./failure-recovery.ts";
+import { memoryCoordination } from "./memory-coordination.ts";
 import { memoryDistractor } from "./memory-distractor.ts";
 import { planImplementReview } from "./plan-implement-review.ts";
 import { relayPipeline } from "./relay-pipeline.ts";
 import { sqlAudit } from "./sql-audit.ts";
 
 // v8.0 round-11 catalog (OutcomeSpec v2). The 7 old scenarios were deleted in
-// Phase 6 scaffolding; the 7 new discriminating scenarios — sql-audit,
-// memory-distractor, bug-ladder, cross-worker-invent, relay-pipeline,
-// plan-implement-review, distributed-audit — are appended here as each is
-// authored. Historical runs referencing deleted ids keep rendering via stored
+// Phase 6 scaffolding; the new discriminating scenarios are appended here as
+// each is authored. The first seven — sql-audit, memory-distractor, bug-ladder,
+// cross-worker-invent, relay-pipeline, plan-implement-review, distributed-audit
+// — are joined by the swarm-mechanics spike (memory-coordination,
+// failure-recovery, failure-recovery-mixed), where the bottleneck is the SWARM
+// (shared-memory handoff + recovery from a poisoned teammate), not single-model
+// capability. Historical runs referencing deleted ids keep rendering via stored
 // ids (no registry lookup) with the unregistered-scenario fallback on the
 // detail route.
 export const scenarios: Scenario[] = [
@@ -22,6 +27,9 @@ export const scenarios: Scenario[] = [
   relayPipeline,
   planImplementReview,
   distributedAudit,
+  memoryCoordination,
+  failureRecovery,
+  failureRecoveryMixed,
 ];
 
 // Cheap smoke default for `--scenarios` when none are passed. sql-audit is the

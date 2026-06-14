@@ -110,6 +110,30 @@ export interface ScenarioSeed {
    * (no path separators), must end in ".sql". Example: "seeded-history.sql".
    */
   sqlDump?: string;
+  /**
+   * Failure-injection primitive (swarm-mechanics evals): deterministically break
+   * a CHOSEN worker (not just worker 0) at seed time so the scenario can grade
+   * whether the SWARM recovers from a poisoned/disabled teammate.
+   *
+   * Each entry runs its shell `commands` in `workers[entry.worker]`'s sandbox
+   * AFTER `exec` (and after memory indexing) but BEFORE any task is created —
+   * to corrupt/poison/disable that worker, e.g. delete a required input file,
+   * write a confidently-wrong intermediate result, or remove a needed CLI.
+   *
+   * CRUCIAL SEMANTIC DIFFERENCE FROM {@link exec}: these are BEST-EFFORT. A
+   * non-zero exit (or even an exec error) MUST NOT throw/fail the attempt — the
+   * whole point is to LEAVE the worker broken and let the swarm cope. Every
+   * command's outcome is logged; an out-of-range `worker` index is skipped (and
+   * logged), never thrown. Absent/empty `workerFailures` => zero behavior change.
+   */
+  workerFailures?: {
+    /** 0-based index into the scenario's booted workers; out-of-range is skipped + logged. */
+    worker: number;
+    /** Shell commands run (in order) in that worker's sandbox; non-zero exits are tolerated. */
+    commands: string[];
+    /** Optional human label for logs/artifacts ("delete-input", "poison-result"). */
+    label?: string;
+  }[];
 }
 
 export interface LlmJudgeSpec {

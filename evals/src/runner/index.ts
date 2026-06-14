@@ -983,7 +983,11 @@ async function runAttemptOnce(opts: {
 
     // Seed-memories record for the artifacts phase (v6 §2.4).
     let seedMemories: { requested: number; memoryIds: string[]; readinessMs: number } | null = null;
-    if (scenario.seed?.memories?.length || scenario.seed?.exec?.length) {
+    if (
+      scenario.seed?.memories?.length ||
+      scenario.seed?.exec?.length ||
+      scenario.seed?.workerFailures?.length
+    ) {
       signal?.throwIfAborted();
       setAttemptPhase(attempt.id, "seed");
       const seedT0 = Date.now();
@@ -1069,6 +1073,105 @@ async function runAttemptOnce(opts: {
               kind: "meta",
               name: "seed-output.json",
               content: stack.redact(JSON.stringify(seedOutputs, null, 2)),
+            });
+          }
+        }
+
+        // 3. Then seed.workerFailures (swarm-mechanics) — deterministically
+        // break a CHOSEN worker's sandbox to test team recovery. UNLIKE
+        // seed.exec these are BEST-EFFORT: a non-zero exit (or an exec error)
+        // NEVER throws/fails the attempt — that is the whole point, leave the
+        // worker broken and let the swarm cope. Out-of-range worker = skip+log.
+        if (scenario.seed?.workerFailures?.length) {
+          const failureOutputs: {
+            worker: number;
+            label: string | null;
+            cmd: string;
+            exitCode: number | null;
+            durationMs: number;
+            stdout: string;
+            stderr: string;
+            error: string | null;
+            skipped: boolean;
+          }[] = [];
+          // Worker-role members only (mirrors resolveWorker / the later
+          // workerCount): a failure may only target a real worker, never the lead.
+          const bootedWorkerCount = stack.workers.filter((m) => m.member.role === "worker").length;
+          try {
+            for (const entry of scenario.seed.workerFailures) {
+              const label = entry.label ?? null;
+              const w = stack.workers[entry.worker];
+              if (!w || w.member.role !== "worker") {
+                log(
+                  `[seed] WARNING: injecting failure into worker ${entry.worker}${label ? ` (${label})` : ""}: ` +
+                    `worker out of range (${bootedWorkerCount} booted) — SKIPPED`,
+                );
+                for (const cmd of entry.commands) {
+                  failureOutputs.push({
+                    worker: entry.worker,
+                    label,
+                    cmd,
+                    exitCode: null,
+                    durationMs: 0,
+                    stdout: "",
+                    stderr: "",
+                    error: `worker ${entry.worker} out of range (${bootedWorkerCount} booted)`,
+                    skipped: true,
+                  });
+                }
+                continue;
+              }
+              log(
+                `[seed] injecting failure into worker ${entry.worker}${label ? ` (${label})` : ""} ` +
+                  `(${entry.commands.length} command(s))`,
+              );
+              for (const cmd of entry.commands) {
+                log(`[seed] (failure) ${cmd}`);
+                const cmdT0 = Date.now();
+                try {
+                  const res = await sandboxExec(w.sandbox.sandboxID, cmd);
+                  failureOutputs.push({
+                    worker: entry.worker,
+                    label,
+                    cmd,
+                    exitCode: res.exitCode,
+                    durationMs: Date.now() - cmdT0,
+                    stdout: res.stdout.slice(0, SEED_OUTPUT_CLIP),
+                    stderr: res.stderr.slice(0, SEED_OUTPUT_CLIP),
+                    error: null,
+                    skipped: false,
+                  });
+                  // Best-effort: a non-zero exit is EXPECTED to be tolerated —
+                  // log it, do NOT throw (the worker is meant to stay broken).
+                  log(
+                    `[seed] (failure) exit ${res.exitCode} in ${Date.now() - cmdT0}ms` +
+                      (res.exitCode !== 0 ? " (tolerated)" : ""),
+                  );
+                } catch (err) {
+                  // Even an exec/connect error must not fail the attempt.
+                  const msg = err instanceof Error ? err.message : String(err);
+                  failureOutputs.push({
+                    worker: entry.worker,
+                    label,
+                    cmd,
+                    exitCode: null,
+                    durationMs: Date.now() - cmdT0,
+                    stdout: "",
+                    stderr: "",
+                    error: msg.slice(0, SEED_OUTPUT_CLIP),
+                    skipped: false,
+                  });
+                  log(`[seed] WARNING: (failure) exec error (tolerated): ${msg.slice(0, 300)}`);
+                }
+              }
+            }
+          } finally {
+            await insertArtifact(db, {
+              id: crypto.randomUUID(),
+              attemptId: attempt.id,
+              kind: "meta",
+              name: "seed-worker-failures.json",
+              content: stack.redact(JSON.stringify(failureOutputs, null, 2)),
             });
           }
         }
