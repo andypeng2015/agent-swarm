@@ -633,14 +633,14 @@ describe("spec'd scenario shapes (v8.0 round-11)", () => {
     expect(workerFailures[0]?.label).toBe("poison-reconciler-total");
     expect((workerFailures[0]?.commands ?? []).length).toBeGreaterThan(0);
 
-    // Swarm eval: the swarm-behavior dimension OUTWEIGHS raw correctness — graded
-    // recovery correctness (1×) + an agentic failure-recovery judge (3×). The judge
-    // is the discriminator (round-3 sweep: correctness saturated, recovery split).
+    // Graded recovery correctness (3×) + an agentic failure-recovery judge (1×).
+    // (Round-4 finding: the recovery judge does NOT discriminate tiers — the earlier
+    // 3× reweight on it was reverted; see the scenario docblock + QA report.)
     const dims = s?.outcome.dimensions ?? [];
     const correctness = dims.find((d) => d.name === "correctness");
     const recovery = dims.find((d) => d.name === "failure-recovery");
-    expect(correctness?.weight).toBe(1);
-    expect(recovery?.weight).toBe(3);
+    expect(correctness?.weight).toBe(3);
+    expect(recovery?.weight).toBe(1);
     expect(recovery?.judge?.agentic).toBe(true);
     expect(recovery?.checks ?? []).toHaveLength(0);
 
@@ -693,8 +693,8 @@ describe("spec'd scenario shapes (v8.0 round-11)", () => {
     const dims = s?.outcome.dimensions ?? [];
     const correctness = dims.find((d) => d.name === "correctness");
     const recovery = dims.find((d) => d.name === "failure-recovery");
-    expect(correctness?.weight).toBe(1);
-    expect(recovery?.weight).toBe(3);
+    expect(correctness?.weight).toBe(3);
+    expect(recovery?.weight).toBe(1);
     expect((correctness?.checks ?? []).map((c) => c.name)).toEqual(["recovered-net-total"]);
     expect(recovery?.judge?.agentic).toBe(true);
 

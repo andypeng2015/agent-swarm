@@ -276,6 +276,73 @@ opus-vs-deepseek-alone tops at 0.15. **Discriminating frontier from this budget 
 task difficulty past Haiku's ceiling, and/or (c) run 3 attempts to de-noise the marginal deepseek signal. Single-attempt
 noise is also a factor (deepseek scored 1.00 on the other 2).
 
+## Round-3: Swarm-Mechanics Spike Sweep (2026-06-14)
+
+First live E2B run of the 3 swarm-mechanics scenarios (`run swarm-mech-homog` + `swarm-mech-mixed`, Turso, 1 attempt, $3.78).
+**The failure-injection primitive worked end-to-end** — `seed.workerFailures` poisoned worker 1 (wrote a wrong
+`net_total=488`, removed the `swarm-memory-search` CLI), best-effort/no-throw, and the scenario graded recovery.
+
+| Scenario | opus-4.8 | deepseek | haiku | aggregate gap |
+|---|---|---|---|---|
+| memory-coordination | 1.00 | 1.00 | 1.00 | 0.00 |
+| failure-recovery | 0.97 | 0.88 | 0.88 | 0.10 |
+| failure-recovery-mixed (opus lead + haiku workers) | 0.88 | — | — | — |
+
+Per-dimension (the real story):
+- **memory-coordination:** correctness(w3)=1.00 AND memory-coordination judge(w1)=1.00 for **every** model. The swarm memory
+  substrate "just works" across tiers — no discrimination. Either harden the content, or accept it as a finding: *memory
+  coordination is solved by the scaffolding regardless of model tier.*
+- **failure-recovery:** correctness(w3)=1.00 for ALL (everyone recovered the right final number despite the poison), BUT the
+  **failure-recovery judge dimension separates cleanly: opus 0.90 vs budget 0.50** (a 0.40 gap). The aggregate gap is only
+  0.10 because the discriminating dimension is weight 1 of 4 — the SAME dilution pattern as round-11 (hard graded dimension
+  saturates, soft judge dimension discriminates but is underweighted).
+- **failure-recovery-mixed:** opus lead + haiku workers scored failure-recovery=**0.50** — identical to all-haiku, NOT to
+  all-opus (0.90). **The smart lead did NOT rescue the cheap workers** — recovery quality tracked the *worker* doing the
+  verification (haiku), not the lead. A genuine swarm-composition finding (n=1 caveat).
+
+**The reframe is PARTIALLY VALIDATED:** there IS a measurable swarm-citizenship axis — opus is a better swarm participant
+under failure (0.90 vs 0.50 on detection/recovery quality) in a way single-model IQ tests don't capture. But the scenarios
+bury it by weighting final-answer correctness (w3, saturates) over swarm behavior (w1, discriminates).
+
+**Recommended fix (one-line per scenario): for a SWARM eval, the swarm-behavior dimension should OUTWEIGH raw correctness.**
+Flip failure-recovery to correctness(w1) + failure-recovery(w3):
+- opus = (1·1.00 + 3·0.90)/4 = **0.925**; budget = (1·1.00 + 3·0.50)/4 = **0.625** → **gap 0.30, PASS**.
+Then re-sweep at 3 attempts to de-noise the judge signal (single judge call per dimension is noisy at n=1). memory-coordination
+needs harder content (more/subtler facts, distractor memories) or stays a "scaffolding equalizes tiers" finding.
+
+## Round-4: Clean re-sweep after reweight + hardening (2026-06-14) — NEGATIVE RESULT
+
+Run on a LOCAL DB (`/tmp/evals-live.sqlite`) after the round-3 Turso run hit `WalConflict` (the sweep + live `serve` both
+syncing the embedded replica — moved both to a single local file, 0 conflicts). `failure-recovery` ×3 attempts,
+`memory-coordination` ×1, all 3 configs.
+
+**failure-recovery — the reweight was justified by NOISE and does not replicate.** Per-attempt `failure-recovery` judge:
+- opus-4.8: {0.40, 0.50, 0.50} → mean **0.47**
+- deepseek-flash: {0.90, 0.50, 0.50} → mean **0.63**
+- haiku: {0.50, 0.40, 0.50} → mean **0.47**
+
+Aggregate (correctness w1 + recovery w3): opus **0.60**, deepseek **0.72**, haiku **0.60** → **GAP = −0.06 (FAIL).**
+The round-3 "opus 0.90 vs budget 0.50" that justified the 3× reweight was a **single lucky attempt**. With 3 clean attempts
+opus = haiku = 0.47 and **deepseek edges ahead** (its 0.90 outlier). The judge mostly returns ~0.50 for everyone
+("recovered the number but didn't explicitly flag the discrepancy") — i.e. **all three tiers handle the failure the same
+way (recover silently), and there is no real quality gap for the judge to find.** The reweight amplified a noisy dimension
+and actually inverted the aggregate (opus now below budget). **The reweight should be reverted — it was my error,
+committed on an n=1 signal.**
+
+**memory-coordination — hardening did NOT bite.** Even after 8→12 facts + buried secondaries + near-miss distractors +
+2 red-herring memories + a cross-reference fact, all three configs scored correctness **1.00** AND judge **1.00** (gap 0.00).
+The swarm memory substrate genuinely equalizes these tiers on this task.
+
+**Honest conclusion: the swarm-mechanics reframe is NOT validated at our measurement resolution.** Either (a) the swarm
+scaffolding genuinely equalizes model tiers on coordination/memory/recovery (a real, useful product finding — the
+scaffolding carries the work), and/or (b) the single-call agentic judge is too noisy (variance 0.40–0.90) to detect a gap
+that may exist. The tasks as built are handled equivalently by opus / haiku / deepseek.
+
+**Options (no more sweeps without a sharper hypothesis):** (1) REVERT the failure-recovery reweight; (2) attack judge noise
+— N-sample median judging (a plan non-goal) or a tighter deterministic detection bar; (3) genuinely harder failures —
+mid-task worker KILL (not just seed-time poison), simultaneous/cascading failures; (4) accept the finding: at this task
+difficulty the harness equalizes tiers. Cost spent across round-3+round-4 swarm sweeps: ~$15.
+
 ## Verdict
 
 **Status: PASS (implementation) / NOT-YET-SHIPPABLE (scenario calibration).** The v8.0 code is correct and now

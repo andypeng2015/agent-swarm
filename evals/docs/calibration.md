@@ -157,3 +157,27 @@ Pinned frontier model: `claude-opus-4.8`. Fill in after the sweep.
 | `relay-pipeline`       |             |           |     |                                     |       |
 | `plan-implement-review`|             |           |     |                                     |       |
 | `distributed-audit`    |             |           |     |                                     |       |
+
+## Swarm-mechanics scenarios — finding (2026-06-14, ACCEPTED)
+
+`memory-coordination`, `failure-recovery`, `failure-recovery-mixed` were built to test whether a harness+model is a
+good **swarm participant** (shared memory, coordination, failure recovery) rather than a smart single model. The
+`seed.workerFailures` failure-injection primitive works end-to-end (poisons a chosen worker at seed time, best-effort).
+
+**Result: these scenarios do NOT discriminate model tiers at our measurement resolution.** Clean sweeps (opus-4.8 /
+deepseek-flash / haiku):
+
+| Scenario | opus | deepseek | haiku | gap | note |
+|---|---|---|---|---|---|
+| `memory-coordination` (hardened, 12 facts) | 1.00 | 1.00 | 1.00 | 0.00 | all tiers ace it even after hardening |
+| `failure-recovery` (3 attempts) | 0.60 | 0.72 | 0.60 | −0.06 | recovery judge: opus 0.47 / ds 0.63 / hk 0.47, high variance |
+
+**Why (the actual finding):** (a) the swarm **scaffolding equalizes tiers** on coordination/memory/recovery — the harness
+carries the work; and/or (b) the **single-call agentic judge is too noisy** (per-attempt variance 0.40–0.90) to detect a
+gap. All tiers recover a poisoned value ~equally and the judge mostly returns ~0.50. A round-3 reading of "opus 0.90 vs
+budget 0.50" was a single lucky attempt and did **not** replicate at n=3; the 3× reweight it motivated was **reverted**.
+
+These three scenarios are **retained as swarm-mechanics coverage** (and as a live exercise of `seed.workerFailures`), NOT as
+tier discriminators, and are excluded from the ship-gate table above. If revisited, the levers are: N-sample median judging
+(beat the noise), a tighter *deterministic* detection check (replace the soft judge), or genuinely harder failures
+(mid-task worker KILL, simultaneous/cascading failures) — see the QA report Round-4 section.

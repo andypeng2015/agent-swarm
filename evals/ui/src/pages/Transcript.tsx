@@ -590,7 +590,11 @@ export default function Transcript(props: {
             type="button"
             className="t-follow"
             onClick={engageFollow}
-            title={newRows > 0 ? `Resume auto-scroll · ${newRows.toLocaleString()} new` : "Resume auto-scroll"}
+            title={
+              newRows > 0
+                ? `Resume auto-scroll · ${newRows.toLocaleString()} new`
+                : "Resume auto-scroll"
+            }
             aria-label="Resume auto-scroll"
           >
             ↓
