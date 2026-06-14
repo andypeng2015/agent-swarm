@@ -51,15 +51,19 @@ import type { CheckResult, DeterministicCheck, Scenario, WorkerSpec } from "../s
  * Requires an embedding key in evals/.env (EMBEDDING_API_KEY or OPENAI_API_KEY)
  * for the swarm memory store/search every hop relies on.
  *
- * Grading (v2):
- *   - `correctness` (weight 3, GRADED deterministic): the verifier's report must
+ * Grading (v2): this is a SWARM eval — the swarm BEHAVIOR (did the team detect +
+ * recover from a broken teammate) is what we measure, so it OUTWEIGHS raw
+ * final-answer correctness. (Round-3 sweep: correctness saturated at 1.00 for all
+ * tiers — everyone recovered the number — while the recovery judge separated opus
+ * 0.90 vs budget 0.50; weighting recovery 3x makes that the dominant signal.)
+ *   - `correctness` (weight 1, GRADED deterministic): the verifier's report must
  *       carry the GROUND-TRUTH net total (553), NOT the poisoned value (488).
  *       Partial credit over three sub-facts — (a) the correct net total present,
  *       (b) the poisoned value NOT propagated as the final answer, (c) the
  *       discrepancy/correction surfaced — so a report that recovered the number
  *       but never flagged the poison ranks between a full recovery and a blind
  *       propagation. None of the ground-truth values appear in any prompt.
- *   - `failure-recovery` (weight 1, AGENTIC judge): the judge inspects ALL worker
+ *   - `failure-recovery` (weight 3, AGENTIC judge): the judge inspects ALL worker
  *       sandboxes + session logs + the roster to determine, causally, (a) whether
  *       the poisoned/wrong contribution was DETECTED (a worker flagged the
  *       discrepancy) and (b) whether it was CORRECTED / re-derived vs silently
@@ -317,7 +321,7 @@ const failureRecoveryOutcome: Scenario["outcome"] = {
   dimensions: [
     {
       name: "correctness",
-      weight: 3,
+      weight: 1,
       // The final deliverable must carry the GROUND-TRUTH net total (553), reject
       // the poison (488), and surface the discrepancy — graded fraction (partial
       // credit). The answer-key values live only in the seeded ledger.
@@ -325,7 +329,7 @@ const failureRecoveryOutcome: Scenario["outcome"] = {
     },
     {
       name: "failure-recovery",
-      weight: 1,
+      weight: 3,
       // Custom dimension (allowed by design). Agentic so the judge can inspect ALL
       // worker sandboxes + session logs + the roster to grade recovery CAUSALLY:
       // was the poisoned contribution DETECTED, and was it CORRECTED/re-derived vs
@@ -373,8 +377,8 @@ export const failureRecovery: Scenario = {
     "confidently-WRONG net total; worker 2 (the verifier) must re-derive the total from the source",
     "ledger, CATCH that the reconciler's claim is wrong, and publish the corrected total. The correct",
     "answer is reachable only if the swarm detects the broken teammate and recovers. Graded on the",
-    "final deliverable carrying the ground-truth total (correctness, 3x) and an agentic judge that",
-    "verifies detection + recovery causally from the sandboxes and session logs (failure-recovery, 1x).",
+    "final deliverable carrying the ground-truth total (correctness, 1x) and an agentic judge that",
+    "verifies detection + recovery causally from the sandboxes and session logs (failure-recovery, 3x).",
   ].join(" "),
   // Three homogeneous workers (the cap), no lead. Worker 0 = source, worker 1 =
   // poisoned reconciler, worker 2 = verifier/consumer (owns the final deliverable).

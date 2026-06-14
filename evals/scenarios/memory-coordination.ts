@@ -15,20 +15,46 @@ import type { CheckResult, DeterministicCheck, Scenario } from "../src/types.ts"
  *
  * Worker 0 (the INVESTIGATOR) is seeded — on its sandbox ONLY, via `seed.exec`
  * (which the runner runs in worker 0's sandbox alone) — with an incident dossier
- * (`/workspace/dossier/incident-INC-4417.md`). It must extract SIX structured
- * findings (incident id, root-cause commit SHA, the service that failed, the
- * rollback target tag, the on-call engineer, and the customer-impact minutes) and
- * PUBLISH each to SWARM memory (scope swarm, via its memory tools) under a shared
- * channel tag, plus write its own findings file.
+ * (`/workspace/dossier/incident-INC-4417.md`). It must extract EIGHT structured
+ * findings — six HEADLINE facts (incident id, root-cause commit SHA, the service
+ * that failed, the rollback target tag, the on-call engineer, the customer-impact
+ * minutes) PLUS two SECONDARY facts buried later in the same dossier sections as a
+ * headline (the merge PR number buried in Root cause, the failure deploy cell/region
+ * buried in Summary, the error-rate peak buried in Impact) — and PUBLISH each to
+ * SWARM memory (scope swarm, via its memory tools) under a shared channel tag, plus
+ * write its own findings file.
+ *
+ * HARDENING (round 11, post-saturation sweep): opus-4.8, pi-deepseek-flash AND
+ * claude-haiku all scored 1.00 on BOTH correctness and the coordination judge — the
+ * substrate was too easy because every headline fact sits as the first salient token
+ * in its own dossier section and surfaces on a single shallow lookup. To make graded
+ * correctness DISCRIMINATE again WITHOUT restructuring the dimensions, the answer key
+ * is deepened from 6 distinct values to TWELVE downstream sub-facts using four
+ * proven techniques: (a) MORE extracted facts (buried secondaries the investigator
+ * must publish too); (b) BURIED facts tucked late in the same section as a headline,
+ * so grabbing the first salient token per section misses them; (c) tightened
+ * NEAR-MISS distractors in the dossier AND two red-herring swarm memories that sit
+ * one token off the truth, so shallow retrieval lands on the wrong value and the
+ * anchored checks reject it; (d) a CROSS-REFERENCE fact (a deploy-freeze ref) that
+ * is stated atomically in NO single memory — the synthesizer must combine the
+ * incident id from one memory with the rollback tag from another to construct it, so
+ * a worker that stops after the first hit gets it wrong. A budget model that does
+ * shallow/lazy retrieval now recalls the obvious headlines but misses the buried
+ * secondaries, mis-grabs a near-miss distractor, and fails to assemble the
+ * cross-reference; a frontier model that reads the whole dossier and all the
+ * memories end-to-end keeps them.
  *
  * Workers 1 and 2 (the SYNTHESIZERS) have NO copy of the dossier — their sandboxes
  * are fresh (seed.exec never touches them), so the ONLY path to the findings is
  * RETRIEVING worker 0's swarm memory. Each writes a deliverable that must COMBINE
  * MULTIPLE of worker 0's stored facts:
  *   - Worker 1 writes a remediation ticket combining the incident id + the
- *     root-cause SHA + the rollback target tag + the failed service.
+ *     root-cause SHA + the rollback target tag + the failed service + the buried
+ *     merge PR number + a CROSS-REFERENCE deploy-freeze ref it must assemble from
+ *     the incident id and the rollback tag (two separately-stored memories).
  *   - Worker 2 writes a status-page postmortem combining the incident id + the
- *     on-call engineer + the customer-impact minutes + the failed service.
+ *     on-call engineer + the customer-impact minutes + the failed service + the
+ *     buried failure deploy cell/region + the buried error-rate peak.
  * Neither deliverable's facts can be produced without first reading worker 0's
  * memory: a swarm that does not use memory as shared infra simply CANNOT transfer
  * the knowledge (workers 1/2 have no local source).
@@ -46,12 +72,17 @@ import type { CheckResult, DeterministicCheck, Scenario } from "../src/types.ts"
  * Grading:
  *   - `correctness` (weight 3): a single inline graded check (factsRecalled-style,
  *       `score = matched / total`) over BOTH downstream deliverables. Each of
- *       worker 1's four required facts and worker 2's four required facts is a
+ *       worker 1's six required facts and worker 2's six required facts is a
  *       distinctive regex anchored on the dossier-derived VALUE (which appears in
- *       NO prompt). Eight sub-facts total → fine-grained partial credit so a team
+ *       NO prompt). TWELVE sub-facts total → fine-grained partial credit so a team
  *       that transferred half the facts ranks below one that transferred them all
  *       and above one that transferred none. A worker that never read memory writes
  *       a deliverable missing every value-bearing fact and scores 0 on its half.
+ *       The buried secondaries (PR number, deploy cell, error-rate peak) and the
+ *       cross-reference deploy-freeze ref discriminate a thorough transfer from a
+ *       shallow one: a budget model that grabs the headline value per section and
+ *       stops misses ~half and scores ≈0.5; a frontier model that reads the whole
+ *       dossier + all memories keeps ≈0.9+.
  *   - `memory-coordination` (weight 1, custom, agentic — depends on Phase 4): a
  *       judge reads worker 0's sandbox + session logs to confirm it WROTE structured
  *       memory (the facts derived from the dossier), then reads workers 1/2 sandboxes
@@ -86,7 +117,9 @@ import type { CheckResult, DeterministicCheck, Scenario } from "../src/types.ts"
  *   - The grading rubric / per-fact patterns are NOT shown to any worker.
  *
  * Answer key (mirror of the seeded dossier below — keep them in lockstep; if the
- * dossier changes, update these patterns AND the dossier heredoc together):
+ * dossier changes, update these patterns AND the dossier heredoc together). Six
+ * HEADLINE facts + three BURIED secondaries + one CROSS-REFERENCE = the twelve
+ * downstream sub-facts:
  *   incident id            = INC-4417
  *   root-cause commit SHA  = 9f3c1a7e2b4d6f8a0c2e1d3b5a7c9e1f0a2b4c6d  (NOT the
  *                            superseded 0011223344556677889900aabbccddeeff001122)
@@ -96,7 +129,28 @@ import type { CheckResult, DeterministicCheck, Scenario } from "../src/types.ts"
  *                            v2.18.0 that was rejected)
  *   on-call engineer       = Priya Natarajan            (NOT the secondary
  *                            responder "Marcus Feld" who only ack'd)
- *   customer-impact minutes = 73
+ *   customer-impact minutes = 73                        (NOT the unrelated 41-min blip)
+ *   --- buried secondaries (tucked late in a section that opens with a headline) ---
+ *   merge PR number        = #8842                      (buried in Root cause; NOT the
+ *                            superseded suspect's PR #8830)
+ *   failure deploy cell    = eu-central-1c              (buried in Summary; NOT the
+ *                            decommissioned eu-central-1a, NOT inventory-sync's 1b)
+ *   error-rate peak        = 18.4%                      (buried in Impact; NOT the
+ *                            unrelated blip's 4.1%)
+ *   --- cross-reference (atomic in NO single memory) ---
+ *   deploy-freeze ref      = freeze-INC-4417-v2.19.4    (worker 1 must ASSEMBLE this
+ *                            from the incident id + the rollback tag — each stored in
+ *                            a separate memory; the literal string is in none, and the
+ *                            near-miss freeze-INC-4417-v2.18.0 built from the rejected
+ *                            tag fails the \b2\.19\.4\b anchor)
+ *
+ * Two RED-HERRING swarm memories (seed.memories, scope swarm — visible to ALL
+ * workers) sit one token off the truth so a synthesizer that doesn't discriminate
+ * on the channel tag / "of record" phrasing can land the wrong value:
+ *   - a stale draft naming the superseded SHA 0011…, the rejected tag v2.18.0, and
+ *     the merely-degraded inventory-sync as if confirmed;
+ *   - a paging-log fragment crediting the responder Marcus Feld and citing the
+ *     unrelated 41-min/4.1% blip as the customer impact.
  */
 
 const DOSSIER_DIR = "/workspace/dossier";
@@ -125,25 +179,35 @@ const DOSSIER_CONTENT = [
   "## Summary",
   "On the night of the deploy, the **checkout-orchestrator** service began",
   "returning 5xx on the payment-intent path and had to be rolled back. A",
-  "secondary service, **inventory-sync**, was DEGRADED (elevated latency) but did",
-  "NOT fail and required no rollback — it recovered on its own once checkout-",
-  "orchestrator was restored. The failing service of record for this incident is",
-  "checkout-orchestrator.",
+  "secondary service, **inventory-sync** (which runs in the eu-central-1b cell),",
+  "was DEGRADED (elevated latency) but did NOT fail and required no rollback — it",
+  "recovered on its own once checkout-orchestrator was restored. The failing",
+  "service of record for this incident is checkout-orchestrator. NOTE on placement:",
+  "checkout-orchestrator used to run in the now-decommissioned eu-central-1a cell,",
+  "but at the time of the incident the failing checkout-orchestrator instances were",
+  "deployed in the **eu-central-1c** cell — eu-central-1c is the deploy cell of",
+  "record for this failure.",
   "",
   "## Root cause",
   "The regression was introduced by commit",
   "`9f3c1a7e2b4d6f8a0c2e1d3b5a7c9e1f0a2b4c6d`, which changed the idempotency-key",
   "hashing and silently dropped retries. An EARLIER commit",
-  "`0011223344556677889900aabbccddeeff001122` was initially suspected and",
-  "investigated, but it was SUPERSEDED — it was already live for two weeks without",
-  "incident and is NOT the root cause. The confirmed root-cause commit is",
-  "9f3c1a7e2b4d6f8a0c2e1d3b5a7c9e1f0a2b4c6d.",
+  "`0011223344556677889900aabbccddeeff001122` (which landed in pull request",
+  "**#8830**) was initially suspected and investigated, but it was SUPERSEDED — it",
+  "was already live for two weeks without incident and is NOT the root cause. The",
+  "confirmed root-cause commit is 9f3c1a7e2b4d6f8a0c2e1d3b5a7c9e1f0a2b4c6d, which",
+  "merged via pull request **#8842**. The merge PR of record for the root cause is",
+  "#8842 (the superseded suspect's #8830 is a red herring).",
   "",
   "## Remediation / rollback",
   "Rolling back to tag `v2.18.0` was considered first but REJECTED — it predates a",
   "required schema migration and would have broken the orders table. The deploy was",
   "instead rolled back to the last-known-good release tag **v2.19.4**, which",
-  "restored service. The rollback target of record is v2.19.4.",
+  "restored service. The rollback target of record is v2.19.4. Per the change-",
+  "management runbook, any incident that triggers a production rollback opens a",
+  "deploy-freeze ticket whose reference is formed as",
+  "`freeze-<incident-id>-<rollback-tag>` — the incident id joined to the rollback",
+  "target tag with hyphens.",
   "",
   "## Response",
   "The page fired at 02:14. **Marcus Feld** acknowledged the page but handed off",
@@ -153,9 +217,11 @@ const DOSSIER_CONTENT = [
   "",
   "## Impact",
   "Customer-visible impact (elevated error rate on checkout) lasted 73 minutes,",
-  "from 02:14 to 03:27. (An internal alerting blip 41 minutes earlier was",
-  "unrelated and had no customer impact.) Customer-impact duration of record: 73",
-  "minutes.",
+  "from 02:14 to 03:27. (An internal alerting blip 41 minutes earlier, which briefly",
+  "showed a 4.1% error rate on an unrelated canary, was unrelated and had no",
+  "customer impact.) Customer-impact duration of record: 73 minutes. During the",
+  "incident window the checkout error rate PEAKED at **18.4%** before the rollback;",
+  "18.4% is the peak error rate of record (the unrelated 4.1% blip is not it).",
 ].join("\n");
 
 // ---- Per-fact answer key, graded individually over each downstream deliverable
@@ -168,8 +234,10 @@ interface DownstreamFact {
   pattern: RegExp;
 }
 
-// Worker 1's remediation ticket must combine FOUR facts: the incident id, the
-// confirmed root-cause SHA, the rollback target tag, and the failed service.
+// Worker 1's remediation ticket must combine SIX facts: the incident id, the
+// confirmed root-cause SHA, the rollback target tag, the failed service, the BURIED
+// merge PR number, and the CROSS-REFERENCE deploy-freeze ref it must assemble from
+// the incident id + the rollback tag (stored in separate memories; atomic in none).
 const TICKET_FACTS: DownstreamFact[] = [
   { label: "incident-id=INC-4417", pattern: /INC-4417/i },
   // The CONFIRMED root-cause SHA (anchored full 40-hex so the superseded
@@ -179,10 +247,24 @@ const TICKET_FACTS: DownstreamFact[] = [
   { label: "rollback-tag=v2.19.4", pattern: /\bv?2\.19\.4\b/i },
   // The failed service (anchored so the secondary "inventory-sync" doesn't match).
   { label: "failed-service=checkout-orchestrator", pattern: /checkout-orchestrator/i },
+  // BURIED: the merge PR of record (#8842), tucked late in the Root cause section
+  // after the headline SHA. Anchored so the superseded suspect's #8830 fails — a
+  // shallow read that grabs the first PR token in the section lands on #8830.
+  { label: "merge-pr=#8842", pattern: /#?\b8842\b/ },
+  // CROSS-REFERENCE: the deploy-freeze ticket ref, stated atomically in NO single
+  // memory. The runbook gives the template `freeze-<incident-id>-<rollback-tag>`;
+  // worker 1 must assemble it from the incident id (INC-4417) and the rollback tag
+  // (v2.19.4) — each retrieved from a SEPARATE memory. Anchored so the near-miss
+  // freeze-INC-4417-v2.18.0 (built from the rejected tag) fails the version anchor.
+  {
+    label: "deploy-freeze-ref=freeze-INC-4417-v2.19.4",
+    pattern: /freeze-INC-4417-v?2\.19\.4\b/i,
+  },
 ];
 
-// Worker 2's status-page postmortem must combine FOUR facts: the incident id, the
-// on-call engineer, the customer-impact minutes, and the failed service.
+// Worker 2's status-page postmortem must combine SIX facts: the incident id, the
+// on-call engineer, the customer-impact minutes, the failed service, the BURIED
+// failure deploy cell, and the BURIED error-rate peak.
 const POSTMORTEM_FACTS: DownstreamFact[] = [
   { label: "incident-id=INC-4417", pattern: /INC-4417/i },
   // The on-call engineer who OWNED the incident (not the secondary responder
@@ -200,6 +282,15 @@ const POSTMORTEM_FACTS: DownstreamFact[] = [
   // The failed service (shared with the ticket — both deliverables must name it,
   // proving each independently retrieved that fact from memory).
   { label: "failed-service=checkout-orchestrator", pattern: /checkout-orchestrator/i },
+  // BURIED: the failure deploy cell (eu-central-1c), tucked late in the Summary
+  // after the headline service. Anchored so the decommissioned eu-central-1a and
+  // inventory-sync's eu-central-1b (both named earlier in the section) fail — a
+  // shallow read that grabs the first region token lands on the wrong cell.
+  { label: "deploy-cell=eu-central-1c", pattern: /eu-central-1c\b/i },
+  // BURIED: the peak error rate during the incident (18.4%), tucked at the END of
+  // the Impact section. Anchored so the unrelated blip's 4.1% (named earlier in the
+  // same section) fails — a shallow read that stops at the first percentage misses it.
+  { label: "error-peak=18.4%", pattern: /\b18\.4\s*%/ },
 ];
 
 /** One downstream deliverable graded over its worker's sandbox: a worker + path + facts. */
@@ -215,10 +306,27 @@ const DELIVERABLES: DownstreamDeliverable[] = [
   { label: "postmortem", worker: 2, path: POSTMORTEM_FILE, facts: POSTMORTEM_FACTS },
 ];
 
+// ---- RED-HERRING swarm memories (scope swarm — seeded BEFORE tasks, visible to
+// ALL workers including the synthesizers). They look on-topic for the same incident
+// but carry the SUPERSEDED / near-miss values, and crucially they do NOT carry the
+// investigator's channel tag (MEMORY_TAG). A synthesizer that searches broadly and
+// grabs the first plausible hit — instead of discriminating on the channel tag and
+// the "of record"/confirmed phrasing — pulls a wrong value and the anchored checks
+// reject it. The investigator's own authoritative memories (written at runtime, tag-
+// stamped) are the only correct source. None of these values appear in any prompt. ----
+const DISTRACTOR_MEMORIES: string[] = [
+  // Stale triage draft: names the SUPERSEDED SHA, the REJECTED tag, the merely-
+  // degraded inventory-sync, and the suspect PR #8830 as if they were confirmed.
+  "INC-4417 early triage draft (NOT final — superseded): initial suspicion fell on commit 0011223344556677889900aabbccddeeff001122, merged in pull request #8830, and the team first proposed rolling back to tag v2.18.0. The inventory-sync service in eu-central-1b looked like the failing component at first glance. This draft predates the confirmed root-cause analysis and should not be cited as the findings of record.",
+  // Paging-log fragment: credits the secondary responder Marcus Feld and cites the
+  // unrelated 41-min / 4.1% blip as if it were the customer impact.
+  "INC-4417 paging log excerpt: 02:14 page acknowledged by Marcus Feld. An alerting blip 41 minutes earlier showed a 4.1% error rate on a canary. (This excerpt is raw pager data, not the validated postmortem; impact figures here are NOT the customer-impact of record.)",
+];
+
 /**
  * Inline graded correctness check (factsRecalled-style, defined here per the
  * round-11 inline-checks rule). Reads BOTH downstream deliverables (worker 1's
- * ticket, worker 2's postmortem) and scores the FRACTION of the eight
+ * ticket, worker 2's postmortem) and scores the FRACTION of the twelve
  * dossier-derived sub-facts present across them — `score = matched / total`.
  * Partial credit so a team that transferred half the facts ranks between a full
  * transfer and none. The values live ONLY in worker 0's seeded dossier (and the
@@ -261,14 +369,17 @@ export const memoryCoordination: Scenario = {
   name: "Memory coordination",
   description: [
     "Memory-as-shared-substrate, three workers. Worker 0 is seeded (on its sandbox ONLY) with an",
-    "incident dossier and must extract six structured findings and PUBLISH each into swarm memory",
-    "under a shared channel tag. Workers 1 and 2 have NO copy of the dossier — their only path to the",
-    "facts is RETRIEVING worker 0's swarm memory — and each writes a deliverable (a remediation ticket",
-    "and a status-page postmortem) that must COMBINE four of worker 0's stored facts. A swarm that does",
-    "not use memory as shared infrastructure cannot transfer the knowledge at all. Graded on combined",
-    "downstream per-fact correctness (3×, eight value-bearing facts derived from the dossier and absent",
-    "from every prompt) and an agentic memory-coordination judge (1×) that confirms worker 0 wrote the",
-    "memory and workers 1/2 retrieved-not-guessed it.",
+    "incident dossier and must extract eight structured findings (six headlines plus buried",
+    "secondaries the dossier tucks late in a section) and PUBLISH each into swarm memory under a",
+    "shared channel tag, discriminating them from two seeded red-herring memories that carry stale",
+    "near-miss values. Workers 1 and 2 have NO copy of the dossier — their only path to the facts is",
+    "RETRIEVING worker 0's swarm memory — and each writes a deliverable (a remediation ticket and a",
+    "status-page postmortem) that must COMBINE six of worker 0's stored facts, including a",
+    "cross-reference (a deploy-freeze ref) assembled from two separately-stored memories. A swarm that",
+    "does not use memory as shared infrastructure cannot transfer the knowledge at all. Graded on",
+    "combined downstream per-fact correctness (3×, twelve value-bearing facts derived from the dossier",
+    "and absent from every prompt) and an agentic memory-coordination judge (1×) that confirms worker 0",
+    "wrote the memory and workers 1/2 retrieved-not-guessed it.",
   ].join(" "),
   workers: 3,
   seed: {
@@ -280,6 +391,12 @@ export const memoryCoordination: Scenario = {
       `mkdir -p ${DOSSIER_DIR} && chmod -R a+rwX ${DOSSIER_DIR}`,
       `printf '%s' '${Buffer.from(DOSSIER_CONTENT).toString("base64")}' | base64 -d > ${DOSSIER_FILE}`,
     ],
+    // RED-HERRING swarm memories indexed (scope swarm) BEFORE tasks — visible to all
+    // workers. They carry the superseded/near-miss values and lack the channel tag,
+    // so a synthesizer that does shallow retrieval and grabs the first on-topic hit
+    // pulls a wrong value; only the investigator's tag-stamped runtime memories are
+    // authoritative. None of these values appear in any prompt.
+    memories: DISTRACTOR_MEMORIES,
   },
   tasks: [
     {
@@ -287,10 +404,13 @@ export const memoryCoordination: Scenario = {
       worker: 0,
       description: [
         "You are the INVESTIGATOR. An incident postmortem dossier has been placed on your sandbox at",
-        `\`${DOSSIER_FILE}\`. Read it carefully — it contains some misleading/superseded details`,
-        "(an earlier suspected commit, a rejected rollback candidate, a secondary degraded service, a",
-        "responder who only acknowledged the page). Determine the CONFIRMED value for each of these six",
-        "findings (use the dossier's stated 'of record' / confirmed values, not the red herrings):",
+        `\`${DOSSIER_FILE}\`. Read the WHOLE dossier carefully, every section end-to-end — it contains`,
+        "misleading/superseded details (an earlier suspected commit and its pull request, a rejected",
+        "rollback candidate, a secondary degraded service in a different cell, a responder who only",
+        "acknowledged the page, an unrelated earlier alerting blip). Several sections OPEN with a",
+        "headline value and then BURY a second, equally-required value later in the same section — do not",
+        "stop at the first value you see. Determine the CONFIRMED value (the dossier's stated 'of record'",
+        "/ confirmed value, never a red herring) for EACH of these EIGHT findings:",
         "",
         "  1. The incident id.",
         "  2. The confirmed ROOT-CAUSE commit SHA (the one of record, not the superseded suspect).",
@@ -298,13 +418,22 @@ export const memoryCoordination: Scenario = {
         "  4. The rollback TARGET release tag (the one service was restored to, not the rejected one).",
         "  5. The ON-CALL engineer who owned and resolved the incident (not the responder who only ack'd).",
         "  6. The customer-impact duration in minutes (the customer-visible one, not the unrelated blip).",
+        "  7. The merge PULL-REQUEST number of the confirmed root cause (buried later in the Root cause",
+        "     section — NOT the suspect commit's PR).",
+        "  8. The deploy CELL/region the failing service ran in at incident time (buried later in the",
+        "     Summary — NOT the decommissioned cell, NOT the degraded service's cell), AND the PEAK error",
+        "     rate during the incident window (buried at the end of Impact — NOT the unrelated blip's rate).",
         "",
         "Two other agents will build deliverables from your findings, and they CANNOT see your files —",
-        "swarm memory is the ONLY way to hand the findings off. So you MUST:",
-        "  - Index the findings into SWARM memory (scope swarm) using your memory tools — store the six",
-        `    findings (you may use one memory per finding or group them) AND include the exact channel`,
-        `    tag \`${MEMORY_TAG}\` in the memory content so the other agents can search for it.`,
-        `  - Also write the six findings to \`${FINDINGS_FILE}\` on your own sandbox (one labeled line`,
+        "swarm memory is the ONLY way to hand the findings off. NOTE: some on-topic-looking memories about",
+        "this incident were seeded earlier that carry STALE/superseded values and do NOT use the channel",
+        "tag below; do not let those pollute your published findings — publish only the confirmed values",
+        "you derived from the dossier, tagged. So you MUST:",
+        "  - Index the findings into SWARM memory (scope swarm) using your memory tools — store every",
+        `    finding (you may use one memory per finding or group them) AND include the exact channel`,
+        `    tag \`${MEMORY_TAG}\` in the memory content so the other agents can search for it. Store the`,
+        "    incident id and the rollback target tag clearly (a downstream agent must combine them).",
+        `  - Also write all the findings to \`${FINDINGS_FILE}\` on your own sandbox (one labeled line`,
         "    each) as your local record.",
         "",
         "Do not invent values — every finding must come from the dossier. Then report completion via",
@@ -322,17 +451,26 @@ export const memoryCoordination: Scenario = {
         "the facts. Do NOT guess or invent values.",
         "",
         `Search your memory for the channel tag \`${MEMORY_TAG}\` and retrieve the investigator's`,
-        "findings. Then create the directory `/workspace/coord/` and write a remediation ticket to",
-        `\`${TICKET_FILE}\` (markdown) that COMBINES the following four retrieved facts:`,
+        "findings. WARNING: some other on-topic-looking memories about this incident were seeded that",
+        "carry STALE/superseded values and do NOT use that channel tag — trust only the investigator's",
+        "tag-stamped findings of record. Read enough of the tagged findings to recover EACH field below;",
+        "do not stop at the first hit. Then create the directory `/workspace/coord/` and write a",
+        `remediation ticket to \`${TICKET_FILE}\` (markdown) that COMBINES the following SIX retrieved`,
+        "facts:",
         "",
         "  - The incident id.",
         "  - The confirmed root-cause commit SHA.",
         "  - The rollback target release tag.",
         "  - The service that failed and was rolled back.",
+        "  - The merge pull-request number of the confirmed root cause.",
+        "  - The deploy-freeze ticket reference. This is NOT stored as a ready-made string — you must",
+        "    CONSTRUCT it from two separately-stored findings, joined as `freeze-<incident-id>-<rollback-",
+        "    tag>` (the incident id and the rollback target tag, hyphen-joined, exactly as the runbook",
+        "    rule the investigator stored prescribes).",
         "",
-        "State all four clearly in the ticket (e.g. a 'Root cause' line with the SHA, a 'Rollback to'",
-        "line with the tag, etc.). Use exactly the values you retrieved from memory — they are not in",
-        "this prompt. Then report completion via store-progress.",
+        "State all six clearly in the ticket (e.g. a 'Root cause' line with the SHA, a 'Rollback to' line",
+        "with the tag, a 'Merge PR' line, a 'Deploy-freeze' line, etc.). Use exactly the values you",
+        "retrieved from memory — they are not in this prompt. Then report completion via store-progress.",
       ].join("\n"),
     },
     {
@@ -346,18 +484,23 @@ export const memoryCoordination: Scenario = {
         "the facts. Do NOT guess or invent values.",
         "",
         `Search your memory for the channel tag \`${MEMORY_TAG}\` and retrieve the investigator's`,
-        "findings. Then create the directory `/workspace/coord/` and write a public status-page",
-        `postmortem to \`${POSTMORTEM_FILE}\` (markdown) that COMBINES the following four retrieved`,
-        "facts:",
+        "findings. WARNING: some other on-topic-looking memories about this incident were seeded that",
+        "carry STALE/superseded values and do NOT use that channel tag — trust only the investigator's",
+        "tag-stamped findings of record. Read enough of the tagged findings to recover EACH field below;",
+        "do not stop at the first hit. Then create the directory `/workspace/coord/` and write a public",
+        `status-page postmortem to \`${POSTMORTEM_FILE}\` (markdown) that COMBINES the following SIX`,
+        "retrieved facts:",
         "",
         "  - The incident id.",
         "  - The on-call engineer who owned and resolved the incident.",
         "  - The customer-impact duration in minutes.",
         "  - The service that failed.",
+        "  - The deploy cell/region the failing service ran in at incident time.",
+        "  - The peak error rate during the incident window.",
         "",
-        "State all four clearly (e.g. an 'Impact: <N> minutes' line, an 'Owner: <name>' line, etc.). Use",
-        "exactly the values you retrieved from memory — they are not in this prompt. Then report",
-        "completion via store-progress.",
+        "State all six clearly (e.g. an 'Impact: <N> minutes' line, an 'Owner: <name>' line, a 'Cell:' line,",
+        "a 'Peak error rate:' line, etc.). Use exactly the values you retrieved from memory — they are not",
+        "in this prompt. Then report completion via store-progress.",
       ].join("\n"),
     },
   ],
@@ -376,7 +519,7 @@ export const memoryCoordination: Scenario = {
         name: "correctness",
         weight: 3,
         // The combined downstream answer key graded over BOTH deliverables
-        // (partial credit over the eight value-bearing facts). The values live
+        // (partial credit over the twelve value-bearing facts). The values live
         // only in worker 0's seeded dossier + the memory it must publish.
         checks: [downstreamFactsCombined],
       },
@@ -393,7 +536,9 @@ export const memoryCoordination: Scenario = {
             "investigator (worker 0) to the two synthesizers (workers 1 and 2). Worker 0 was the only",
             `worker with the source dossier (at ${DOSSIER_FILE} on worker 0's sandbox); workers 1 and 2`,
             "had NO copy and could only obtain the findings by searching swarm memory under the channel",
-            `tag \`${MEMORY_TAG}\`.`,
+            `tag \`${MEMORY_TAG}\`. Two RED-HERRING memories about the same incident were also seeded`,
+            "(scope swarm) that carry STALE/superseded near-miss values and do NOT use that channel tag —",
+            "the authoritative source is worker 0's tag-stamped findings of record, not those distractors.",
             "",
             "Use the tools to verify, in order:",
             `  1. Worker 0 WROTE the findings to swarm memory. Read worker 0's findings file at`,
@@ -423,10 +568,13 @@ export const memoryCoordination: Scenario = {
       },
     ],
   },
-  // A three-worker memory-as-substrate scenario: worker 0 must derive + publish six
-  // findings, then two synthesizers fan out (both depend on worker 0) and each must
-  // search memory and assemble four facts. Weaker configs burn turns getting the
-  // memory publish/search right, mis-extract a red-herring value, or never use memory
-  // at all (and then have no source). Budgeted at 14 minutes.
+  // A three-worker memory-as-substrate scenario: worker 0 must derive + publish eight
+  // findings (six headlines + buried secondaries), discriminating them from two seeded
+  // red-herring memories, then two synthesizers fan out (both depend on worker 0) and
+  // each must search memory and assemble six facts — one of them a cross-reference built
+  // from two separate memories. Weaker configs burn turns getting the memory
+  // publish/search right, stop at the first hit and miss the buried secondaries, grab a
+  // near-miss red-herring value, fail to assemble the cross-reference, or never use
+  // memory at all (and then have no source). Budgeted at 14 minutes.
   timeoutMs: 14 * 60_000,
 };
