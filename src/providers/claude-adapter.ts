@@ -248,6 +248,7 @@ export function mergeMcpConfig(
   baseConfig: { mcpServers?: Record<string, unknown> } | null,
   installedServers: Record<string, Record<string, unknown>> | null,
   taskId: string,
+  contextKey?: string,
 ): { mcpServers: Record<string, unknown> } {
   const config: { mcpServers: Record<string, unknown> } = {
     mcpServers: { ...(baseConfig?.mcpServers ?? {}) },
@@ -273,6 +274,9 @@ export function mergeMcpConfig(
     const server = config.mcpServers[serverKey] as Record<string, unknown>;
     if (!server.headers) server.headers = {};
     (server.headers as Record<string, string>)["X-Source-Task-Id"] = taskId;
+    if (contextKey) {
+      (server.headers as Record<string, string>)["X-Context-Key"] = contextKey;
+    }
   }
 
   return config;
@@ -291,6 +295,7 @@ export async function createSessionMcpConfig(
   cwd: string,
   taskId: string,
   installedServers?: Record<string, Record<string, unknown>> | null,
+  contextKey?: string,
 ): Promise<string | null> {
   // Collect every .mcp.json from cwd up to filesystem root. Stopping at the first
   // match silently drops the swarm-managed /workspace/.mcp.json when the cloned
@@ -341,7 +346,12 @@ export async function createSessionMcpConfig(
   }
 
   try {
-    const config = mergeMcpConfig({ mcpServers: mergedServers }, installedServers ?? null, taskId);
+    const config = mergeMcpConfig(
+      { mcpServers: mergedServers },
+      installedServers ?? null,
+      taskId,
+      contextKey,
+    );
     const sessionConfigPath = `/tmp/mcp-${taskId}.json`;
     await writeFile(sessionConfigPath, JSON.stringify(config, null, 2));
     return sessionConfigPath;
@@ -950,11 +960,12 @@ export class ClaudeAdapter implements ProviderAdapter {
       );
     }
 
-    // Create per-session MCP config with X-Source-Task-Id header + installed servers (no shared-file race condition)
+    // Create per-session MCP config with X-Source-Task-Id + X-Context-Key headers + installed servers (no shared-file race condition)
     const sessionMcpConfig = await createSessionMcpConfig(
       config.cwd,
       config.taskId,
       installedServers,
+      config.contextKey,
     );
 
     // Stage the system prompt on disk so it can be passed as a file path

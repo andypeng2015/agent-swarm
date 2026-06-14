@@ -50,11 +50,12 @@ declare module "swarm-sdk" {
     // --- memory ---
     memory_search(args: {
       query: string;
+      intent: string;
       scope?: "all" | "agent" | "swarm";
       limit?: number;
       source?: string;
     }): Promise<unknown>;
-    memory_get(args: { memoryId: string }): Promise<unknown>;
+    memory_get(args: { memoryId: string; intent: string }): Promise<unknown>;
     memory_rate(args: { id: string; useful: boolean; note?: string }): Promise<unknown>;
     // --- tasks ---
     task_list(args?: Record<string, unknown>): Promise<unknown>;
@@ -298,7 +299,6 @@ declare module "swarm-sdk" {
       includeBuiltin?: boolean;
     }): Promise<unknown>;
     skill_get(args: { id: string }): Promise<unknown>;
-    skill_getFile(args: { skillId: string; path: string }): Promise<unknown>;
     skill_search(args: { query: string; limit?: number }): Promise<unknown>;
     skill_create(args: Record<string, unknown>): Promise<unknown>;
     skill_update(args: Record<string, unknown>): Promise<unknown>;

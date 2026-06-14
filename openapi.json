@@ -4248,6 +4248,9 @@
                   },
                   "persistMemory": {
                     "type": "boolean"
+                  },
+                  "contextKey": {
+                    "type": "string"
                   }
                 },
                 "required": [
@@ -4291,6 +4294,11 @@
                     "type": "string",
                     "minLength": 1
                   },
+                  "intent": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Why you are searching. Required for recall-edge tracking."
+                  },
                   "limit": {
                     "type": "integer",
                     "minimum": 1,
@@ -4317,7 +4325,8 @@
                   }
                 },
                 "required": [
-                  "query"
+                  "query",
+                  "intent"
                 ]
               }
             }
@@ -4516,6 +4525,17 @@
             "required": true,
             "name": "id",
             "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Why you are retrieving this memory."
+            },
+            "required": true,
+            "description": "Why you are retrieving this memory.",
+            "name": "intent",
+            "in": "query"
           }
         ],
         "responses": {

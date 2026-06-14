@@ -1317,6 +1317,7 @@ async function getPausedTasksFromAPI(config: ApiConfig): Promise<
     finishedAt?: string;
     output?: string;
     status?: string;
+    contextKey?: string;
   }>
 > {
   const headers: Record<string, string> = {
@@ -2329,6 +2330,7 @@ async function fetchRelevantMemories(
   agentId: string,
   taskDescription: string,
   taskId?: string,
+  contextKey?: string,
 ): Promise<string | null> {
   try {
     const headers: Record<string, string> = {
@@ -2341,11 +2343,12 @@ async function fetchRelevantMemories(
     // memories they surface against this task's session_logs at completion.
     // Plan: thoughts/taras/plans/2026-05-05-memory-rater-v1.5/step-2.md §2
     if (taskId) headers["X-Source-Task-ID"] = taskId;
+    if (contextKey) headers["X-Context-Key"] = contextKey;
 
     const response = await fetch(`${apiUrl}/api/memory/search`, {
       method: "POST",
       headers,
-      body: JSON.stringify({ query: taskDescription, limit: 5 }),
+      body: JSON.stringify({ query: taskDescription, limit: 5, intent: "pre-task memory recall" }),
     });
 
     if (!response.ok) return null;
@@ -2600,6 +2603,7 @@ async function spawnProviderProcess(
     harnessProvider: ProviderName;
     cwd?: string;
     vcsRepo?: string;
+    contextKey?: string;
   },
   logDir: string,
   isYolo: boolean,
@@ -2688,6 +2692,7 @@ async function spawnProviderProcess(
     // Propagate the selected OAuth slot so the adapter refreshes back to the
     // correct pool key. Undefined for non-codex providers and single-cred deploys.
     codexSlot: oauthSelection?.index,
+    contextKey: opts.contextKey,
   };
 
   // Create the long-lived `worker.session` span up front so the provider
@@ -4412,6 +4417,7 @@ export async function runAgent(config: RunnerConfig, opts: RunnerOptions) {
           agentId,
           task.task,
           task.id,
+          (task as { contextKey?: string }).contextKey,
         );
         if (resumeMemoryContext) {
           resumePrompt += resumeMemoryContext;
@@ -4537,6 +4543,7 @@ export async function runAgent(config: RunnerConfig, opts: RunnerOptions) {
               harnessProvider: state.harnessProvider,
               cwd: resumeCwd,
               vcsRepo: task.vcsRepo,
+              contextKey: (task as { contextKey?: string }).contextKey,
             },
             logDir,
             isYolo,
@@ -4802,7 +4809,7 @@ export async function runAgent(config: RunnerConfig, opts: RunnerOptions) {
         if (trigger.type === "task_assigned" || trigger.type === "task_offered") {
           const task =
             trigger.task && typeof trigger.task === "object" && "task" in trigger.task
-              ? (trigger.task as { task: string; id?: string })
+              ? (trigger.task as { task: string; id?: string; contextKey?: string })
               : null;
           if (task?.task) {
             const memoryContext = await fetchRelevantMemories(
@@ -4811,6 +4818,7 @@ export async function runAgent(config: RunnerConfig, opts: RunnerOptions) {
               agentId,
               task.task,
               task.id,
+              task.contextKey,
             );
             if (memoryContext) {
               triggerPrompt += memoryContext;
@@ -4870,6 +4878,7 @@ export async function runAgent(config: RunnerConfig, opts: RunnerOptions) {
         // Extract model from task data for per-task model selection
         const taskModel = (trigger.task as { model?: string } | undefined)?.model;
         const taskModelTier = (trigger.task as { modelTier?: string } | undefined)?.modelTier;
+        const taskContextKey = (trigger.task as { contextKey?: string } | undefined)?.contextKey;
 
         // Detect Slack context for conditional prompt sections
         const taskSlackChannelId = (trigger.task as { slackChannelId?: string } | undefined)
@@ -5016,6 +5025,7 @@ export async function runAgent(config: RunnerConfig, opts: RunnerOptions) {
               harnessProvider: state.harnessProvider,
               cwd: effectiveCwd,
               vcsRepo: taskVcsRepo,
+              contextKey: taskContextKey,
             },
             logDir,
             isYolo,
