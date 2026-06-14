@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { configs } from "../configs/index.ts";
 import { CONFIG_PRESETS, expandPresetSelection } from "../configs/presets.ts";
 import { serializeConfig, serializeScenario, validateScenario } from "./registry.ts";
-import type { Scenario } from "./types.ts";
+import type { CheckResult, DeterministicCheck, DimensionSpec, Scenario } from "./types.ts";
 
 /** Minimal valid scenario; tests override single fields to isolate one rule. */
 function scenario(overrides: Partial<Scenario>): Scenario {
@@ -363,6 +363,147 @@ describe("expandPresetSelection — CLI --preset expansion (v7.7 item 1)", () =>
     expect(() => expandPresetSelection(["nope"], [])).toThrow(
       'unknown preset "nope" (available: frontier, challengers, oss, claude-family, budget)',
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// v8.0 (OutcomeSpec v2) — weighted graded dimension validation + serialization.
+// ---------------------------------------------------------------------------
+describe("validateScenario — OutcomeSpec v2 dimensions (v8.0)", () => {
+  const okCheck = (name: string, weight?: number): DeterministicCheck => {
+    const c: DeterministicCheck = { name, fn: async (): Promise<CheckResult> => ({ pass: true }) };
+    if (weight !== undefined) c.weight = weight;
+    return c;
+  };
+  const withDims = (dimensions: DimensionSpec[]) => scenario({ outcome: { dimensions } });
+
+  test("a dimension with checks + positive weight is valid (core name)", () => {
+    expect(
+      validateScenario(withDims([{ name: "correctness", weight: 1, checks: [okCheck("c")] }])),
+    ).toEqual([]);
+  });
+
+  test("a dimension with a judge + positive weight is valid", () => {
+    expect(
+      validateScenario(withDims([{ name: "communication", weight: 2, judge: { rubric: "r" } }])),
+    ).toEqual([]);
+  });
+
+  test("custom dimension names are allowed (warn-only, not an error)", () => {
+    expect(
+      validateScenario(
+        withDims([{ name: "retrieval-fidelity", weight: 1, judge: { rubric: "r" } }]),
+      ),
+    ).toEqual([]);
+  });
+
+  test("weight must be > 0", () => {
+    expect(
+      validateScenario(withDims([{ name: "correctness", weight: 0, checks: [okCheck("c")] }])),
+    ).not.toEqual([]);
+    expect(
+      validateScenario(withDims([{ name: "correctness", weight: -1, checks: [okCheck("c")] }])),
+    ).not.toEqual([]);
+  });
+
+  test("a dimension must define at least one of checks/judge", () => {
+    expect(validateScenario(withDims([{ name: "correctness", weight: 1 }]))).not.toEqual([]);
+    expect(
+      validateScenario(withDims([{ name: "correctness", weight: 1, checks: [] }])),
+    ).not.toEqual([]);
+  });
+
+  test("a non-efficiency dimension may NOT set both checks AND a judge (round 11 XOR)", () => {
+    const errors = validateScenario(
+      withDims([
+        { name: "communication", weight: 1, checks: [okCheck("c")], judge: { rubric: "r" } },
+      ]),
+    );
+    expect(errors).not.toEqual([]);
+    expect(errors.join("\n")).toContain("EITHER checks OR a judge, not both");
+    // The XOR rule is structural: checks-only and judge-only each stay valid.
+    expect(
+      validateScenario(withDims([{ name: "communication", weight: 1, checks: [okCheck("c")] }])),
+    ).toEqual([]);
+    expect(
+      validateScenario(withDims([{ name: "communication", weight: 1, judge: { rubric: "r" } }])),
+    ).toEqual([]);
+  });
+
+  test("dimension names must be unique within a scenario", () => {
+    expect(
+      validateScenario(
+        withDims([
+          { name: "correctness", weight: 1, checks: [okCheck("a")] },
+          { name: "correctness", weight: 1, checks: [okCheck("b")] },
+        ]),
+      ),
+    ).not.toEqual([]);
+  });
+
+  test("per-check weight must be > 0 when present", () => {
+    expect(
+      validateScenario(withDims([{ name: "correctness", weight: 1, checks: [okCheck("c", 0)] }])),
+    ).not.toEqual([]);
+    expect(
+      validateScenario(withDims([{ name: "correctness", weight: 1, checks: [okCheck("c", 2)] }])),
+    ).toEqual([]);
+  });
+
+  test("total dimension weight must be > 0 (guards Phase 3 divide-by-zero)", () => {
+    // Each dim individually fails weight>0, so the total-weight error also fires.
+    const errors = validateScenario(
+      withDims([
+        { name: "correctness", weight: 0, checks: [okCheck("a")] },
+        { name: "completeness", weight: 0, checks: [okCheck("b")] },
+      ]),
+    );
+    expect(errors.join("\n")).toContain("total weight must be > 0");
+  });
+});
+
+describe("serializeScenario — OutcomeSpec v2 outcome view (v8.0)", () => {
+  test("v1 spec normalizes: checks → gates, judge → correctness dimension, default 0.75", () => {
+    const s = serializeScenario(
+      scenario({
+        outcome: {
+          checks: [{ name: "k", fn: async () => ({ pass: true }) }],
+          llmJudge: { rubric: "is it correct?" },
+        },
+      }),
+    );
+    expect(s.outcome.gates).toEqual(["k"]);
+    expect(s.outcome.dimensions).toEqual([
+      { name: "correctness", weight: 1, checks: [], judge: true },
+    ]);
+    // passThreshold now defaults via DEFAULT_PASS_THRESHOLD (0.75), not 0.7.
+    expect(s.outcome.passThreshold).toBe(0.75);
+    // legacy fields stay populated for back-compat UI.
+    expect(s.outcome.llmJudge).not.toBeNull();
+    expect(s.outcome.checks).toContain("tasks-completed");
+  });
+
+  test("v2 dimensions serialize names/weights/check-names/judge-flag", () => {
+    const s = serializeScenario(
+      scenario({
+        outcome: {
+          gates: [{ name: "g0", fn: async () => ({ pass: true }) }],
+          dimensions: [
+            {
+              name: "correctness",
+              weight: 3,
+              checks: [{ name: "c0", fn: async () => ({ pass: true }) }],
+            },
+            { name: "communication", weight: 1, judge: { rubric: "grade comms" } },
+          ],
+        },
+      }),
+    );
+    expect(s.outcome.gates).toEqual(["g0"]);
+    expect(s.outcome.dimensions).toEqual([
+      { name: "correctness", weight: 3, checks: ["c0"], judge: false },
+      { name: "communication", weight: 1, checks: [], judge: true },
+    ]);
   });
 });
 

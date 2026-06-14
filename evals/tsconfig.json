@@ -14,5 +14,5 @@
     "noUncheckedIndexedAccess": true,
     "types": ["bun"]
   },
-  "include": ["src", "scenarios", "configs"]
+  "include": ["src", "scenarios", "configs", "scripts"]
 }

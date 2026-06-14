@@ -13,7 +13,12 @@ import {
 } from "../db/queries.ts";
 import { AgenticJudgeError, judgeAgentic } from "../judge/agentic.ts";
 import { runChecks } from "../judge/deterministic.ts";
-import { beginJudging, clearJudging, endJudging } from "../judge/live-registry.ts";
+import {
+  beginJudging,
+  clearJudging,
+  endJudging,
+  type JudgeLiveHandle,
+} from "../judge/live-registry.ts";
 import { judgeWithLlm } from "../judge/llm.ts";
 import {
   beginAttemptProgress,
@@ -24,6 +29,8 @@ import {
   recordAttemptTimings,
   setAttemptPhase,
 } from "../live/attempt-progress.ts";
+import { normalizeOutcome } from "../normalize-outcome.ts";
+import { dimensionScoreFromChecks, efficiencyScore, finalizeScore } from "../scoring.ts";
 import {
   type AgentJson,
   flattenTranscript,
@@ -49,6 +56,7 @@ import {
   type HarnessConfig,
   type JudgeContext,
   type JudgeTrace,
+  type NormalizedDimension,
   type PhaseTimings,
   type RecomputeInput,
   type RecomputeResult,
@@ -140,6 +148,28 @@ export class InfraTaskFailureError extends Error {
   ) {
     super(message);
     this.name = "InfraTaskFailureError";
+  }
+}
+
+/**
+ * A genuine judge model/infra failure (v8.0 §3.5) — raised by the dimension
+ * scoring loop when a judge call (and, for agentic judges, its llm fallback)
+ * throws for a reason that is NOT a cancel. `runAttemptWithRetry` maps it to
+ * attempt status `error` (excluded from analytics) so a judge flake never
+ * masquerades as a 0-score config failure. A graded *check* that throws stays
+ * score 0 (that's the config's broken sandbox, not a judge fault); only a
+ * judge-side throw becomes `error`. Cancel (`signal.throwIfAborted()`) stays
+ * ahead of this so a cancelled attempt is left resumable/`pending`, never
+ * `error`.
+ */
+export class JudgeInfraError extends Error {
+  constructor(
+    public readonly dimension: string,
+    message: string,
+    options?: ErrorOptions,
+  ) {
+    super(message, options);
+    this.name = "JudgeInfraError";
   }
 }
 
@@ -591,6 +621,285 @@ function tasksCompletedCheck(tasks: SwarmTask[]): DeterministicCheck {
       return { pass: false, detail: parts.join(" · ") };
     },
   };
+}
+
+/**
+ * Score ONE normalized dimension (v8.0 §3.3) and persist exactly one judgment
+ * row carrying `dimension`/`weight`. Returns the dimension's 0-1 sub-score.
+ *
+ * - graded checks: `runChecks(dim.checks, ctx, judgeLive)` (threads the live
+ *   trace); per-check value = `res.score ?? (res.pass ? 1 : 0)`; sub-score =
+ *   weighted mean over member checks (per-check `weight ?? 1`). A check that
+ *   THROWS yields {pass:false} → value 0 (counts against the config). Row:
+ *   kind 'deterministic', name/dimension = dim.name, durationMs = Σ member
+ *   durations, score = subScore, pass = subScore >= 1.
+ * - judge: `judgeAgentic` (per `dim.judge.agentic`) with the agentic→llm
+ *   fallback, else `judgeWithLlm`. A genuine judge model/infra throw (NOT a
+ *   cancel — `signal.throwIfAborted()` stays ahead of the fallback) becomes a
+ *   typed {@link JudgeInfraError} so the attempt is marked `error`. Row: kind
+ *   'llm', name/dimension = dim.name, score = verdict.score, pass = score >= 1,
+ *   carrying steps/cost/tokens.
+ */
+export async function scoreDimension(opts: {
+  db: Client;
+  attempt: AttemptRow;
+  scenario: Scenario;
+  dim: NormalizedDimension;
+  ctx: JudgeContext;
+  judgeLive: JudgeLiveHandle;
+  judgeModel: string | null;
+  timings: PhaseTimings;
+  addJudgeCost: (c: number | null) => void;
+  signal?: AbortSignal;
+  log: (msg: string) => void;
+}): Promise<number> {
+  const { db, attempt, scenario, dim, ctx, judgeLive, timings, signal, log } = opts;
+
+  // ---- graded checks ----
+  if (dim.checks && dim.checks.length > 0) {
+    setAttemptPhase(attempt.id, "checks");
+    log(`[dimension] ${dim.name}: running ${dim.checks.length} graded check(s)`);
+    const dimTimed = await timed(() => runChecks(dim.checks ?? [], ctx, judgeLive));
+    const results = dimTimed.result;
+    timings.checksMs = (timings.checksMs ?? 0) + dimTimed.ms;
+    recordAttemptTimings(attempt.id, timings);
+    const values = results.map((res, i) => ({
+      value: res.score ?? (res.pass ? 1 : 0),
+      // A graded check that THROWS → {pass:false} → value 0 (config's fault).
+      weight: dim.checks?.[i]?.weight ?? 1,
+    }));
+    const subScore = dimensionScoreFromChecks(values);
+    const durationMs = results.reduce((s, r) => s + r.durationMs, 0);
+    const detail = results
+      .map((r) => `${r.name}=${(r.score ?? (r.pass ? 1 : 0)).toFixed(2)}`)
+      .join(", ");
+    await insertJudgment(db, {
+      id: crypto.randomUUID(),
+      attemptId: attempt.id,
+      kind: "deterministic",
+      name: dim.name,
+      pass: subScore >= 1,
+      score: subScore,
+      reasoning: detail || null,
+      durationMs,
+      dimension: dim.name,
+      weight: dim.weight,
+    });
+    log(`[dimension] ${dim.name}: score=${subScore.toFixed(2)} (graded checks)`);
+    return subScore;
+  }
+
+  // ---- judge ----
+  const judge = dim.judge;
+  if (!judge) {
+    // Normalizer guarantees a dimension has checks or a judge; defensively a
+    // source-less dimension contributes 0 rather than crashing.
+    log(`[dimension] ${dim.name}: no checks/judge — sub-score 0`);
+    await insertJudgment(db, {
+      id: crypto.randomUUID(),
+      attemptId: attempt.id,
+      kind: "deterministic",
+      name: dim.name,
+      pass: false,
+      score: 0,
+      reasoning: "dimension has no checks or judge",
+      durationMs: 0,
+      dimension: dim.name,
+      weight: dim.weight,
+    });
+    return 0;
+  }
+
+  const model = judge.model ?? opts.judgeModel ?? undefined;
+  const phase = judge.agentic ? "agentic-judge" : "llm-judge";
+  signal?.throwIfAborted();
+  setAttemptPhase(attempt.id, phase);
+  log(
+    `[dimension] ${dim.name}: ${judge.agentic ? "agentic" : "llm"} judge starting ` +
+      `(model ${judge.model ?? opts.judgeModel ?? "default"}` +
+      `${judge.agentic && judge.maxSteps ? `, maxSteps ${judge.maxSteps}` : ""})`,
+  );
+  const judgeT0 = Date.now();
+  let verdict: Awaited<ReturnType<typeof judgeWithLlm>>;
+  let judgeName = dim.name;
+  // Kept on AgenticJudgeError so the failed loop's steps/cost are never lost.
+  let failedTrace: JudgeTrace | null = null;
+  try {
+    if (judge.agentic) {
+      try {
+        verdict = await judgeAgentic({
+          scenario,
+          rubric: judge.rubric,
+          tasks: ctx.tasks,
+          transcript: ctx.transcript,
+          ctx,
+          model,
+          maxSteps: judge.maxSteps,
+          live: judgeLive,
+        });
+      } catch (err) {
+        // Cancel mid-agentic-judge kills the sandbox, making the judge tools
+        // fail — never start a fresh LLM call post-abort (frozen contract).
+        signal?.throwIfAborted();
+        log(
+          `[dimension] ${dim.name}: agentic judge failed (${err instanceof Error ? err.message : err}); falling back to llm judge`,
+        );
+        failedTrace = err instanceof AgenticJudgeError ? err.trace : null;
+        judgeName = `${dim.name} (llm fallback)`;
+        verdict = await judgeWithLlm({
+          scenario,
+          rubric: judge.rubric,
+          tasks: ctx.tasks,
+          transcript: ctx.transcript,
+          workers: ctx.workers,
+          model,
+          live: judgeLive,
+        });
+      }
+    } else {
+      verdict = await judgeWithLlm({
+        scenario,
+        rubric: judge.rubric,
+        tasks: ctx.tasks,
+        transcript: ctx.transcript,
+        workers: ctx.workers,
+        model,
+        live: judgeLive,
+      });
+    }
+  } catch (err) {
+    // A cancel is re-thrown verbatim (handled by runAttemptWithRetry → pending).
+    signal?.throwIfAborted();
+    // Anything else here (llm-judge throw, or the agentic fallback's llm throw)
+    // is a genuine judge model/infra flake — surface it typed so the attempt is
+    // marked `error`, never a 0-score config failure.
+    const message = err instanceof Error ? err.message : String(err);
+    throw new JudgeInfraError(
+      dim.name,
+      `judge infra failure on dimension "${dim.name}": ${message}`,
+      { cause: err },
+    );
+  }
+  const judgeMs = Date.now() - judgeT0;
+  if (judge.agentic) timings.agenticJudgeMs = (timings.agenticJudgeMs ?? 0) + judgeMs;
+  else timings.llmJudgeMs = (timings.llmJudgeMs ?? 0) + judgeMs;
+  recordAttemptTimings(attempt.id, timings);
+
+  const subScore = verdict.score;
+  // Fallback path: merge the failed agentic trace with the fallback's — the
+  // failed loop's spend is real and MUST be counted.
+  const steps = failedTrace
+    ? [...failedTrace.steps, ...verdict.trace.steps].map((s, i) => ({ ...s, index: i }))
+    : verdict.trace.steps;
+  const judgmentCost = failedTrace
+    ? sumNullableCosts(failedTrace.costUsd, verdict.trace.costUsd)
+    : verdict.trace.costUsd;
+  const judgmentTokens = failedTrace
+    ? mergeJudgeTokens(failedTrace.tokens, verdict.trace.tokens)
+    : verdict.trace.tokens;
+  await insertJudgment(db, {
+    id: crypto.randomUUID(),
+    attemptId: attempt.id,
+    kind: "llm",
+    name: judgeName,
+    pass: subScore >= 1,
+    score: subScore,
+    reasoning: verdict.reasoning,
+    raw: verdict.raw,
+    durationMs: failedTrace ? judgeMs : (verdict.trace.durationMs ?? judgeMs),
+    costUsd: judgmentCost,
+    tokensJson: judgmentTokens ? JSON.stringify(judgmentTokens) : null,
+    stepsJson: JSON.stringify(steps),
+    dimension: dim.name,
+    weight: dim.weight,
+  });
+  opts.addJudgeCost(judgmentCost);
+  log(`[dimension] ${dim.name}: score=${subScore.toFixed(2)} (judge)`);
+  return subScore;
+}
+
+/**
+ * True for the DETERMINISTIC efficiency dimension (v8.0 §5): a dimension named
+ * `efficiency` with no graded checks and no judge. Such a dimension is scored by
+ * the runner from the attempt's REAL cost/duration vs the scenario budget — not
+ * by a check or judge. A scenario that DOES attach checks/judge to a dimension
+ * named `efficiency` keeps the normal graded/judged path (this returns false).
+ */
+function isDeterministicEfficiencyDimension(dim: NormalizedDimension): boolean {
+  return dim.name === "efficiency" && (dim.checks?.length ?? 0) === 0 && dim.judge === undefined;
+}
+
+/**
+ * Score the deterministic `efficiency` dimension (v8.0 §5) from the attempt's
+ * REAL cost/duration against the scenario budget — never self-reported.
+ *
+ * - cost: scored only when `scenario.budgetUsd` is set AND `costUsd` is non-null
+ *   (priced). An UNPRICED attempt (`costUsd === null`) DROPS the cost sub-score
+ *   — a missing price is not a model failure (Open Question 6).
+ * - time: scored only when `scenario.budgetMs` is set.
+ * - when BOTH sub-scores are available, the dimension sub-score is the MIN of the
+ *   two (worst-case discipline).
+ *
+ * Returns `null` when NO sub-score is available (no time budget AND unpriced, or
+ * no budgets at all). The caller treats `null` as "drop this dimension from the
+ * weighted average" → the divisor re-normalizes over the REMAINING weights, so
+ * the dimension is never silently scored 0. When `null`, NO judgment row is
+ * written (there is nothing to grade).
+ */
+async function efficiencyDimensionScore(opts: {
+  db: Client;
+  attempt: AttemptRow;
+  scenario: Scenario;
+  dim: NormalizedDimension;
+  costUsd: number | null;
+  durationMs: number;
+  log: (msg: string) => void;
+}): Promise<number | null> {
+  const { db, attempt, scenario, dim, costUsd, durationMs, log } = opts;
+  const parts: string[] = [];
+  const subScores: number[] = [];
+
+  if (scenario.budgetUsd !== undefined) {
+    if (costUsd === null) {
+      // Unpriced — a missing price is not a model failure; drop the cost term.
+      parts.push("cost=unpriced(skip)");
+    } else {
+      const costScore = efficiencyScore(costUsd, scenario.budgetUsd);
+      subScores.push(costScore);
+      parts.push(`cost=${costScore.toFixed(2)} ($${costUsd.toFixed(4)}/$${scenario.budgetUsd})`);
+    }
+  }
+  if (scenario.budgetMs !== undefined) {
+    const timeScore = efficiencyScore(durationMs, scenario.budgetMs);
+    subScores.push(timeScore);
+    parts.push(`time=${timeScore.toFixed(2)} (${durationMs}ms/${scenario.budgetMs}ms)`);
+  }
+
+  if (subScores.length === 0) {
+    // Nothing to score (no time budget AND unpriced, or no budgets at all) —
+    // re-normalize this dimension OUT of the weighted average. No row written.
+    log(`[dimension] efficiency: no available metric — dropped (re-normalized out)`);
+    return null;
+  }
+
+  // Dual budget → MIN of the two sub-scores (worst-case discipline).
+  const subScore = Math.min(...subScores);
+  await insertJudgment(db, {
+    id: crypto.randomUUID(),
+    attemptId: attempt.id,
+    kind: "deterministic",
+    name: dim.name,
+    pass: subScore >= 1,
+    score: subScore,
+    reasoning: parts.join(", ") || null,
+    // Deterministic compute is ~instant; report 0 (the attempt's own durationMs
+    // is the wall-clock signal, not this dimension's compute time).
+    durationMs: 0,
+    dimension: dim.name,
+    weight: dim.weight,
+  });
+  log(`[dimension] efficiency: score=${subScore.toFixed(2)} (${parts.join(", ")})`);
+  return subScore;
 }
 
 async function runAttemptOnce(opts: {
@@ -1059,6 +1368,12 @@ async function runAttemptOnce(opts: {
       agentId: w.agentId,
       exec: (cmd: string) => sandboxExec(w.sandbox.sandboxID, cmd),
       readFile: (path: string) => sandboxReadFile(w.sandbox.sandboxID, path),
+      // Roster metadata (v8.0 §4) from boot-time BootMember — the agentic judge
+      // renders this as a manifest so it knows which worker is which / the lead.
+      name: w.member.spec.name,
+      template: w.member.spec.template,
+      role: w.member.role,
+      isLead: w.member.role === "lead",
     }));
     const worker0Ctx = ctxWorkers[0] as (typeof ctxWorkers)[number];
     const ctx: JudgeContext = {
@@ -1070,158 +1385,94 @@ async function runAttemptOnce(opts: {
       workers: ctxWorkers,
     };
 
-    const checks = [tasksCompletedCheck(tasks), ...(scenario.outcome.checks ?? [])];
+    // ---- v8.0 OutcomeSpec v2 scoring: gates → weighted dimensions ----
+    // Normalize any v1 spec (checks/llmJudge/agenticJudge/passThreshold) onto
+    // the v2 shape so v1 and v2 share one code path. tasksCompletedCheck is
+    // prepended HERE (not in the normalizer) so it gates both uniformly.
+    const normalized = normalizeOutcome(scenario.outcome);
+    const threshold = normalized.passThreshold;
+
+    // 1) Gates — binary must-pass. A gate failure forces passed=false, but the
+    // score is STILL computed and stored (anti-gaming: a config can't "win" by
+    // clearing only the cheap gate). A thrown check yields {pass:false} (it's
+    // the config's broken sandbox), NOT a judge error.
+    const gates = [tasksCompletedCheck(tasks), ...normalized.gates];
     setAttemptPhase(attempt.id, "checks");
-    log(`[check] running ${checks.length} deterministic check(s)`);
-    const checksTimed = await timed(() => runChecks(checks, ctx, judgeLive));
-    const checkResults = checksTimed.result;
-    timings.checksMs = checksTimed.ms;
+    log(`[check] running ${gates.length} gate check(s)`);
+    const gatesTimed = await timed(() => runChecks(gates, ctx, judgeLive));
+    const gateResults = gatesTimed.result;
+    timings.checksMs = gatesTimed.ms;
     recordAttemptTimings(attempt.id, timings);
-    for (const result of checkResults) {
+    for (const result of gateResults) {
       await insertJudgment(db, {
         id: crypto.randomUUID(),
         attemptId: attempt.id,
         kind: "deterministic",
         name: result.name,
         pass: result.pass,
+        score: result.score ?? (result.pass ? 1 : 0),
         reasoning: result.detail ?? null,
         durationMs: result.durationMs,
+        // Gates are NOT dimensions — dimension/weight stay NULL.
+        dimension: null,
+        weight: null,
       });
       log(
         `[check] ${result.name}: ${result.pass ? "pass" : "FAIL"}${result.detail ? ` (${result.detail})` : ""}`,
       );
     }
-    const checksPass = checkResults.every((r) => r.pass);
+    const allGatesPass = gateResults.every((r) => r.pass);
 
-    const threshold = scenario.outcome.passThreshold ?? 0.7;
-    let llmPass = true;
-    let score: number | null = null;
-
-    if (scenario.outcome.llmJudge) {
-      const spec = scenario.outcome.llmJudge;
-      signal?.throwIfAborted();
-      setAttemptPhase(attempt.id, "llm-judge");
-      log(`[judge] llm judge starting (model ${spec.model ?? opts.judgeModel ?? "default"})`);
-      const llmTimed = await timed(() =>
-        judgeWithLlm({
+    // 2) Dimensions — each yields a 0-1 sub-score (graded checks weighted mean,
+    // a judge, OR the deterministic efficiency metric), persisted as exactly one
+    // judgment row carrying dimension + weight. Sub-scores aggregate into
+    // score = Σ wᵢ·dimᵢ / Σ wᵢ.
+    const scored: { weight: number; subScore: number }[] = [];
+    for (const dim of normalized.dimensions) {
+      // Deterministic efficiency (v8.0 §5): a dimension named `efficiency` with
+      // no checks/judge is scored from the attempt's REAL cost/duration vs the
+      // scenario budget. An unpriced+no-time-budget result returns null → the
+      // dimension is DROPPED (re-normalized out of the divisor), never 0.
+      if (isDeterministicEfficiencyDimension(dim)) {
+        const effScore = await efficiencyDimensionScore({
+          db,
+          attempt,
           scenario,
-          rubric: spec.rubric,
-          tasks,
-          transcript,
-          model: spec.model ?? opts.judgeModel ?? undefined,
-          live: judgeLive,
-        }),
-      );
-      const verdict = llmTimed.result;
-      timings.llmJudgeMs = llmTimed.ms;
-      recordAttemptTimings(attempt.id, timings);
-      score = verdict.score;
-      llmPass = verdict.pass && verdict.score >= threshold;
-      await insertJudgment(db, {
-        id: crypto.randomUUID(),
-        attemptId: attempt.id,
-        kind: "llm",
-        name: "llm-judge",
-        pass: llmPass,
-        score: verdict.score,
-        reasoning: verdict.reasoning,
-        raw: verdict.raw,
-        durationMs: verdict.trace.durationMs ?? llmTimed.ms,
-        costUsd: verdict.trace.costUsd,
-        tokensJson: verdict.trace.tokens ? JSON.stringify(verdict.trace.tokens) : null,
-        stepsJson: JSON.stringify(verdict.trace.steps),
-      });
-      addJudgeCost(verdict.trace.costUsd);
-      log(`[judge] llm score=${verdict.score.toFixed(2)} pass=${llmPass}`);
-    }
-
-    let agenticPass = true;
-    if (scenario.outcome.agenticJudge) {
-      const spec = scenario.outcome.agenticJudge;
-      signal?.throwIfAborted();
-      setAttemptPhase(attempt.id, "agentic-judge");
-      log(
-        `[judge] agentic judge starting (model ${spec.model ?? opts.judgeModel ?? "default"}` +
-          `${spec.maxSteps ? `, maxSteps ${spec.maxSteps}` : ""})`,
-      );
-      const agenticT0 = Date.now();
-      let verdict: Awaited<ReturnType<typeof judgeAgentic>>;
-      let judgeName = "agentic-judge";
-      // Kept on AgenticJudgeError so the failed loop's steps/cost are never lost.
-      let failedTrace: JudgeTrace | null = null;
-      try {
-        verdict = await judgeAgentic({
-          scenario,
-          rubric: spec.rubric,
-          tasks,
-          transcript,
-          ctx,
-          model: spec.model ?? opts.judgeModel ?? undefined,
-          maxSteps: spec.maxSteps,
-          live: judgeLive,
+          dim,
+          costUsd,
+          durationMs: Date.now() - startedAt,
+          log,
         });
-      } catch (err) {
-        // Cancel mid-agentic-judge kills the sandbox, which makes the judge's
-        // exec tools fail — don't start a fresh LLM judge call post-abort
-        // (frozen contract: no judge calls run after the abort).
-        signal?.throwIfAborted();
-        // Agent never submitted a verdict (or judge-model flake) — fall back to
-        // the plain LLM judge rather than burning the whole attempt.
-        log(
-          `[judge] agentic judge failed (${err instanceof Error ? err.message : err}); falling back to llm judge`,
-        );
-        failedTrace = err instanceof AgenticJudgeError ? err.trace : null;
-        judgeName = "agentic-judge (llm fallback)";
-        verdict = await judgeWithLlm({
-          scenario,
-          rubric: spec.rubric,
-          tasks,
-          transcript,
-          model: spec.model ?? opts.judgeModel ?? undefined,
-          live: judgeLive,
-        });
+        if (effScore !== null) scored.push({ weight: dim.weight, subScore: effScore });
+        continue;
       }
-      timings.agenticJudgeMs = Date.now() - agenticT0;
-      recordAttemptTimings(attempt.id, timings);
-      agenticPass = verdict.pass && verdict.score >= threshold;
-      // Agentic verdicts verify against the live sandbox, so they take score precedence.
-      score = verdict.score;
-      // Fallback path: merge the failed agentic trace with the fallback's —
-      // the failed loop's spend is real and MUST be counted.
-      const steps = failedTrace
-        ? [...failedTrace.steps, ...verdict.trace.steps].map((s, i) => ({ ...s, index: i }))
-        : verdict.trace.steps;
-      const judgmentCost = failedTrace
-        ? sumNullableCosts(failedTrace.costUsd, verdict.trace.costUsd)
-        : verdict.trace.costUsd;
-      const judgmentTokens = failedTrace
-        ? mergeJudgeTokens(failedTrace.tokens, verdict.trace.tokens)
-        : verdict.trace.tokens;
-      await insertJudgment(db, {
-        id: crypto.randomUUID(),
-        attemptId: attempt.id,
-        kind: "llm",
-        name: judgeName,
-        pass: agenticPass,
-        score: verdict.score,
-        reasoning: verdict.reasoning,
-        raw: verdict.raw,
-        durationMs: failedTrace
-          ? timings.agenticJudgeMs
-          : (verdict.trace.durationMs ?? timings.agenticJudgeMs),
-        costUsd: judgmentCost,
-        tokensJson: judgmentTokens ? JSON.stringify(judgmentTokens) : null,
-        stepsJson: JSON.stringify(steps),
+      const subScore = await scoreDimension({
+        db,
+        attempt,
+        scenario,
+        dim,
+        ctx,
+        judgeLive,
+        judgeModel: opts.judgeModel,
+        timings,
+        addJudgeCost,
+        signal,
+        log,
       });
-      addJudgeCost(judgmentCost);
-      log(`[judge] agentic score=${verdict.score.toFixed(2)} pass=${agenticPass}`);
+      scored.push({ weight: dim.weight, subScore });
     }
 
     // Live view flips judging → false; traces stay readable until clearJudging.
     endJudging(attempt.id);
 
-    const passed = checksPass && llmPass && agenticPass;
-    if (score === null) score = passed ? 1 : 0;
+    // 3) Aggregate + pass. No dimensions (legacy gates-only spec) → score is the
+    // binary gate verdict. Otherwise score = Σ wᵢ·dimᵢ / Σ wᵢ. The score is
+    // computed regardless of gate outcome; gates only gate `passed`.
+    const { score, passed } = finalizeScore({
+      allGatesPass,
+      dimensions: scored,
+      passThreshold: threshold,
+    });
 
     // Persist artifacts (redacted) before the sandboxes die.
     signal?.throwIfAborted();
@@ -1430,10 +1681,12 @@ async function runAttemptWithRetry(opts: {
       return;
     } catch (err) {
       // Infra-net errors persist the frozen §0.13 message verbatim (it must
-      // START with "infra failure (<signatureId>)"); everything else keeps the
-      // stack for debuggability.
+      // START with "infra failure (<signatureId>)"); a JudgeInfraError (v8.0
+      // §3.5 judge model/infra flake) keeps its clean typed message and maps to
+      // status `error` (NOT `failed`); everything else keeps the stack for
+      // debuggability.
       const message =
-        err instanceof InfraTaskFailureError
+        err instanceof InfraTaskFailureError || err instanceof JudgeInfraError
           ? err.message
           : err instanceof Error
             ? (err.stack ?? err.message)

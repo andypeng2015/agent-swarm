@@ -391,6 +391,8 @@ function FactsColumn(props: { scenario: ScenarioJson }): ReactNode {
   const s = props.scenario;
   const members = scenarioMembers(s);
   const seed = s.seed;
+  // v8.0 OutcomeSpec v2 — absent on pre-v2 payloads (render nothing below).
+  const { gates, dimensions } = s.outcome;
   return (
     <div className="sc-facts">
       <Fact label="Id">
@@ -438,6 +440,48 @@ function FactsColumn(props: { scenario: ScenarioJson }): ReactNode {
       </Fact>
       <Fact label="Timeout">{fmtDuration(s.timeoutMs)}</Fact>
       <Fact label="Pass Threshold">≥ {s.outcome.passThreshold}</Fact>
+      {/* v8.0 OutcomeSpec v2: weighted dimensions. NULL/absent (pre-v2) → omit
+          the whole Fact so legacy scenarios render exactly as before. */}
+      {dimensions !== undefined && dimensions.length > 0 ? (
+        <Fact label={`Dimensions · ${dimensions.length}`}>
+          <div className="sc-dims">
+            {dimensions.map((d) => (
+              <Tooltip
+                key={d.name}
+                text={
+                  d.judge
+                    ? "Scored by a judge rubric"
+                    : d.checks.length > 0
+                      ? `Fed by checks:\n${d.checks.join("\n")}`
+                      : "Fed by checks"
+                }
+              >
+                <span className="sc-dim">
+                  <span className="sc-dim-name">{d.name}</span>
+                  <span className="sc-dim-weight">×{d.weight}</span>
+                  <span className={d.judge ? "sc-dim-src sc-dim-src-judge" : "sc-dim-src"}>
+                    {d.judge
+                      ? "judge"
+                      : `${d.checks.length} ${d.checks.length === 1 ? "check" : "checks"}`}
+                  </span>
+                </span>
+              </Tooltip>
+            ))}
+          </div>
+        </Fact>
+      ) : null}
+      {/* v8.0 OutcomeSpec v2: pass/fail gates. NULL/absent (pre-v2) → omit. */}
+      {gates !== undefined && gates.length > 0 ? (
+        <Fact label={`Gates · ${gates.length}`}>
+          <div className="sc-checks">
+            {gates.map((gate) => (
+              <code className="sc-check sc-gate" key={gate}>
+                {gate}
+              </code>
+            ))}
+          </div>
+        </Fact>
+      ) : null}
       <Fact label={`Checks · ${s.outcome.checks.length}`}>
         {s.outcome.checks.length === 0 ? (
           <span className="dim">—</span>

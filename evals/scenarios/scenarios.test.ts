@@ -1,24 +1,48 @@
 import { describe, expect, test } from "bun:test";
+import { normalizeOutcome } from "../src/normalize-outcome.ts";
 import { loadRegistry, serializeScenario, validateScenario } from "../src/registry.ts";
 import { validateSqlDumpText } from "../src/runner/index.ts";
-import { scenarioWorkerCount } from "../src/types.ts";
+import { type JudgeContext, type JudgeWorkerContext, scenarioWorkerCount } from "../src/types.ts";
 import { DEFAULT_SCENARIO_IDS, scenarios } from "./index.ts";
 
 /**
- * Registry-load gate for the bundled scenarios (v6 WP-B): every registered
- * scenario passes the frozen §0.11 validation, the new-machinery scenarios
- * carry the shapes the spec pins, and the sql fixture on disk satisfies the
- * frozen §1.3 content rules.
+ * A benign stub {@link JudgeContext} for exercising graded-check `fn`s purely for
+ * their return shape (not their verdict): every file read misses, every command
+ * fails, every API call returns nothing. Checks must still return a numeric
+ * `score` (here 0) rather than throwing — that's the contract this file asserts.
+ * Sized to cover the lead too (worker index === count), so multi-worker checks
+ * that target a specific worker find a context entry instead of going undefined.
+ */
+function stubJudgeContext(workerCount: number): JudgeContext {
+  const exec = async () => ({ exitCode: 1, stdout: "", stderr: "" });
+  const readFile = async () => null;
+  const workers: JudgeWorkerContext[] = Array.from({ length: workerCount + 1 }, (_, index) => ({
+    index,
+    agentId: `stub-${index}`,
+    exec,
+    readFile,
+  }));
+  return { tasks: [], transcript: "", exec, readFile, apiGet: async () => null, workers };
+}
+
+/**
+ * Registry-load gate for the bundled scenarios. The v8.0 round-11 catalog
+ * replaces the 7 old scenarios with the 7 new discriminating ones; this file is
+ * EXTENDED as each new scenario is authored (one `spec'd scenario shapes`
+ * describe block per scenario). The generic assertions iterate `scenarios`, so
+ * they hold for whatever subset of the round-11 catalog is currently registered.
  */
 
+// Currently-registered round-11 scenario ids. The full v8.0 round-11 catalog of
+// seven discriminating scenarios is now authored.
 const EXPECTED_IDS = [
-  "sql-seeded-history",
-  "memory-seeded-recall",
-  "memory-pipeline",
-  "two-workers",
-  "relay-handoff",
-  "build-verify-fix",
-  "roster-demo",
+  "sql-audit",
+  "memory-distractor",
+  "bug-ladder",
+  "cross-worker-invent",
+  "relay-pipeline",
+  "plan-implement-review",
+  "distributed-audit",
 ];
 
 describe("scenario registry", () => {
@@ -27,16 +51,32 @@ describe("scenario registry", () => {
     for (const id of EXPECTED_IDS) {
       expect(registry.scenarios.has(id)).toBe(true);
     }
+    // Exactly the registered round-11 scenarios — no leftover old ids.
+    expect([...registry.scenarios.keys()].sort()).toEqual([...EXPECTED_IDS].sort());
   });
 
-  test("the v7 §5.1 dummies are gone and the smoke scenario is the default", () => {
+  test("the deleted old scenarios are gone", () => {
     const registry = loadRegistry();
-    expect(registry.scenarios.has("hello-file")).toBe(false);
-    expect(registry.scenarios.has("quick-reasoning")).toBe(false);
-    expect(DEFAULT_SCENARIO_IDS).toEqual(["memory-seeded-recall"]);
-    expect(registry.scenarios.get("memory-seeded-recall")?.description).toContain(
-      "Designated smoke scenario",
-    );
+    for (const dead of [
+      "sql-seeded-history",
+      "memory-seeded-recall",
+      "memory-pipeline",
+      "two-workers",
+      "relay-handoff",
+      "build-verify-fix",
+      "roster-demo",
+      "hello-file",
+      "quick-reasoning",
+    ]) {
+      expect(registry.scenarios.has(dead)).toBe(false);
+    }
+  });
+
+  test("DEFAULT_SCENARIO_IDS all resolve in the registry", () => {
+    const registry = loadRegistry();
+    for (const id of DEFAULT_SCENARIO_IDS) {
+      expect(registry.scenarios.has(id)).toBe(true);
+    }
   });
 
   test("scenario ids are unique", () => {
@@ -58,114 +98,462 @@ describe("scenario registry", () => {
       expect(serialized.tasks.length).toBe(s.tasks.length);
     }
   });
+
+  test("every round-11 scenario carries gates + ≥1 weighted dimension (v8.0)", () => {
+    for (const s of scenarios) {
+      const serialized = serializeScenario(s);
+      // gates always include the synthetic tasks-completed gate + the report/output gate(s).
+      expect(serialized.outcome.gates.length).toBeGreaterThan(0);
+      expect(serialized.outcome.dimensions.length).toBeGreaterThan(0);
+      for (const dim of serialized.outcome.dimensions) {
+        expect(dim.weight).toBeGreaterThan(0);
+        // Each dimension is fed by graded checks OR a judge — EXCEPT the
+        // deterministic `efficiency` dimension (v8.0 §5), which the runner scores
+        // from the attempt's real cost/time vs a scenario budget (no checks/judge).
+        const isDeterministicEfficiency =
+          dim.name === "efficiency" && dim.checks.length === 0 && !dim.judge;
+        if (isDeterministicEfficiency) {
+          // It must be budget-backed (else the runner re-normalizes it out).
+          expect(serialized.budgetUsd !== null || serialized.budgetMs !== null).toBeTruthy();
+        } else {
+          // Checks XOR judge (round 11): exactly one source of truth — never both
+          // (the runner short-circuits on checks, so a co-set judge would be dead).
+          expect(dim.checks.length > 0 || dim.judge).toBeTruthy();
+          expect(dim.checks.length > 0 && dim.judge).toBeFalsy();
+        }
+      }
+    }
+  });
+
+  test("every graded dimension check returns a numeric score (v8.0)", async () => {
+    for (const s of scenarios) {
+      const ctx = stubJudgeContext(scenarioWorkerCount(s.workers));
+      const { dimensions } = normalizeOutcome(s.outcome);
+      // At least one dimension across the catalog must be fed by graded checks
+      // (the partial-credit signal); assert each such check returns a score.
+      const gradedChecks = dimensions.flatMap((d) => d.checks ?? []);
+      for (const check of gradedChecks) {
+        const result = await check.fn(ctx);
+        expect(typeof result.score, `${s.id} › ${check.name} must return a numeric score`).toBe(
+          "number",
+        );
+        expect(result.score).toBeGreaterThanOrEqual(0);
+        expect(result.score).toBeLessThanOrEqual(1);
+      }
+    }
+  });
 });
 
-describe("spec'd scenario shapes (v6)", () => {
+describe("spec'd scenario shapes (v8.0 round-11)", () => {
   const byId = new Map(scenarios.map((s) => [s.id, s]));
 
-  test("sql-seeded-history seeds from seeded-history.sql with both proof checks", () => {
-    const s = byId.get("sql-seeded-history");
-    expect(s?.seed?.sqlDump).toBe("seeded-history.sql");
-    const checkNames = (s?.outcome.checks ?? []).map((c) => c.name);
-    expect(checkNames).toContain("seeded-task-visible");
-    expect(checkNames).toContain("file-contains:/workspace/seeded-task.txt");
-  });
+  test("sql-audit seeds the audit dump and grades correctness + communication", () => {
+    const s = byId.get("sql-audit");
+    expect(s).toBeDefined();
+    expect(s?.workers ?? 1).toBe(1);
+    expect(s?.seed?.sqlDump).toBe("sql-audit-history.sql");
+    expect(s?.tasks.length).toBe(1);
+    expect(s?.timeoutMs).toBe(12 * 60_000);
 
-  test("memory-seeded-recall seeds exactly one memory and checks the recall file", () => {
-    const s = byId.get("memory-seeded-recall");
-    expect(s?.seed?.memories?.length).toBe(1);
-    expect(s?.seed?.memories?.[0]).toContain("nightjar-prod.internal");
-    const checkNames = (s?.outcome.checks ?? []).map((c) => c.name);
-    expect(checkNames).toContain("file-contains:/workspace/nightjar-deploy.txt");
-  });
+    // Two weighted dimensions: graded correctness (3 answer-key checks) +
+    // a communication judge.
+    const dims = s?.outcome.dimensions ?? [];
+    const correctness = dims.find((d) => d.name === "correctness");
+    const communication = dims.find((d) => d.name === "communication");
+    expect(correctness?.weight).toBe(3);
+    expect(communication?.weight).toBe(1);
+    expect(communication?.judge?.agentic).toBe(true);
 
-  test("memory-pipeline chains task 2 on task 1 via native dependsOn (§9.6)", () => {
-    const s = byId.get("memory-pipeline");
-    expect(s?.tasks.length).toBe(2);
-    expect(s?.tasks[1]?.dependsOn).toEqual([0]);
-    expect(s?.seed).toBeUndefined();
-    expect(s?.outcome.agenticJudge).toBeDefined();
-  });
-
-  test("two-workers routes one task per worker with both isolation checks (§3.5)", () => {
-    const s = byId.get("two-workers");
-    expect(s?.workers).toBe(2);
-    expect(s?.tasks.map((t) => t.worker)).toEqual([0, 1]);
-    const checkNames = (s?.outcome.checks ?? []).map((c) => c.name);
+    // The three answer-key checks (count → which → cross-reference anomaly).
+    const checkNames = (correctness?.checks ?? []).map((c) => c.name);
     expect(checkNames).toEqual([
-      "file-contains[w0]:/workspace/eval-worker-a.txt",
-      "file-contains[w1]:/workspace/eval-worker-b.txt",
-      "file-absent[w0]:/workspace/eval-worker-b.txt",
-      "file-absent[w1]:/workspace/eval-worker-a.txt",
+      "audit:completed-count",
+      "audit:top-priority-completed",
+      "audit:anomaly",
     ]);
-    // deliberately dep-free: gates the unchanged sequential creation mode
-    expect(s?.tasks.every((t) => !t.dependsOn?.length)).toBe(true);
+
+    // The report file is a binary must-pass gate (required output surface).
+    const gateNames = (s?.outcome.gates ?? []).map((g) => g.name);
+    expect(gateNames).toContain("file-contains:/workspace/audit/report.md");
+
+    // Anti-gaming: the answer-key values never appear in the task prompt.
+    const promptText = `${s?.description ?? ""}\n${s?.tasks.map((t) => `${t.title}\n${t.description}`).join("\n")}`;
+    expect(promptText).not.toMatch(/\b21\b/); // Q1 count
+    expect(promptText).not.toMatch(/Rotate the payments service API keys/); // Q2 answer
+    expect(promptText).not.toMatch(/Deploy the checkout redesign to production/); // Q3 answer
   });
 
-  test("relay-handoff crosses workers through a dependency chain (§13 S1)", () => {
-    const s = byId.get("relay-handoff");
-    expect(s?.workers).toBe(2);
+  test("memory-distractor seeds ground-truth memories and grades recall + retrieval-fidelity", () => {
+    const s = byId.get("memory-distractor");
+    expect(s).toBeDefined();
+    expect(s?.workers ?? 1).toBe(1);
+    expect(s?.tasks.length).toBe(1);
+    expect(s?.timeoutMs).toBe(8 * 60_000);
+
+    // Three seeded ground-truth memories carry the canonical config (host/port/rollout).
+    expect((s?.seed?.memories ?? []).length).toBe(3);
+
+    // Two weighted dimensions: graded per-fact correctness + a custom agentic
+    // retrieval-fidelity judge.
+    const dims = s?.outcome.dimensions ?? [];
+    const correctness = dims.find((d) => d.name === "correctness");
+    const fidelity = dims.find((d) => d.name === "retrieval-fidelity");
+    expect(correctness?.weight).toBe(3);
+    expect(fidelity?.weight).toBe(1);
+    // retrieval-fidelity is an agentic judge (Phase 4: cross-checks the sandbox).
+    expect(fidelity?.judge?.agentic).toBe(true);
+    expect(fidelity?.checks ?? []).toHaveLength(0);
+
+    // Correctness is fed by the graded facts-recalled check (partial credit).
+    const checkNames = (correctness?.checks ?? []).map((c) => c.name);
+    expect(checkNames).toEqual(["facts-recalled[w0]:/workspace/halberd/deploy-config.txt"]);
+
+    // The recall file is a binary must-pass gate (required output surface).
+    const gateNames = (s?.outcome.gates ?? []).map((g) => g.name);
+    expect(gateNames).toContain("file-contains:/workspace/halberd/deploy-config.txt");
+
+    // Anti-gaming: the ground-truth (correct) values NEVER appear in the prompt —
+    // only the WRONG distractor defaults do. A prompt-echo or guess scores 0.
+    const promptText = `${s?.description ?? ""}\n${s?.tasks.map((t) => `${t.title}\n${t.description}`).join("\n")}`;
+    expect(promptText).not.toMatch(/halberd-prod-3\.svc\.internal/); // host answer
+    expect(promptText).not.toMatch(/\b7711\b/); // port answer
+    expect(promptText).not.toMatch(/canary/i); // rollout answer
+    // The plausible-WRONG distractors ARE present in the prompt (they're the trap).
+    expect(promptText).toMatch(/halberd\.internal/);
+    expect(promptText).toMatch(/\b8080\b/);
+    expect(promptText).toMatch(/blue-green/);
+
+    // The ground-truth values DO live in the seeded memories (the only source).
+    const memoryText = (s?.seed?.memories ?? []).join("\n");
+    expect(memoryText).toMatch(/halberd-prod-3\.svc\.internal/);
+    expect(memoryText).toMatch(/\b7711\b/);
+    expect(memoryText).toMatch(/canary/i);
+  });
+
+  test("bug-ladder seeds the buggy project and grades correctness + instruction-following + efficiency", () => {
+    const s = byId.get("bug-ladder");
+    expect(s).toBeDefined();
+    expect(s?.workers ?? 1).toBe(1);
+    expect(s?.tasks.length).toBe(2);
+    expect(s?.timeoutMs).toBe(15 * 60_000);
+
+    // Efficiency is a waste-guard, not a quality lever (round-11): a $1.5 cost
+    // budget so a normal frontier run (~$0.8) scores 1.0 and only an egregious
+    // (>2-3×) overspend is penalized.
+    expect(s?.budgetUsd).toBe(1.5);
+    expect(s?.budgetMs).toBeUndefined();
+
+    // The fix task depends on the survey task (build-verify-fix machinery).
+    expect(s?.tasks[1]?.dependsOn).toEqual([0]);
+
+    // Seeds the project source + five per-bug test files via seed.exec heredocs.
+    const execSeed = (s?.seed?.exec ?? []).join("\n");
+    expect(execSeed).toMatch(/textkit\.ts/);
+    for (const n of [1, 2, 3, 4, 5]) {
+      expect(execSeed).toMatch(new RegExp(`bug${n}\\.test\\.ts`));
+    }
+
+    // Three weighted dimensions: graded correctness (test groups) + tests-
+    // unmodified instruction-following + deterministic efficiency.
+    const dims = s?.outcome.dimensions ?? [];
+    const correctness = dims.find((d) => d.name === "correctness");
+    const instruction = dims.find((d) => d.name === "instruction-following");
+    const efficiency = dims.find((d) => d.name === "efficiency");
+    expect(correctness?.weight).toBe(3);
+    expect(instruction?.weight).toBe(1);
+    expect(efficiency?.weight).toBe(1);
+
+    // Correctness is fed by the graded testGroupsGreen check (fraction green).
+    const ccNames = (correctness?.checks ?? []).map((c) => c.name);
+    expect(ccNames).toEqual(["test-groups-green[w0]"]);
+
+    // instruction-following is the tests-unmodified anti-gaming check.
+    const ifNames = (instruction?.checks ?? []).map((c) => c.name);
+    expect(ifNames).toEqual(["tests-unmodified"]);
+
+    // efficiency is the DETERMINISTIC dimension: no checks, no judge (the runner
+    // scores it from the attempt's real cost vs budgetUsd).
+    expect(efficiency?.checks ?? []).toHaveLength(0);
+    expect(efficiency?.judge).toBeUndefined();
+
+    // The source module is a binary must-pass gate (required output surface).
+    const gateNames = (s?.outcome.gates ?? []).map((g) => g.name);
+    expect(gateNames).toContain("src-exists");
+
+    // Anti-gaming: the bug FIXES / expected values are NOT in the task prompt —
+    // only the seeded test bodies pin them down. The prompt names no function fix
+    // and no expected output token.
+    const promptText = `${s?.description ?? ""}\n${s?.tasks.map((t) => `${t.title}\n${t.description}`).join("\n")}`;
+    expect(promptText).not.toMatch(/glyphLength/); // fn name lives only in the seeded module/tests
+    expect(promptText).not.toMatch(/countVowels/);
+    expect(promptText).not.toMatch(/code point/i); // the subtle-bug fix hint
+  });
+
+  test("cross-worker-invent runs a 3-worker relay and grades propagation + provenance", () => {
+    const s = byId.get("cross-worker-invent");
+    expect(s).toBeDefined();
+    // Three workers (the cap), no lead, three dependency-chained tasks.
+    expect(s?.workers).toBe(3);
+    expect(s?.lead).toBeUndefined();
+    expect(s?.tasks.length).toBe(3);
+    expect(s?.timeoutMs).toBe(12 * 60_000);
+
+    // Tasks fan out across the three workers: A=0 origin, B=1 + C=2 consumers,
+    // both depending on A (relay-handoff machinery generalized to a fan-out).
     expect(s?.tasks[0]?.worker).toBe(0);
     expect(s?.tasks[1]?.worker).toBe(1);
+    expect(s?.tasks[2]?.worker).toBe(2);
     expect(s?.tasks[1]?.dependsOn).toEqual([0]);
-    expect(s?.seed?.exec?.length).toBe(1);
-    expect(s?.seed?.exec?.[0]).toContain("relay-7f3a9c");
-    const checkNames = (s?.outcome.checks ?? []).map((c) => c.name);
-    expect(checkNames).toContain("file-contains[w1]:/workspace/relay-received.txt");
-    expect(checkNames).toContain("file-absent[w0]:/workspace/relay-received.txt");
+    expect(s?.tasks[2]?.dependsOn).toEqual([0]);
+
+    // seed.exec only prepares worker 0's relay dir (seed runs on worker 0 only).
+    const execSeed = (s?.seed?.exec ?? []).join("\n");
+    expect(execSeed).toMatch(/\/workspace\/relay/);
+
+    // Two weighted dimensions: graded per-hop correctness + a custom agentic
+    // provenance judge.
+    const dims = s?.outcome.dimensions ?? [];
+    const correctness = dims.find((d) => d.name === "correctness");
+    const provenance = dims.find((d) => d.name === "provenance");
+    expect(correctness?.weight).toBe(3);
+    expect(provenance?.weight).toBe(1);
+    // provenance is an agentic judge (Phase 4: cross-checks all three sandboxes).
+    expect(provenance?.judge?.agentic).toBe(true);
+    expect(provenance?.checks ?? []).toHaveLength(0);
+
+    // Correctness is fed by the single graded uuid-propagation check (partial
+    // credit over the two downstream hops).
+    expect((correctness?.checks ?? []).length).toBe(1);
+    expect((correctness?.checks ?? [])[0]?.name).toMatch(/^uuid-propagated:/);
+
+    // Gates: origin uuid exists + isolation proofs that A's origin file did NOT
+    // leak onto B/C (the handoff was through memory, not a shared disk).
+    const gateNames = (s?.outcome.gates ?? []).map((g) => g.name);
+    expect(gateNames).toContain("origin-uuid-exists");
+    expect(gateNames).toContain("file-absent[w1]:/workspace/relay/origin-uuid.txt");
+    expect(gateNames).toContain("file-absent[w2]:/workspace/relay/origin-uuid.txt");
+
+    // Anti-gaming: the invented UUID is per-attempt random, so no concrete uuid
+    // value appears in the prompt — there is nothing to echo or guess. The prompt
+    // only shows a throwaway EXAMPLE uuid the worker is told NOT to reuse.
+    const promptText = `${s?.description ?? ""}\n${s?.tasks.map((t) => `${t.title}\n${t.description}`).join("\n")}`;
+    const uuids = promptText.match(
+      /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi,
+    );
+    // At most the single illustrative example, and it is explicitly fenced off.
+    expect((uuids ?? []).length).toBeLessThanOrEqual(1);
+    expect(promptText).toMatch(/do\s+NOT reuse any example/i);
   });
 
-  test("roster-demo exercises the v7 heterogeneous roster: specs, overrides, lead routing", () => {
-    const s = byId.get("roster-demo");
-    expect(Array.isArray(s?.workers)).toBe(true);
-    const workers = s?.workers as import("../src/types.ts").WorkerSpec[];
-    expect(workers).toHaveLength(2);
-    // worker 0: cell config + identity (template/name) — NOT overridden
-    expect(workers[0]).toEqual({ name: "scribe-a", template: "coder" });
-    // worker 1: catalog config override
-    expect(workers[1]).toEqual({ name: "scribe-b", configId: "pi-deepseek-flash" });
-    // lead: stronger-model override + the official lead template
-    expect(s?.lead).toEqual({ name: "Lead", template: "lead", configId: "claude-sonnet" });
-    // one task per worker by index + the lead task via worker: "lead"
-    expect(s?.tasks.map((t) => t.worker)).toEqual([0, 1, "lead"]);
-    // deterministic-only — zero judge LLM spend
-    expect(s?.outcome.llmJudge).toBeUndefined();
-    expect(s?.outcome.agenticJudge).toBeUndefined();
-    const checkNames = (s?.outcome.checks ?? []).map((c) => c.name);
-    expect(checkNames).toEqual([
-      "file-contains[w0]:/workspace/roster-a.txt",
-      "file-contains[w1]:/workspace/roster-b.txt",
-      "file-contains[w2]:/workspace/roster-lead.txt",
+  test("relay-pipeline runs a 3-stage transform chain and grades correctness + completeness", () => {
+    const s = byId.get("relay-pipeline");
+    expect(s).toBeDefined();
+    // Three workers (the cap), no lead, three strictly-chained stage tasks.
+    expect(s?.workers).toBe(3);
+    expect(s?.lead).toBeUndefined();
+    expect(s?.tasks.length).toBe(3);
+    expect(s?.timeoutMs).toBe(12 * 60_000);
+
+    // Stages fan along a strict chain: A=0 → B=1 (dependsOn A) → C=2 (dependsOn B).
+    expect(s?.tasks[0]?.worker).toBe(0);
+    expect(s?.tasks[1]?.worker).toBe(1);
+    expect(s?.tasks[2]?.worker).toBe(2);
+    expect(s?.tasks[1]?.dependsOn).toEqual([0]);
+    expect(s?.tasks[2]?.dependsOn).toEqual([1]);
+
+    // seed.exec only prepares worker 0's pipeline dir + the random source payload
+    // (seed runs on worker 0 only); the payload is generated at runtime via awk.
+    const execSeed = (s?.seed?.exec ?? []).join("\n");
+    expect(execSeed).toMatch(/\/workspace\/pipeline/);
+    expect(execSeed).toMatch(/source\.csv/);
+    expect(execSeed).toMatch(/srand\(\)/); // random per-attempt payload
+
+    // Two weighted dimensions: graded per-stage correctness (3×) + completeness (1×).
+    const dims = s?.outcome.dimensions ?? [];
+    const correctness = dims.find((d) => d.name === "correctness");
+    const completeness = dims.find((d) => d.name === "completeness");
+    expect(correctness?.weight).toBe(3);
+    expect(completeness?.weight).toBe(1);
+    // Both are deterministic graded checks (no judge) — fully checkable per stage.
+    expect(correctness?.judge).toBeUndefined();
+    expect(completeness?.judge).toBeUndefined();
+
+    // Correctness is fed by the single graded pipeline-stages check (partial
+    // credit over the three chained stages).
+    expect((correctness?.checks ?? []).length).toBe(1);
+    expect((correctness?.checks ?? [])[0]?.name).toMatch(/^pipeline-stages:/);
+    // Completeness is fed by the stage-receipts-present check.
+    expect((completeness?.checks ?? []).map((c) => c.name)).toEqual(["pipeline-stages-present"]);
+
+    // Gates: source payload exists + isolation proofs that A's source file did NOT
+    // leak onto B/C (the handoff was through memory, not a shared disk).
+    const gateNames = (s?.outcome.gates ?? []).map((g) => g.name);
+    expect(gateNames).toContain("source-exists");
+    expect(gateNames).toContain("file-absent[w1]:/workspace/pipeline/source.csv");
+    expect(gateNames).toContain("file-absent[w2]:/workspace/pipeline/source.csv");
+
+    // Anti-gaming: the source payload is per-attempt random, so no concrete record
+    // value appears in the prompt — there is nothing to echo or guess. The prompt
+    // states the transform SPEC but contains no `<id>,<value>` data rows.
+    const promptText = `${s?.description ?? ""}\n${s?.tasks.map((t) => `${t.title}\n${t.description}`).join("\n")}`;
+    // No literal data record of the seeded shape (a number, comma, then a word).
+    expect(promptText).not.toMatch(/^\s*\d+,[a-z]+\s*$/m);
+  });
+
+  test("plan-implement-review runs a lead-driven plan→implement→review chain", () => {
+    const s = byId.get("plan-implement-review");
+    expect(s).toBeDefined();
+    // Two workers (under the cap) + a lead (outside the cap), three chained tasks.
+    expect(scenarioWorkerCount(s?.workers)).toBe(2);
+    expect(s?.lead).toBeDefined();
+    expect(s?.lead?.template).toBe("lead");
+    expect(s?.tasks.length).toBe(3);
+    // Raised timeout — the deepest scenario in the round.
+    expect(s?.timeoutMs).toBe(20 * 60_000);
+
+    // Stage chain: PLAN on the lead, IMPLEMENT then REVIEW on worker 0 (one sandbox
+    // so the review can cite the very file it built). Strict dependency chain.
+    expect(s?.tasks[0]?.worker).toBe("lead");
+    expect(s?.tasks[1]?.worker).toBe(0);
+    expect(s?.tasks[2]?.worker).toBe(0);
+    expect(s?.tasks[1]?.dependsOn).toEqual([0]);
+    expect(s?.tasks[2]?.dependsOn).toEqual([1]);
+
+    // seed.exec plants the stub + the five hidden test files on worker 0; the spec
+    // is published into swarm memory so the (isolated) lead can plan from it.
+    const execSeed = (s?.seed?.exec ?? []).join("\n");
+    expect(execSeed).toMatch(/ratelimit\.ts/);
+    for (const f of [
+      "starts-full",
+      "remove-guard",
+      "refill-rate",
+      "fractional-refill",
+      "capacity-cap",
+    ]) {
+      expect(execSeed).toMatch(new RegExp(`${f}\\.test\\.ts`));
+    }
+    expect((s?.seed?.memories ?? []).length).toBe(1);
+
+    // Four weighted dimensions (round 11 checks-XOR-judge split): graded
+    // correctness (test groups, 3x) + citation-validity (deterministic citation
+    // check, 1x) + communication (judge-only specificity grader, 1x) +
+    // instruction-following (tests-unmodified, 1x). The communication concern keeps
+    // its old combined weight of 2, now split across citation-validity + comms.
+    const dims = s?.outcome.dimensions ?? [];
+    const correctness = dims.find((d) => d.name === "correctness");
+    const citationValidity = dims.find((d) => d.name === "citation-validity");
+    const communication = dims.find((d) => d.name === "communication");
+    const instruction = dims.find((d) => d.name === "instruction-following");
+    expect(correctness?.weight).toBe(3);
+    expect(citationValidity?.weight).toBe(1);
+    expect(communication?.weight).toBe(1);
+    expect(instruction?.weight).toBe(1);
+
+    // Correctness is fed by the graded testGroupsGreen check (fraction green).
+    expect((correctness?.checks ?? []).map((c) => c.name)).toEqual(["test-groups-green[w0]"]);
+
+    // citation-validity is the deterministic half: the citations-resolve check
+    // (real in-range source lines). No judge on this dimension (checks XOR judge).
+    expect(citationValidity?.judge).toBeUndefined();
+    expect((citationValidity?.checks ?? []).map((c) => c.name)).toEqual([
+      "citations-resolve[w0]:ratelimit.ts",
     ]);
 
-    // serialization (v4 SerializedScenario): workerSpecs + lead survive
-    const serialized = serializeScenario(s as import("../src/types.ts").Scenario);
-    expect(serialized.workers).toBe(2);
-    expect(serialized.workerSpecs?.map((w) => w.name)).toEqual(["scribe-a", "scribe-b"]);
-    expect(serialized.workerSpecs?.[1]?.configId).toBe("pi-deepseek-flash");
-    expect(serialized.lead?.configId).toBe("claude-sonnet");
-    expect(serialized.tasks[2]?.worker).toBe("lead");
+    // Communication is JUDGE-ONLY (the head+tail-transcript-dependent review
+    // specificity grader, v8.0 §4) — no deterministic checks (checks XOR judge).
+    expect(communication?.judge?.agentic).toBe(true);
+    expect(communication?.checks ?? []).toHaveLength(0);
+
+    // instruction-following is the tests-unmodified anti-gaming check.
+    expect((instruction?.checks ?? []).map((c) => c.name)).toEqual(["tests-unmodified"]);
+
+    // Gates: the implemented source + the review file must exist on worker 0.
+    const gateNames = (s?.outcome.gates ?? []).map((g) => g.name);
+    expect(gateNames).toContain("src-exists");
+    expect(gateNames).toContain("review-exists");
+
+    // Anti-gaming: the implementation/fix and the test ground truth are NOT in the
+    // prompt — the prompt states behaviors, not method bodies or expected tokens,
+    // and never shows a concrete source line number to cite (the worker must read
+    // the file it built). No `ratelimit.ts:<line>` citation appears in the prompt.
+    const promptText = `${s?.description ?? ""}\n${s?.tasks.map((t) => `${t.title}\n${t.description}`).join("\n")}`;
+    // The only `ratelimit.ts:<line>` in the prompt is the illustrative `:42`
+    // EXAMPLE, explicitly fenced as an example; no real seeded line is leaked.
+    const citationLeaks = (promptText.match(/ratelimit\.ts:\d+/gi) ?? []).filter(
+      (c) => c.toLowerCase() !== "ratelimit.ts:42",
+    );
+    expect(citationLeaks).toEqual([]);
+    // The hidden test bodies / expected numeric results never appear in the prompt.
+    expect(promptText).not.toMatch(/toBeCloseTo/);
   });
 
-  test("build-verify-fix seeds the test suite and grades by re-running it (§13 S2)", () => {
-    const s = byId.get("build-verify-fix");
-    expect(s?.workers ?? 1).toBe(1);
-    expect(s?.tasks[1]?.dependsOn).toEqual([0]);
-    expect(s?.seed?.exec?.[0]).toContain("/workspace/calc/calc.test.ts");
-    expect(s?.seed?.exec?.[0]).toContain("pow(2, -2)");
-    const checkNames = (s?.outcome.checks ?? []).map((c) => c.name);
-    expect(checkNames).toContain("bun-test-green");
+  test("distributed-audit shards a seeded audit across 2 workers and merges via a lead", () => {
+    const s = byId.get("distributed-audit");
+    expect(s).toBeDefined();
+    // Two workers (under the cap) + a lead (outside the cap), three tasks.
+    expect(scenarioWorkerCount(s?.workers)).toBe(2);
+    expect(s?.lead).toBeDefined();
+    expect(s?.lead?.template).toBe("lead");
+    expect(s?.tasks.length).toBe(3);
+    // Raised timeout — a deep distributed data scenario.
+    expect(s?.timeoutMs).toBe(18 * 60_000);
+
+    // Reuses the shared sql-audit dump (same seeded history as sql-audit).
+    expect(s?.seed?.sqlDump).toBe("sql-audit-history.sql");
+
+    // Task fan: shard A on worker 0, shard B on worker 1, merge on the lead
+    // (dependsOn BOTH shards). The lead does NOT count toward the worker cap.
+    expect(s?.tasks[0]?.worker).toBe(0);
+    expect(s?.tasks[1]?.worker).toBe(1);
+    expect(s?.tasks[2]?.worker).toBe("lead");
+    expect(s?.tasks[2]?.dependsOn).toEqual([0, 1]);
+
+    // Three weighted dimensions: shard-coverage completeness (2×) + merged
+    // answer-key correctness (3×) + a communication judge (1×).
+    const dims = s?.outcome.dimensions ?? [];
+    const completeness = dims.find((d) => d.name === "completeness");
+    const correctness = dims.find((d) => d.name === "correctness");
+    const communication = dims.find((d) => d.name === "communication");
+    expect(completeness?.weight).toBe(2);
+    expect(correctness?.weight).toBe(3);
+    expect(communication?.weight).toBe(1);
+    // communication is an agentic judge (Phase 4: reads the lead's merged report).
+    expect(communication?.judge?.agentic).toBe(true);
+    expect(communication?.checks ?? []).toHaveLength(0);
+
+    // Completeness is fed by the graded shard-coverage check; correctness by the
+    // graded merged-answer-key check.
+    expect((completeness?.checks ?? []).map((c) => c.name)).toEqual(["shard-coverage"]);
+    expect((correctness?.checks ?? []).map((c) => c.name)).toEqual(["merged-answer-key"]);
+
+    // The merged report on the LEAD's sandbox (member index 2) is a binary
+    // must-pass gate (required output surface).
+    const gateNames = (s?.outcome.gates ?? []).map((g) => g.name);
+    expect(gateNames).toContain("file-contains[w2]:/workspace/audit/merged-report.md");
+
+    // Anti-gaming: the answer-key VALUES never appear in any prompt — only the
+    // seeded DB rows carry them. Echoing the prompt or guessing scores 0.
+    const promptText = `${s?.description ?? ""}\n${s?.tasks.map((t) => `${t.title}\n${t.description}`).join("\n")}`;
+    expect(promptText).not.toMatch(/\b21\b/); // completed count
+    expect(promptText).not.toMatch(/Rotate the payments service API keys/); // top-priority answer
+    expect(promptText).not.toMatch(/Deploy the checkout redesign to production/); // anomaly answer
+    // The numeric shard counts (failed=5, cancelled=4) are not stated either.
+    expect(promptText).not.toMatch(/\b5\s+(failed|tasks? failed)/i);
+    expect(promptText).not.toMatch(/\b4\s+(cancell?ed|tasks? cancell?ed)/i);
   });
 });
 
-describe("seeded-history.sql fixture", () => {
-  test("exists where the runner resolves it and passes the frozen §1.3 content rules", async () => {
-    const file = Bun.file(new URL("./fixtures/seeded-history.sql", import.meta.url));
+describe("sql-audit-history.sql fixture", () => {
+  test("exists where the runner resolves it and passes the frozen content rules", async () => {
+    const file = Bun.file(new URL("./fixtures/sql-audit-history.sql", import.meta.url));
     expect(await file.exists()).toBe(true);
     const text = await file.text();
     expect(validateSqlDumpText(text)).toBeNull();
-    // the one seeded historical row the scenario is built around
-    expect(text).toMatch(/Calibrate the flux capacitor/);
-    expect(text).toMatch(/'completed'/);
+    // The audit dataset is seeded; the base flux-capacitor row is removed.
+    expect(text).toMatch(/sql-audit dataset/);
+    expect(text).not.toMatch(/Calibrate the flux capacitor/);
+    // Answer-key rows are present in the seed data.
+    expect(text).toMatch(/Rotate the payments service API keys/);
+    expect(text).toMatch(/Deploy the checkout redesign to production/);
   });
 });

@@ -1,9 +1,12 @@
 import { getAaForConfig } from "../configs/aa.ts";
 import { configs } from "../configs/index.ts";
 import { scenarios } from "../scenarios/index.ts";
+import { normalizeOutcome } from "./normalize-outcome.ts";
 import type { Registry } from "./runner/index.ts";
 import { findDependencyCycles } from "./runner/topo.ts";
 import {
+  type CoreDimension,
+  type DimensionSpec,
   type HarnessConfig,
   type Scenario,
   scenarioWorkerCount,
@@ -11,6 +14,18 @@ import {
 } from "./types.ts";
 
 const MAX_WORKERS = 3;
+/**
+ * Canonical dimension names (v8.0). Custom dimension names are allowed
+ * (warn-only — never an error); this set is the source of truth for "is this a
+ * core dimension" used by validation messaging and downstream UI/analytics.
+ */
+export const CORE_DIMENSIONS = new Set<CoreDimension>([
+  "correctness",
+  "completeness",
+  "efficiency",
+  "instruction-following",
+  "communication",
+]);
 /**
  * Env keys the boot path owns — WorkerSpec.env may never override them
  * (v7 §9/§12). TEMPLATE_ID / AGENT_NAME / SYSTEM_PROMPT* are reserved too:
@@ -72,6 +87,92 @@ function validateWorkerSpec(
     } else if (WORKER_SPEC_RESERVED_ENV.has(key)) {
       errors.push(`${label}.env key "${key}" is reserved by the boot path`);
     }
+  }
+}
+
+/**
+ * True for the DETERMINISTIC efficiency dimension (v8.0 §5): a dimension named
+ * `efficiency` with no graded checks and no judge. This shape is scored by the
+ * runner from the attempt's REAL cost/duration vs the scenario budget (see
+ * `isDeterministicEfficiencyDimension` in runner/index.ts), so — unlike every
+ * other dimension — it is ALLOWED to omit checks/judge. The validator still
+ * requires the scenario to set at least one budget (budgetUsd/budgetMs); without
+ * a budget the runner re-normalizes it out entirely and it is a silent no-op.
+ */
+function isDeterministicEfficiencyDimension(dim: DimensionSpec): boolean {
+  return dim.name === "efficiency" && (dim.checks?.length ?? 0) === 0 && dim.judge === undefined;
+}
+
+/**
+ * OutcomeSpec v2 dimension validation (v8.0). Each DimensionSpec must carry a
+ * positive weight and EXACTLY ONE source of truth — deterministic checks XOR a
+ * judge, never both (round 11: the runner short-circuits on checks, so a judge
+ * set alongside checks would be DEAD; the XOR contract makes that authoring
+ * mistake a load-time error instead of a silent no-op). Dimension names are
+ * unique within a scenario; core names are validated, custom strings allowed
+ * (warn-only — not pushed as errors); per-check weights (when present) must be
+ * > 0; the total dimension weight must be > 0 (avoids divide-by-zero in the
+ * Phase 3 aggregation). The one exception to the checks/judge requirement is the
+ * deterministic `efficiency` dimension (v8.0 §5), which is scored by the runner
+ * from the attempt's real cost/time vs a scenario budget — `hasBudget` says
+ * whether the scenario set budgetUsd/budgetMs to back it.
+ */
+function validateDimensions(
+  dimensions: DimensionSpec[],
+  hasBudget: boolean,
+  errors: string[],
+): void {
+  const names = new Set<string>();
+  let totalWeight = 0;
+  dimensions.forEach((dim, i) => {
+    const label = `outcome.dimensions[${i}] ("${dim.name}")`;
+    if (typeof dim.name !== "string" || dim.name.trim().length === 0) {
+      errors.push(`${label}: name must be a non-empty string`);
+    } else if (names.has(dim.name)) {
+      errors.push(`${label}: dimension name "${dim.name}" is duplicated`);
+    }
+    names.add(dim.name);
+    // Core names (CORE_DIMENSIONS) are the canonical set; custom names (e.g.
+    // "retrieval-fidelity", "provenance") are allowed by design and never
+    // rejected. Validation only enforces structure (weight/sources/uniqueness),
+    // so a non-core name produces no error.
+    if (!(dim.weight > 0)) {
+      errors.push(`${label}: weight must be > 0, got ${dim.weight}`);
+    } else {
+      totalWeight += dim.weight;
+    }
+    const hasChecks = (dim.checks?.length ?? 0) > 0;
+    if (isDeterministicEfficiencyDimension(dim)) {
+      // Deterministic efficiency (v8.0 §5): checks/judge are intentionally
+      // omitted; the runner scores it from real cost/time. It MUST be backed by a
+      // budget, else it is silently re-normalized out and the weight is dead.
+      if (!hasBudget) {
+        errors.push(
+          `${label}: deterministic efficiency dimension requires scenario.budgetUsd or budgetMs`,
+        );
+      }
+    } else if (!hasChecks && dim.judge === undefined) {
+      errors.push(`${label}: must define at least one of checks/judge`);
+    } else if (hasChecks && dim.judge !== undefined) {
+      // XOR (round 11): a dimension is fed by deterministic checks OR a judge,
+      // never both. The runner short-circuits on checks, so a co-set judge would
+      // never run. Split such a dimension into a check-fed dimension and a
+      // judge-only dimension. (The efficiency exemption above never reaches here.)
+      errors.push(
+        `${label}: a dimension must define EITHER checks OR a judge, not both ` +
+          `(the runner scores from checks and the judge would be dead — split into two dimensions)`,
+      );
+    }
+    for (const check of dim.checks ?? []) {
+      if (check.weight !== undefined && !(check.weight > 0)) {
+        errors.push(
+          `${label}: check "${check.name}" weight must be > 0 when present, got ${check.weight}`,
+        );
+      }
+    }
+  });
+  if (dimensions.length > 0 && !(totalWeight > 0)) {
+    errors.push("outcome.dimensions total weight must be > 0");
   }
 }
 
@@ -162,6 +263,18 @@ export function validateScenario(s: Scenario): string[] {
       }
     });
   }
+  // OutcomeSpec v2 (v8.0): weighted graded dimensions.
+  if (s.outcome.dimensions !== undefined) {
+    const hasBudget = s.budgetUsd !== undefined || s.budgetMs !== undefined;
+    validateDimensions(s.outcome.dimensions, hasBudget, errors);
+  }
+  // Efficiency-dimension budgets (v8.0 §5): positive when present.
+  if (s.budgetUsd !== undefined && !(s.budgetUsd > 0)) {
+    errors.push(`budgetUsd must be > 0 when present, got ${s.budgetUsd}`);
+  }
+  if (s.budgetMs !== undefined && !(s.budgetMs > 0)) {
+    errors.push(`budgetMs must be > 0 when present, got ${s.budgetMs}`);
+  }
   return errors;
 }
 
@@ -211,11 +324,19 @@ export interface SerializedScenario {
   tasks: { title: string; description: string; worker: number | "lead"; dependsOn: number[] }[];
   seed: { exec: string[]; sqlDump: string | null; memories: string[] } | null;
   timeoutMs: number;
+  /** v8.0 §5: cost budget (USD) for the deterministic efficiency dimension; null when unset. */
+  budgetUsd: number | null;
+  /** v8.0 §5: wall-clock budget (ms) for the deterministic efficiency dimension; null when unset. */
+  budgetMs: number | null;
   outcome: {
     checks: string[];
     llmJudge: { rubric: string; model: string | null } | null;
     agenticJudge: { rubric: string; model: string | null; maxSteps: number | null } | null;
     passThreshold: number;
+    /** v8.0 OutcomeSpec v2: gate check names (after normalization). */
+    gates: string[];
+    /** v8.0 OutcomeSpec v2: weighted graded dimensions (after normalization). */
+    dimensions: { name: string; weight: number; checks: string[]; judge: boolean }[];
   };
 }
 
@@ -232,6 +353,10 @@ function serializeWorkerSpec(w: WorkerSpec): SerializedWorkerSpec {
 
 export function serializeScenario(s: Scenario): SerializedScenario {
   const hasSeed = Boolean(s.seed?.exec?.length || s.seed?.sqlDump || s.seed?.memories?.length);
+  // v8.0: serialize gates/dimensions from the NORMALIZED outcome so the UI sees
+  // a consistent view regardless of v1/v2 authoring. The synthetic
+  // "tasks-completed" prepend on `checks` stays (the runner injects it).
+  const normalized = normalizeOutcome(s.outcome);
   return {
     id: s.id,
     name: s.name,
@@ -253,6 +378,8 @@ export function serializeScenario(s: Scenario): SerializedScenario {
         }
       : null,
     timeoutMs: s.timeoutMs ?? 10 * 60 * 1000,
+    budgetUsd: s.budgetUsd ?? null,
+    budgetMs: s.budgetMs ?? null,
     outcome: {
       checks: ["tasks-completed", ...(s.outcome.checks ?? []).map((c) => c.name)],
       llmJudge: s.outcome.llmJudge
@@ -265,7 +392,14 @@ export function serializeScenario(s: Scenario): SerializedScenario {
             maxSteps: s.outcome.agenticJudge.maxSteps ?? null,
           }
         : null,
-      passThreshold: s.outcome.passThreshold ?? 0.7,
+      passThreshold: normalized.passThreshold,
+      gates: normalized.gates.map((g) => g.name),
+      dimensions: normalized.dimensions.map((d) => ({
+        name: d.name,
+        weight: d.weight,
+        checks: (d.checks ?? []).map((c) => c.name),
+        judge: d.judge !== undefined,
+      })),
     },
   };
 }

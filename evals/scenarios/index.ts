@@ -1,25 +1,29 @@
 import type { Scenario } from "../src/types.ts";
-import { buildVerifyFix } from "./build-verify-fix.ts";
-import { memoryPipeline } from "./memory-pipeline.ts";
-import { memorySeededRecall } from "./memory-seeded-recall.ts";
-import { relayHandoff } from "./relay-handoff.ts";
-import { rosterDemo } from "./roster-demo.ts";
-import { sqlSeededHistory } from "./sql-seeded-history.ts";
-import { twoWorkers } from "./two-workers.ts";
+import { bugLadder } from "./bug-ladder.ts";
+import { crossWorkerInvent } from "./cross-worker-invent.ts";
+import { distributedAudit } from "./distributed-audit.ts";
+import { memoryDistractor } from "./memory-distractor.ts";
+import { planImplementReview } from "./plan-implement-review.ts";
+import { relayPipeline } from "./relay-pipeline.ts";
+import { sqlAudit } from "./sql-audit.ts";
 
-// v7 §5.1: the `hello-file` and `quick-reasoning` dummies are REMOVED from the
-// registry. Historical runs referencing them keep rendering everywhere (run
-// lists/details/analytics use stored ids, no registry lookups); the scenario
-// detail route degrades to the unregistered-scenario fallback.
-// `memory-seeded-recall` is the designated smoke scenario.
+// v8.0 round-11 catalog (OutcomeSpec v2). The 7 old scenarios were deleted in
+// Phase 6 scaffolding; the 7 new discriminating scenarios — sql-audit,
+// memory-distractor, bug-ladder, cross-worker-invent, relay-pipeline,
+// plan-implement-review, distributed-audit — are appended here as each is
+// authored. Historical runs referencing deleted ids keep rendering via stored
+// ids (no registry lookup) with the unregistered-scenario fallback on the
+// detail route.
 export const scenarios: Scenario[] = [
-  sqlSeededHistory,
-  memorySeededRecall,
-  memoryPipeline,
-  twoWorkers,
-  relayHandoff,
-  buildVerifyFix,
-  rosterDemo,
+  sqlAudit,
+  memoryDistractor,
+  bugLadder,
+  crossWorkerInvent,
+  relayPipeline,
+  planImplementReview,
+  distributedAudit,
 ];
 
-export const DEFAULT_SCENARIO_IDS = ["memory-seeded-recall"];
+// Cheap smoke default for `--scenarios` when none are passed. sql-audit is the
+// designated Data smoke scenario (seeds a dump, one worker, ~$0.15-0.3).
+export const DEFAULT_SCENARIO_IDS: string[] = ["sql-audit"];

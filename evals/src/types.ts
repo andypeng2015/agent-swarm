@@ -135,20 +135,110 @@ export interface AgenticJudgeSpec {
 export interface CheckResult {
   pass: boolean;
   detail?: string;
+  /**
+   * Graded value in [0,1] (v8.0 OutcomeSpec v2). When omitted, scoring falls
+   * back to the binary `pass` (1 when pass, else 0). A graded check that feeds
+   * a weighted dimension sets this to report partial credit.
+   */
+  score?: number;
 }
 
 /** Deterministic check, run against the live attempt context after tasks finish. */
 export interface DeterministicCheck {
   name: string;
   fn: (ctx: JudgeContext) => Promise<CheckResult>;
+  /**
+   * Per-check weight within a dimension's graded checks (v8.0). Default 1.
+   * Ignored for gates (binary must-pass — weight is meaningless there).
+   */
+  weight?: number;
+}
+
+/**
+ * The five canonical scoring dimensions (v8.0 OutcomeSpec v2). Core names are
+ * validated against this set; custom dimension names are allowed (warn-only).
+ */
+export type CoreDimension =
+  | "correctness"
+  | "completeness"
+  | "efficiency"
+  | "instruction-following"
+  | "communication";
+
+/** A dimension name: a {@link CoreDimension} or any custom string (core validated, custom allowed). */
+export type DimensionName = CoreDimension | (string & {});
+
+/** Judge sub-spec feeding a single weighted dimension (v8.0). */
+export interface JudgeSubSpec {
+  /** Rubric describing what a successful outcome looks like for this dimension. */
+  rubric: string;
+  /** OpenRouter model id; defaults to the run's judgeModel, then EVAL_JUDGE_MODEL. */
+  model?: string;
+  /** When true, the dimension is graded by the agentic (tool-loop) judge. */
+  agentic?: boolean;
+  /** Max agentic-judge steps before forcing a verdict (agentic only). Default 10. */
+  maxSteps?: number;
+}
+
+/**
+ * One weighted, graded dimension of an outcome (v8.0 OutcomeSpec v2). The
+ * dimension's 0-1 sub-score comes from graded {@link checks} (weighted mean) OR
+ * a {@link judge} rubric. At least one of `checks`/`judge` is required
+ * (enforced in validateScenario). The final attempt score is
+ * `Σ wᵢ·dimᵢ / Σ wᵢ` over all dimensions.
+ */
+export interface DimensionSpec {
+  name: DimensionName;
+  /** Dimension weight in the aggregate; must be > 0 (validated). */
+  weight: number;
+  /** Graded checks feeding this dimension (weighted mean of per-check values). */
+  checks?: DeterministicCheck[];
+  /** OR a judge rubric grading this dimension. */
+  judge?: JudgeSubSpec;
 }
 
 export interface OutcomeSpec {
+  // ---- v1 (kept; normalized to v2 internally) ----
   llmJudge?: LlmJudgeSpec;
   agenticJudge?: AgenticJudgeSpec;
   checks?: DeterministicCheck[];
-  /** Minimum LLM judge score in [0,1] to count as pass. Default 0.7. */
+  /**
+   * Minimum aggregate score in [0,1] to count as pass. Default
+   * DEFAULT_PASS_THRESHOLD (0.75). In v2 this gates the WEIGHTED AGGREGATE, not
+   * each judge individually.
+   */
   passThreshold?: number;
+  // ---- v2 (gates + weighted graded dimensions) ----
+  /** Binary must-pass checks (v8.0). A failed gate forces `passed = false`. */
+  gates?: DeterministicCheck[];
+  /** Weighted graded dimensions (v8.0). */
+  dimensions?: DimensionSpec[];
+}
+
+/**
+ * Canonical v2 dimension after normalization (v8.0). Either `checks` or `judge`
+ * is populated (a normalized dimension always has at least one source). Custom
+ * names survive normalization unchanged.
+ */
+export interface NormalizedDimension {
+  name: DimensionName;
+  weight: number;
+  checks?: DeterministicCheck[];
+  judge?: JudgeSubSpec;
+}
+
+/**
+ * Canonical v2 outcome (v8.0): the shape the runner aggregates against. Any v1
+ * spec (checks/llmJudge/agenticJudge/passThreshold) maps onto this via
+ * {@link import("./normalize-outcome.ts").normalizeOutcome}; native-v2 specs
+ * pass through. `gates` are binary must-pass; `dimensions` are weighted/graded.
+ * `tasksCompletedCheck` is NOT prepended here — that stays the runner's job so
+ * it applies uniformly to v1 and v2.
+ */
+export interface NormalizedOutcome {
+  gates: DeterministicCheck[];
+  dimensions: NormalizedDimension[];
+  passThreshold: number;
 }
 
 /**
@@ -197,6 +287,21 @@ export interface Scenario {
   /** Per-attempt wall clock budget. Default 10 minutes. */
   timeoutMs?: number;
   /**
+   * Cost budget in USD for the deterministic `efficiency` dimension (v8.0 §5).
+   * When set (> 0, validated), an `efficiency` dimension with no checks/judge is
+   * scored 1.0 at observed cost ≤ budget, decaying linearly to 0 at N× budget
+   * ({@link import("./scoring.ts").EFFICIENCY_DECAY_FACTOR}). Unpriced attempts
+   * (costUsd null) drop the cost sub-score (re-normalized out — never scored 0).
+   */
+  budgetUsd?: number;
+  /**
+   * Wall-clock budget in ms for the deterministic `efficiency` dimension
+   * (v8.0 §5). Same decay mapping as {@link budgetUsd}. When BOTH budgets are
+   * set, the efficiency sub-score is MIN(costScore, timeScore) (worst-case
+   * discipline).
+   */
+  budgetMs?: number;
+  /**
    * Workers booted per attempt. Number = N homogeneous default workers
    * (back-compat); WorkerSpec[] = one configured worker per entry (v7 §9).
    * Default 1. Max 3 either way.
@@ -230,6 +335,15 @@ export interface JudgeWorkerContext {
   agentId: string;
   exec: (cmd: string) => Promise<{ exitCode: number; stdout: string; stderr: string }>;
   readFile: (path: string) => Promise<string | null>;
+  /**
+   * Roster metadata (v8.0 §4) — populated from the boot member so the agentic
+   * judge can render a manifest and attribute "who said what". All optional for
+   * back-compat (pre-v8 ctxWorkers and bare test fixtures omit them).
+   */
+  name?: string;
+  template?: string;
+  role?: "lead" | "worker";
+  isLead?: boolean;
 }
 
 /** What judges can see: the swarm API of the attempt's stack + sandbox access. */
@@ -713,6 +827,16 @@ export interface JudgmentRow {
   tokens: TokenTotals | null;
   /** Full trace steps (llm/agentic). Null on old rows / deterministic. */
   steps: JudgeStep[] | null;
+  /**
+   * The scoring dimension this judgment grades (v8.0 OutcomeSpec v2). NULL on
+   * gate rows and all pre-v2 rows (gates are binary must-pass, not dimensions).
+   */
+  dimension: string | null;
+  /**
+   * Dimension weight in the weighted aggregate (v8.0). NULL on gate rows and
+   * all pre-v2 rows.
+   */
+  weight: number | null;
   createdAt: string;
 }
 

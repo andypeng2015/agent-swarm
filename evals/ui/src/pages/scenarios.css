@@ -116,6 +116,52 @@
   overflow-wrap: anywhere;
 }
 
+/* v8.0 OutcomeSpec v2 — weighted dimensions + pass/fail gates */
+.sc-dims {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-start;
+}
+
+.sc-dim {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 1px 7px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel-2);
+  font-size: 11px;
+  max-width: 100%;
+  flex-wrap: wrap;
+}
+
+.sc-dim-name {
+  font-weight: 600;
+}
+
+.sc-dim-weight {
+  font-family: var(--font-mono);
+  color: var(--dim);
+}
+
+.sc-dim-src {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--dim);
+}
+
+.sc-dim-src-judge {
+  color: var(--accent);
+}
+
+.sc-gate {
+  border-color: var(--accent);
+}
+
 .sc-seed {
   display: flex;
   flex-direction: column;

@@ -50,4 +50,5 @@ sqlite3 /tmp/fixture-src.sqlite .dump > evals/scenarios/fixtures/<name>.sql
 
 | File | Used by | Contents |
 |---|---|---|
-| `seeded-history.sql` | `sql-seeded-history` | Full dump of a fresh dev DB (v1.94.0 migration set) plus exactly one completed, unassigned historical task titled "Calibrate the flux capacitor". Built with the recipe above: task created via `POST /api/tasks`, completed via a direct status/output update before dumping. |
+| `seeded-history.sql` | _(legacy — scenario deleted in v8.0)_ | Full dump of a fresh dev DB (v1.94.0 migration set) plus exactly one completed, unassigned historical task titled "Calibrate the flux capacitor". Kept as the base dump the `sql-audit` generator builds on. Built with the recipe above: task created via `POST /api/tasks`, completed via a direct status/output update before dumping. |
+| `sql-audit-history.sql` | `sql-audit` | The `seeded-history.sql` base dump with the flux-capacitor row removed and 30 terminal `agent_tasks` rows (completed/failed/cancelled) appended as an audit dataset with red herrings + one status/output-contradiction anomaly. **Generated, not hand-edited** — run `bun scenarios/fixtures/generate-sql-audit-history.ts` to regenerate, then mirror the printed answer key into `scenarios/sql-audit.ts`. |

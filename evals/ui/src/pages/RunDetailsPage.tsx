@@ -1787,6 +1787,26 @@ const JUDGMENT_COLUMNS: Column<JudgmentJson>[] = [
     render: (j) => <span className="rd-judgment-name">{j.name}</span>,
   },
   {
+    // v8.0 OutcomeSpec v2: the weighted dimension this judgment feeds. Gate rows
+    // and pre-v2 rows carry NULL → rendered as a dim dash (frozen-contract).
+    key: "dimension",
+    header: "Dimension",
+    width: "150px",
+    sortValue: (j) => j.dimension ?? "",
+    titleText: (j) => (j.dimension === null ? "" : `${j.dimension} · weight ${fmtScore(j.weight)}`),
+    render: (j) =>
+      j.dimension === null ? (
+        <span className="rd-judgment-dim dim">—</span>
+      ) : (
+        <span className="rd-judgment-dim">
+          {humanizeKey(j.dimension)}
+          {j.weight === null ? null : (
+            <span className="rd-judgment-weight"> ×{fmtScore(j.weight)}</span>
+          )}
+        </span>
+      ),
+  },
+  {
     key: "verdict",
     header: "Verdict",
     width: "84px",
@@ -1830,6 +1850,91 @@ const JUDGMENT_COLUMNS: Column<JudgmentJson>[] = [
   },
 ];
 
+/**
+ * Per-dimension breakdown of a finished attempt (v8.0 OutcomeSpec v2). One entry
+ * per dimension judgment (non-null `dimension`/`weight`); `aggregate` mirrors the
+ * runner's weighted mean `Σ wᵢ·dimᵢ / Σ wᵢ`. Pre-v2 attempts have no dimension
+ * rows → `rows` empty → the summary band is suppressed (old attempts unchanged).
+ */
+interface DimensionBreakdown {
+  rows: { name: string; weight: number; score: number | null }[];
+  aggregate: number | null;
+}
+
+function dimensionBreakdown(judgments: JudgmentJson[]): DimensionBreakdown {
+  const rows = judgments
+    .filter((j) => j.dimension !== null && j.weight !== null)
+    .map((j) => ({ name: j.dimension as string, weight: j.weight as number, score: j.score }));
+  let weightSum = 0;
+  let weighted = 0;
+  for (const r of rows) {
+    if (r.score === null) continue;
+    weightSum += r.weight;
+    weighted += r.weight * r.score;
+  }
+  return { rows, aggregate: weightSum > 0 ? weighted / weightSum : null };
+}
+
+/**
+ * Compact per-dimension weighted-score band (v8.0). Hidden when no dimension
+ * rows. Each chip is a toggle that FOCUSES one dimension — the judgments table
+ * below narrows to that dimension's rows; click again (or the title) to clear.
+ * `focused` mirrors ChecksTab state; a focus on a now-absent dimension just
+ * shows no chip pressed (the table filter falls through to "all").
+ */
+function DimensionSummary(props: {
+  breakdown: DimensionBreakdown;
+  focused: string | null;
+  onFocus: (name: string | null) => void;
+}): ReactNode {
+  const { rows, aggregate } = props.breakdown;
+  const { focused, onFocus } = props;
+  if (rows.length === 0) return null;
+  return (
+    <div className="rd-dim-summary">
+      <div className="rd-dim-summary-head">
+        <button
+          type="button"
+          className="rd-dim-summary-title"
+          title={focused !== null ? "Clear the dimension focus" : "Click a dimension to focus it"}
+          onClick={() => onFocus(null)}
+        >
+          Dimensions
+        </button>
+        <Tooltip text="Weighted mean Σ wᵢ·dimᵢ / Σ wᵢ — excludes gate rows">
+          <span className="rd-dim-summary-agg">{fmtScore(aggregate)}</span>
+        </Tooltip>
+        {focused !== null ? (
+          <span className="rd-dim-summary-focus dim">· focused on {humanizeKey(focused)}</span>
+        ) : null}
+      </div>
+      <div className="rd-dim-summary-rows">
+        {rows.map((r) => {
+          const isFocused = focused === r.name;
+          return (
+            <button
+              type="button"
+              className={isFocused ? "rd-dim-summary-chip focused" : "rd-dim-summary-chip"}
+              key={r.name}
+              aria-pressed={isFocused}
+              title={
+                isFocused
+                  ? `Showing only ${humanizeKey(r.name)} judgments — click to show all`
+                  : `Focus the judgments table on ${humanizeKey(r.name)}`
+              }
+              onClick={() => onFocus(isFocused ? null : r.name)}
+            >
+              <span className="rd-dim-summary-chip-name">{humanizeKey(r.name)}</span>
+              <span className="rd-dim-summary-chip-weight">×{fmtScore(r.weight)}</span>
+              <span className="rd-dim-summary-chip-score">{fmtScore(r.score)}</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function ChecksTab(props: {
   attempt: AttemptJson | null;
   judgments: JudgmentJson[];
@@ -1837,6 +1942,22 @@ function ChecksTab(props: {
 }): ReactNode {
   const { attempt, judgments, live } = props;
   const judging = attempt?.status === "judging";
+  const breakdown = dimensionBreakdown(judgments);
+  // v8.0 per-run dimension focus (per-attempt scope): null = show every
+  // judgment; a name narrows the table below to that dimension's rows. Reset on
+  // attempt change so a stale focus never leaks across attempts.
+  const [focusedDim, setFocusedDim] = useState<string | null>(null);
+  const attemptId = attempt?.id ?? null;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: attemptId is the reset trigger — the effect must re-run to clear focus when the viewed attempt changes, even though it is not read inside the body.
+  useEffect(() => {
+    setFocusedDim(null);
+  }, [attemptId]);
+  // Only filter when the focused dimension still has rows in this attempt;
+  // otherwise fall through to "all" (no empty table from a stale focus).
+  const focusActive = focusedDim !== null && judgments.some((j) => j.dimension === focusedDim);
+  const visibleJudgments = focusActive
+    ? judgments.filter((j) => j.dimension === focusedDim)
+    : judgments;
   // While judging with live traces available, the live stream IS the view — the
   // deterministic trace covers the checks (no double-display of persisted rows).
   if (judging && live && live.traces.length > 0) {
@@ -1861,14 +1982,21 @@ function ChecksTab(props: {
         </div>
       ) : null}
       {judgments.length > 0 ? (
-        <DataTable
-          rows={judgments}
-          columns={JUDGMENT_COLUMNS}
-          rowKey={(j) => j.id}
-          searchable={false}
-          emptyText="No judgments"
-          renderExpanded={(j) => <JudgmentDetail judgment={j} />}
-        />
+        <>
+          <DimensionSummary
+            breakdown={breakdown}
+            focused={focusActive ? focusedDim : null}
+            onFocus={setFocusedDim}
+          />
+          <DataTable
+            rows={visibleJudgments}
+            columns={JUDGMENT_COLUMNS}
+            rowKey={(j) => j.id}
+            searchable={false}
+            emptyText="No judgments"
+            renderExpanded={(j) => <JudgmentDetail judgment={j} />}
+          />
+        </>
       ) : null}
     </div>
   );

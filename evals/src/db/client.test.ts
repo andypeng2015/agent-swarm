@@ -86,10 +86,38 @@ describe("initDb on a local client", () => {
     await db.execute("UPDATE eval_runs SET judge_model = 'x' WHERE id = 'r1'");
     const row = (await db.execute("SELECT judge_model FROM eval_runs WHERE id = 'r1'")).rows[0];
     expect(row?.judge_model).toBe("x");
+    // v8.0 OutcomeSpec v2 columns (judgments.dimension/weight) exist + round-trip.
+    await db.execute(
+      `INSERT INTO attempts (id, run_id, scenario_id, config_id, attempt_index)
+       VALUES ('a1', 'r1', 's1', 'c1', 0)`,
+    );
+    await db.execute(
+      `INSERT INTO judgments (id, attempt_id, kind, name, pass, dimension, weight)
+       VALUES ('j-dim', 'a1', 'llm', 'correctness', 1, 'correctness', 2.5)`,
+    );
+    const dimRow = (await db.execute("SELECT dimension, weight FROM judgments WHERE id = 'j-dim'"))
+      .rows[0];
+    expect(dimRow?.dimension).toBe("correctness");
+    expect(dimRow?.weight).toBe(2.5);
+    // Gate / pre-v2 row shape: omitting both columns reads back NULL on both.
+    await db.execute(
+      "INSERT INTO judgments (id, attempt_id, kind, name, pass) VALUES ('j-gate', 'a1', 'deterministic', 'tasks-completed', 1)",
+    );
+    const gateRow = (
+      await db.execute("SELECT dimension, weight FROM judgments WHERE id = 'j-gate'")
+    ).rows[0];
+    expect(gateRow?.dimension).toBeNull();
+    expect(gateRow?.weight).toBeNull();
     // Second init is a no-op (CREATE IF NOT EXISTS + tolerated ALTERs).
     await initDb();
     const count = (await db.execute("SELECT COUNT(*) AS n FROM eval_runs")).rows[0];
     expect(count?.n).toBe(1);
+    // Columns remain usable after the second init (idempotent ALTERs).
+    const stillThere = (
+      await db.execute("SELECT dimension, weight FROM judgments WHERE id = 'j-dim'")
+    ).rows[0];
+    expect(stillThere?.dimension).toBe("correctness");
+    expect(stillThere?.weight).toBe(2.5);
   });
 
   test("no WAL requirement for the plain-file escape hatch (:memory: reports 'memory')", async () => {

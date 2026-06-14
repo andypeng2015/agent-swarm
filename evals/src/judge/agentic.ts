@@ -4,7 +4,16 @@ import { z } from "zod";
 import { lookupOpenrouterModel, priceUsage } from "../cost/pricing.ts";
 import type { JudgeContext, JudgeStep, JudgeTrace, Scenario, SwarmTask } from "../types.ts";
 import type { JudgeLiveHandle } from "./live-registry.ts";
-import { finishJudgeTrace, type LlmVerdict, newJudgeTrace, usageToTokens } from "./llm.ts";
+import {
+  finishJudgeTrace,
+  type LlmVerdict,
+  newJudgeTrace,
+  renderRosterManifest,
+  truncateMiddle,
+  usageToTokens,
+} from "./llm.ts";
+
+const TRANSCRIPT_MAX_CHARS = 60_000;
 
 const DEFAULT_AGENTIC_MODEL = "deepseek/deepseek-v4-pro";
 const DEFAULT_MAX_STEPS = 10;
@@ -16,6 +25,42 @@ function clipForLog(value: Record<string, unknown>, max = 2_000): Record<string,
     out[key] = typeof v === "string" && v.length > max ? `${v.slice(0, max)}…` : v;
   }
   return out;
+}
+
+/**
+ * Exec a command in a selected worker's sandbox (v8.0 §4). Mirrors the
+ * out-of-range guard in {@link import("./deterministic.ts").fileContainsOnWorker}:
+ * an unknown index returns an `{ error }` object rather than throwing, so the
+ * judge tool loop keeps running. `worker` defaults to 0 for back-compat.
+ */
+export async function runWorkerCommand(
+  ctx: JudgeContext,
+  command: string,
+  worker = 0,
+): Promise<Record<string, unknown>> {
+  const w = ctx.workers[worker];
+  if (!w) return { error: `no such worker: ${worker}` };
+  const res = await w.exec(command);
+  return {
+    exitCode: res.exitCode,
+    stdout: res.stdout.slice(0, 8_000),
+    stderr: res.stderr.slice(0, 4_000),
+  };
+}
+
+/** Read a file from a selected worker's sandbox (v8.0 §4); see {@link runWorkerCommand}. */
+export async function readWorkerFile(
+  ctx: JudgeContext,
+  path: string,
+  worker = 0,
+): Promise<Record<string, unknown>> {
+  const w = ctx.workers[worker];
+  if (!w) return { error: `no such worker: ${worker}` };
+  const content = await w.readFile(path);
+  return {
+    exists: content !== null,
+    content: content?.slice(0, 16_000) ?? null,
+  };
 }
 
 const VerdictInput = z.object({
@@ -118,39 +163,50 @@ export async function judgeAgentic(
       )
       .join("\n\n");
 
+    const rosterBlock = renderRosterManifest(input.ctx.workers);
+
     const { steps } = await generateText({
       model: openrouter(model),
       tools: {
         run_command: tool({
           description:
-            "Run a shell command inside the worker sandbox the agent worked in (e.g. inspect /workspace). Returns exit code, stdout, stderr.",
-          inputSchema: z.object({ command: z.string().describe("Shell command to run") }),
-          execute: async ({ command }) => {
+            "Run a shell command inside a worker's sandbox (e.g. inspect /workspace). Defaults to worker 0; pass `worker` to target another worker from the roster manifest. Returns exit code, stdout, stderr.",
+          inputSchema: z.object({
+            command: z.string().describe("Shell command to run"),
+            worker: z
+              .number()
+              .int()
+              .optional()
+              .describe("Worker index from the roster manifest (default 0)"),
+          }),
+          execute: async ({ command, worker = 0 }) => {
             const t0 = Date.now();
-            const res = await input.ctx.exec(command);
-            const output = {
-              exitCode: res.exitCode,
-              stdout: res.stdout.slice(0, 8_000),
-              stderr: res.stderr.slice(0, 4_000),
-            };
-            toolLog.push({ tool: "run_command", args: { command }, output: clipForLog(output) });
-            recordToolStep("run_command", { command }, output, t0);
+            const output = await runWorkerCommand(input.ctx, command, worker);
+            toolLog.push({
+              tool: "run_command",
+              args: { command, worker },
+              output: clipForLog(output),
+            });
+            recordToolStep("run_command", { command, worker }, output, t0);
             return output;
           },
         }),
         read_file: tool({
           description:
-            "Read a file from the worker sandbox. Returns null when the file is missing.",
-          inputSchema: z.object({ path: z.string().describe("Absolute file path") }),
-          execute: async ({ path }) => {
+            "Read a file from a worker's sandbox. Defaults to worker 0; pass `worker` to target another worker from the roster manifest. Returns null content when the file is missing.",
+          inputSchema: z.object({
+            path: z.string().describe("Absolute file path"),
+            worker: z
+              .number()
+              .int()
+              .optional()
+              .describe("Worker index from the roster manifest (default 0)"),
+          }),
+          execute: async ({ path, worker = 0 }) => {
             const t0 = Date.now();
-            const content = await input.ctx.readFile(path);
-            const output = {
-              exists: content !== null,
-              content: content?.slice(0, 16_000) ?? null,
-            };
-            toolLog.push({ tool: "read_file", args: { path }, output: clipForLog(output) });
-            recordToolStep("read_file", { path }, output, t0);
+            const output = await readWorkerFile(input.ctx, path, worker);
+            toolLog.push({ tool: "read_file", args: { path, worker }, output: clipForLog(output) });
+            recordToolStep("read_file", { path, worker }, output, t0);
             return output;
           },
         }),
@@ -230,9 +286,9 @@ ${input.rubric}
 
 ## Final task records (authoritative orchestrator state)
 ${taskSummaries}
-
-## Transcript excerpt (may be truncated mid-stream)
-${input.transcript.slice(0, 30_000)}
+${rosterBlock ? `\n${rosterBlock}\n\nTarget a specific worker's sandbox by passing its index as the \`worker\` argument to run_command / read_file (default is worker 0).\n` : ""}
+## Transcript excerpt (head + tail; the middle may be truncated)
+${truncateMiddle(input.transcript, TRANSCRIPT_MAX_CHARS)}
 
 Verify the rubric's claims with the tools (inspect files, run commands, query the API), then call submit_verdict exactly once. Harness-internal activity (memory searches, tool discovery, progress reporting) is normal — judge the outcome, not the style. Keep tool use focused: a handful of targeted verifications, not an exhaustive crawl.`,
     });

@@ -363,6 +363,13 @@ export interface JudgmentJson {
   tokens: TokenTotalsJson | null;
   /** Full trace steps (llm/agentic). Null on old rows / deterministic. */
   steps: JudgeStepJson[] | null;
+  /**
+   * Weighted dimension this judgment scores (v8.0 OutcomeSpec v2). NULL on gate
+   * rows and all pre-v2 rows — rendered as a dash; never backfilled.
+   */
+  dimension: string | null;
+  /** Dimension weight in the aggregate (v8.0). NULL on gate rows / pre-v2 rows. */
+  weight: number | null;
   createdAt: string;
 }
 
@@ -450,6 +457,17 @@ export interface ScenarioJson {
     llmJudge: { rubric: string; model: string | null } | null;
     agenticJudge: { rubric: string; model: string | null; maxSteps: number | null } | null;
     passThreshold: number;
+    /**
+     * v8.0 OutcomeSpec v2: pass/fail gate check names (serializeScenario emits
+     * normalized `gates`). NULL/absent on pre-v2 payloads — render nothing.
+     */
+    gates?: string[];
+    /**
+     * v8.0 OutcomeSpec v2: weighted scoring dimensions. `judge` true = the
+     * dimension is fed by a judge rubric; otherwise its `checks` feed it.
+     * NULL/absent on pre-v2 payloads — render nothing (back-compat).
+     */
+    dimensions?: { name: string; weight: number; checks: string[]; judge: boolean }[];
   };
 }
 

@@ -183,4 +183,8 @@ const COLUMN_MIGRATIONS = [
   "ALTER TABLE judgments ADD COLUMN cost_usd REAL",
   "ALTER TABLE judgments ADD COLUMN tokens_json TEXT",
   "ALTER TABLE judgments ADD COLUMN steps_json TEXT",
+  // v8.0 OutcomeSpec v2: per-dimension judgment rows. Nullable, no default —
+  // gate rows and all pre-v2 rows read back NULL on both.
+  "ALTER TABLE judgments ADD COLUMN dimension TEXT",
+  "ALTER TABLE judgments ADD COLUMN weight REAL",
 ];

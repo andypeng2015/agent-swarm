@@ -6,6 +6,7 @@ import type {
   JudgeKind,
   JudgeStep,
   JudgeTrace,
+  JudgeWorkerContext,
   Scenario,
   SwarmTask,
   TokenTotals,
@@ -34,6 +35,12 @@ export interface LlmJudgeInput {
   tasks: SwarmTask[];
   transcript: string;
   model?: string;
+  /**
+   * Worker roster (v8.0 §4) — when present, a manifest is injected into the
+   * prompt so the non-agentic fallback also has worker labels. Optional for
+   * back-compat (single-worker scenarios pass nothing).
+   */
+  workers?: JudgeWorkerContext[];
   /** Live-registry handle — the trace is attached before the LLM call starts. */
   live?: JudgeLiveHandle;
 }
@@ -92,10 +99,29 @@ export function finishJudgeTrace(trace: JudgeTrace): void {
 }
 
 /** Cap transcript size so judge calls stay cheap; keep head + tail. */
-function truncateMiddle(text: string, maxChars: number): string {
+export function truncateMiddle(text: string, maxChars: number): string {
   if (text.length <= maxChars) return text;
   const half = Math.floor(maxChars / 2);
   return `${text.slice(0, half)}\n\n[... ${text.length - maxChars} chars truncated ...]\n\n${text.slice(-half)}`;
+}
+
+/**
+ * Render the worker roster as a manifest block for a judge prompt (v8.0 §4) so
+ * the judge knows what it is inspecting — each worker's index, registered name,
+ * template, and role, with the lead flagged. Returns "" when no workers are
+ * provided (back-compat: pre-v8 ctxs / bare fixtures), so callers can append it
+ * unconditionally.
+ */
+export function renderRosterManifest(workers: JudgeWorkerContext[]): string {
+  if (workers.length === 0) return "";
+  const lines = workers.map((w) => {
+    const isLead = w.isLead ?? w.role === "lead";
+    const name = w.name ?? `worker-${w.index}`;
+    const template = w.template ?? "(default)";
+    const role = w.role ?? (isLead ? "lead" : "worker");
+    return `- worker ${w.index}: name "${name}", template "${template}", role ${role}${isLead ? "  ← LEAD" : ""}`;
+  });
+  return `## Workers in this attempt\n${lines.join("\n")}`;
 }
 
 export async function judgeWithLlm(
@@ -118,6 +144,7 @@ export async function judgeWithLlm(
     )
     .join("\n\n");
 
+  const rosterBlock = renderRosterManifest(input.workers ?? []);
   const prompt = `You are grading the outcome of an autonomous-agent evaluation scenario.
 
 ## Scenario: ${input.scenario.name}
@@ -125,7 +152,7 @@ ${input.scenario.description ?? ""}
 
 ## Rubric (what a successful outcome looks like)
 ${input.rubric}
-
+${rosterBlock ? `\n${rosterBlock}\n` : ""}
 ## Final task records (authoritative — written by the orchestrator on completion)
 ${taskSummaries}
 

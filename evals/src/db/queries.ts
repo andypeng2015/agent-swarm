@@ -81,6 +81,9 @@ function rowToJudgment(r: Row): JudgmentRow {
     costUsd: r.cost_usd === null ? null : Number(r.cost_usd),
     tokens: parseJsonColumn<TokenTotals>(r.tokens_json),
     steps: parseJsonColumn<JudgeStep[]>(r.steps_json),
+    // v8.0 OutcomeSpec v2 — NULL on gate rows and all pre-v2 rows.
+    dimension: (r.dimension as string) ?? null,
+    weight: r.weight === null ? null : Number(r.weight),
     createdAt: r.created_at as string,
   };
 }
@@ -277,12 +280,15 @@ export async function insertJudgment(
     /** Pre-serialized JSON strings — callers JSON.stringify, stored as-is. */
     tokensJson?: string | null;
     stepsJson?: string | null;
+    /** v8.0 OutcomeSpec v2 — NULL for gate rows (gates are not dimensions). */
+    dimension?: string | null;
+    weight?: number | null;
   },
 ): Promise<void> {
   await db.execute({
     sql: `INSERT INTO judgments (id, attempt_id, kind, name, pass, score, reasoning, raw,
-          duration_ms, cost_usd, tokens_json, steps_json)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          duration_ms, cost_usd, tokens_json, steps_json, dimension, weight)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     args: [
       j.id,
       j.attemptId,
@@ -296,6 +302,8 @@ export async function insertJudgment(
       j.costUsd ?? null,
       j.tokensJson ?? null,
       j.stepsJson ?? null,
+      j.dimension ?? null,
+      j.weight ?? null,
     ],
   });
 }
