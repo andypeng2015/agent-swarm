@@ -2,11 +2,11 @@
 date: 2026-06-16T00:00:00Z
 planner: Claude
 topic: "Evals swarm-mechanics redesign — Plan A: foundations + delegation axis + de-risk pilot"
-status: in-progress
+status: completed
 autonomy: critical
 commit_per_phase: true
 last_updated: 2026-06-16
-last_updated_by: Claude (orchestrator, Phase 3)
+last_updated_by: Claude (orchestrator — all 4 phases done; Pilot-2 GO after N2/N4 fix)
 related:
   - thoughts/taras/plans/2026-06-15-evals-swarm-redesign-scope.md
   - thoughts/taras/research/2026-06-15-evals-swarm-mechanics-redesign.md
