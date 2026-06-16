@@ -1,0 +1,84 @@
+---
+date: 2026-06-16
+author: Claude (orchestrator)
+topic: "Phase 4 de-risk pilot — delegation-probe 2-tier E2B sweep"
+run_id: run-202606161340-0b26da
+status: complete — NO-GO on Plan B (delegation rubric does not discriminate; root cause under investigation)
+related:
+  - thoughts/taras/plans/2026-06-16-evals-swarm-redesign-plan-a.md
+  - thoughts/taras/research/2026-06-16-delegation-probe-050-rootcause.md
+tags: [evals, delegation, pilot, de-risk, discrimination, no-go]
+---
+
+# Phase 4 de-risk pilot — `delegation-probe` (HARD GATE result)
+
+## What ran
+
+```
+cd evals && EVALS_DB_PATH=/tmp/evals-pilot.sqlite EVALS_DB_SYNC_URL='' EVALS_DB_AUTH_TOKEN='' \
+  bun src/cli.ts run --scenarios delegation-probe \
+  --configs claude-opus-4.8,pi-deepseek-flash --attempts 5 --judge-model deepseek/deepseek-v4-pro
+```
+
+- Run `run-202606161340-0b26da` — 1 scenario × 2 configs × 5 attempts = **10 attempts**, concurrency 2, fresh local DB per attempt.
+- **10/10 finished, 0 harness errors** (no `waiting_for_credentials`, all sandboxes booted, 1 MB seed imported ~3s each).
+- **Total cost: $4.20** (claude ≈ $0.56–$0.86/attempt; pi ≈ $0.07–$0.10/attempt).
+- delegation-probe is judge-free → the `--judge-model` is inert here.
+
+## Headline (Phase-3 metric, rendered against a REAL run DB)
+
+```
+run-202606161340-0b26da [done] mean±CI @n=5
+delegation-probe   ✗ 0.64 ±0.00 · 0%    ✗ 0.56 ±0.09 · 0%
+legend: «mean ±halfCI · pass-rate» · ✓ CI≥0.75 · ~ CI straddles · ✗ CI<0.75
+0/2 cells passed · 10/10 attempts finished · $4.1981 total
+```
+
+(This also satisfies the Phase-3 "render mean±CI against a real run" QA — it was only done synthetically before, no prior run DB existed.)
+
+## Per-attempt, per-dimension breakdown
+
+Aggregate = `(5·delegation + 2·correctness)/7`, pass threshold 0.75.
+
+| config | attempt | delegation (w5) | correctness (w2) | total | gates |
+|---|---|---|---|---|---|
+| claude-opus-4.8 | 0 | **0.50** | 1.00 | 0.643 | both pass |
+| claude-opus-4.8 | 1 | **0.50** | 1.00 | 0.643 | both pass |
+| claude-opus-4.8 | 2 | **0.50** | 1.00 | 0.643 | both pass |
+| claude-opus-4.8 | 3 | **0.50** | 1.00 | 0.643 | both pass |
+| claude-opus-4.8 | 4 | **0.50** | 1.00 | 0.643 | both pass |
+| pi-deepseek-flash | 0 | **0.50** | 1.00 | 0.643 | both pass |
+| pi-deepseek-flash | 1 | **0.50** | 0.75 | 0.571 | both pass |
+| pi-deepseek-flash | 2 | **0.50** | 1.00 | 0.643 | both pass |
+| pi-deepseek-flash | 3 | **0.50** | 0.00 | 0.357 | report-exists FAIL (no report) |
+| pi-deepseek-flash | 4 | **0.50** | 0.75 | 0.571 | both pass |
+
+## The critical finding
+
+**The `delegation` dimension scored EXACTLY 0.50 on all 10 attempts — both tiers, every attempt.**
+
+- **Delegation gap (frontier − budget): 0.00.** The CI is `[0, 0]` → **not significant**. The axis the scenario exists to measure produced **zero discrimination**.
+- All total-score separation comes from **correctness** (claude 1.00 ×5 → mean 1.00; pi mean 0.70). Correctness gap ≈ 0.30 — but correctness is the seeded-answer-key audit, i.e. exactly the **saturating single-model-quality signal the redesign set out to move away from**.
+- Total-score gap 0.643 − 0.557 = **0.086**, below the 0.2 ship gate, and driven by the wrong dimension.
+- **0.50 is also a ceiling**: with delegation pinned at 0.50, the max achievable total is `(5·0.5 + 2·1.0)/7 = 0.643` — so **no config can ever pass** the 0.75 threshold regardless of behavior. Hence 0/10 passed.
+
+### Why this is a bug, not parity
+
+claude-opus-4.8 **demonstrably delegated**: its workers audited the seeded 20-task history and reported real figures that the lead merged into a correct report (correctness = 1.00 on all 5). A genuinely-delegating frontier model scoring the *same* 0.50 as the budget anchor means the rubric is **under-crediting real delegation** — a measurement bug, not a behavioral tie. A perfectly uniform 0.50 = 4/8 of the positive weight across 10 independent attempts is the signature of a constant, data-blind result.
+
+Root-cause analysis (which sub-checks P1–P4/N1–N4 fire, and whether the runtime-spawned child/follow-up tasks were actually captured by the Phase-1 enumeration against the real API) is in `thoughts/taras/research/2026-06-16-delegation-probe-050-rootcause.md`. The per-attempt `task` + `raw-session-logs` artifacts are preserved in `/tmp/evals-pilot.sqlite` (`artifacts` table).
+
+## Verdict — HARD GATE
+
+**NO-GO on authoring Plan B as planned.** Per the plan's Phase-4 decision rule, this is case (b): the scenario does not discriminate on its core axis. Plan B (tool-use / resource-efficiency) is built on the same delegation paper-trail + the Phase-1 enumeration, so building it now would inherit whatever pins delegation at 0.50.
+
+**Recommended sequence before Plan B:**
+1. Fix the delegation rubric / enumeration so the dimension reflects real delegation (root-cause doc has the specifics).
+2. Re-pilot `delegation-probe` (same 2-tier n=5) and confirm the **delegation-dimension** gap (not total) is positive and its CI excludes 0.
+3. Only then author Plan B.
+
+## What the pilot positively de-risked
+
+- Harness path is solid: delegation-probe boots, seeds, runs lead+2 workers on real E2B, and scores deterministically with **no harness errors** at n=5 for ~$4.
+- The Phase-3 convergent metric renders correctly on real data (mean±CI · pass-rate · ✓/~/✗), and the `±0.00` CI on claude's 5 identical scores is exactly the "tight band = high confidence" behavior intended — here it tightly confirms a *broken-constant* signal, which is the metric doing its job.
+- The fixture + gates + correctness dimension work end-to-end (correctness discriminated pi's attempts: 0.00–1.00).
