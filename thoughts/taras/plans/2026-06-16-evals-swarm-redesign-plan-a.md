@@ -2,9 +2,11 @@
 date: 2026-06-16T00:00:00Z
 planner: Claude
 topic: "Evals swarm-mechanics redesign — Plan A: foundations + delegation axis + de-risk pilot"
-status: ready-for-review
+status: in-progress
 autonomy: critical
 commit_per_phase: true
+last_updated: 2026-06-16
+last_updated_by: Claude (phase-running, Phase 1)
 related:
   - thoughts/taras/plans/2026-06-15-evals-swarm-redesign-scope.md
   - thoughts/taras/research/2026-06-15-evals-swarm-mechanics-redesign.md
@@ -91,15 +93,15 @@ Two reusable pieces the delegation rubric (and Plan B) depend on: (1) a provider
 ### Success Criteria:
 
 #### Automated Verification:
-- [ ] Type check passes: `cd evals && bun run tsc:check`
-- [ ] Unit tests pass: `cd evals && bun test`
-- [ ] New parser test passes: `cd evals && bun test src/judge/session-log-parse.test.ts` — feeds fixture `session_logs.content` lines for Claude + Codex (+ pi/opencode if in roster) and asserts extracted tool names/inputs and `isError` flags.
-- [ ] Lint clean (root): `bun run lint`
-- [ ] DB boundary holds (root): `bash scripts/check-db-boundary.sh` (evals reads only via HTTP)
-- [ ] If route filter added: `bun run docs:openapi` leaves no diff after commit.
+- [x] Type check passes: `cd evals && bun run tsc:check`
+- [x] Unit tests pass: `cd evals && bun test`
+- [x] New parser test passes: `cd evals && bun test src/judge/session-log-parse.test.ts` — feeds fixture `session_logs.content` lines for Claude + Codex (+ pi/opencode if in roster) and asserts extracted tool names/inputs and `isError` flags.
+- [x] Lint clean (root): `bun run lint`
+- [x] DB boundary holds (root): `bash scripts/check-db-boundary.sh` (evals reads only via HTTP)
+- [ ] If route filter added: `bun run docs:openapi` leaves no diff after commit. _(DEFERRED — optional `taskType` route filter not added; the list+client-filter approach in #2 is clean, so no `src/http/tasks.ts`/`openapi.json` change.)_
 
 #### Automated QA:
-- [ ] Agent runs a focused script that builds a synthetic `JudgeContext` whose `apiGet("/api/tasks?fields=full&limit=200")` returns a fixture set of {1 lead task, 2 child tasks (`creatorAgentId`=lead), 2 follow-ups (`taskType='follow-up'`)} and confirms the runner's enumeration merges all 5 into `ctx.tasks` (vs the 1 upfront).
+- [x] Agent runs a focused script that builds a synthetic `JudgeContext` whose `apiGet("/api/tasks?fields=full&limit=200")` returns a fixture set of {1 lead task, 2 child tasks (`creatorAgentId`=lead), 2 follow-ups (`taskType='follow-up'`)} and confirms the runner's enumeration merges all 5 into `ctx.tasks` (vs the 1 upfront). _(evals/src/runner/spawned-tasks.test.ts)_
 
 #### Manual Verification:
 - [ ] Parser shapes look right against a real recent `session_logs` row for each provider we actually run (eyeball one Claude + one pi sample).

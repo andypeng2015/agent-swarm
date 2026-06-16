@@ -1276,6 +1276,32 @@ async function runAttemptOnce(opts: {
     recordAttemptTimings(attempt.id, timings);
     await updateAttempt(db, attempt.id, { taskIds: tasks.map((t) => t.id) });
 
+    // Runtime-spawned-task enumeration (Plan A §Phase 1). The scenario's upfront
+    // tasks are the only ones we await/capture, but the agents spawn MORE tasks
+    // at runtime — lead-delegated child tasks, the auto follow-ups a worker
+    // completion triggers (taskType="follow-up"), and resume tasks. Those ARE
+    // the delegation artifacts the rubric scores, but they're invisible to
+    // `tasks` (which only holds the upfront set). Fresh-DB-per-attempt means a
+    // full list returns exactly THIS attempt's tasks, so merge any not already
+    // tracked into the set passed to JudgeContext.tasks. Read-only for scoring:
+    // NOT awaited, NOT added to taskIds, NOT pulled into log/cost capture (those
+    // stay scenario-scoped via `activeTasks`). Best-effort — a list failure must
+    // not fail the attempt (scoring degrades to the upfront set).
+    const ctxTasks: SwarmTask[] = [...tasks];
+    try {
+      const knownIds = new Set(tasks.map((t) => t.id));
+      const allTasks = await client.listAllTasks();
+      const spawned = allTasks.filter((t) => t.id && !knownIds.has(t.id));
+      ctxTasks.push(...spawned);
+      log(`[task] captured ${spawned.length} runtime-spawned task(s) for scoring`);
+    } catch (err) {
+      log(
+        `[task] runtime-spawned-task enumeration failed (scoring upfront set only): ${
+          err instanceof Error ? err.message : err
+        }`,
+      );
+    }
+
     // Skipped tasks never produced a session — exclude them from the log and
     // cost waits (v6 §9.4 frozen); they STAY in tasks/taskIds/tasks.json.
     const activeTasks = tasks.filter((t) => !t.skipped);
@@ -1480,7 +1506,9 @@ async function runAttemptOnce(opts: {
     }));
     const worker0Ctx = ctxWorkers[0] as (typeof ctxWorkers)[number];
     const ctx: JudgeContext = {
-      tasks,
+      // Scenario tasks + runtime-spawned tasks (Plan A §Phase 1) — the latter
+      // are read-only delegation artifacts merged in above for the rubric.
+      tasks: ctxTasks,
       transcript,
       exec: worker0Ctx.exec,
       readFile: worker0Ctx.readFile,
