@@ -10,9 +10,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 - **Worker image now pins `@desplega.ai/claude-bridge` `0.1.13`** (#770) — the default worker build refreshes the bundled Claude Bridge binary to pick up the latest bridge fixes while keeping the installed-path flow documented for operators.
+- **Worker harness pins were refreshed for the weekly upgrade** (#772) — the worker image now ships the latest pinned Claude Code, pi-mono, Codex, opencode, and bridge builds from the weekly harness refresh.
 
 ### Fixed
 - **Boot-time historical log scrubbing is now restart-safe and non-blocking** (#769) — the one-time `boot-scrub-logs` maintenance task now paginates work in bounded batches, yields between batches to keep `/health` responsive, and persists cursor progress so single-replica deployments can resume after a restart instead of looping in crash recovery.
+- **Task lifecycle telemetry is emitted from the durable DB path** (#773) — task status changes now flow through the shared lifecycle emitter so pending, in-progress, completion, failure, and webhook-driven transitions produce consistent telemetry.
+- **OAuth keepalive refreshes are awaited during shutdown** (#774) — shutdown now waits for the keepalive token refresh path before closing resources, reducing dropped refresh writes during process teardown.
 
 ## [1.99.0] - 2026-06-15
 
