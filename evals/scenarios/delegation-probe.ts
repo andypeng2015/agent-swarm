@@ -23,23 +23,36 @@ import type {
  * Why deterministic: the negative finding (`thoughts/.../mechanics-rethink-handoff.md`)
  * is that correctness saturates and the soft judge is too noisy to discriminate
  * model tiers. The delegation paper-trail (child tasks created, worker tasks
- * completed, follow-ups received, who ran which tool) is fully observable from
- * the swarm API + session logs, so we grade the BEHAVIOR, not the prose.
+ * completed, whether the report's facts trace back to worker output, who ran
+ * which tool) is fully observable from the swarm API + session logs, so we grade
+ * the BEHAVIOR, not the prose.
  *
  * Two dimensions:
  *   - `delegation` (weight 5): did the lead actually orchestrate?
  *       P1 child-tasks-created    (≥2 children, creator=lead, parent=lead seed task)  w3
  *       P2 worker-tasks-completed (≥2 of those completed with non-empty output)        w2
- *       P3 follow-up-received     (≥1 system follow-up whose parent is a child task)    w2
  *       P4 workers-have-sessions  (each child task has non-empty session_logs)          w1
+ *       Q1 task-count-discipline  (exactly 2 children = ideal; 3 = half; else 0)        w1
+ *       Q4 facts-flow-through-workers (report facts trace back to worker output)        w4
  *       N1 no-solo-research       (lead session has NO get-tasks-with-status tool_use)  ZEROES the dimension
  *       N2 no-solo-audit          (lead session has no db-query / data-scrape Bash)      penalty
  *       N3 no-delegation-loops    (no task created BY a worker with a parent)           penalty
  *       N4 no-re-doing-work       (lead does data-research AFTER it began delegating)    penalty
- *     The four P-checks are a weighted mean (the positive delegation score); the
- *     N2/N3/N4 negatives each subtract a fixed penalty; N1 is a HARD ZERO (see
- *     `delegationDimensionCheck` — the short-circuit returns score 0 before any
- *     positive credit is computed, so a solo lead cannot dilute it back up).
+ *     The positive checks (P1/P2/P4 existence + Q1/Q4 quality) are a weighted mean
+ *     (the positive delegation score); the N2/N3/N4 negatives each subtract a fixed
+ *     penalty; N1 is a HARD ZERO (see `delegationDimensionCheck` — the short-circuit
+ *     returns score 0 before any positive credit is computed, so a solo lead cannot
+ *     dilute it back up).
+ *
+ *     NOTE (Pilot-3 / 2026-06-17): the former P3 "follow-up-received" check
+ *     (≥1 system follow-up whose parent is a child task, w2) was DROPPED. It was a
+ *     brittle proxy: a lead that delegates well but sets `followUpConfig.disabled`
+ *     on its send-task calls (a legitimate choice — it manages the merge itself) got
+ *     NO system follow-up task and so P3=0, dropping the dimension 2/11 even on a
+ *     perfect run. Its real intent ("lead acknowledged and used worker output") is
+ *     already measured, more robustly, by Q4 (facts-flow-through-workers). Its weight
+ *     (2) was folded into Q4 (2→4), keeping positiveTotal=11 unchanged. N4 (which
+ *     used to gate on P3) was re-gated on the lead having delegated at all.
  *   - `correctness` (weight 2): the MERGED answer key graded over the lead's
  *       report (per-status counts + the highest-priority completed title). Anchored
  *       to the lead's report because IT owns the merge; the answer-key values live
@@ -188,8 +201,8 @@ function isDataResearchTool(u: ToolUse): boolean {
 
 /** Tools the lead uses to DELEGATE (hand a child task to a worker). The first such
  * call marks the start of orchestration — any data-research the lead does AFTER it
- * is the N4 "re-did the work" signal (a follow-up can only arrive post-delegation,
- * so this positionally approximates "after the first follow-up"). */
+ * is the N4 "re-did the work" signal (the lead should merge from worker output, not
+ * re-audit the history once it has delegated). */
 function leadDelegationToolIndex(toolUses: ToolUse[]): number {
   return toolUses.findIndex((u) =>
     toolUseMatches(u.toolName, ["send-task", "send_task", "create-task", "create_task"]),
@@ -242,10 +255,10 @@ const N2_PENALTY = 0.25; // lead audited the history itself (db-query / data-scr
 const N3_PENALTY = 0.5; //  a worker re-delegated (delegation loop)
 const N4_PENALTY = 0.25; // lead re-did research after it began delegating
 
-// Positive-check weights (P1–P4), per the plan.
+// Positive-check weights (P1/P2/P4), per the plan. (P3 follow-up-received was
+// dropped in Pilot-3; its weight was folded into Q4 — see the header NOTE.)
 const P1_WEIGHT = 3;
 const P2_WEIGHT = 2;
-const P3_WEIGHT = 2;
 const P4_WEIGHT = 1;
 
 // Quality-graded positive-check weights (Q1, Q4) — folded into the SAME composite
@@ -254,11 +267,13 @@ const P4_WEIGHT = 1;
 // non-delegator earns no phantom quality credit. Q1 grades task-count discipline
 // (1 per worker = 2 children is ideal); Q4 grades delegation FIDELITY — whether the
 // merged report's answer-key facts trace back to WORKER output rather than the lead
-// re-deriving them. With these added, the positive total is
-//   P1(3)+P2(2)+P3(2)+P4(1)+Q1(1)+Q4(2) = 11, and a clean delegator (all P pass,
+// re-deriving them. Q4 absorbed the dropped P3's weight (2→4) so its real intent
+// ("lead used worker output") is now carried by the more robust fidelity check.
+// With these, the positive total is
+//   P1(3)+P2(2)+P4(1)+Q1(1)+Q4(4) = 11, and a clean delegator (all P pass,
 //   Q1=1, Q4=1) scores 11/11 = 1.0 — clearing the 0.75 dimension threshold.
 const Q1_WEIGHT = 1;
-const Q4_WEIGHT = 2;
+const Q4_WEIGHT = 4;
 
 /**
  * The `delegation` dimension as a SINGLE composite check. Modeling it as one
@@ -313,15 +328,19 @@ const delegationDimensionCheck: DeterministicCheck = {
     );
     const p2 = completedChildren.length >= 2;
 
-    // ---- P3: ≥1 system follow-up whose parent is one of the child tasks ----
-    const followUps = ctx.tasks.filter(
+    // ---- (P3 DROPPED, Pilot-3 / 2026-06-17) The former P3 "follow-up-received"
+    // check was removed from scoring: a lead that delegates well but disables
+    // follow-ups (managing the merge itself) got no system follow-up and so P3=0
+    // even on a perfect run. Its intent is now carried by Q4. We still tally the
+    // follow-up count below PURELY as an observability `detail` string — it does
+    // NOT affect the score. ----
+    const followUpCount = ctx.tasks.filter(
       (t) =>
         t.source === "system" &&
         t.taskType === "follow-up" &&
         typeof t.parentTaskId === "string" &&
         childTaskIds.has(t.parentTaskId),
-    );
-    const p3 = followUps.length >= 1;
+    ).length;
 
     // ---- P4: each child task has non-empty session_logs (the worker ran) ----
     let workersWithSessions = 0;
@@ -362,15 +381,14 @@ const delegationDimensionCheck: DeterministicCheck = {
       }
     }
 
-    // Positive weighted mean (P1–P4 existence + Q1/Q4 quality).
+    // Positive weighted mean (P1/P2/P4 existence + Q1/Q4 quality). P3 dropped.
     const positiveWeighted =
       P1_WEIGHT * (p1 ? 1 : 0) +
       P2_WEIGHT * (p2 ? 1 : 0) +
-      P3_WEIGHT * (p3 ? 1 : 0) +
       P4_WEIGHT * (p4 ? 1 : 0) +
       Q1_WEIGHT * q1 +
       Q4_WEIGHT * q4;
-    const positiveTotal = P1_WEIGHT + P2_WEIGHT + P3_WEIGHT + P4_WEIGHT + Q1_WEIGHT + Q4_WEIGHT;
+    const positiveTotal = P1_WEIGHT + P2_WEIGHT + P4_WEIGHT + Q1_WEIGHT + Q4_WEIGHT;
     let score = positiveWeighted / positiveTotal;
 
     // ---- N2: the lead audited the history itself (penalty) ----
@@ -388,18 +406,19 @@ const delegationDimensionCheck: DeterministicCheck = {
     // "Re-doing the work": the lead should merge from the worker output, not re-
     // query the history itself. We detect a data-research tool call (the SAME
     // signal N2 uses — db-query / data-scrape Bash, NEVER a Write) that occurs
-    // POSITIONALLY AFTER the lead's first delegation in its transcript. The lead
-    // transcript carries no explicit "follow-up received" marker, so we approximate
-    // "after the first follow-up" with "after the lead began delegating" — a
-    // follow-up can only arrive once children exist (parseToolUses preserves
-    // transcript order, so array index is a valid ordering). N4 requires a
-    // follow-up to actually have landed (P3) so it never fires on a non-delegating
+    // POSITIONALLY AFTER the lead's first delegation in its transcript
+    // (parseToolUses preserves transcript order, so array index is a valid
+    // ordering). N4 is GATED on the lead having actually delegated — at least one
+    // child task exists OR P1 (≥2 children) — so it never fires on a non-delegating
     // run (that path is N1/N2's job) and cannot fire merely because the lead wrote
-    // the report.
+    // the report. (Pilot-3 / 2026-06-17: this gate was changed from the now-removed
+    // P3 "follow-up-received" to "delegated at all", so a lead that disables
+    // follow-ups is still penalized for re-researching after it delegated.)
+    const delegated = childTasks.length >= 1 || p1;
     const delegateIdx = leadDelegationToolIndex(leadTools);
     const reResearchedAfterDelegating =
       delegateIdx >= 0 && leadTools.slice(delegateIdx + 1).some((u) => isDataResearchTool(u));
-    const n4Redo = p3 && reResearchedAfterDelegating;
+    const n4Redo = delegated && reResearchedAfterDelegating;
     if (n4Redo) score -= N4_PENALTY;
 
     score = Math.max(0, Math.min(1, score));
@@ -407,8 +426,9 @@ const delegationDimensionCheck: DeterministicCheck = {
     const flags: string[] = [];
     flags.push(`P1=${p1 ? "✓" : "✗"}(${childTasks.length} children)`);
     flags.push(`P2=${p2 ? "✓" : "✗"}(${completedChildren.length} done w/ output)`);
-    flags.push(`P3=${p3 ? "✓" : "✗"}(${followUps.length} follow-ups)`);
     flags.push(`P4=${p4 ? "✓" : "✗"}(${workersWithSessions}/${childTasks.length} w/ sessions)`);
+    // Observability only — P3 was dropped; the follow-up count does NOT affect score.
+    flags.push(`followups=${followUpCount}`);
     flags.push(`Q1=${q1.toFixed(2)}(${childTasks.length} children)`);
     flags.push(`Q4=${q4.toFixed(2)}(facts→workers)`);
     if (n2Tool) flags.push(`N2 penalty (${n2Tool.toolName})`);
@@ -472,7 +492,7 @@ export const delegationProbe: Scenario = {
     "per shard, the workers query the seeded 20-task history (11 completed / 5 failed / 4 cancelled),",
     "report back, and the lead merges both shards into one report on its own sandbox. Graded",
     "deterministically (no judge) on delegation behavior (child tasks created, worker tasks completed,",
-    "follow-ups received, who ran which tool — weight 5) and the merged answer key (correctness,",
+    "whether the report's facts trace back to worker output, who ran which tool — weight 5) and the merged answer key (correctness,",
     "weight 2). A lead that audits the history solo scores ZERO on delegation even if its merged",
     "report is correct.",
   ].join(" "),

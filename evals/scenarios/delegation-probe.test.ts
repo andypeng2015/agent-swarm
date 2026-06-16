@@ -264,10 +264,11 @@ describe("delegation-probe rubric — three cases", () => {
 
     const r = await scoreScenario(ctx);
     expect(r.gatePass).toBe(true);
-    // P1+P2+P3+P4 all pass; the Write is NOT a penalty; Q1=1 (exactly 2 children)
+    // P1+P2+P4 all pass; the Write is NOT a penalty; Q1=1 (exactly 2 children)
     // and Q4=1 (every report fact also appears in a worker's output — worker A
     // carries completed=11 + the analytics-warehouse title, worker B carries
-    // failed=5/cancelled=4) → delegation 1.0.
+    // failed=5/cancelled=4) → (3+2+1+1+4)/11 = 11/11 = delegation 1.0. (Follow-up
+    // tasks are present in the fixture but no longer scored — P3 was dropped.)
     expect(r.delegation).toBeCloseTo(1, 10);
     // The key regression assertion: a clean delegator scores HIGH, not 0.50.
     expect(r.delegation).toBeGreaterThan(0.75);
@@ -358,11 +359,14 @@ describe("delegation-probe rubric — three cases", () => {
     expect(r.delegation).toBeLessThan(0.75);
   });
 
-  it("(a4) N4 only: data-research AFTER delegating is penalized; the SAME signal is N2 too", async () => {
-    // A lead that delegated, got follow-ups, but then re-scraped the history via a
-    // Bash /api/tasks call AFTER delegating. N2 fires (solo audit) and N4 fires
-    // (re-research after delegating). N4 is based on the data-research signal, never
-    // a Write, and is ordered after the first delegation.
+  it("(a4) N4 only: data-research AFTER delegating is penalized — WITHOUT relying on a follow-up existing", async () => {
+    // A lead that delegated (NO follow-up tasks in the fixture — it disabled them /
+    // manages the merge itself), then re-scraped the history via a Bash /api/tasks
+    // call AFTER delegating. N2 fires (solo audit) and N4 fires (re-research after
+    // delegating). N4 is now GATED on "delegated at all" (≥1 child), not on a
+    // follow-up existing (Pilot-3: P3 dropped), so it still fires here. N4 is based
+    // on the data-research signal, never a Write, and is ordered after the first
+    // delegation.
     const ctx = makeCtx({
       tasks: [
         leadSeedTask(),
@@ -374,8 +378,7 @@ describe("delegation-probe rubric — three cases", () => {
           "completed=11; top='Provision the analytics warehouse cluster'",
         ),
         childTask("task-child-b", WORKER_B, "failed=5; cancelled=4"),
-        followUpTask("task-fu-a", "task-child-a"),
-        followUpTask("task-fu-b", "task-child-b"),
+        // NB: NO followUpTask(...) here — proving N4 no longer depends on P3.
       ],
       leadTools: [
         toolUseRow(LEAD_TASK_ID, "mcp__agent-swarm__send-task", {}),
@@ -527,12 +530,57 @@ describe("delegation-probe rubric — three cases", () => {
     expect(r.delegation).toBeGreaterThan(0.75);
   });
 
+  it("(no-followup) lead delegated faithfully but NO follow-up task exists (disabled follow-ups) → delegation 1.0", async () => {
+    // The exact Pilot-3 #3 scenario that motivated dropping P3: a lead that
+    // delegates faithfully but sets followUpConfig.disabled on its send-task calls
+    // (a legitimate choice — it manages the merge itself), so the swarm creates NO
+    // system follow-up task. Under the old rubric P3 (follow-up-received) = 0 and the
+    // dimension dropped 2/11 → 9/11 ≈ 0.818 even on a perfect run. With P3 dropped and
+    // its weight folded into Q4, this clean delegator now scores the full 1.0 WITHOUT
+    // any follow-up task in the fixture. This is the regression proving P3 is gone.
+    const ctx = makeCtx({
+      tasks: [
+        leadSeedTask(),
+        // Faithful worker outputs — every answer-key fact traces back to a worker.
+        childTask(
+          "task-child-a",
+          WORKER_A,
+          "Audited completed shard: 11 completed tasks. Top: Provision the analytics warehouse cluster.",
+        ),
+        childTask(
+          "task-child-b",
+          WORKER_B,
+          "Audited failures: 5 failed tasks and 4 cancelled tasks.",
+        ),
+        // NB: NO followUpTask(...) — the lead disabled follow-ups and merges itself.
+      ],
+      leadTools: [
+        toolUseRow(LEAD_TASK_ID, "mcp__agent-swarm__send-task", {}),
+        toolUseRow(LEAD_TASK_ID, "mcp__agent-swarm__send-task", {}),
+        toolUseRow(LEAD_TASK_ID, "Write", { file_path: REPORT_FILE }),
+      ],
+      sessionLogsByTask: {
+        "task-child-a": [toolUseRow("task-child-a", "x", {})],
+        "task-child-b": [toolUseRow("task-child-b", "x", {})],
+      },
+      report: CORRECT_REPORT,
+    });
+    const r = await scoreScenario(ctx);
+    // P1·3 + P2·2 + P4·1 + Q1·1 + Q4·4 = 11/11 = 1.0 — no follow-up needed.
+    expect(r.delegation).toBeCloseTo(1, 10);
+    expect(r.delegation).toBeGreaterThan(0.75);
+    expect(r.passed).toBe(true);
+  });
+
   it("(q4-infidelity) delegated + report correct but facts NOT in worker output → Q4≈0, delegation drops below faithful", async () => {
-    // Same shape (P1–P4 all pass, exactly 2 children → Q1=1) and a CORRECT merged
+    // Same shape (P1/P2/P4 all pass, exactly 2 children → Q1=1) and a CORRECT merged
     // report, but the workers returned only vague acknowledgements — none of the
     // answer-key facts appears in any worker output. The lead must have re-derived
     // the data solo. Q4 = 0 (0 of the 4 report facts trace to a worker), pulling the
-    // dimension down to (P1+P2+P3+P4 + Q1·1 + Q4·0)/11 = (8+1)/11 ≈ 0.818.
+    // dimension down to (P1·3 + P2·2 + P4·1 + Q1·1 + Q4·0)/11 = (6+1)/11 = 7/11 ≈ 0.636.
+    // (Q4 now weighs 4 — it absorbed the dropped P3's weight — so infidelity costs
+    // MORE than before: a correct report whose facts don't trace to workers loses
+    // 4/11 of the dimension, not 2/11.)
     const ctx = makeCtx({
       tasks: [
         leadSeedTask(),
@@ -553,8 +601,8 @@ describe("delegation-probe rubric — three cases", () => {
       report: CORRECT_REPORT,
     });
     const r = await scoreScenario(ctx);
-    // Q4 = 0 → (P-block 8 + Q1·1)/11.
-    expect(r.delegation).toBeCloseTo((8 + __test__.Q1_WEIGHT) / 11, 10);
+    // Q4 = 0 → (P-block 6 [P1·3+P2·2+P4·1] + Q1·1)/11 = 7/11 ≈ 0.636.
+    expect(r.delegation).toBeCloseTo((6 + __test__.Q1_WEIGHT) / 11, 10);
     // Meaningfully below the faithful case (1.0) — this is Q4 catching infidelity.
     const FAITHFUL = 1;
     expect(r.delegation).toBeLessThan(FAITHFUL - 0.15);
@@ -563,7 +611,7 @@ describe("delegation-probe rubric — three cases", () => {
   it("(q1q4-guarded) only 1 child (P1 fails) → Q1=Q4=0, dimension stays low", async () => {
     // A single child means P1 (≥2 children) fails, so both quality checks are
     // guarded to 0 — no phantom quality credit for a non-delegator. P2 (≥2 completed)
-    // also fails; only P3 (a follow-up) and P4 (child ran) can contribute.
+    // also fails; only P4 (child ran) can contribute (P3 was dropped).
     const ctx = makeCtx({
       tasks: [
         leadSeedTask(),
@@ -582,9 +630,9 @@ describe("delegation-probe rubric — three cases", () => {
       report: CORRECT_REPORT,
     });
     const r = await scoreScenario(ctx);
-    // P1=0, P2=0, P3 passes (weight 2), P4 passes (weight 1), Q1=0, Q4=0 (both
-    // guarded on P1) → (2+1)/11 = 3/11 ≈ 0.27.
-    expect(r.delegation).toBeCloseTo(3 / 11, 10);
+    // P1=0, P2=0, P4 passes (weight 1), Q1=0, Q4=0 (both guarded on P1) →
+    // 1/11 ≈ 0.09. (P3 was dropped — it used to add weight 2 here.)
+    expect(r.delegation).toBeCloseTo(1 / 11, 10);
     // Far below a faithful delegator (1.0), and below the 0.75 dimension threshold.
     expect(r.delegation).toBeLessThan(0.5);
   });
