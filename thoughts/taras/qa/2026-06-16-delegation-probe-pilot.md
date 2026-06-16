@@ -60,6 +60,31 @@ tags: [evals, delegation, pilot, de-risk, discrimination, no-go]
 > **Net:** delegation-probe discriminates and the quality layer is sound. Q1/Q4 confirmed as real signal. Total spend across 3 pilots ~$12.
 >
 > ---
+>
+> ## UPDATE 2026-06-17 — Pilot-4 (P3 dropped, Q4→w4): rubric is now VALID
+>
+> Dropped the brittle P3 (follow-up-received) check — it penalized a lead that legitimately disabled redundant system follow-ups (`followUpConfig.disabled`) even on a perfect run. Folded its weight into Q4 (2→4). Pilot-4 `run-202606162212-36304f`, n=5, **$4.33**.
+>
+> ```
+> delegation-probe   ~ 0.86 ±0.20 · 80%      ✗ 0.57 ±0.11 · 0%
+> 4/10 passed · 1/2 cells passed
+> ```
+>
+> | config | per-attempt delegation | note |
+> |---|---|---|
+> | claude-opus-4.8 | **1.00, 1.00, 1.00, 1.00, 0.45** | 4 clean perfects; #1 is a real botch (correctness 0.00, no valid report) |
+> | pi-deepseek-flash | 0.50, 0.50, 0.50, **0.00**, 0.50 | delegates-but-self-audits (−N2−N4); #3 worse |
+>
+> - **The P3 fix worked**: the spurious pilot-3 0.82 is gone — every faithful claude run scores a clean **1.0**. The only low claude score is a genuine task failure, correctly scored. The rubric no longer introduces variance — remaining variance is REAL behavior.
+> - **Q4-at-36% did NOT misfire**: all faithful claude runs hit Q4=1.0; no phrasing false-negative.
+> - claude delegation mean ≈ 0.89 (4×1.0 + 1×0.45), pi ≈ 0.40. The cell reads "~" only because of the one *real* claude botch widening the CI at n=5 — honest, not noise. Higher n would tighten it around claude's true ~80% completion rate on this scenario.
+>
+> ### Final rubric (delegation dimension, weight 5; single composite check)
+> Positives (total 11): P1 children-created (3), P2 children-completed (2), P4 workers-have-sessions (1), Q1 task-count-discipline (1), **Q4 facts-flow-through-workers (4)**. Penalties: N1 solo-research → hard-zero; N2 self-audit (db-query/Bash) −0.25; N3 delegation-loop −0.5; N4 re-research-after-delegating −0.25. Correctness dimension (weight 2) = answer-key regexes. Aggregate (5·deleg + 2·corr)/7, threshold 0.75.
+>
+> **delegation-probe is DONE and validated** across 4 real-E2B pilots (~$16): it discriminates frontier (claude, ~0.89 delegation / 80% pass) from budget (pi, ~0.40 / 0% pass) on the *behavioral* axis, with correctness saturated. Quality checks (Q1/Q4) confirmed as real signal; the two brittleness bugs (N2/N4 Write, P3 follow-up) found and fixed by the de-risk loop.
+>
+> ---
 > Original Pilot-1 finding (NO-GO, pre-fix) preserved below.
 
 
