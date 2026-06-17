@@ -6,6 +6,7 @@ import {
   getLeadAgent,
   getTaskAttachments,
   getTaskById,
+  hasNonTerminalTakeoverDecisionChild,
 } from "../be/db";
 import { repointTrackerSyncBySwarmId } from "../be/db-queries/tracker";
 import { resolveTemplate } from "../prompts/resolver";
@@ -145,6 +146,76 @@ export type CreateResumeFollowUpResult =
   | { kind: "created"; task: AgentTask }
   | { kind: "workflow-skip"; stepId: string }
   | { kind: "skipped"; reason: "parent_not_found" | "lead_not_found" };
+
+/**
+ * Create a Lead-owned `takeover-decision` task for a superseded parent.
+ *
+ * The Lead consults the `takeover-routing` skill and direct-assigns the resume
+ * to a role/harness-appropriate worker. A configurable timeout in the heartbeat
+ * falls open to the unassigned pool if the Lead does not act in time.
+ *
+ * `maxGenerations` and `timeoutMin` are passed in from the heartbeat caller
+ * (which owns those consts) to avoid a circular import.
+ */
+export function createTakeoverDecisionTask(args: {
+  parentId: string;
+  reason: ResumeReason;
+  maxGenerations: number;
+  timeoutMin: number;
+}): CreateResumeFollowUpResult {
+  const parent = getTaskById(args.parentId);
+  if (!parent) return { kind: "skipped", reason: "parent_not_found" };
+
+  // Workflow carve-out — let the engine's retry policy handle recovery.
+  if (parent.workflowRunStepId) {
+    return { kind: "workflow-skip", stepId: parent.workflowRunStepId };
+  }
+
+  // Idempotency: don't double-escalate.
+  if (hasNonTerminalTakeoverDecisionChild(parent.id)) {
+    return { kind: "skipped", reason: "lead_not_found" }; // reuse union; semantics: "already escalated"
+  }
+
+  const lead = getLeadAgent();
+  if (!lead) return { kind: "skipped", reason: "lead_not_found" };
+
+  const original = parent.agentId ? getAgentById(parent.agentId) : null;
+  const originalRole = original?.role ?? "unknown";
+  const originalProvider = original?.harnessProvider ?? original?.provider ?? "unknown";
+  const originalName = original?.name ?? parent.agentId?.slice(0, 8) ?? "unknown";
+
+  const nextGen = getNextResumeGeneration(parent);
+  const artifactsBlock = formatAttachmentsBlock(getTaskAttachments(parent.id));
+
+  const bodyResult = resolveTemplate("task.takeover.decision", {
+    original_agent_name: originalName,
+    original_role: originalRole,
+    original_provider: originalProvider,
+    original_task_id: parent.id,
+    reason: args.reason,
+    task_desc: parent.task.slice(0, 200),
+    generation_next: String(nextGen),
+    max_generations: String(args.maxGenerations),
+    artifacts_block: artifactsBlock,
+    timeout_min: String(args.timeoutMin),
+  });
+
+  const created = createTaskExtended(bodyResult.text, {
+    agentId: lead.id,
+    creatorAgentId: parent.creatorAgentId,
+    source: "system",
+    taskType: "takeover-decision",
+    parentTaskId: parent.id,
+    priority: Math.min(100, (parent.priority ?? 50) + 10),
+    tags: [
+      "takeover-decision",
+      `reason:${args.reason}`,
+      `${RESUME_GENERATION_TAG_PREFIX}${nextGen}`,
+    ],
+  });
+
+  return { kind: "created", task: created };
+}
 
 /**
  * Create a "resume" follow-up task for a parent that is being superseded

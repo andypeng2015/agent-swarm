@@ -2,6 +2,7 @@ import {
   assignUnassignedTaskPending,
   backfillSupersedeTaskResumeTaskId,
   cleanupStaleSessions,
+  completeTask,
   createTaskExtended,
   deleteActiveSession,
   failTask,
@@ -11,10 +12,12 @@ import {
   getDb,
   getIdleWorkersWithCapacity,
   getLeadAgent,
+  getOpenTakeoverDecisionTasks,
   getRecentCompletedCount,
   getRecentFailedCount,
   getRecentFailedTasks,
   getStalledInProgressTasks,
+  getTaskById,
   getTaskStats,
   getTasksByStatus,
   getUnassignedPoolTasks,
@@ -26,7 +29,11 @@ import {
   updateAgentStatus,
 } from "../be/db";
 import { resolveTemplate } from "../prompts/resolver";
-import { createResumeFollowUp, getNextResumeGeneration } from "../tasks/worker-follow-up";
+import {
+  createResumeFollowUp,
+  createTakeoverDecisionTask,
+  getNextResumeGeneration,
+} from "../tasks/worker-follow-up";
 import type { AgentTask } from "../types";
 import { getExecutorRegistry } from "../workflows";
 import { recoverIncompleteRuns } from "../workflows/recovery";
@@ -66,6 +73,21 @@ export const MAX_RESUME_GENERATIONS = Number(process.env.HEARTBEAT_MAX_RESUME_GE
 
 export const RESUME_BUDGET_EXHAUSTED_REASON = "resume_budget_exhausted";
 
+/**
+ * Whether to route crash-recovery takeovers through the Lead for role-aware
+ * assignment. Defaults FALSE (opt-in). Set HEARTBEAT_TAKEOVER_VIA_LEAD=true
+ * to enable; the existing pool fallback remains active when disabled or on
+ * any failure/timeout in the Lead route.
+ */
+export const TAKEOVER_VIA_LEAD = process.env.HEARTBEAT_TAKEOVER_VIA_LEAD === "true";
+
+/**
+ * How long (minutes) to wait for the Lead to route a takeover-decision task
+ * before falling back to the unassigned pool. Default: 30 minutes.
+ */
+export const LEAD_ESCALATION_TIMEOUT_MIN =
+  Number(process.env.HEARTBEAT_LEAD_ESCALATION_TIMEOUT_MIN) || 30;
+
 /** Heartbeat checklist interval: how often to check HEARTBEAT.md (default: 30 min) */
 const HEARTBEAT_CHECKLIST_INTERVAL_MS =
   Number(process.env.HEARTBEAT_CHECKLIST_INTERVAL_MS) || 30 * 60 * 1000;
@@ -83,6 +105,12 @@ export interface HeartbeatFindings {
   autoResumedTasks: Array<{
     taskId: string;
     resumeTaskId: string;
+    agentId: string;
+    reason: string;
+  }>;
+  escalatedTakeovers: Array<{
+    taskId: string;
+    decisionTaskId: string;
     agentId: string;
     reason: string;
   }>;
@@ -157,6 +185,7 @@ export async function codeLevelTriage(): Promise<HeartbeatFindings> {
     stalledTasks: [],
     autoFailedTasks: [],
     autoResumedTasks: [],
+    escalatedTakeovers: [],
     workerHealthFixes: [],
     autoAssigned: [],
     staleCleanup: {
@@ -170,6 +199,9 @@ export async function codeLevelTriage(): Promise<HeartbeatFindings> {
 
   // 1. Detect and remediate stalled tasks (tiered: auto-fail dead workers)
   detectAndRemediateStalledTasks(findings);
+
+  // 1b. Escalate timed-out takeover-decision tasks back to the pool (fail-open)
+  escalateTakeoverTimeouts(findings);
 
   // 2. Check and fix worker health
   checkWorkerHealth(findings);
@@ -197,6 +229,10 @@ function detectAndRemediateStalledTasks(findings: HeartbeatFindings): void {
 
   for (const task of candidates) {
     if (!task.agentId) continue; // Unassigned tasks can't be stalled
+
+    // takeover-decision tasks are managed exclusively by escalateTakeoverTimeouts —
+    // never superseded or failed by the crash detector, which would lose the original.
+    if (task.taskType === "takeover-decision") continue;
 
     const session = getActiveSessionForTask(task.id);
     const taskAgeMs = Date.now() - new Date(task.lastUpdatedAt).getTime();
@@ -235,6 +271,70 @@ function detectAndRemediateStalledTasks(findings: HeartbeatFindings): void {
           findings.stalledTasks.push(task);
         }
       }
+    }
+  }
+}
+
+/**
+ * Phase 3: Fail-open timeout handler for takeover-decision tasks.
+ *
+ * When TAKEOVER_VIA_LEAD is on, a crashed worker's task gets a Lead-owned
+ * `takeover-decision` sibling. If the Lead doesn't route within
+ * LEAD_ESCALATION_TIMEOUT_MIN minutes, this function creates a pool-based
+ * resume task (today's default path) and marks the decision task failed.
+ *
+ * Skip-cases:
+ * - Lead already routed (a non-terminal resume child exists) → close decision task, continue.
+ * - Decision task not yet timed out → skip this tick.
+ */
+function escalateTakeoverTimeouts(findings: HeartbeatFindings): void {
+  const openDecisions = getOpenTakeoverDecisionTasks();
+  if (openDecisions.length === 0) return;
+
+  const timeoutMs = LEAD_ESCALATION_TIMEOUT_MIN * 60 * 1000;
+
+  for (const decision of openDecisions) {
+    const original = decision.parentTaskId ? getTaskById(decision.parentTaskId) : null;
+    if (!original) {
+      // Parent was deleted or never existed — close the orphan decision task.
+      failTask(decision.id, "lead_escalation_timeout_no_parent");
+      continue;
+    }
+
+    // Lead already routed — a resume child exists for the original.
+    if (hasNonTerminalResumeChild(original.id)) {
+      completeTask(decision.id, "routed_by_lead");
+      console.log(
+        `[Heartbeat] Takeover-decision ${decision.id.slice(0, 8)} closed — Lead already routed original ${original.id.slice(0, 8)}`,
+      );
+      continue;
+    }
+
+    const ageMs = Date.now() - new Date(decision.createdAt).getTime();
+    if (ageMs < timeoutMs) continue; // Still within the generous window.
+
+    // Timed out — fail-open: create a pool resume and close the decision task.
+    const resume = createResumeFollowUp({ parentId: original.id, reason: "crash_recovery" });
+
+    if (resume.kind === "created") {
+      backfillSupersedeTaskResumeTaskId(original.id, resume.task.id);
+      failTask(decision.id, "lead_escalation_timeout");
+
+      findings.autoResumedTasks.push({
+        taskId: original.id,
+        resumeTaskId: resume.task.id,
+        agentId: original.agentId ?? "",
+        reason: "lead_escalation_timeout",
+      });
+      console.warn(
+        `[Heartbeat] Takeover-decision ${decision.id.slice(0, 8)} timed out — pool resume ${resume.task.id.slice(0, 8)} created for original ${original.id.slice(0, 8)}`,
+      );
+    } else {
+      // Resume creation failed; still close the decision task so it doesn't loop.
+      failTask(decision.id, `lead_escalation_timeout_resume_${resume.kind}`);
+      console.warn(
+        `[Heartbeat] Takeover-decision ${decision.id.slice(0, 8)} timed out — resume creation returned ${resume.kind} for original ${original.id.slice(0, 8)}`,
+      );
     }
   }
 }
@@ -342,6 +442,37 @@ function remediateCrashedWorkerTask(
     return;
   }
 
+  if (TAKEOVER_VIA_LEAD) {
+    const decision = createTakeoverDecisionTask({
+      parentId: task.id,
+      reason: "crash_recovery",
+      maxGenerations: MAX_RESUME_GENERATIONS,
+      timeoutMin: LEAD_ESCALATION_TIMEOUT_MIN,
+    });
+
+    if (decision.kind === "created") {
+      findings.escalatedTakeovers.push({
+        taskId: task.id,
+        decisionTaskId: decision.task.id,
+        agentId: task.agentId,
+        reason: opts.supersedeReason,
+      });
+      console.log(
+        `[Heartbeat] Escalated task ${task.id.slice(0, 8)} → takeover-decision ${decision.task.id.slice(0, 8)} (${opts.shortLabel})`,
+      );
+
+      if (opts.cleanupActiveSession) deleteActiveSession(task.id);
+      const remaining = getActiveTaskCount(task.agentId);
+      if (remaining === 0) updateAgentStatus(task.agentId, "idle");
+      return;
+    }
+
+    // decision task creation failed (skipped/workflow-skip) — fall through to pool path
+    console.warn(
+      `[Heartbeat] createTakeoverDecisionTask returned ${decision.kind} for ${task.id.slice(0, 8)} — falling back to pool resume`,
+    );
+  }
+
   const resume = createResumeFollowUp({ parentId: task.id, reason: "crash_recovery" });
 
   if (resume.kind === "created") {
@@ -428,6 +559,28 @@ export async function runRebootSweep(): Promise<void> {
 
       // Don't retry system-generated heartbeat tasks
       if (SKIP_AUTO_RESUME_TYPES.has(task.taskType ?? "")) {
+        rebootAffectedTasks.push({ original: failed, retryTaskId: null });
+        continue;
+      }
+
+      // takeover-decision tasks: fail-open the original to pool rather than
+      // creating a generic retry (which would re-enqueue the decision task itself).
+      if (task.taskType === "takeover-decision") {
+        if (task.parentTaskId) {
+          const original = getTaskById(task.parentTaskId);
+          if (original && !hasNonTerminalResumeChild(original.id)) {
+            const resume = createResumeFollowUp({
+              parentId: original.id,
+              reason: "crash_recovery",
+            });
+            if (resume.kind === "created") {
+              backfillSupersedeTaskResumeTaskId(original.id, resume.task.id);
+              console.log(
+                `[Heartbeat] Reboot sweep: takeover-decision ${task.id.slice(0, 8)} failed — pool resume ${resume.task.id.slice(0, 8)} created for original ${original.id.slice(0, 8)}`,
+              );
+            }
+          }
+        }
         rebootAffectedTasks.push({ original: failed, retryTaskId: null });
         continue;
       }
@@ -854,6 +1007,7 @@ export async function runHeartbeatSweep(): Promise<void> {
         stalledTasks: [],
         autoFailedTasks: [],
         autoResumedTasks: [],
+        escalatedTakeovers: [],
         workerHealthFixes: [],
         autoAssigned: [],
         staleCleanup: {
@@ -890,6 +1044,9 @@ function logFindings(findings: HeartbeatFindings): void {
   }
   if (findings.autoResumedTasks.length > 0) {
     parts.push(`auto_resumed=${findings.autoResumedTasks.length}`);
+  }
+  if (findings.escalatedTakeovers.length > 0) {
+    parts.push(`escalated_takeovers=${findings.escalatedTakeovers.length}`);
   }
   if (findings.stalledTasks.length > 0) {
     parts.push(`stalled=${findings.stalledTasks.length}`);

@@ -1444,6 +1444,31 @@ export function hasNonTerminalResumeChild(parentId: string): boolean {
   return row !== undefined && row !== null;
 }
 
+export function hasNonTerminalTakeoverDecisionChild(parentId: string): boolean {
+  const row = getDb()
+    .prepare(
+      `SELECT 1 FROM agent_tasks
+       WHERE parentTaskId = ?
+         AND taskType = 'takeover-decision'
+         AND status NOT IN ('completed', 'failed', 'cancelled', 'superseded')
+       LIMIT 1`,
+    )
+    .get(parentId);
+  return row !== undefined && row !== null;
+}
+
+export function getOpenTakeoverDecisionTasks(): AgentTask[] {
+  const rows = getDb()
+    .prepare(
+      `SELECT * FROM agent_tasks
+       WHERE taskType = 'takeover-decision'
+         AND status NOT IN ('completed', 'failed', 'cancelled', 'superseded')
+       ORDER BY createdAt ASC`,
+    )
+    .all() as AgentTaskRow[];
+  return rows.map(rowToAgentTask);
+}
+
 export function updateTaskClaudeSessionId(
   taskId: string,
   claudeSessionId: string,

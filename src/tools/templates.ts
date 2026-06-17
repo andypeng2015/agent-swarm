@@ -133,6 +133,66 @@ Decide whether to reassign, retry, or handle the failure. Use \`get-task-details
 });
 
 // ============================================================================
+// Takeover-decision follow-up (Lead-routed crash-recovery, DES-523)
+// Created when HEARTBEAT_TAKEOVER_VIA_LEAD=true and a worker crashes.
+// The Lead reads the routing policy (see `takeover-routing` skill) and
+// direct-assigns a replacement to a role/harness-appropriate worker.
+// Built-in default policy is included so routing works even without the skill.
+// ============================================================================
+
+registerTemplate({
+  eventType: "task.takeover.decision",
+  header: "",
+  defaultBody: `Takeover-decision: orphaned task needs a new owner.
+
+Original agent: {{original_agent_name}} (role: {{original_role}}, harness: {{original_provider}})
+Original task ID: {{original_task_id}}
+Trigger: {{reason}}
+Task: "{{task_desc}}"
+
+Resume generation: {{generation_next}} of {{max_generations}} (max). You MUST attach the tag \`resume-generation:{{generation_next}}\` and set \`parentTaskId: {{original_task_id}}\` when dispatching the resume. Do NOT inherit the original task's \`model\`.{{artifacts_block}}
+
+## Your job
+
+Consult the \`takeover-routing\` skill for the per-work-class routing policy.
+Default policy (apply when no skill override exists):
+- Coding tasks → direct-assign to a coder agent on a non-capped harness (role includes "coder" or capabilities include coding). Never route coding work to a reviewer.
+- Review tasks → direct-assign to a reviewer agent. Never route review work to a coder.
+- PM / planning tasks → direct-assign to a PM or researcher agent.
+- All others → direct-assign to any available worker whose role matches the task type.
+
+Capacity-check the target agent first (use \`get-agent-info\` or \`task-action claim\`). Default action is **direct-assign** via \`send-task\` with an explicit \`agentId\`.
+
+⚠️ Fail-open warning: if you do not route within approximately {{timeout_min}} minutes, the system will automatically fall back to the unassigned pool. Route promptly — the work will not be lost either way, but pool routing is role-blind.`,
+  variables: [
+    { name: "original_agent_name", description: "Name or ID prefix of the crashed agent" },
+    { name: "original_role", description: "Role of the crashed agent, or 'unknown'" },
+    {
+      name: "original_provider",
+      description: "Harness provider of the crashed agent, or 'unknown'",
+    },
+    { name: "original_task_id", description: "ID of the superseded original task" },
+    { name: "reason", description: "Takeover trigger reason (e.g. crash_recovery)" },
+    { name: "task_desc", description: "Task description (truncated to 200 chars)" },
+    {
+      name: "generation_next",
+      description: "Next resume generation number (must be set on dispatched resume)",
+    },
+    { name: "max_generations", description: "Maximum resume generations before budget exhaustion" },
+    {
+      name: "artifacts_block",
+      description: "Formatted attachment list from the original task, or empty string",
+    },
+    {
+      name: "timeout_min",
+      description:
+        "Lead-escalation timeout in minutes — after this the system falls back to pool routing",
+    },
+  ],
+  category: "task_lifecycle",
+});
+
+// ============================================================================
 // Budget refusal follow-up (Phase 5: created when an agent is refused due to
 // per-agent or global daily budget exhaustion)
 // ============================================================================
