@@ -45,7 +45,7 @@ and `pi-gemini-3.5-flash` are **NOT** calibration anchors (they stay in the cata
 |----------------|--------------------|----------|
 | Easy / cheap   | ≤ $0.25            | `sql-audit`, `memory-distractor`, `relay-pipeline` |
 | Code / medium  | ~$0.3 – $0.5       | `bug-ladder` |
-| Deep / lead    | ~$1 – $2           | `plan-implement-review`, `distributed-audit` |
+| Deep / lead    | ~$1 – $2           | `distributed-audit` |
 
 The **full sweep** = 6 scenarios × 4 anchors × 3 attempts = 72 attempts. Budget roughly **$35 – $100** total
 depending on how many deep/lead scenarios run their full attempt count and how many retries fire.
@@ -105,7 +105,7 @@ Run all at once, or per scenario (so one scenario's failure doesn't abort the ba
 ```bash
 cd evals && bun src/cli.ts run \
   --name "round11-calibration" \
-  --scenarios sql-audit,memory-distractor,bug-ladder,relay-pipeline,plan-implement-review,distributed-audit \
+  --scenarios sql-audit,memory-distractor,bug-ladder,relay-pipeline,distributed-audit,delegation-probe \
   --configs claude-opus-4.8,codex-5.5,pi-deepseek-flash,claude-haiku \
   --attempts 3 --concurrency 4 --max-retries 1
 ```
@@ -154,8 +154,8 @@ Pinned frontier model: `claude-opus-4.8`. Fill in after the sweep.
 | `memory-distractor`    |             |           |     |                                     |       |
 | `bug-ladder`           |             |           |     |                                     |       |
 | `relay-pipeline`       |             |           |     |                                     |       |
-| `plan-implement-review`|             |           |     |                                     |       |
 | `distributed-audit`    |             |           |     |                                     |       |
+| `delegation-probe`     |             |           |     |                                     |       |
 
 ## Swarm-mechanics scenarios — finding (2026-06-14, ACCEPTED) → PRUNED (2026-06-17, Plan A)
 

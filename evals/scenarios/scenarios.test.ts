@@ -35,14 +35,15 @@ function stubJudgeContext(workerCount: number): JudgeContext {
 
 // Currently-registered round-11 scenario ids. The swarm-redesign prune (Plan A)
 // removed the four clearly-measured non-discriminators (memory-coordination,
-// failure-recovery, failure-recovery-mixed, cross-worker-invent); what remains
-// still discriminates harness+model or swarm mechanics.
+// failure-recovery, failure-recovery-mixed, cross-worker-invent); a follow-up
+// scenario audit additionally killed plan-implement-review (expensive lead+2; only
+// a noisy weight-1 judge moved the aggregate). What remains still discriminates
+// harness+model or swarm mechanics.
 const EXPECTED_IDS = [
   "sql-audit",
   "memory-distractor",
   "bug-ladder",
   "relay-pipeline",
-  "plan-implement-review",
   "distributed-audit",
   "delegation-probe",
 ];
@@ -74,6 +75,9 @@ describe("scenario registry", () => {
       "failure-recovery",
       "failure-recovery-mixed",
       "cross-worker-invent",
+      // Follow-up scenario audit KILL: expensive lead+2, only a noisy weight-1
+      // judge moved the aggregate.
+      "plan-implement-review",
     ]) {
       expect(registry.scenarios.has(dead)).toBe(false);
     }
@@ -349,93 +353,6 @@ describe("spec'd scenario shapes (v8.0 round-11)", () => {
     const promptText = `${s?.description ?? ""}\n${s?.tasks.map((t) => `${t.title}\n${t.description}`).join("\n")}`;
     // No literal data record of the seeded shape (a number, comma, then a word).
     expect(promptText).not.toMatch(/^\s*\d+,[a-z]+\s*$/m);
-  });
-
-  test("plan-implement-review runs a lead-driven plan→implement→review chain", () => {
-    const s = byId.get("plan-implement-review");
-    expect(s).toBeDefined();
-    // Two workers (under the cap) + a lead (outside the cap), three chained tasks.
-    expect(scenarioWorkerCount(s?.workers)).toBe(2);
-    expect(s?.lead).toBeDefined();
-    expect(s?.lead?.template).toBe("lead");
-    expect(s?.tasks.length).toBe(3);
-    // Raised timeout — the deepest scenario in the round.
-    expect(s?.timeoutMs).toBe(20 * 60_000);
-
-    // Stage chain: PLAN on the lead, IMPLEMENT then REVIEW on worker 0 (one sandbox
-    // so the review can cite the very file it built). Strict dependency chain.
-    expect(s?.tasks[0]?.worker).toBe("lead");
-    expect(s?.tasks[1]?.worker).toBe(0);
-    expect(s?.tasks[2]?.worker).toBe(0);
-    expect(s?.tasks[1]?.dependsOn).toEqual([0]);
-    expect(s?.tasks[2]?.dependsOn).toEqual([1]);
-
-    // seed.exec plants the stub + the five hidden test files on worker 0; the spec
-    // is published into swarm memory so the (isolated) lead can plan from it.
-    const execSeed = (s?.seed?.exec ?? []).join("\n");
-    expect(execSeed).toMatch(/ratelimit\.ts/);
-    for (const f of [
-      "starts-full",
-      "remove-guard",
-      "refill-rate",
-      "fractional-refill",
-      "capacity-cap",
-    ]) {
-      expect(execSeed).toMatch(new RegExp(`${f}\\.test\\.ts`));
-    }
-    expect((s?.seed?.memories ?? []).length).toBe(1);
-
-    // Four weighted dimensions (round 11 checks-XOR-judge split): graded
-    // correctness (test groups, 3x) + citation-validity (deterministic citation
-    // check, 1x) + communication (judge-only specificity grader, 1x) +
-    // instruction-following (tests-unmodified, 1x). The communication concern keeps
-    // its old combined weight of 2, now split across citation-validity + comms.
-    const dims = s?.outcome.dimensions ?? [];
-    const correctness = dims.find((d) => d.name === "correctness");
-    const citationValidity = dims.find((d) => d.name === "citation-validity");
-    const communication = dims.find((d) => d.name === "communication");
-    const instruction = dims.find((d) => d.name === "instruction-following");
-    expect(correctness?.weight).toBe(3);
-    expect(citationValidity?.weight).toBe(1);
-    expect(communication?.weight).toBe(1);
-    expect(instruction?.weight).toBe(1);
-
-    // Correctness is fed by the graded testGroupsGreen check (fraction green).
-    expect((correctness?.checks ?? []).map((c) => c.name)).toEqual(["test-groups-green[w0]"]);
-
-    // citation-validity is the deterministic half: the citations-resolve check
-    // (real in-range source lines). No judge on this dimension (checks XOR judge).
-    expect(citationValidity?.judge).toBeUndefined();
-    expect((citationValidity?.checks ?? []).map((c) => c.name)).toEqual([
-      "citations-resolve[w0]:ratelimit.ts",
-    ]);
-
-    // Communication is JUDGE-ONLY (the head+tail-transcript-dependent review
-    // specificity grader, v8.0 §4) — no deterministic checks (checks XOR judge).
-    expect(communication?.judge?.agentic).toBe(true);
-    expect(communication?.checks ?? []).toHaveLength(0);
-
-    // instruction-following is the tests-unmodified anti-gaming check.
-    expect((instruction?.checks ?? []).map((c) => c.name)).toEqual(["tests-unmodified"]);
-
-    // Gates: the implemented source + the review file must exist on worker 0.
-    const gateNames = (s?.outcome.gates ?? []).map((g) => g.name);
-    expect(gateNames).toContain("src-exists");
-    expect(gateNames).toContain("review-exists");
-
-    // Anti-gaming: the implementation/fix and the test ground truth are NOT in the
-    // prompt — the prompt states behaviors, not method bodies or expected tokens,
-    // and never shows a concrete source line number to cite (the worker must read
-    // the file it built). No `ratelimit.ts:<line>` citation appears in the prompt.
-    const promptText = `${s?.description ?? ""}\n${s?.tasks.map((t) => `${t.title}\n${t.description}`).join("\n")}`;
-    // The only `ratelimit.ts:<line>` in the prompt is the illustrative `:42`
-    // EXAMPLE, explicitly fenced as an example; no real seeded line is leaked.
-    const citationLeaks = (promptText.match(/ratelimit\.ts:\d+/gi) ?? []).filter(
-      (c) => c.toLowerCase() !== "ratelimit.ts:42",
-    );
-    expect(citationLeaks).toEqual([]);
-    // The hidden test bodies / expected numeric results never appear in the prompt.
-    expect(promptText).not.toMatch(/toBeCloseTo/);
   });
 
   test("distributed-audit shards a seeded audit across 2 workers and merges via a lead", () => {

@@ -3,14 +3,15 @@ import { bugLadder } from "./bug-ladder.ts";
 import { delegationProbe } from "./delegation-probe.ts";
 import { distributedAudit } from "./distributed-audit.ts";
 import { memoryDistractor } from "./memory-distractor.ts";
-import { planImplementReview } from "./plan-implement-review.ts";
 import { relayPipeline } from "./relay-pipeline.ts";
 import { sqlAudit } from "./sql-audit.ts";
 
 // v8.0 round-11 catalog (OutcomeSpec v2). The swarm-redesign prune (Plan A) cut
 // the four clearly-measured non-discriminators — memory-coordination,
-// failure-recovery, failure-recovery-mixed, and cross-worker-invent — leaving
-// the scenarios that still discriminate harness+model or swarm mechanics.
+// failure-recovery, failure-recovery-mixed, and cross-worker-invent. A follow-up
+// scenario audit additionally killed plan-implement-review (expensive lead+2; only
+// a noisy weight-1 judge moved the aggregate) — leaving the scenarios that still
+// discriminate harness+model or swarm mechanics.
 // Historical runs referencing deleted ids keep rendering via stored ids (no
 // registry lookup) with the unregistered-scenario fallback on the detail route.
 export const scenarios: Scenario[] = [
@@ -18,7 +19,6 @@ export const scenarios: Scenario[] = [
   memoryDistractor,
   bugLadder,
   relayPipeline,
-  planImplementReview,
   distributedAudit,
   delegationProbe,
 ];
