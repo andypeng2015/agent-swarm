@@ -314,6 +314,16 @@ describe("Heartbeat — Lead-routed takeover-decision (DES-523)", () => {
     });
     startTask(decision.id);
 
+    // Backdate so getStalledInProgressTasks(0) deterministically includes this task.
+    // Without this, startTask() and the sweep cutoff may land in the same millisecond,
+    // causing lastUpdatedAt == cutoff (not <), which silently excludes the task.
+    const pastTime = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    getDb().run("UPDATE agent_tasks SET createdAt = ?, lastUpdatedAt = ? WHERE id = ?", [
+      pastTime,
+      pastTime,
+      decision.id,
+    ]);
+
     // Sanity: confirm the gap this fixes — old predicate would miss the completed child.
     expect(hasAnyResumeChild(parent.id)).toBe(true);
     expect(hasNonTerminalResumeChild(parent.id)).toBe(false);
