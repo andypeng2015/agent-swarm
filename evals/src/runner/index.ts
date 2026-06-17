@@ -203,6 +203,33 @@ export function processTerminalTask<T extends SwarmTask>(
 }
 
 /**
+ * Classify a task as run-vs-seed for the run-details artifact (display-only —
+ * scoring NEVER consults this). A scenario may seed reference-data tasks into the
+ * same swarm DB the run uses (e.g. delegation-probe's 20 audit-history rows); they
+ * pollute the run-details Tasks panel as if they were run activity.
+ *
+ * A task is a RUN task iff ANY of:
+ *   - its id is one of the scenario's upfront task ids (`upfrontTaskIds`), OR
+ *   - its `creatorAgentId` is one of the run's agent ids (lead + workers), OR
+ *   - its `agentId` is one of the run's agent ids.
+ * Everything else — the pre-existing fixture history, created BEFORE the run's
+ * agents existed and assigned to no run agent — is a SEED task. Defensive: the
+ * delegation fields ride the SwarmTask index signature and may be absent/non-string.
+ */
+export function classifyTaskOrigin(
+  task: SwarmTask,
+  upfrontTaskIds: ReadonlySet<string>,
+  runAgentIds: ReadonlySet<string>,
+): "run" | "seed" {
+  if (typeof task.id === "string" && upfrontTaskIds.has(task.id)) return "run";
+  const creatorAgentId = task.creatorAgentId;
+  if (typeof creatorAgentId === "string" && runAgentIds.has(creatorAgentId)) return "run";
+  const agentId = task.agentId ?? task.assignedAgentId;
+  if (typeof agentId === "string" && runAgentIds.has(agentId)) return "run";
+  return "seed";
+}
+
+/**
  * Build the persisted sandboxJson v2 blob (v6 §0.3 — shape FROZEN; v7 §9.3
  * adds the nullable identity + effective-config member fields — the override
  * trio is non-null ONLY when the member overrode the cell config).
@@ -1288,10 +1315,10 @@ async function runAttemptOnce(opts: {
     // stay scenario-scoped via `activeTasks`). Best-effort — a list failure must
     // not fail the attempt (scoring degrades to the upfront set).
     const ctxTasks: SwarmTask[] = [...tasks];
+    const upfrontTaskIds = new Set(tasks.map((t) => t.id));
     try {
-      const knownIds = new Set(tasks.map((t) => t.id));
       const allTasks = await client.listAllTasks();
-      const spawned = allTasks.filter((t) => t.id && !knownIds.has(t.id));
+      const spawned = allTasks.filter((t) => t.id && !upfrontTaskIds.has(t.id));
       ctxTasks.push(...spawned);
       log(`[task] captured ${spawned.length} runtime-spawned task(s) for scoring`);
     } catch (err) {
@@ -1300,6 +1327,19 @@ async function runAttemptOnce(opts: {
           err instanceof Error ? err.message : err
         }`,
       );
+    }
+    // Tag each task run-vs-seed (display-only — scoring is unaffected). A scenario
+    // may seed reference-data tasks (e.g. delegation-probe's 20 audit-history rows)
+    // into the SAME swarm DB the run uses; listAllTasks() returns them alongside
+    // the real run activity. They were created BEFORE the run's agents existed, so
+    // none carry a run agent id / upfront id — the predicate (see classifyTaskOrigin)
+    // segregates them. The flag rides on the artifact (origin) so the UI can hide the
+    // seed rows by default; the seed tasks STAY in ctxTasks for post-hoc debugging.
+    const runAgentIds = new Set(
+      stack.workers.map((w) => w.agentId).filter((id): id is string => !!id),
+    );
+    for (const t of ctxTasks) {
+      (t as SwarmTask).origin = classifyTaskOrigin(t, upfrontTaskIds, runAgentIds);
     }
 
     // Skipped tasks never produced a session — exclude them from the log and
