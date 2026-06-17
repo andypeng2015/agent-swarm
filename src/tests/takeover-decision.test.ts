@@ -27,6 +27,7 @@ import {
   LEAD_ESCALATION_TIMEOUT_MIN,
   MAX_RESUME_GENERATIONS,
   RESUME_BUDGET_EXHAUSTED_REASON,
+  runRebootSweep,
   setBeforeHeartbeatSupersedeForTests,
   setTakeoverViaLeadForTests,
 } from "../heartbeat/heartbeat";
@@ -284,6 +285,48 @@ describe("Heartbeat — Lead-routed takeover-decision (DES-523)", () => {
     const resumeChildren = getChildTasks(parent.id).filter((c) => c.taskType === "resume");
     expect(resumeChildren.length).toBe(1);
     expect(findings.autoResumedTasks.find((r) => r.taskId === parent.id)).toBeUndefined();
+  });
+
+  test("T3c: runRebootSweep — completed Lead-routed resume child → decision failed but no second pool resume", async () => {
+    setTakeoverViaLeadForTests(true);
+
+    const lead = createAgent({ name: "lead", isLead: true, status: "idle" });
+    const worker = createAgent({ name: "coder-4c", isLead: false, status: "busy" });
+    const parent = createTaskExtended("Auth refactor (reboot sweep)", { agentId: worker.id });
+    startTask(parent.id);
+
+    getDb().run("UPDATE agent_tasks SET status = 'superseded' WHERE id = ?", [parent.id]);
+
+    // Lead routed a resume task — it has since completed successfully.
+    const resume = createTaskExtended("Resume interrupted auth refactor", {
+      parentTaskId: parent.id,
+      taskType: "resume",
+      tags: ["auto-resume", "reason:crash_recovery", `${RESUME_GENERATION_TAG_PREFIX}1`],
+    });
+    startTask(resume.id);
+    getDb().run("UPDATE agent_tasks SET status = 'completed' WHERE id = ?", [resume.id]);
+
+    // Takeover-decision task is in_progress (assigned to lead, no active session).
+    const decision = createTaskExtended("Takeover decision", {
+      agentId: lead.id,
+      taskType: "takeover-decision",
+      parentTaskId: parent.id,
+    });
+    startTask(decision.id);
+
+    // Sanity: confirm the gap this fixes — old predicate would miss the completed child.
+    expect(hasAnyResumeChild(parent.id)).toBe(true);
+    expect(hasNonTerminalResumeChild(parent.id)).toBe(false);
+
+    await runRebootSweep();
+
+    // Reboot sweep fails in-progress tasks with no active session — expected.
+    const updatedDecision = getTaskById(decision.id);
+    expect(updatedDecision?.status).toBe("failed");
+
+    // No second pool resume must be created — still exactly one resume child.
+    const resumeChildren = getChildTasks(parent.id).filter((c) => c.taskType === "resume");
+    expect(resumeChildren.length).toBe(1);
   });
 
   // --------------------------------------------------------------------------

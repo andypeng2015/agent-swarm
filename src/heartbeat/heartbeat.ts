@@ -575,7 +575,8 @@ export async function runRebootSweep(): Promise<void> {
       if (task.taskType === "takeover-decision") {
         if (task.parentTaskId) {
           const original = getTaskById(task.parentTaskId);
-          if (original && !hasNonTerminalResumeChild(original.id)) {
+          // Use hasAnyResumeChild so a completed Lead-routed resume doesn't look like "not routed yet".
+          if (original && !hasAnyResumeChild(original.id)) {
             const resume = createResumeFollowUp({
               parentId: original.id,
               reason: "crash_recovery",
