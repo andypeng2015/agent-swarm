@@ -86,6 +86,12 @@ export interface HeartbeatFindings {
     agentId: string;
     reason: string;
   }>;
+  /**
+   * Crash-recovery resumes pinned back to their original (stable-ID) agent
+   * instead of being released to the role-blind unassigned pool (DES-523). A
+   * subset of `autoResumedTasks`: the resume `taskId` + the agent it pinned to.
+   */
+  pinnedResumes: Array<{ taskId: string; agentId: string }>;
   workerHealthFixes: Array<{ agentId: string; oldStatus: string; newStatus: string }>;
   autoAssigned: Array<{ taskId: string; agentId: string }>;
   staleCleanup: {
@@ -157,6 +163,7 @@ export async function codeLevelTriage(): Promise<HeartbeatFindings> {
     stalledTasks: [],
     autoFailedTasks: [],
     autoResumedTasks: [],
+    pinnedResumes: [],
     workerHealthFixes: [],
     autoAssigned: [],
     staleCleanup: {
@@ -353,9 +360,20 @@ function remediateCrashedWorkerTask(
       agentId: task.agentId,
       reason: opts.supersedeReason,
     });
-    console.log(
-      `[Heartbeat] Auto-superseded task ${task.id.slice(0, 8)} — created resume ${resume.task.id.slice(0, 8)} (${opts.shortLabel})`,
-    );
+    // Phase 1 (DES-523): when the resume pinned back to the original
+    // (stable-ID) agent, record it so the sweep summary surfaces the pin
+    // rather than a silent pool fallback. `createResumeFollowUp` sets the
+    // resume's `agentId` to the original only on the crash_recovery pin path.
+    if (resume.task.agentId === task.agentId) {
+      findings.pinnedResumes.push({ taskId: resume.task.id, agentId: task.agentId });
+      console.log(
+        `[Heartbeat] Auto-superseded task ${task.id.slice(0, 8)} — pinned resume ${resume.task.id.slice(0, 8)} to original agent ${task.agentId.slice(0, 8)} (${opts.shortLabel})`,
+      );
+    } else {
+      console.log(
+        `[Heartbeat] Auto-superseded task ${task.id.slice(0, 8)} — created resume ${resume.task.id.slice(0, 8)} in unassigned pool (${opts.shortLabel})`,
+      );
+    }
   } else {
     const reason =
       resume.kind === "skipped"
@@ -854,6 +872,7 @@ export async function runHeartbeatSweep(): Promise<void> {
         stalledTasks: [],
         autoFailedTasks: [],
         autoResumedTasks: [],
+        pinnedResumes: [],
         workerHealthFixes: [],
         autoAssigned: [],
         staleCleanup: {
@@ -890,6 +909,9 @@ function logFindings(findings: HeartbeatFindings): void {
   }
   if (findings.autoResumedTasks.length > 0) {
     parts.push(`auto_resumed=${findings.autoResumedTasks.length}`);
+  }
+  if (findings.pinnedResumes.length > 0) {
+    parts.push(`pinned_resumes=${findings.pinnedResumes.length}`);
   }
   if (findings.stalledTasks.length > 0) {
     parts.push(`stalled=${findings.stalledTasks.length}`);

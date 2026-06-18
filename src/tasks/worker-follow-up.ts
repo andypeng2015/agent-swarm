@@ -166,10 +166,24 @@ export type CreateResumeFollowUpResult =
  * at session-init. The resume task runs on the assignee agent's own model. See
  * the `model` carve-out comment in `createTaskExtended` (`src/be/db.ts`).
  *
- * Routing: the parent's assigned worker (`parent.agentId`) is preferred if
- * its `lastActivityAt` is within `WORKER_LIVENESS_WINDOW_SECONDS` AND it has
- * remaining capacity (`getActiveTaskCount < agent.maxTasks`). Otherwise the
- * resume task goes to the unassigned pool for any worker to pick up.
+ * Routing: the parent's assigned worker (`parent.agentId`) is preferred when
+ * the agent row still exists, is not `offline`, and has remaining capacity
+ * (`getActiveTaskCount < agent.maxTasks`). For `crash_recovery` the pin holds
+ * regardless of `lastActivityAt` freshness — the agent ID is stable across a
+ * restart and the crashed row survives intact, so a stale `lastActivityAt` at
+ * the ~5-min crash-detection mark means "restarting", not "gone". Pinning keeps
+ * the resume off the role-blind unassigned pool so no wrong-specialization
+ * worker can grab it (DES-523). For `context_limits` / `manual_supersede` the
+ * worker is alive, so `lastActivityAt` freshness is still required. The resume
+ * falls back to the unassigned pool only when the agent is genuinely gone
+ * (graceful close → `offline`) or its row is absent.
+ *
+ * Gone-agent / never-reclaimed case: a pin whose agent never returns is NOT
+ * re-pooled — the heartbeat's stale-resume reaper escalates it to a Lead
+ * re-delegation decision once a grace window lapses. (That reaper,
+ * `escalateUnreclaimedResumes`, is the companion DES-523 change in
+ * `src/heartbeat/heartbeat.ts`; until it lands an unreclaimed pin stays
+ * `pending`.)
  */
 export function createResumeFollowUp(args: {
   parentId: string;
@@ -183,24 +197,34 @@ export function createResumeFollowUp(args: {
     return { kind: "workflow-skip", stepId: parent.workflowRunStepId };
   }
 
-  // Routing decision — same DB process so the read-then-create window is
-  // small. Acceptable for v1 per the plan (the unassigned-pool fallback
-  // covers the race anyway).
+  // Routing decision — same DB process so the read-then-create window is small.
   //
-  // For `graceful_shutdown` specifically, force the unassigned-pool path:
-  // the parent worker is exiting and will call `closeAgent` (→ offline)
-  // moments after the supersede loop. At the moment of this check it
-  // still looks fresh + has capacity (the parent just terminal-
-  // transitioned), so the liveness branch would assign the resume task to
-  // a dying worker — leaving it orphaned in `pending` once the worker
-  // closes. Pool routing lets any live worker claim it.
+  // For `graceful_shutdown`, force the unassigned-pool path: the parent worker
+  // is exiting and will call `closeAgent` (→ offline) moments after the
+  // supersede loop. At this check it still looks fresh + has capacity (it just
+  // terminal-transitioned), so the liveness branch would pin the resume to a
+  // dying worker — orphaning it in `pending` once the worker closes. Pool
+  // routing lets any live worker claim it.
   //
-  // Other reasons keep the liveness-aware routing:
-  //   - `crash_recovery`: parent worker is presumed dead → `lastActivityAt`
-  //     is stale or `status === "offline"`, so the existing check already
-  //     rejects it naturally.
+  // For `crash_recovery`, deliberately PIN to the same (stable-ID) agent even
+  // when `lastActivityAt` is stale. This REVERSES the prior "let staleness pool
+  // it" behavior: crash detection only fires after STALL_THRESHOLD_NO_SESSION_MIN
+  // (~5 min), by which point a healthy-but-restarting worker is always >30s
+  // stale, so the old `fresh` gate dumped every crash resume into the role-blind
+  // pool where a wrong-specialization worker could grab it (DES-523). The agent
+  // ID is stable across restart and the crashed row survives intact, so here
+  // "stale" means "restarting", not "gone". We KEEP the `offline` guard — only a
+  // graceful close sets `offline`, i.e. genuinely gone → pool — and the capacity
+  // guard. An unreclaimed pin is escalated to a Lead decision by the heartbeat
+  // reaper, never silently re-pooled.
+  //
+  // Brittleness note: this relies on a hard crash NEVER marking the agent
+  // `offline` (only `POST /close` does). If future code offlines stale agents
+  // before remediation, this re-opens the pool path for `crash_recovery` —
+  // revisit the gate then.
+  //
   //   - `context_limits` / `manual_supersede`: the worker is alive and
-  //     can keep handling the resume task on a fresh session.
+  //     responsive, so keep requiring `fresh`.
   let preferredAgentId: string | undefined;
   if (parent.agentId && args.reason !== "graceful_shutdown") {
     const candidate = getAgentById(parent.agentId);
@@ -211,8 +235,16 @@ export function createResumeFollowUp(args: {
         Date.now() - lastActivity < WORKER_LIVENESS_WINDOW_SECONDS * 1000;
       const activeCount = getActiveTaskCount(candidate.id);
       const hasCap = activeCount < (candidate.maxTasks ?? 1);
-      if (fresh && hasCap) {
+      const isCrashRecovery = args.reason === "crash_recovery";
+      // crash_recovery pins regardless of `fresh`; other reasons still require it.
+      if (hasCap && (isCrashRecovery || fresh)) {
         preferredAgentId = candidate.id;
+      } else if (isCrashRecovery && !hasCap) {
+        // The only reason a crash_recovery pin is skipped here is capacity —
+        // surface the pool fallback instead of letting it happen silently.
+        console.warn(
+          `[Heartbeat] crash_recovery resume for task ${parent.id.slice(0, 8)} NOT pinned: agent ${candidate.id.slice(0, 8)} at capacity (${activeCount}/${candidate.maxTasks ?? 1}); falling back to unassigned pool`,
+        );
       }
     }
   }
