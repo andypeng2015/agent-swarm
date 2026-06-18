@@ -45,8 +45,20 @@ import "./templates";
 /**
  * System tasks that must NOT be auto-resumed — mirrors `runRebootSweep`'s exclusion list
  * to prevent infinite retry loops on the heartbeat/triage system tasks themselves.
+ *
+ * `reroute-decision` is included (DES-523): it is a control-plane Lead task, not
+ * user work. If a Lead crashed while holding one, auto-resuming it would create a
+ * crash-recovery pin for the decision; reaping that pin would then treat the
+ * decision as the `original`, producing nested reroute-decisions ABOUT the control
+ * prompt instead of recovering the real work. So a crashed decision is failed, not
+ * resumed (the original work was already superseded; its recovery chain is separate).
  */
-const SKIP_AUTO_RESUME_TYPES = new Set(["heartbeat-checklist", "boot-triage", "heartbeat"]);
+const SKIP_AUTO_RESUME_TYPES = new Set([
+  "heartbeat-checklist",
+  "boot-triage",
+  "heartbeat",
+  "reroute-decision",
+]);
 
 // ============================================================================
 // Configuration (env var overrides)
@@ -87,9 +99,16 @@ export const RESUME_BUDGET_EXHAUSTED_REASON = "resume_budget_exhausted";
  * Uses `??` (not `|| 10`) so an explicit `0` is honored as "reaper off" rather
  * than coerced back to the default.
  */
-export const HEARTBEAT_RESUME_PIN_GRACE_MIN = Number(
-  process.env.HEARTBEAT_RESUME_PIN_GRACE_MIN ?? "10",
-);
+export const HEARTBEAT_RESUME_PIN_GRACE_MIN = (() => {
+  const raw = process.env.HEARTBEAT_RESUME_PIN_GRACE_MIN;
+  if (raw === undefined) return 10;
+  const parsed = Number(raw);
+  // Honor an explicit `0` (reaper off), but fall back to the default on a
+  // non-finite value (e.g. a typo'd `abc` → NaN). Without this guard, NaN passes
+  // the `<= 0` disable check, reaches getStalePinnedResumes(NaN), and throws in
+  // `new Date(NaN).toISOString()` — breaking cleanup on every sweep.
+  return Number.isFinite(parsed) ? parsed : 10;
+})();
 
 /** Heartbeat checklist interval: how often to check HEARTBEAT.md (default: 30 min) */
 const HEARTBEAT_CHECKLIST_INTERVAL_MS =
@@ -627,10 +646,14 @@ function escalateUnreclaimedResumes(findings: HeartbeatFindings): void {
   const stale = getStalePinnedResumes(HEARTBEAT_RESUME_PIN_GRACE_MIN);
   if (stale.length === 0) return;
 
-  // A Lead is required to re-delegate. Without one, leave escalation candidates
-  // `pending` rather than terminalize them into a dead end. The budget-exhaustion
-  // path below is independent of the Lead and still runs.
-  const hasLead = getLeadAgent() != null;
+  // A non-offline Lead is required to re-delegate. Without one (none registered,
+  // or the only lead is `offline` after POST /close), leave escalation candidates
+  // `pending` rather than cancel the pin and hand the decision to an agent that
+  // can't poll it (which would strand the work). The budget-exhaustion path below
+  // is independent of the Lead and still runs. `getLeadAgent` already prefers a
+  // non-offline lead, so this also guards the createRerouteDecisionTask assignment.
+  const lead = getLeadAgent();
+  const hasLead = lead != null && lead.status !== "offline";
 
   for (const resume of stale) {
     if (!resume.parentTaskId) continue; // Defensive — resumes always have a parent.

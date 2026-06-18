@@ -21,6 +21,7 @@ import {
   failPendingResumeIfUnclaimed,
   getChildTasks,
   getDb,
+  getLeadAgent,
   getTaskById,
   initDb,
   startTask,
@@ -471,5 +472,99 @@ describe("Heartbeat — reroute-decision fallback (DES-523)", () => {
     expect(decision).toBeDefined();
     // generation_next derives from the failed pin (MAX-1) → MAX.
     expect(decision!.task).toContain(`${RESUME_GENERATION_TAG_PREFIX}${MAX_RESUME_GENERATIONS}`);
+  });
+
+  // --------------------------------------------------------------------------
+  // Review hardening (codex PR review on #791)
+  // --------------------------------------------------------------------------
+
+  test("reroute-decision does NOT inherit the original's outputSchema (control task stays completable)", () => {
+    createAgent({ name: "lead", isLead: true, status: "busy" });
+    const agent = createAgent({ name: "coder-schema", isLead: false, status: "idle" });
+    const original = createTaskExtended("work with a strict output contract", {
+      agentId: agent.id,
+      outputSchema: {
+        type: "object",
+        required: ["answer"],
+        properties: { answer: { type: "string" } },
+      },
+    });
+    startTask(original.id);
+    // A normal resume child DOES inherit the schema (proves inheritance is the default
+    // and the decision's opt-out is targeted, not a global change).
+    const r1 = createTaskExtended("resume of schema work", {
+      agentId: agent.id,
+      parentTaskId: original.id,
+      taskType: "resume",
+      tags: [
+        "auto-resume",
+        "reason:crash_recovery",
+        `${RESUME_GENERATION_TAG_PREFIX}1`,
+        CRASH_RECOVERY_PIN_TAG,
+      ],
+    });
+    expect(r1.outputSchema).toBeDefined();
+    supersedeTask(original.id, { reason: "crash", resumeTaskId: r1.id });
+
+    const result = createRerouteDecisionTask({
+      original: getTaskById(original.id)!,
+      staleResume: r1,
+      reason: "crash_recovery",
+      maxGenerations: MAX_RESUME_GENERATIONS,
+    });
+    expect(result.kind).toBe("created");
+    if (result.kind !== "created") throw new Error("expected created");
+    // The Lead completes this control task by re-delegating, not by producing the
+    // original work's structured output — so it must NOT carry the contract.
+    expect(result.task.outputSchema).toBeUndefined();
+  });
+
+  test("offline-only Lead → reaper leaves the pin pending (no escalation to an unpollable Lead)", async () => {
+    createAgent({ name: "stale-lead", isLead: true, status: "offline" });
+    const { original, r1 } = seedPinnedCrash("coder-offlinelead");
+    ageCreatedAtPastGrace(r1.id);
+
+    const findings = await codeLevelTriage();
+
+    expect(findings.escalatedReroutes.length).toBe(0);
+    // Pin is left pending (recoverable when a live Lead returns), NOT cancelled.
+    expect(getTaskById(r1.id)!.status).toBe("pending");
+    expect(getChildTasks(original.id).filter((c) => c.taskType === "reroute-decision").length).toBe(
+      0,
+    );
+  });
+
+  test("getLeadAgent prefers a non-offline lead, falls back to any when all offline", () => {
+    const offline = createAgent({ name: "old-lead", isLead: true, status: "offline" });
+    const online = createAgent({ name: "new-lead", isLead: true, status: "idle" });
+    // The offline lead was registered first but must not shadow the live one.
+    expect(getLeadAgent()!.id).toBe(online.id);
+    // When every lead is offline, still return one (preserves "is there a lead?" semantics).
+    getDb().run("UPDATE agents SET status = 'offline' WHERE id = ?", [online.id]);
+    expect(getLeadAgent()!.isLead).toBe(true);
+    expect(offline.isLead).toBe(true); // (referenced to keep the binding meaningful)
+  });
+
+  test("a crashed reroute-decision is NOT auto-resumed — failed, no crash-recovery pin (no nested decisions)", async () => {
+    createAgent({ name: "lead", isLead: true, status: "busy" });
+    const agent = createAgent({ name: "coder-control", isLead: false, status: "idle" });
+    const original = createTaskExtended("original user work", { agentId: agent.id });
+    // A Lead-owned reroute-decision the Lead started, then crashed on.
+    const decision = createTaskExtended("decide where to reroute", {
+      agentId: agent.id,
+      parentTaskId: original.id,
+      taskType: "reroute-decision",
+      tags: ["reroute-decision"],
+    });
+    startTask(decision.id); // in_progress
+    // Stale + no active session → the no-session crash branch (Case A).
+    const old = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    getDb().run("UPDATE agent_tasks SET lastUpdatedAt = ? WHERE id = ?", [old, decision.id]);
+
+    await codeLevelTriage();
+
+    // Failed via the legacy path (skip-auto-resume), NOT superseded into a resume.
+    expect(getTaskById(decision.id)!.status).toBe("failed");
+    expect(getChildTasks(decision.id).filter((c) => c.taskType === "resume").length).toBe(0);
   });
 });

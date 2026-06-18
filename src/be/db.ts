@@ -753,8 +753,13 @@ export function getAllAgents(opts?: { slim?: boolean }): Agent[] {
 }
 
 export function getLeadAgent(): Agent | null {
-  const agents = getAllAgents();
-  return agents.find((a) => a.isLead) ?? null;
+  const leads = getAllAgents().filter((a) => a.isLead);
+  // Prefer a usable (non-offline) lead so callers route to one that can actually
+  // poll — e.g. an old offline lead must not shadow a live replacement. Falls
+  // back to any lead (incl. offline) so existing "is there a lead at all?"
+  // semantics are preserved; callers that require a live lead must check
+  // `status` themselves (see escalateUnreclaimedResumes).
+  return leads.find((a) => a.status !== "offline") ?? leads[0] ?? null;
 }
 
 export function updateAgentStatus(id: string, status: AgentStatus): Agent | null {
@@ -2974,6 +2979,14 @@ export interface CreateTaskOptions {
    * a schema'd task should be defensive about JSON parsing.
    */
   outputSchema?: Record<string, unknown>;
+  /**
+   * When a `parentTaskId` is set, the child inherits the parent's `outputSchema`
+   * by default. Set this to `false` to opt out — used by control-plane children
+   * (e.g. the Lead `reroute-decision` task) that must inherit Slack/VCS context
+   * from the parent but must NOT be forced to satisfy the original work's output
+   * contract on completion (which would block the control task — DES-523).
+   */
+  inheritParentOutputSchema?: boolean;
   followUpConfig?: FollowUpConfig;
   requestedByUserId?: string;
   contextKey?: string;
@@ -3126,8 +3139,15 @@ export function createTaskExtended(task: string, options?: CreateTaskOptions): A
 
       // Contract (schema validation) — `store-progress` validates completion
       // output against `outputSchema`, runner injects structured-output
-      // instructions only when it's present.
-      if (parent.outputSchema && !options.outputSchema) {
+      // instructions only when it's present. Opt-out via
+      // `inheritParentOutputSchema: false` for control-plane children (e.g. the
+      // Lead reroute-decision) that must not be held to the original work's
+      // output contract.
+      if (
+        parent.outputSchema &&
+        !options.outputSchema &&
+        options.inheritParentOutputSchema !== false
+      ) {
         options.outputSchema = parent.outputSchema;
       }
 

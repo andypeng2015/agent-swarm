@@ -421,6 +421,12 @@ export function createRerouteDecisionTask(args: {
     tags: ["reroute-decision"],
     priority: Math.min(100, (original.priority ?? 50) + 10),
     parentTaskId: original.id,
+    // Inherit Slack/VCS context from the original, but NOT its outputSchema: this
+    // is a control-plane task the Lead completes by re-delegating via send-task,
+    // not by producing the original work's structured output. Inheriting it would
+    // make store-progress reject the Lead's completion and strand the decision
+    // (blocking further escalation via the duplicate-decision guard) — DES-523.
+    inheritParentOutputSchema: false,
   });
 
   return { kind: "created", task: created };
