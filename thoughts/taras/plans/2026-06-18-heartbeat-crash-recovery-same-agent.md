@@ -2,7 +2,7 @@
 date: 2026-06-18T00:00:00Z
 author: Taras
 topic: "Heartbeat crash-recovery: same-agent pin + templated Lead fallback (replaces PR #783)"
-status: draft
+status: completed
 branch: (new branch from main)
 pr: 783
 tags: [heartbeat, crash-recovery, task-lifecycle, lead-routing, des-523]
@@ -112,18 +112,18 @@ This makes the resume `status='pending'` for the original agent via the existing
 ### Success Criteria:
 
 #### Automated Verification:
-- [ ] Type check passes: `bun run tsc:check`
-- [ ] Lint passes: `bun run lint`
-- [ ] DB boundary guard passes: `bash scripts/check-db-boundary.sh`
-- [ ] Delete `src/tests/takeover-decision.test.ts` (it tests the removed PR #783 `takeover-decision` mechanism and will fail to compile once that code is absent on the main-based branch).
-- [ ] New/updated unit test (extend `src/tests/heartbeat-supersede-resume.test.ts`, which already exercises `reason:crash_recovery` routing): crash_recovery resume for a *recoverable* agent has `agentId === original.agentId` and `status='pending'` (NOT `unassigned`): `bun test src/tests/heartbeat-supersede-resume.test.ts`
-- [ ] Unit test: assert `supersedeTask` runs **before** `createResumeFollowUp` (the capacity-ordering invariant) so the pin succeeds at `maxTasks=1`: `bun test src/tests/heartbeat-supersede-resume.test.ts`
-- [ ] Unit test (Case B coverage): a crash detected via the **stale session-heartbeat** branch (not just the no-session branch) also pins the resume to the original agent: `bun test src/tests/heartbeat-supersede-resume.test.ts`
-- [ ] Unit test: running the heartbeat sweep again with the pinned `pending` resume still unclaimed creates **no** second resume (invisible to `getStalledInProgressTasks`; no loop): `bun test src/tests/heartbeat-supersede-resume.test.ts`
-- [ ] Existing crash→resume regression tests still pass (resume-generation budget cap, tracker-sync repointing unaffected): `bun test src/tests/heartbeat.test.ts src/tests/heartbeat-supersede-resume.test.ts`
+- [x] Type check passes: `bun run tsc:check`
+- [x] Lint passes: `bun run lint`
+- [x] DB boundary guard passes: `bash scripts/check-db-boundary.sh`
+- [x] Delete `src/tests/takeover-decision.test.ts` (it tests the removed PR #783 `takeover-decision` mechanism and will fail to compile once that code is absent on the main-based branch).
+- [x] New/updated unit test (extend `src/tests/heartbeat-supersede-resume.test.ts`, which already exercises `reason:crash_recovery` routing): crash_recovery resume for a *recoverable* agent has `agentId === original.agentId` and `status='pending'` (NOT `unassigned`): `bun test src/tests/heartbeat-supersede-resume.test.ts`
+- [x] Unit test: assert `supersedeTask` runs **before** `createResumeFollowUp` (the capacity-ordering invariant) so the pin succeeds at `maxTasks=1`: `bun test src/tests/heartbeat-supersede-resume.test.ts`
+- [x] Unit test (Case B coverage): a crash detected via the **stale session-heartbeat** branch (not just the no-session branch) also pins the resume to the original agent: `bun test src/tests/heartbeat-supersede-resume.test.ts`
+- [x] Unit test: running the heartbeat sweep again with the pinned `pending` resume still unclaimed creates **no** second resume (invisible to `getStalledInProgressTasks`; no loop): `bun test src/tests/heartbeat-supersede-resume.test.ts`
+- [x] Existing crash→resume regression tests still pass (resume-generation budget cap, tracker-sync repointing unaffected): `bun test src/tests/heartbeat.test.ts src/tests/heartbeat-supersede-resume.test.ts`
 
 #### Automated QA:
-- [ ] A test simulates: worker assigned task → goes stale past `STALL_THRESHOLD_NO_SESSION_MIN` → heartbeat sweep → assert resume is pinned to the same agentId, and a second idle worker polling does NOT receive/claim it.
+- [x] A test simulates: worker assigned task → goes stale past `STALL_THRESHOLD_NO_SESSION_MIN` → heartbeat sweep → assert resume is pinned to the same agentId, and a second idle worker polling does NOT receive/claim it.
 
 #### Manual Verification:
 - [ ] Confirm the pinned resume is served back to the original agent on its next poll (covered by Manual E2E).
@@ -169,14 +169,14 @@ Build the **reusable capability** for handing the Lead a re-delegation decision:
 ### Success Criteria:
 
 #### Automated Verification:
-- [ ] Type check passes: `bun run tsc:check`
-- [ ] Lint passes: `bun run lint`
-- [ ] Template registration test: update `src/tests/prompt-template-remaining.test.ts` — the "Task lifecycle templates are registered" test hardcodes its count and an explicit `toContain` list (currently `task.worker.completed` + `task.worker.failed`); add `expect(eventTypes).toContain('task.reroute.decision')` and bump the `(2 task_lifecycle)` label: `bun test src/tests/prompt-template-remaining.test.ts`
-- [ ] Template resolver test: `resolveTemplate("task.reroute.decision", { …all vars… })` returns `result.unresolved.length === 0` (no unresolved `{{…}}`) — add to `src/tests/prompt-template-resolver.test.ts`: `bun test src/tests/prompt-template-resolver.test.ts`
-- [ ] Unit test (new file `src/tests/heartbeat-reroute-decision.test.ts`, mirroring the deleted `takeover-decision.test.ts` DB-path setup — `const TEST_DB_PATH=...`, `initDb`, side-effect import `'../tools/templates'`): gone-agent crash → a Lead-owned `taskType='reroute-decision'` decision task exists referencing the parent; resume is NOT pooled and the original work task is NOT assigned to the Lead; `hasNonTerminalRerouteDecisionChild` dedup prevents a duplicate on a second sweep: `bun test src/tests/heartbeat-reroute-decision.test.ts`
+- [x] Type check passes: `bun run tsc:check`
+- [x] Lint passes: `bun run lint`
+- [x] Template registration test: update `src/tests/prompt-template-remaining.test.ts` — the "Task lifecycle templates are registered" test hardcodes its count and an explicit `toContain` list (currently `task.worker.completed` + `task.worker.failed`); add `expect(eventTypes).toContain('task.reroute.decision')` and bump the `(2 task_lifecycle)` label: `bun test src/tests/prompt-template-remaining.test.ts`
+- [x] Template resolver test: `resolveTemplate("task.reroute.decision", { …all vars… })` returns `result.unresolved.length === 0` (no unresolved `{{…}}`) — add to `src/tests/prompt-template-resolver.test.ts`: `bun test src/tests/prompt-template-resolver.test.ts`
+- [x] Unit test (new file `src/tests/heartbeat-reroute-decision.test.ts`, mirroring the deleted `takeover-decision.test.ts` DB-path setup — `const TEST_DB_PATH=...`, `initDb`, side-effect import `'../tools/templates'`): gone-agent crash → a Lead-owned `taskType='reroute-decision'` decision task exists referencing the parent; resume is NOT pooled and the original work task is NOT assigned to the Lead; `hasNonTerminalRerouteDecisionChild` dedup prevents a duplicate on a second sweep: `bun test src/tests/heartbeat-reroute-decision.test.ts`
 
 #### Automated QA:
-- [ ] Test simulates a gone agent (id absent) → assert exactly one Lead-owned decision task created, body contains the original task id + crashed-agent identity, and references `send-task` re-delegation.
+- [x] Test simulates a gone agent (id absent) → assert exactly one Lead-owned decision task created, body contains the original task id + crashed-agent identity, and references `send-task` re-delegation.
 
 #### Manual Verification:
 - [ ] Eyeball the rendered template body for routing clarity (the Lead must understand it should re-delegate, not execute).
@@ -233,15 +233,15 @@ Wire the call into `cleanupStaleResources` (`main:src/heartbeat/heartbeat.ts:564
 ### Success Criteria:
 
 #### Automated Verification:
-- [ ] Type check passes: `bun run tsc:check`
-- [ ] Lint passes: `bun run lint`
-- [ ] DB boundary guard passes: `bash scripts/check-db-boundary.sh`
-- [ ] Unit test: a pinned resume older than the grace window with a still-absent agent → escalated to a Lead decision exactly once (idempotent across repeated sweeps): `bun test src/tests/heartbeat-*.test.ts`
-- [ ] Unit test: `tracker_sync` chain on the gone-agent path — seed a `tracker_sync` row on the original; assert it follows `original → R1` (pin) → `R1 → original` (reaper terminalize) → `original → R2` (Lead `send-task` resume), so R2 owns the link and R1 owns none: `bun test src/tests/heartbeat-reroute-decision.test.ts`
-- [ ] Unit test: a pinned resume whose agent reclaims it before the grace window is NOT escalated: `bun test src/tests/heartbeat-*.test.ts`
+- [x] Type check passes: `bun run tsc:check`
+- [x] Lint passes: `bun run lint`
+- [x] DB boundary guard passes: `bash scripts/check-db-boundary.sh`
+- [x] Unit test: a pinned resume older than the grace window with a still-absent agent → escalated to a Lead decision exactly once (idempotent across repeated sweeps): `bun test src/tests/heartbeat-*.test.ts`
+- [x] Unit test: `tracker_sync` chain on the gone-agent path — seed a `tracker_sync` row on the original; assert it follows `original → R1` (pin) → `R1 → original` (reaper terminalize) → `original → R2` (Lead `send-task` resume), so R2 owns the link and R1 owns none: `bun test src/tests/heartbeat-reroute-decision.test.ts`
+- [x] Unit test: a pinned resume whose agent reclaims it before the grace window is NOT escalated: `bun test src/tests/heartbeat-*.test.ts`
 
 #### Automated QA:
-- [ ] Test simulates: pin resume → advance time past grace with agent still gone → run sweep → assert Lead decision created and resume no longer stuck; run sweep again → no duplicate decision.
+- [x] Test simulates: pin resume → advance time past grace with agent still gone → run sweep → assert Lead decision created and resume no longer stuck; run sweep again → no duplicate decision.
 
 #### Manual Verification:
 - [ ] Confirm the grace default is sensible for the real restart time in the target deployment.
@@ -272,12 +272,12 @@ The full behavior is only complete after Phase 3, so document it here. This intr
 ### Success Criteria:
 
 #### Automated Verification:
-- [ ] `task-lifecycle.mdx` renders without MDX errors (docs build, if run): `cd docs-site && pnpm build` (or visual check)
-- [ ] No `openapi.json` drift introduced (concept MDX only): `git status` shows only intended files
+- [x] `task-lifecycle.mdx` renders without MDX errors (docs build, if run): `cd docs-site && pnpm build` (or visual check)
+- [x] No `openapi.json` drift introduced (concept MDX only): `git status` shows only intended files
 
 #### Automated QA:
-- [ ] Grep the new subsection for the env-var names and confirm they match the consts added in Phase 1/3 (`HEARTBEAT_RESUME_PIN_GRACE_MIN`, `HEARTBEAT_PIN_CRASH_RESUME`).
-- [ ] `runbooks/heartbeat-crash-recovery.md` §3 reflects the new routing (no "Planned change" callout remains; pseudocode matches the implemented `createResumeFollowUp` + reaper): `grep -c "Planned change" runbooks/heartbeat-crash-recovery.md` returns 0.
+- [x] Grep the new subsection for the env-var names and confirm they match the consts added in Phase 1/3 (`HEARTBEAT_RESUME_PIN_GRACE_MIN`, `HEARTBEAT_PIN_CRASH_RESUME`).
+- [x] `runbooks/heartbeat-crash-recovery.md` §3 reflects the new routing (no "Planned change" callout remains; pseudocode matches the implemented `createResumeFollowUp` + reaper): `grep -c "Planned change" runbooks/heartbeat-crash-recovery.md` returns 0.
 
 #### Manual Verification:
 - [ ] Read the new subsection end-to-end: an operator can understand when a resume pins, when it escalates to the Lead, and how to disable the behavior.
