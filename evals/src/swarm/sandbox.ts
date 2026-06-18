@@ -159,6 +159,10 @@ export function credentialsForConfig(config: HarnessConfig): Record<string, stri
       need("OPENAI_API_KEY");
       break;
     }
+    case "ai-sdk-agent": {
+      need("OPENAI_API_KEY");
+      break;
+    }
     case "pi":
     case "opencode": {
       // Credential gate is MODEL_OVERRIDE-prefix-aware: forward the key matching

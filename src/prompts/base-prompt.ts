@@ -104,8 +104,8 @@ export const getBasePrompt = async (args: BasePromptArgs): Promise<string> => {
   } else if (args.provider === "pi") {
     // Pi has no context-mode MCP wiring yet (deferred to DES-514), so it uses a
     // worker composite that omits the context_mode block to avoid advertising
-    // phantom `ctx_*` tools. All other local providers (claude, codex, opencode)
-    // keep the block via the standard worker composite.
+    // phantom `ctx_*` tools. All other local providers (claude, codex,
+    // opencode, ai-sdk-agent) keep the block via the standard worker composite.
     compositeEventType = "system.session.worker.pi";
   } else {
     compositeEventType = "system.session.worker";

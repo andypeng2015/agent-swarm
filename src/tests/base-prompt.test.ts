@@ -645,7 +645,7 @@ describe("getBasePrompt — local providers unaffected", () => {
 //
 // The context_mode block advertises the `ctx_*` MCP tools. It is included for
 // local providers that have context-mode wired into their per-session config
-// (claude, codex, opencode) and excluded for `pi`, which has no context-mode
+// (claude, codex, opencode, ai-sdk-agent) and excluded for `pi`, which has no context-mode
 // wiring yet (deferred to DES-514). Remote-provider exclusion is covered by the
 // "remote provider excluded sections" suite above.
 // ---------------------------------------------------------------------------
@@ -662,7 +662,7 @@ describe("getBasePrompt — context-mode provider gating", () => {
     expect(result).not.toContain("context-mode");
   });
 
-  for (const provider of ["claude", "codex", "opencode"] as const) {
+  for (const provider of ["claude", "codex", "opencode", "ai-sdk-agent"] as const) {
     test(`includes context-mode block for ${provider} provider`, async () => {
       const result = await getBasePrompt({
         ...minimalArgs,
