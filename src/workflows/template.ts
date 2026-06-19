@@ -102,6 +102,7 @@ export function deepInterpolate(
         }
         return resolved.value;
       }
+      // Multi-token or mixed string - fall back to string interpolation.
       const { result, unresolved } = interpolate(v, ctx);
       allUnresolved.push(...unresolved);
       return result;
