@@ -338,6 +338,37 @@ describe("getBasePrompt — capabilities", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Installed skills
+// ---------------------------------------------------------------------------
+describe("getBasePrompt — installed skills", () => {
+  const skillsSummary = [{ name: "work-on-task", description: "Task lifecycle" }];
+
+  test("tells ai-sdk-agent to load skills with the provider-local Skill tool", async () => {
+    const result = await getBasePrompt({
+      ...minimalArgs,
+      provider: "ai-sdk-agent",
+      skillsSummary,
+    });
+
+    expect(result).toContain("## Installed Skills");
+    expect(result).toContain("Use the Skill tool to load them by name.");
+    expect(result).toContain("- /work-on-task: Task lifecycle");
+  });
+
+  test("does not advertise the Skill tool to other providers", async () => {
+    const result = await getBasePrompt({
+      ...minimalArgs,
+      provider: "codex",
+      skillsSummary,
+    });
+
+    expect(result).toContain("## Installed Skills");
+    expect(result).toContain("Use the slash-command name when invoking them.");
+    expect(result).not.toContain("Use the Skill tool");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Truncation (tests truncateSection indirectly)
 // ---------------------------------------------------------------------------
 describe("getBasePrompt — truncation", () => {

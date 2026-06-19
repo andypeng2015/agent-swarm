@@ -161,10 +161,13 @@ export const getBasePrompt = async (args: BasePromptArgs): Promise<string> => {
   }
 
   // Installed skills section (progressive disclosure — name + description only)
-  // Skip for providers without MCP — skills require the Skill MCP tool
   if (hasMcp && args.skillsSummary && args.skillsSummary.length > 0) {
     const summaries = args.skillsSummary.map((s) => `- /${s.name}: ${s.description}`).join("\n");
-    prompt += `\n\n## Installed Skills\n\nThe following skills are available. Use the Skill tool to invoke them by name.\n\n${summaries}\n`;
+    const usage =
+      args.provider === "ai-sdk-agent"
+        ? "Use the Skill tool to load them by name."
+        : "Use the slash-command name when invoking them.";
+    prompt += `\n\n## Installed Skills\n\nThe following skills are available. ${usage}\n\n${summaries}\n`;
   }
 
   // Installed MCP servers section — skip for providers without MCP

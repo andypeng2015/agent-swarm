@@ -13,6 +13,7 @@ import {
   getAiSdkAgentContextWindow,
   resolveAiSdkAgentModel,
 } from "./ai-sdk-agent-models";
+import { createAiSdkAgentSkillTool } from "./ai-sdk-agent-skill-tool";
 import { readPkgVersion } from "./harness-version";
 import { McpHttpClient } from "./pi-mono-mcp-client";
 import type {
@@ -319,6 +320,10 @@ export class AiSdkAgentSession implements ProviderSession {
       await client.initialize();
       const tools = createAiSdkAgentTools({
         tools: await client.listTools(),
+        client,
+        emit: (event) => this.emit(event),
+      });
+      tools.Skill = createAiSdkAgentSkillTool({
         client,
         emit: (event) => this.emit(event),
       });
