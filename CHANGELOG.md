@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.102.0] - 2026-06-23
+
+### Added
+- **`codex-login` can now target any credential pool slot from 0 through 100** (#802) — operators can explicitly place ChatGPT OAuth credentials in higher-numbered `codex_oauth_<slot>` entries instead of being limited to single-digit slots, while the default path still auto-picks the next free slot.
+
+### Fixed
+- **`swarm-script` workflow nodes can trigger workflows again through the MCP bridge** (#801) — script-side tool authorization now checks MCP tool names instead of SDK method names, and the `workflow_trigger` arg-name drift was corrected so workflow launches no longer 403.
+
 ## [1.101.0] - 2026-06-22
 
 ### Added
