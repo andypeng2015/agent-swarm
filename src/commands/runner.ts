@@ -2,7 +2,6 @@ import { existsSync, statSync } from "node:fs";
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { ensure, initialize } from "@desplega.ai/business-use";
 import type { TemplateResponse } from "../../templates/schema.ts";
-import { resolveTaskModelSelection } from "../model-tiers.ts";
 import {
   type Attributes,
   initOtel,
@@ -34,7 +33,7 @@ import {
   type ProviderSessionConfig,
 } from "../providers/index.ts";
 import { initTelemetry, telemetry } from "../telemetry.ts";
-import type { ProviderName, RepoGuidelines } from "../types.ts";
+import { type ProviderName, type RepoGuidelines, resolveTaskModelSelection } from "../types.ts";
 import { getApiKey } from "../utils/api-key.ts";
 import { computeBudgetBackoffMs } from "../utils/budget-backoff.ts";
 import { getMcpBaseUrl } from "../utils/constants.ts";
@@ -52,9 +51,9 @@ import { resolveHarnessProvider } from "../utils/harness-provider.ts";
 import { prettyPrintLine, prettyPrintStderr } from "../utils/pretty-print.ts";
 import { scrubSecrets } from "../utils/secret-scrubber.ts";
 import { refreshSkillsIfChanged } from "../utils/skills-refresh.ts";
+import { interpolate } from "../utils/template.ts";
 import { detectVcsProvider } from "../vcs/index.ts";
 import { validateJsonSchema } from "../workflows/json-schema-validator.ts";
-import { interpolate } from "../workflows/template.ts";
 import { buildContextPreamble, buildResumeContextPreamble } from "./context-preamble.ts";
 import { awaitCredentials, BootMaxWaitExceededError, EX_CONFIG } from "./credential-wait.ts";
 import {
