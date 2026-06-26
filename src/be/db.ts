@@ -128,6 +128,10 @@ function emitTaskLifecycleTelemetryAfterCommit(
   });
 }
 
+function taskTagsForTelemetry(task: AgentTask): string[] {
+  return Array.isArray(task.tags) ? task.tags : [];
+}
+
 export function isSqliteVecAvailable(): boolean {
   return sqliteVecAvailable;
 }
@@ -2153,6 +2157,8 @@ export function completeTask(id: string, output?: string): AgentTask | null {
       "completed",
       {
         taskId: id,
+        source: oldTask.source,
+        tags: taskTagsForTelemetry(oldTask),
         agentId: row.agentId ?? undefined,
         durationMs: row.createdAt ? Date.now() - new Date(row.createdAt).getTime() : undefined,
       },
@@ -2203,6 +2209,8 @@ export function failTask(id: string, reason: string): AgentTask | null {
       "failed",
       {
         taskId: id,
+        source: oldTask.source,
+        tags: taskTagsForTelemetry(oldTask),
         agentId: row.agentId ?? undefined,
         durationMs: row.createdAt ? Date.now() - new Date(row.createdAt).getTime() : undefined,
       },
@@ -2337,6 +2345,21 @@ export function supersedeTask(
     .get(finishedAt, id);
 
   if (row && oldTask) {
+    emitTaskLifecycleTelemetryAfterCommit(
+      "superseded",
+      {
+        taskId: id,
+        source: oldTask.source,
+        tags: taskTagsForTelemetry(oldTask),
+        agentId: row.agentId ?? undefined,
+        reason: args.reason,
+        durationMs: oldTask.createdAt
+          ? Date.now() - new Date(oldTask.createdAt).getTime()
+          : undefined,
+      },
+      (task) => task?.status === "superseded",
+    );
+
     try {
       createLogEntry({
         eventType: "task_superseded",
@@ -7037,6 +7060,22 @@ export function getWorkflowRun(id: string): WorkflowRun | null {
   return row ? rowToWorkflowRun(row) : null;
 }
 
+function emitWorkflowTerminalTelemetry(run: WorkflowRun): void {
+  if (run.status !== "completed" && run.status !== "failed") return;
+
+  queueMicrotask(() => {
+    const latest = getWorkflowRun(run.id);
+    if (!latest || latest.status !== run.status) return;
+    const steps = getWorkflowRunStepsByRunId(run.id);
+    telemetry.workflow(run.status, {
+      workflowId: run.workflowId,
+      durationMs: run.startedAt ? Date.now() - new Date(run.startedAt).getTime() : undefined,
+      stepsCompleted: steps.filter((step) => step.status === "completed").length,
+      stepsFailed: steps.filter((step) => step.status === "failed").length,
+    });
+  });
+}
+
 export function updateWorkflowRun(
   id: string,
   data: {
@@ -7073,7 +7112,12 @@ export function updateWorkflowRun(
       `UPDATE workflow_runs SET ${updates.join(", ")} WHERE id = ? RETURNING *`,
     )
     .get(...params);
-  return row ? rowToWorkflowRun(row) : null;
+  if (!row) return null;
+  const run = rowToWorkflowRun(row);
+  if (data.status === "completed" || data.status === "failed") {
+    emitWorkflowTerminalTelemetry(run);
+  }
+  return run;
 }
 
 export function listWorkflowRuns(workflowId: string): WorkflowRun[] {

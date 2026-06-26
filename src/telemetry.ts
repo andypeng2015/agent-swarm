@@ -256,4 +256,20 @@ export const telemetry = {
   session(event: string, props: { agentId: string; taskId?: string; [k: string]: unknown }): void {
     track({ event: `session.${event}`, properties: props });
   },
+
+  schedule(event: string, props: Record<string, unknown>): void {
+    track({ event: `schedule.${event}`, properties: props });
+  },
+
+  workflow(event: string, props: Record<string, unknown>): void {
+    track({ event: `workflow.${event}`, properties: props });
+  },
+
+  agent(event: string, props: Record<string, unknown>): void {
+    track({ event: `agent.${event}`, properties: props });
+  },
+
+  compaction(event: string, props: Record<string, unknown>): void {
+    track({ event: `compaction.${event}`, properties: props });
+  },
 };
