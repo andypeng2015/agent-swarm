@@ -1,5 +1,6 @@
 import { getDb, isSqliteVecAvailable } from "@/be/db";
 import { cosineSimilarity, deserializeEmbedding, serializeEmbedding } from "@/be/embedding";
+import { contentSha256 } from "@/commands/profile-sync";
 import type { AgentMemory, AgentMemoryScope, AgentMemorySource } from "@/types";
 import {
   EMBEDDING_DIMENSIONS,
@@ -9,6 +10,8 @@ import {
 } from "../constants";
 import type {
   MemoryCandidate,
+  MemoryEditInput,
+  MemoryEditResult,
   MemoryHealth,
   MemoryInput,
   MemoryListOptions,
@@ -41,6 +44,10 @@ type AgentMemoryRow = {
   embeddingModel: string | null;
   alpha: number;
   beta: number;
+  key: string | null;
+  contentHash: string | null;
+  version: number;
+  updatedAt: string | null;
 };
 
 function rowToAgentMemory(row: AgentMemoryRow): AgentMemory {
@@ -48,6 +55,7 @@ function rowToAgentMemory(row: AgentMemoryRow): AgentMemory {
     id: row.id,
     agentId: row.agentId,
     scope: row.scope as AgentMemoryScope,
+    key: row.key ?? null,
     name: row.name,
     content: row.content,
     summary: row.summary,
@@ -58,10 +66,13 @@ function rowToAgentMemory(row: AgentMemoryRow): AgentMemory {
     totalChunks: row.totalChunks,
     tags: JSON.parse(row.tags || "[]"),
     createdAt: row.createdAt,
+    updatedAt: row.updatedAt ?? null,
     accessedAt: row.accessedAt,
     expiresAt: row.expiresAt ?? null,
     accessCount: row.accessCount ?? 0,
     embeddingModel: row.embeddingModel ?? null,
+    contentHash: row.contentHash ?? null,
+    version: row.version ?? 1,
   };
 }
 
@@ -85,10 +96,91 @@ function computeExpiresAt(source: AgentMemorySource): string | null {
 
 export class SqliteMemoryStore implements MemoryStore {
   private vecInitialized = false;
+  private ftsInitialized = false;
   private lastPopulate: MemoryVecPopulateStats | null = null;
 
   constructor() {
     this.ensureVecTable();
+    this.ensureFtsTable();
+  }
+
+  private ensureFtsTable(): void {
+    if (this.ftsInitialized) return;
+    const db = getDb();
+    try {
+      db.run(`
+        CREATE VIRTUAL TABLE IF NOT EXISTS memory_fts USING fts5(
+          memory_id UNINDEXED,
+          name,
+          content,
+          tokenize='porter unicode61'
+        )
+      `);
+      this.populateFtsTable();
+      this.ftsInitialized = true;
+    } catch (err) {
+      this.ftsInitialized = false;
+      console.error("[memory-fts] Failed to initialize memory_fts:", (err as Error).message);
+    }
+  }
+
+  private getFtsTableSchema(): string | null {
+    try {
+      return (
+        getDb()
+          .prepare<{ sql: string | null }, []>(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'memory_fts'",
+          )
+          .get()?.sql ?? null
+      );
+    } catch {
+      return null;
+    }
+  }
+
+  private populateFtsTable(): void {
+    const db = getDb();
+    const deletedExtra = db
+      .prepare(
+        `DELETE FROM memory_fts
+         WHERE memory_id NOT IN (SELECT id FROM agent_memory)`,
+      )
+      .run();
+    if (deletedExtra.changes > 0) {
+      console.warn(`[memory-fts] removed_extra_rows count=${deletedExtra.changes}`);
+    }
+
+    const inserted = db
+      .prepare(
+        `INSERT INTO memory_fts(memory_id, name, content)
+         SELECT m.id, m.name, m.content
+         FROM agent_memory m
+         WHERE NOT EXISTS (SELECT 1 FROM memory_fts f WHERE f.memory_id = m.id)`,
+      )
+      .run();
+    console.log(`[memory-fts] populate inserted=${inserted.changes}`);
+  }
+
+  private syncFtsRow(memoryId: string, name: string, content: string): void {
+    if (!this.ftsInitialized && !this.getFtsTableSchema()) return;
+    const db = getDb();
+    try {
+      db.prepare("DELETE FROM memory_fts WHERE memory_id = ?").run(memoryId);
+      db.prepare("INSERT INTO memory_fts(memory_id, name, content) VALUES (?, ?, ?)").run(
+        memoryId,
+        name,
+        content,
+      );
+    } catch (err) {
+      console.error(`[memory-fts] sync failed memory_id=${memoryId}: ${(err as Error).message}`);
+    }
+  }
+
+  private deleteFtsRows(ids: string[]): void {
+    if (ids.length === 0 || (!this.ftsInitialized && !this.getFtsTableSchema())) return;
+    const db = getDb();
+    const placeholders = ids.map(() => "?").join(",");
+    db.prepare(`DELETE FROM memory_fts WHERE memory_id IN (${placeholders})`).run(...ids);
   }
 
   private ensureVecTable(): void {
@@ -237,38 +329,20 @@ export class SqliteMemoryStore implements MemoryStore {
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
     const expiresAt = computeExpiresAt(input.source);
+    const key = input.key ?? `${input.scope}/${input.source}/${id}`;
+    const contentHash = contentSha256(input.content);
+    const version = 1;
 
     const row = getDb()
-      .prepare<
-        AgentMemoryRow,
-        [
-          string,
-          string | null,
-          string,
-          string,
-          string,
-          string | null,
-          string,
-          string | null,
-          string | null,
-          number,
-          number,
-          string,
-          string,
-          string,
-          string | null,
-          number,
-          string | null,
-          string | null,
-        ]
-      >(
-        `INSERT INTO agent_memory (id, agentId, scope, name, content, summary, source, sourceTaskId, sourcePath, chunkIndex, totalChunks, tags, createdAt, accessedAt, expiresAt, accessCount, embeddingModel, contextKey)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`,
+      .prepare<AgentMemoryRow, (string | number | null)[]>(
+        `INSERT INTO agent_memory (id, agentId, scope, key, name, content, summary, source, sourceTaskId, sourcePath, chunkIndex, totalChunks, tags, createdAt, updatedAt, accessedAt, expiresAt, accessCount, embeddingModel, contextKey, contentHash, version)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`,
       )
       .get(
         id,
         input.agentId ?? null,
         input.scope,
+        key,
         input.name,
         input.content,
         input.summary ?? null,
@@ -280,13 +354,35 @@ export class SqliteMemoryStore implements MemoryStore {
         JSON.stringify(input.tags ?? []),
         now,
         now,
+        now,
         expiresAt,
         0,
         null,
         input.contextKey ?? null,
+        contentHash,
+        version,
       );
 
     if (!row) throw new Error("Failed to create memory");
+    getDb()
+      .prepare(
+        `INSERT INTO agent_memory_version (id, memory_id, version, content, contentHash, intent, operation, changedByAgentId, createdAt, updatedAt, created_by, updated_by)
+         VALUES (?, ?, ?, ?, ?, ?, 'create', ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        crypto.randomUUID(),
+        row.id,
+        version,
+        input.content,
+        contentHash,
+        input.intent ?? "create memory",
+        input.agentId ?? null,
+        now,
+        now,
+        input.agentId ?? null,
+        input.agentId ?? null,
+      );
+    this.syncFtsRow(row.id, row.name, row.content);
     return rowToAgentMemory(row);
   }
 
@@ -333,11 +429,43 @@ export class SqliteMemoryStore implements MemoryStore {
     const { scope = "all", limit = 10, source, isLead = false, includeExpired = false } = options;
 
     const health = this.getHealth();
+    if (
+      options.queryText &&
+      this.ftsInitialized &&
+      this.getFtsTableSchema() &&
+      health.retrievalMode === "vec" &&
+      embedding.length === EMBEDDING_DIMENSIONS
+    ) {
+      console.log(
+        `[memory-search] retrieval_path=hybrid scope=${scope} limit=${limit} vec_rows=${health.counts.memoryVec} searchable=${health.counts.searchable}`,
+      );
+      return this.searchHybrid(embedding, options.queryText, agentId, {
+        scope,
+        limit,
+        source,
+        isLead,
+        includeExpired,
+      });
+    }
+
     if (health.retrievalMode === "vec" && embedding.length === EMBEDDING_DIMENSIONS) {
       console.log(
         `[memory-search] retrieval_path=vec scope=${scope} limit=${limit} vec_rows=${health.counts.memoryVec} searchable=${health.counts.searchable}`,
       );
       return this.searchWithVec(embedding, agentId, {
+        scope,
+        limit,
+        source,
+        isLead,
+        includeExpired,
+      });
+    }
+
+    if (options.queryText && this.ftsInitialized && this.getFtsTableSchema()) {
+      console.log(
+        `[memory-search] retrieval_path=fts scope=${scope} limit=${limit} reason=${embedding.length !== EMBEDDING_DIMENSIONS ? "query_dimension_mismatch" : health.reasons.join("|") || "vec_unavailable"}`,
+      );
+      return this.searchFts(options.queryText, agentId, {
         scope,
         limit,
         source,
@@ -356,6 +484,106 @@ export class SqliteMemoryStore implements MemoryStore {
       isLead,
       includeExpired,
     });
+  }
+
+  private searchHybrid(
+    queryEmbedding: Float32Array,
+    queryText: string,
+    agentId: string,
+    options: {
+      scope: string;
+      limit: number;
+      source?: AgentMemorySource;
+      isLead: boolean;
+      includeExpired: boolean;
+    },
+  ): MemoryCandidate[] {
+    const overfetchLimit = Math.min(Math.max(options.limit * 4, options.limit), 100);
+    const vectorCandidates = this.searchWithVec(queryEmbedding, agentId, {
+      ...options,
+      limit: overfetchLimit,
+    });
+    const ftsCandidates = this.searchFts(queryText, agentId, { ...options, limit: overfetchLimit });
+    if (ftsCandidates.length === 0) return vectorCandidates.slice(0, options.limit);
+
+    const byId = new Map<string, MemoryCandidate>();
+    const scores = new Map<string, number>();
+    const add = (candidate: MemoryCandidate, rank: number) => {
+      byId.set(candidate.id, byId.get(candidate.id) ?? candidate);
+      scores.set(candidate.id, (scores.get(candidate.id) ?? 0) + 1 / (60 + rank + 1));
+    };
+
+    vectorCandidates.forEach(add);
+    ftsCandidates.forEach(add);
+
+    return [...byId.values()]
+      .map((candidate) => ({
+        ...candidate,
+        rawSimilarity: candidate.rawSimilarity ?? candidate.similarity,
+        similarity: scores.get(candidate.id) ?? candidate.similarity,
+      }))
+      .sort((a, b) => b.similarity - a.similarity)
+      .slice(0, options.limit);
+  }
+
+  private searchFts(
+    queryText: string,
+    agentId: string,
+    options: {
+      scope: string;
+      limit: number;
+      source?: AgentMemorySource;
+      isLead: boolean;
+      includeExpired: boolean;
+    },
+  ): MemoryCandidate[] {
+    const match = this.buildFtsMatch(queryText);
+    if (!match) return [];
+
+    const db = getDb();
+    const { scope, limit, source, isLead, includeExpired } = options;
+    const conditions: string[] = ["memory_fts MATCH ?"];
+    const params: (Buffer | string | number | null)[] = [match];
+
+    this.addScopeConditions(conditions, params, agentId, scope, isLead, "m");
+
+    if (source) {
+      conditions.push("m.source = ?");
+      params.push(source);
+    }
+
+    if (!includeExpired) {
+      conditions.push("(m.expiresAt IS NULL OR m.expiresAt > datetime('now'))");
+    }
+
+    try {
+      const rows = db
+        .prepare<AgentMemoryRow & { rank: number }, (Buffer | string | number | null)[]>(
+          `SELECT m.*, bm25(memory_fts) AS rank
+           FROM memory_fts
+           JOIN agent_memory m ON m.id = memory_fts.memory_id
+           WHERE ${conditions.join(" AND ")}
+           ORDER BY rank
+           LIMIT ?`,
+        )
+        .all(...params, limit);
+
+      return rows.map((row, index) => rowToCandidate(row, 1 / (index + 1)));
+    } catch (err) {
+      console.warn("[memory-fts] query failed:", (err as Error).message);
+      return [];
+    }
+  }
+
+  private buildFtsMatch(queryText: string): string | null {
+    const terms = queryText
+      .trim()
+      .split(/[^\p{L}\p{N}_-]+/u)
+      .map((term) => term.trim())
+      .filter((term) => term.length > 0)
+      .slice(0, 12);
+    if (terms.length === 0) return null;
+    return terms.map((term) => `"${term.replaceAll('"', '""')}"`).join(" OR ");
   }
 
   private searchWithVec(
@@ -553,6 +781,105 @@ export class SqliteMemoryStore implements MemoryStore {
     return PROTECTED_SOURCES.has(source);
   }
 
+  edit(input: MemoryEditInput): MemoryEditResult {
+    if (!input.id && !(input.key && input.scope)) {
+      throw new Error("memory edit requires either id or key+scope");
+    }
+
+    const db = getDb();
+    const row = input.id
+      ? db
+          .prepare<AgentMemoryRow, [string]>("SELECT * FROM agent_memory WHERE id = ?")
+          .get(input.id)
+      : db
+          .prepare<AgentMemoryRow, [string, string, string | null]>(
+            `SELECT * FROM agent_memory
+             WHERE key = ? AND scope = ? AND coalesce(agentId, '') = coalesce(?, '')
+             ORDER BY chunkIndex ASC
+             LIMIT 1`,
+          )
+          .get(input.key!, input.scope!, input.agentId ?? null);
+
+    if (!row) throw new Error("memory not found");
+    if ((row.totalChunks ?? 1) !== 1)
+      throw new Error("memory edit only supports single-chunk rows");
+    if (input.expectedVersion && input.expectedVersion !== (row.version ?? 1)) {
+      throw new Error("memory version conflict");
+    }
+
+    const previousVersion = row.version ?? 1;
+    let nextContent: string;
+    if (input.mode === "replace") {
+      if (input.content == null) throw new Error("replace mode requires content");
+      nextContent = input.content;
+    } else {
+      if (!input.oldString || input.newString == null) {
+        throw new Error("exact mode requires oldString and newString");
+      }
+      const first = row.content.indexOf(input.oldString);
+      if (first === -1) throw new Error("oldString not found");
+      if (row.content.indexOf(input.oldString, first + input.oldString.length) !== -1) {
+        throw new Error("oldString is ambiguous");
+      }
+      nextContent =
+        row.content.slice(0, first) +
+        input.newString +
+        row.content.slice(first + input.oldString.length);
+    }
+
+    const nextHash = contentSha256(nextContent);
+    if (nextHash === row.contentHash) {
+      return {
+        memory: rowToAgentMemory(row),
+        changed: false,
+        previousVersion,
+        version: previousVersion,
+        contentHash: nextHash,
+      };
+    }
+
+    const nextVersion = previousVersion + 1;
+    const now = new Date().toISOString();
+    const tx = db.transaction(() => {
+      db.prepare(
+        `INSERT INTO agent_memory_version (id, memory_id, version, content, contentHash, intent, operation, changedByAgentId, createdAt, updatedAt, created_by, updated_by)
+         VALUES (?, ?, ?, ?, ?, ?, 'edit', ?, ?, ?, ?, ?)`,
+      ).run(
+        crypto.randomUUID(),
+        row.id,
+        nextVersion,
+        nextContent,
+        nextHash,
+        input.intent,
+        input.changedByAgentId ?? null,
+        now,
+        now,
+        input.changedByAgentId ?? null,
+        input.changedByAgentId ?? null,
+      );
+      db.prepare(
+        `UPDATE agent_memory
+         SET content = ?, contentHash = ?, version = ?, updatedAt = ?
+         WHERE id = ?`,
+      ).run(nextContent, nextHash, nextVersion, now, row.id);
+    });
+    tx();
+
+    this.syncFtsRow(row.id, row.name, nextContent);
+    const updated = db
+      .prepare<AgentMemoryRow, [string]>("SELECT * FROM agent_memory WHERE id = ?")
+      .get(row.id);
+    if (!updated) throw new Error("memory disappeared after edit");
+
+    return {
+      memory: rowToAgentMemory(updated),
+      changed: true,
+      previousVersion,
+      version: nextVersion,
+      contentHash: nextHash,
+    };
+  }
+
   listForCuration(
     agentId?: string,
   ): { id: string; source: string; name: string; createdAt: string }[] {
@@ -593,6 +920,7 @@ export class SqliteMemoryStore implements MemoryStore {
     if (this.vecInitialized && this.getVecTableSchema()) {
       db.prepare("DELETE FROM memory_vec WHERE memory_id = ?").run(id);
     }
+    this.deleteFtsRows([id]);
     const result = db.prepare("DELETE FROM agent_memory WHERE id = ?").run(id);
     return result.changes > 0;
   }
@@ -600,14 +928,13 @@ export class SqliteMemoryStore implements MemoryStore {
   deleteBySourcePath(sourcePath: string, agentId: string): number {
     const db = getDb();
 
-    if (this.vecInitialized && this.getVecTableSchema()) {
-      // Get IDs first for vec table cleanup
-      const ids = db
-        .prepare<{ id: string }, [string, string]>(
-          "SELECT id FROM agent_memory WHERE sourcePath = ? AND agentId = ?",
-        )
-        .all(sourcePath, agentId);
+    const ids = db
+      .prepare<{ id: string }, [string, string]>(
+        "SELECT id FROM agent_memory WHERE sourcePath = ? AND agentId = ?",
+      )
+      .all(sourcePath, agentId);
 
+    if (this.vecInitialized && this.getVecTableSchema()) {
       if (ids.length > 0) {
         const placeholders = ids.map(() => "?").join(",");
         db.prepare(`DELETE FROM memory_vec WHERE memory_id IN (${placeholders})`).run(
@@ -615,11 +942,12 @@ export class SqliteMemoryStore implements MemoryStore {
         );
       }
     }
+    this.deleteFtsRows(ids.map((r) => r.id));
 
     const result = db
       .prepare("DELETE FROM agent_memory WHERE sourcePath = ? AND agentId = ?")
       .run(sourcePath, agentId);
-    return result.changes;
+    return ids.length || result.changes;
   }
 
   purgeExpired(): number {
@@ -643,6 +971,7 @@ export class SqliteMemoryStore implements MemoryStore {
         );
       }
     }
+    this.deleteFtsRows(expiredIds.map((r) => r.id));
 
     const result = db
       .prepare(

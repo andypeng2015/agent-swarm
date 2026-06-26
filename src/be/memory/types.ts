@@ -21,6 +21,7 @@ export interface MemoryStore {
   get(id: string): AgentMemory | null;
   peek(id: string): AgentMemory | null;
   search(embedding: Float32Array, agentId: string, options: MemorySearchOptions): MemoryCandidate[];
+  edit(input: MemoryEditInput): MemoryEditResult;
   list(agentId: string, options: MemoryListOptions): AgentMemory[];
   count(agentId: string, options: MemoryListOptions): number;
   isSourceProtected(source: AgentMemorySource): boolean;
@@ -53,6 +54,8 @@ export interface MemoryInput {
   totalChunks?: number;
   tags?: string[];
   contextKey?: string | null;
+  intent?: string | null;
+  key?: string | null;
 }
 
 export interface MemoryCandidate extends AgentMemory {
@@ -75,6 +78,31 @@ export interface MemorySearchOptions {
   source?: AgentMemorySource;
   isLead?: boolean;
   includeExpired?: boolean;
+  queryText?: string;
+}
+
+export type MemoryEditMode = "replace" | "exact";
+
+export interface MemoryEditInput {
+  id?: string;
+  key?: string;
+  scope?: AgentMemoryScope;
+  agentId?: string | null;
+  mode: MemoryEditMode;
+  content?: string;
+  oldString?: string;
+  newString?: string;
+  intent: string;
+  expectedVersion?: number;
+  changedByAgentId?: string | null;
+}
+
+export interface MemoryEditResult {
+  memory: AgentMemory;
+  changed: boolean;
+  previousVersion: number;
+  version: number;
+  contentHash: string;
 }
 
 export interface MemoryListOptions {

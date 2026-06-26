@@ -82,14 +82,15 @@ export const registerMemorySearchTool = (server: McpServer) => {
       const store = getMemoryStore();
       const queryEmbedding = await provider.embed(query);
 
-      if (queryEmbedding) {
-        const candidateLimit = limit * CANDIDATE_SET_MULTIPLIER;
-        const candidates = store.search(queryEmbedding, requestInfo.agentId, {
-          scope: scope as "agent" | "swarm" | "all",
-          limit: candidateLimit,
-          source,
-          isLead,
-        });
+      const candidateLimit = limit * CANDIDATE_SET_MULTIPLIER;
+      const candidates = store.search(queryEmbedding ?? new Float32Array(0), requestInfo.agentId, {
+        scope: scope as "agent" | "swarm" | "all",
+        limit: candidateLimit,
+        source,
+        isLead,
+        queryText: query,
+      });
+      if (candidates.length > 0) {
         const ranked = rerank(candidates, { limit });
 
         // Retrieval bridge — when called inside a task scope, log one
@@ -145,7 +146,7 @@ export const registerMemorySearchTool = (server: McpServer) => {
         };
       }
 
-      // Fallback: list recent memories (no OPENAI_API_KEY)
+      // Fallback: list recent memories (no OPENAI_API_KEY and no FTS hit)
       const recent = store.list(requestInfo.agentId, {
         scope: scope as "agent" | "swarm" | "all",
         limit,
