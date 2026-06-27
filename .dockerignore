@@ -61,5 +61,9 @@ docker-compose.yml
 docker-compose.*.yml
 !docker-compose.worker.yml
 
-# Eval harness sub-project (own package, never part of images)
+# Eval harness sub-project (own package, never part of images).
+# Exception: its package.json must reach the build context — the root package.json
+# declares `evals` as a Bun workspace member, so `bun install --frozen-lockfile` in the
+# builder needs the manifest to resolve the workspace graph (the rest of evals/ stays out).
 evals/
+!evals/package.json
