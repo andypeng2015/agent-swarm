@@ -6,14 +6,19 @@ export const REDACTED_PLACEHOLDER_PREFIX = "[REDACTED:";
 
 export const CredentialBindingScopeSchema = z.enum(["global", "agent", "repo"]);
 
-export const CredentialBindingSchema = z.object({
-  configKey: z.string().min(1).max(255),
-  allowedHosts: z.array(z.string().min(1)).min(1),
-  headerTemplate: z.string().min(1),
-  scope: CredentialBindingScopeSchema.default("global"),
-  scopeId: z.string().nullable().optional(),
-  active: z.boolean().default(true),
-});
+export const CredentialBindingSchema = z
+  .object({
+    configKey: z.string().min(1).max(255),
+    allowedHosts: z.array(z.string().min(1)).min(1),
+    headerTemplate: z.string().min(1).optional(),
+    queryTemplate: z.string().min(1).optional(),
+    scope: CredentialBindingScopeSchema.default("global"),
+    scopeId: z.string().nullable().optional(),
+    active: z.boolean().default(true),
+  })
+  .refine((binding) => binding.headerTemplate || binding.queryTemplate, {
+    message: "At least one of headerTemplate or queryTemplate is required.",
+  });
 
 export const CredentialBindingsDocumentSchema = z.union([
   z.array(CredentialBindingSchema),

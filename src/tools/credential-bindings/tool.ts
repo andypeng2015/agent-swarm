@@ -22,6 +22,7 @@ const credentialBindingsInputSchema = z.object({
   configKey: z.string().min(1).max(255).optional(),
   allowedHosts: z.array(z.string().min(1)).min(1).optional(),
   headerTemplate: z.string().min(1).optional(),
+  queryTemplate: z.string().min(1).optional(),
   scope: z.enum(["global", "agent", "repo"]).default("global").optional(),
   scopeId: z.string().uuid().nullable().optional(),
 });
@@ -170,22 +171,26 @@ export const registerCredentialBindingsTool = (server: McpServer) => {
         };
       }
 
-      if (!args.allowedHosts || !args.headerTemplate) {
+      if (!args.allowedHosts || (!args.headerTemplate && !args.queryTemplate)) {
         return {
           content: [
-            { type: "text", text: "allowedHosts and headerTemplate are required for upsert." },
+            {
+              type: "text",
+              text: "allowedHosts and at least one of headerTemplate or queryTemplate are required for upsert.",
+            },
           ],
           structuredContent: {
             yourAgentId: requestInfo.agentId,
             success: false,
-            message: "allowedHosts and headerTemplate are required for upsert.",
+            message:
+              "allowedHosts and at least one of headerTemplate or queryTemplate are required for upsert.",
             bindings,
           },
         };
       }
 
       const placeholder = placeholderForConfigKey(args.configKey);
-      if (!args.headerTemplate.includes(placeholder)) {
+      if (args.headerTemplate && !args.headerTemplate.includes(placeholder)) {
         return {
           content: [{ type: "text", text: `headerTemplate must include ${placeholder}.` }],
           structuredContent: {
@@ -196,11 +201,23 @@ export const registerCredentialBindingsTool = (server: McpServer) => {
           },
         };
       }
+      if (args.queryTemplate && !args.queryTemplate.includes(placeholder)) {
+        return {
+          content: [{ type: "text", text: `queryTemplate must include ${placeholder}.` }],
+          structuredContent: {
+            yourAgentId: requestInfo.agentId,
+            success: false,
+            message: `queryTemplate must include ${placeholder}.`,
+            bindings,
+          },
+        };
+      }
 
       const nextBinding = CredentialBindingSchema.parse({
         configKey: args.configKey,
         allowedHosts: args.allowedHosts,
         headerTemplate: args.headerTemplate,
+        queryTemplate: args.queryTemplate,
         scope,
         scopeId,
         active: true,

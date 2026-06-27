@@ -38,6 +38,14 @@ function parseBindingsFromConfig(config: SwarmConfig): CredentialBinding[] {
   }
 }
 
+function bindingHasPlaceholder(binding: CredentialBinding) {
+  const placeholder = placeholderForConfigKey(binding.configKey);
+  return (
+    binding.headerTemplate?.includes(placeholder) === true ||
+    binding.queryTemplate?.includes(placeholder) === true
+  );
+}
+
 export class SwarmConfigCredentialBindingStore implements CredentialBindingStore {
   constructor(private readonly readConfigs: ConfigReader) {}
 
@@ -47,8 +55,6 @@ export class SwarmConfigCredentialBindingStore implements CredentialBindingStore
       .flatMap(parseBindingsFromConfig)
       .filter((binding) => binding.active !== false)
       .filter((binding) => appliesToContext(binding, context))
-      .filter((binding) =>
-        binding.headerTemplate.includes(placeholderForConfigKey(binding.configKey)),
-      );
+      .filter(bindingHasPlaceholder);
   }
 }

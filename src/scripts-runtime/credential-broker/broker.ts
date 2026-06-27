@@ -1,6 +1,14 @@
 import type { CredentialBinding, CredentialBindingStore, CredentialResolver } from "./types";
 import { placeholderForConfigKey, type ResolvedCredentialBinding } from "./types";
 
+function bindingHasPlaceholder(binding: CredentialBinding) {
+  const placeholder = placeholderForConfigKey(binding.configKey);
+  return (
+    binding.headerTemplate?.includes(placeholder) === true ||
+    binding.queryTemplate?.includes(placeholder) === true
+  );
+}
+
 export class CredentialBroker {
   constructor(
     private readonly store: CredentialBindingStore,
@@ -15,7 +23,7 @@ export class CredentialBroker {
 
     for (const binding of merged) {
       if (binding.active === false) continue;
-      if (!binding.headerTemplate.includes(placeholderForConfigKey(binding.configKey))) continue;
+      if (!bindingHasPlaceholder(binding)) continue;
 
       const value = this.resolveCredential(binding.configKey);
       if (!value) continue;
@@ -23,7 +31,8 @@ export class CredentialBroker {
       const dedupeKey = [
         binding.configKey,
         [...binding.allowedHosts].sort().join(","),
-        binding.headerTemplate,
+        binding.headerTemplate ?? "",
+        binding.queryTemplate ?? "",
         binding.scope,
         binding.scopeId ?? "",
       ].join("\0");

@@ -49,6 +49,13 @@ describe("credential broker", () => {
             scope: "global",
             active: false,
           },
+          {
+            configKey: "QUERY_KEY",
+            allowedHosts: ["api.example.com"],
+            queryTemplate: "api_key=[REDACTED:QUERY_KEY]",
+            scope: "global",
+            active: true,
+          },
         ],
       }),
     ]);
@@ -58,6 +65,14 @@ describe("credential broker", () => {
         configKey: "LINEAR_API_KEY",
         allowedHosts: ["api.linear.app"],
         headerTemplate: "Authorization: Bearer [REDACTED:LINEAR_API_KEY]",
+        scope: "global",
+        active: true,
+        scopeId: null,
+      },
+      {
+        configKey: "QUERY_KEY",
+        allowedHosts: ["api.example.com"],
+        queryTemplate: "api_key=[REDACTED:QUERY_KEY]",
         scope: "global",
         active: true,
         scopeId: null,
@@ -139,5 +154,57 @@ describe("credential broker", () => {
     });
 
     expect(authorization).toBe("Bearer [REDACTED:GITHUB_TOKEN]");
+  });
+
+  test("substitutes query placeholders for allowlisted hosts", async () => {
+    let observedUrl: string | null = null;
+    globalThis.fetch = (async (input: string | URL | Request) => {
+      observedUrl = input instanceof Request ? input.url : input.toString();
+      return Response.json({ ok: true });
+    }) as typeof fetch;
+
+    patchFetchWithCredentialBroker([
+      {
+        configKey: "VENDOR_API_KEY",
+        allowedHosts: ["api.vendor.test"],
+        queryTemplate: "api_key=[REDACTED:VENDOR_API_KEY]",
+        scope: "global",
+        scopeId: null,
+        active: true,
+        placeholder: "[REDACTED:VENDOR_API_KEY]",
+        value: "vendor_secret",
+      },
+    ]);
+
+    await fetch("https://api.vendor.test/v1/items?api_key=[REDACTED:VENDOR_API_KEY]&q=one");
+
+    expect(observedUrl).toBe("https://api.vendor.test/v1/items?q=one&api_key=vendor_secret");
+  });
+
+  test("does not substitute query placeholders for non-allowlisted hosts", async () => {
+    let observedUrl: string | null = null;
+    globalThis.fetch = (async (input: string | URL | Request) => {
+      observedUrl = input instanceof Request ? input.url : input.toString();
+      return Response.json({ ok: true });
+    }) as typeof fetch;
+
+    patchFetchWithCredentialBroker([
+      {
+        configKey: "VENDOR_API_KEY",
+        allowedHosts: ["api.vendor.test"],
+        queryTemplate: "api_key=[REDACTED:VENDOR_API_KEY]",
+        scope: "global",
+        scopeId: null,
+        active: true,
+        placeholder: "[REDACTED:VENDOR_API_KEY]",
+        value: "vendor_secret",
+      },
+    ]);
+
+    await fetch("https://example.com/v1/items?api_key=[REDACTED:VENDOR_API_KEY]&q=one");
+
+    expect(observedUrl).toBe(
+      "https://example.com/v1/items?api_key=[REDACTED:VENDOR_API_KEY]&q=one",
+    );
   });
 });
