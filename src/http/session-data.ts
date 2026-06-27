@@ -1,4 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { normalizeModelKey } from "@swarm/ai-pricing";
 import type { SessionCost, SessionCostSource } from "@swarm/types";
 import { z } from "zod";
 import {
@@ -14,7 +15,6 @@ import {
   getSessionLogsByTaskId,
   getTaskById,
 } from "../be/db";
-import { normalizeModelKey } from "../be/pricing-normalize";
 import { incrementServerSessionsProcessed } from "../server-runtime-counters";
 import { route } from "./route-def";
 import { json, jsonError } from "./utils";

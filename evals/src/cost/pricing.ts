@@ -32,10 +32,13 @@ type ModelsDevCache = Record<string, ModelsDevSection>;
 
 let cachePromise: Promise<ModelsDevCache> | null = null;
 
-/** Repo-root models.dev snapshot — in-repo and offline-safe. Loaded once per process. */
+/** Vendored models.dev snapshot from @swarm/ai-pricing — in-repo and offline-safe. Loaded once per process. */
 function loadCache(): Promise<ModelsDevCache> {
   if (!cachePromise) {
-    const url = new URL("../../../src/be/modelsdev-cache.json", import.meta.url);
+    const url = new URL(
+      "../../../packages/ai-pricing/src/be/modelsdev-cache.json",
+      import.meta.url,
+    );
     cachePromise = Bun.file(url).json() as Promise<ModelsDevCache>;
   }
   return cachePromise;

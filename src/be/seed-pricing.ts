@@ -19,14 +19,14 @@
  * admin route (`POST /api/pricing`) — we don't overwrite seed rows.
  */
 
-import type { PricingProvider, PricingTokenClass } from "@swarm/types";
-import { getDb } from "./db";
 import {
   loadModelsDevCache,
   type ModelsDevCache,
   type ModelsDevCostBlock,
-} from "./modelsdev-cache";
-import { normalizeModelKey } from "./pricing-normalize";
+  normalizeModelKey,
+} from "@swarm/ai-pricing";
+import type { PricingProvider, PricingTokenClass } from "@swarm/types";
+import { getDb } from "./db";
 
 /**
  * Per-harness manual rates that models.dev doesn't carry. Keep the source URL

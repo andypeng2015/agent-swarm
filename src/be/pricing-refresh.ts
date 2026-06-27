@@ -1,3 +1,4 @@
+import type { ModelsDevCache } from "@swarm/ai-pricing";
 import { scrubSecrets } from "@swarm/core-utils";
 import {
   createLogEntry,
@@ -6,7 +7,6 @@ import {
   type InsertPricingRowInput,
   insertPricingRow,
 } from "./db";
-import type { ModelsDevCache } from "./modelsdev-cache";
 import { buildModelsDevSeedRows, type PricingSeedRow } from "./seed-pricing";
 
 const MODELSDEV_API_URL = "https://models.dev/api.json";

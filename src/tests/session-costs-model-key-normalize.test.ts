@@ -12,8 +12,8 @@ import {
   type Server,
   type ServerResponse,
 } from "node:http";
+import { normalizeModelKey } from "@swarm/ai-pricing";
 import { closeDb, createAgent, getDb, initDb, insertPricingRow } from "../be/db";
-import { normalizeModelKey } from "../be/pricing-normalize";
 import { handleCore } from "../http/core";
 import { handleSessionData } from "../http/session-data";
 import { getPathSegments, parseQueryParams } from "../http/utils";

@@ -99,8 +99,10 @@ COPY package.json ./
 COPY src/be/migrations/*.sql /app/migrations/
 
 # Copy vendored models.dev pricing snapshot so the compiled binary can seed
-# pricing rows from a real filesystem path at runtime.
-COPY src/be/modelsdev-cache.json /app/src/be/modelsdev-cache.json
+# pricing rows from a real filesystem path at runtime. The snapshot now lives in
+# @swarm/ai-pricing; the destination stays /app/src/be/... because that is the
+# path loadModelsDevCache() probes inside the compiled image.
+COPY packages/ai-pricing/src/be/modelsdev-cache.json /app/src/be/modelsdev-cache.json
 
 # Copy sqlite-vec native extension on real disk. `bun build --compile` embeds JS
 # into /$bunfs/ but not native .so files, and dlopen can't load from /$bunfs/.
