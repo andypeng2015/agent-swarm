@@ -30,7 +30,7 @@ elif [ -d "$repo_dir/.githooks" ]; then
   fi
 fi
 
-if [ -f "$repo_dir/.pre-commit-config.yaml" ]; then
+if [ -f "$repo_dir/.pre-commit-config.yaml" ] || [ -f "$repo_dir/prek.toml" ]; then
   if command -v prek >/dev/null 2>&1; then
     if (cd "$repo_dir" && prek install); then
       echo "    Installed prek git shims"
@@ -38,7 +38,7 @@ if [ -f "$repo_dir/.pre-commit-config.yaml" ]; then
       warn "prek install failed for ${repo_name}"
     fi
   else
-    warn "prek is not installed; cannot install .pre-commit-config.yaml hooks for ${repo_name}"
+    warn "prek is not installed; cannot install prek hooks for ${repo_name}"
   fi
 fi
 
