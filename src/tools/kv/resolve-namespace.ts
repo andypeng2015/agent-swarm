@@ -1,6 +1,6 @@
+import type { RequestInfo } from "@swarm/mcp-tool";
 import { getTaskById } from "@/be/db";
 import { agentContextKey } from "@/tasks/context-key";
-import type { RequestInfo } from "@/tools/utils";
 
 /**
  * Resolve the KV namespace for an MCP tool call.

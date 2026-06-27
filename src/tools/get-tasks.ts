@@ -1,11 +1,10 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import { createToolRegistrar, ownerCtx, type ToolCtx } from "@swarm/mcp-tool";
 import type { AgentTask, AgentTaskSummary } from "@swarm/types";
 import { AgentTaskStatusSchema } from "@swarm/types";
 import * as z from "zod";
 import { getAllTasks } from "@/be/db";
-import { ownerCtx, type ToolCtx } from "@/tools/task-tool-ctx";
-import { createToolRegistrar } from "@/tools/utils";
 
 const TaskSummarySchema = z.object({
   id: z.string(),

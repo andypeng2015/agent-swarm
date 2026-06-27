@@ -1,8 +1,8 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { createToolRegistrar } from "@swarm/mcp-tool";
 import * as z from "zod";
 import { sendKapsoText } from "@/integrations/kapso/client";
 import { getKapsoConfig } from "@/integrations/kapso/config";
-import { createToolRegistrar } from "@/tools/utils";
 
 /** Shared structured-error message for the 24h session-window case. */
 const SESSION_WINDOW_HINT =

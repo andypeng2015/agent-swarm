@@ -1,7 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { createToolRegistrar } from "@swarm/mcp-tool";
 import * as z from "zod";
 import { COMPOSIO_HTTP_METHODS, composioArgsFromParts, executeComposioRequest } from "@/x/composio";
-import { createToolRegistrar } from "./utils";
 
 const primitiveQueryValueSchema = z.union([z.string(), z.number(), z.boolean()]);
 

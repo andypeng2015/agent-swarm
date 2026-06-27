@@ -1,5 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import { createToolRegistrar, ownerCtx, type ToolCtx } from "@swarm/mcp-tool";
 import {
   type AgentTask,
   AgentTaskSchema,
@@ -20,8 +21,6 @@ import {
 } from "@/be/db";
 import { repointTrackerSyncBySwarmId } from "@/be/db-queries/tracker";
 import { findDuplicateTask } from "@/tools/task-dedup";
-import { ownerCtx, type ToolCtx } from "@/tools/task-tool-ctx";
-import { createToolRegistrar } from "@/tools/utils";
 
 export const sendTaskInputSchema = z.object({
   agentId: z

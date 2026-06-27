@@ -1,9 +1,9 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { registerVolatileSecret } from "@swarm/core-utils";
+import { createToolRegistrar } from "@swarm/mcp-tool";
 import * as z from "zod";
 import { getOAuthTokens } from "@/be/db-queries/oauth";
 import { ensureTokenOrThrow } from "@/oauth/ensure-token";
-import { createToolRegistrar } from "@/tools/utils";
 
 type OAuthProvider = string;
 

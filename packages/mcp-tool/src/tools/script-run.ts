@@ -1,6 +1,5 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import * as z from "zod";
-import { createToolRegistrar } from "@/tools/utils";
 import {
   proxyScriptsApi,
   scriptFsModeSchema,
@@ -8,6 +7,7 @@ import {
   scriptScopeSchema,
   scriptToolOutputSchema,
 } from "./script-common";
+import { createToolRegistrar } from "./utils";
 
 export const SCRIPT_RUN_DESCRIPTION =
   "Run a named swarm-shared script (callable across agents and from workflow `swarm-script` nodes), OR inline source (auto-saved as scratch to the catalog). Use for swarm-visible, durable scripts. For local-only throwaway TS, use code-mode `run`.";

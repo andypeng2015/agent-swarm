@@ -4,17 +4,19 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { Readable } from "node:stream";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { refreshSecretScrubberCache } from "@swarm/core-utils";
+import {
+  registerScriptDeleteTool,
+  registerScriptRunsTools,
+  registerScriptRunTool,
+  registerScriptSearchTool,
+  registerScriptUpsertTool,
+} from "@swarm/mcp-tool";
 import { closeDb, createAgent, getDb, initDb } from "../be/db";
 import { setScriptEmbeddingProviderForTests } from "../be/scripts/embeddings";
 import { handleCore } from "../http/core";
 import { handleScriptRuns } from "../http/script-runs";
 import { handleScripts } from "../http/scripts";
 import { getPathSegments, parseQueryParams } from "../http/utils";
-import { registerScriptDeleteTool } from "../tools/script-delete";
-import { registerScriptRunTool } from "../tools/script-run";
-import { registerScriptRunsTools } from "../tools/script-runs";
-import { registerScriptSearchTool } from "../tools/script-search";
-import { registerScriptUpsertTool } from "../tools/script-upsert";
 
 const TEST_DB_PATH = "./test-scripts-mcp-e2e.sqlite";
 const API_KEY = "test-scripts-mcp-key-1234567890";

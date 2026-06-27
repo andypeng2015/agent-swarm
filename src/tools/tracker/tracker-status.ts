@@ -1,8 +1,8 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { createToolRegistrar } from "@swarm/mcp-tool";
 import * as z from "zod";
 import { getOAuthApp, getOAuthTokens } from "@/be/db-queries/oauth";
 import { ensureToken } from "@/oauth/ensure-token";
-import { createToolRegistrar } from "@/tools/utils";
 
 export const registerTrackerStatusTool = (server: McpServer) => {
   createToolRegistrar(server)(

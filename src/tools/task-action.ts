@@ -1,5 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import { assertOwnsTask, createToolRegistrar, ownerCtx, type ToolCtx } from "@swarm/mcp-tool";
 import {
   AgentTaskSchema,
   BudgetRefusalCauseSchema,
@@ -31,8 +32,6 @@ import {
   releaseTask,
   updateTaskClaudeSessionId,
 } from "@/be/db";
-import { assertOwnsTask, ownerCtx, type ToolCtx } from "@/tools/task-tool-ctx";
-import { createToolRegistrar } from "@/tools/utils";
 
 export const TaskActionSchema = z.enum([
   "create",

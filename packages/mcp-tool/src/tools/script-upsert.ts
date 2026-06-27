@@ -1,6 +1,5 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import * as z from "zod";
-import { createToolRegistrar } from "@/tools/utils";
 import {
   proxyScriptsApi,
   scriptFsModeSchema,
@@ -8,6 +7,7 @@ import {
   scriptScopeSchema,
   scriptToolOutputSchema,
 } from "./script-common";
+import { createToolRegistrar } from "./utils";
 
 export const SCRIPT_UPSERT_DESCRIPTION =
   "Persist a TypeScript script to the swarm catalog under your agent scope (or global if you're a lead). Other agents and workflow nodes will be able to find and run it. For local-only scripts, use code-mode `save`.";

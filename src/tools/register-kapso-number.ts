@@ -1,5 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { getPublicMcpBaseUrl } from "@swarm/core-utils";
+import { createToolRegistrar } from "@swarm/mcp-tool";
 import * as z from "zod";
 import { getAgentById, getLeadAgent } from "@/be/db";
 import { registerKapsoWebhook } from "@/integrations/kapso/client";
@@ -10,7 +11,6 @@ import {
   type KapsoNumberMapping,
   putKapsoNumberMapping,
 } from "@/integrations/kapso/config";
-import { createToolRegistrar } from "@/tools/utils";
 
 /** Build the native inbound webhook URL the swarm exposes for Kapso deliveries. */
 function nativeWebhookUrl(): string {

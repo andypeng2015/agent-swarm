@@ -1,9 +1,9 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { createToolRegistrar } from "@swarm/mcp-tool";
 import { WorkflowNodePatchSchema } from "@swarm/types";
 import { z } from "zod";
 import { resolveTaskAuditUserId } from "@/be/audit-user";
 import { getWorkflow, updateWorkflow } from "@/be/db";
-import { createToolRegistrar } from "@/tools/utils";
 import { applyDefinitionPatch, validateDefinition } from "@/workflows/definition";
 import { snapshotWorkflow } from "@/workflows/version";
 

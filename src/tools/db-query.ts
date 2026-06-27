@@ -1,7 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { createToolRegistrar } from "@swarm/mcp-tool";
 import * as z from "zod";
 import { DbQueryInputShape, executeReadOnlyQuery, resolveDbQuerySql } from "@/http/db-query";
-import { createToolRegistrar } from "@/tools/utils";
 
 const MCP_MAX_ROWS = 100;
 

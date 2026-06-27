@@ -1,4 +1,5 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { createToolRegistrar } from "@swarm/mcp-tool";
 import { ModelTierSchema, splitLegacyModelAlias } from "@swarm/types";
 import { CronExpressionParser } from "cron-parser";
 import * as z from "zod";
@@ -11,7 +12,6 @@ import {
 } from "@/be/db";
 import { mergeScheduleTiming, validateRecurringTiming } from "@/be/schedules/validate";
 import { calculateNextRun } from "@/scheduler";
-import { createToolRegistrar } from "@/tools/utils";
 
 export const updateScheduleInputSchema = z.object({
   scheduleId: z.string().uuid().optional().describe("Schedule ID to update"),

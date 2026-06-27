@@ -1,7 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { createToolRegistrar } from "@swarm/mcp-tool";
 import { z } from "zod";
 import { getWorkflow, getWorkflowRun } from "@/be/db";
-import { createToolRegistrar } from "@/tools/utils";
 import { getExecutorRegistry, startWorkflowExecution } from "@/workflows";
 import { TriggerSchemaError } from "@/workflows/engine";
 

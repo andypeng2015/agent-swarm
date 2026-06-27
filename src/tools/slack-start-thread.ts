@@ -1,10 +1,10 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { createToolRegistrar } from "@swarm/mcp-tool";
 import * as z from "zod";
 import { getAgentById } from "@/be/db";
 import { getSlackApp } from "@/slack/app";
 import { withAutoJoin } from "@/slack/channel-join";
 import { markdownToSlack } from "@/slack/responses";
-import { createToolRegistrar } from "@/tools/utils";
 
 export const registerSlackStartThreadTool = (server: McpServer) => {
   createToolRegistrar(server)(

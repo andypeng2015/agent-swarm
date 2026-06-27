@@ -1,11 +1,11 @@
 #!/usr/bin/env bun
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-import { SCRIPT_DELETE_DESCRIPTION } from "../src/tools/script-delete";
-import { SCRIPT_QUERY_TYPES_DESCRIPTION } from "../src/tools/script-query-types";
-import { SCRIPT_RUN_DESCRIPTION } from "../src/tools/script-run";
-import { SCRIPT_SEARCH_DESCRIPTION } from "../src/tools/script-search";
-import { SCRIPT_UPSERT_DESCRIPTION } from "../src/tools/script-upsert";
+import { SCRIPT_DELETE_DESCRIPTION } from "@swarm/mcp-tool";
+import { SCRIPT_QUERY_TYPES_DESCRIPTION } from "@swarm/mcp-tool";
+import { SCRIPT_RUN_DESCRIPTION } from "@swarm/mcp-tool";
+import { SCRIPT_SEARCH_DESCRIPTION } from "@swarm/mcp-tool";
+import { SCRIPT_UPSERT_DESCRIPTION } from "@swarm/mcp-tool";
 
 const expected = new Map([
   ["script-search", SCRIPT_SEARCH_DESCRIPTION],

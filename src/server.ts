@@ -1,4 +1,12 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import {
+  registerScriptDeleteTool,
+  registerScriptQueryTypesTool,
+  registerScriptRunsTools,
+  registerScriptRunTool,
+  registerScriptSearchTool,
+  registerScriptUpsertTool,
+} from "@swarm/mcp-tool";
 import pkg from "../package.json";
 import { initDb } from "./be/db";
 import { startPricingRefreshLoop } from "./be/pricing-refresh";
@@ -77,12 +85,6 @@ import {
   registerRunScheduleNowTool,
   registerUpdateScheduleTool,
 } from "./tools/schedules";
-import { registerScriptDeleteTool } from "./tools/script-delete";
-import { registerScriptQueryTypesTool } from "./tools/script-query-types";
-import { registerScriptRunTool } from "./tools/script-run";
-import { registerScriptRunsTools } from "./tools/script-runs";
-import { registerScriptSearchTool } from "./tools/script-search";
-import { registerScriptUpsertTool } from "./tools/script-upsert";
 import { registerSendTaskTool } from "./tools/send-task";
 // Skills capability
 import {

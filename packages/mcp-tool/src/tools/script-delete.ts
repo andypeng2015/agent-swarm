@@ -1,12 +1,12 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import * as z from "zod";
-import { createToolRegistrar } from "@/tools/utils";
 import {
   proxyScriptsApi,
   scriptNameSchema,
   scriptScopeSchema,
   scriptToolOutputSchema,
 } from "./script-common";
+import { createToolRegistrar } from "./utils";
 
 export const SCRIPT_DELETE_DESCRIPTION =
   "Remove a swarm-shared script from the catalog. Versions table preserves history.";

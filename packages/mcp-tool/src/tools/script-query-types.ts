@@ -1,12 +1,12 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import * as z from "zod";
-import { createToolRegistrar } from "@/tools/utils";
 import {
   proxyScriptsApi,
   scriptNameSchema,
   scriptScopeSchema,
   scriptToolOutputSchema,
 } from "./script-common";
+import { createToolRegistrar } from "./utils";
 
 export const SCRIPT_QUERY_TYPES_DESCRIPTION =
   "Fetch the signature + the auto-generated `swarm-sdk.d.ts` (derived from the live MCP tool registry) + the `stdlib.d.ts` blobs — for IDE-style introspection before authoring or running a script. The same types are used by `script-upsert`'s typecheck pass, so they are authoritative.";

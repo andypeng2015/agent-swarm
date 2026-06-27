@@ -1,7 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { createToolRegistrar } from "@swarm/mcp-tool";
 import * as z from "zod";
 import { getSwarmMetrics } from "@/be/db";
-import { createToolRegistrar } from "@/tools/utils";
 
 const CountByStatusSchema = z.record(z.string(), z.number());
 

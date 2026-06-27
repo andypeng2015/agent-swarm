@@ -1,7 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { createToolRegistrar } from "@swarm/mcp-tool";
 import { z } from "zod";
 import { deleteWorkflow } from "@/be/db";
-import { createToolRegistrar } from "@/tools/utils";
 
 export const registerDeleteWorkflowTool = (server: McpServer) => {
   createToolRegistrar(server)(

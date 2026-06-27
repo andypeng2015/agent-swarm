@@ -13,7 +13,7 @@
 // Import the allowlist module DIRECTLY (not via the @swarm/scripts barrel): the barrel
 // re-exports eval-harness.ts, whose top-level code throws outside the sandbox subprocess.
 import { SDK_TOOL_NAME_MAP } from "../packages/scripts/src/scripts-runtime/sdk-allowlist";
-import { ALL_TOOLS } from "../src/tools/tool-config";
+import { ALL_TOOLS } from "@swarm/mcp-tool";
 
 // Tools intentionally NOT exposed to the scripts SDK.
 // Each entry must have a reason — reviewers will check.

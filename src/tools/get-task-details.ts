@@ -1,5 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import { assertOwnsTask, createToolRegistrar, ownerCtx, type ToolCtx } from "@swarm/mcp-tool";
 import { AgentLogSchema, AgentTaskSchema, TaskAttachmentSchema } from "@swarm/types";
 import * as z from "zod";
 import {
@@ -8,8 +9,6 @@ import {
   getTaskById,
   getUserById,
 } from "@/be/db";
-import { assertOwnsTask, ownerCtx, type ToolCtx } from "@/tools/task-tool-ctx";
-import { createToolRegistrar } from "@/tools/utils";
 
 export const getTaskDetailsInputSchema = z.object({
   taskId: z.uuid().describe("The ID of the task to get details for."),

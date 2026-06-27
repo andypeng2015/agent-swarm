@@ -1,8 +1,8 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { ScriptRunStatusSchema } from "@swarm/types";
 import * as z from "zod";
-import { createToolRegistrar } from "@/tools/utils";
 import { proxyScriptsApi, scriptNameSchema, scriptToolOutputSchema } from "./script-common";
+import { createToolRegistrar } from "./utils";
 
 export const LAUNCH_SCRIPT_RUN_DESCRIPTION =
   "Launch a durable one-off script workflow run. The run executes in the background and can be inspected with get-script-run for terminal status and journal entries.";

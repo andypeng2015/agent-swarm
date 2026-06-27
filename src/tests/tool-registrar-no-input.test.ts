@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { createToolRegistrar } from "@swarm/mcp-tool";
 import * as z from "zod";
-import { createToolRegistrar } from "../tools/utils";
 
 describe("createToolRegistrar with no inputSchema", () => {
   test("handler receives requestInfo from meta when no inputSchema is defined", async () => {

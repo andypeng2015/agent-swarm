@@ -1,4 +1,5 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { createToolRegistrar, userCtx } from "@swarm/mcp-tool";
 import { ModelTierSchema, type User } from "@swarm/types";
 import * as z from "zod";
 import pkg from "../package.json";
@@ -19,8 +20,6 @@ import {
   taskActionInputSchema,
   taskActionOutputSchema,
 } from "./tools/task-action";
-import { userCtx } from "./tools/task-tool-ctx";
-import { createToolRegistrar } from "./tools/utils";
 
 const userSendTaskInputSchema = z.object({
   task: z.string().min(1).describe("The task description to send."),

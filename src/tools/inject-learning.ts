@@ -1,8 +1,8 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { createToolRegistrar } from "@swarm/mcp-tool";
 import * as z from "zod";
 import { getAgentById } from "@/be/db";
 import { getEmbeddingProvider, getMemoryStore } from "@/be/memory";
-import { createToolRegistrar } from "@/tools/utils";
 
 const LearningCategoryEnum = z.enum([
   "mistake-pattern",

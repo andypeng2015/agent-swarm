@@ -1,9 +1,9 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { createToolRegistrar } from "@swarm/mcp-tool";
 import { getTemplateDefinition } from "@swarm/prompt-templates";
 import { PromptTemplateHistorySchema, PromptTemplateSchema } from "@swarm/types";
 import * as z from "zod";
 import { getPromptTemplateById, getPromptTemplateHistory } from "@/be/db";
-import { createToolRegistrar } from "@/tools/utils";
 
 export const registerGetPromptTemplateTool = (server: McpServer) => {
   createToolRegistrar(server)(
