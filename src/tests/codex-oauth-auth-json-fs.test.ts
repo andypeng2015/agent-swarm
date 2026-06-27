@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
-import { materializeCodexAuthJson } from "../providers/codex-oauth/auth-json-fs.js";
-import type { CodexOAuthCredentials } from "../providers/codex-oauth/types.js";
+import type { CodexOAuthCredentials } from "@swarm/credentials";
+import { materializeCodexAuthJson } from "@swarm/credentials";
 
 const mockCreds: CodexOAuthCredentials = {
   access: "at_testaccess",

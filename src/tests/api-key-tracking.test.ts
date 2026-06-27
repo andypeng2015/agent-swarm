@@ -4,6 +4,8 @@
  */
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { unlink } from "node:fs/promises";
+import type { CredentialSelection } from "@swarm/credentials";
+import { resolveCredentialPools, selectCredential } from "@swarm/credentials";
 import {
   clearKeyRateLimit,
   closeDb,
@@ -14,8 +16,6 @@ import {
   recordKeyRateLimitWindows,
   recordKeyUsage,
 } from "../be/db";
-import type { CredentialSelection } from "../utils/credentials";
-import { resolveCredentialPools, selectCredential } from "../utils/credentials";
 
 // ─── Credential Selection Unit Tests ────────────────────────────────────────
 

@@ -18,7 +18,7 @@
 import type { OAuthCredentials } from "@earendil-works/pi-ai";
 import { getEnvApiKey } from "@earendil-works/pi-ai/compat";
 import { getOAuthApiKey } from "@earendil-works/pi-ai/oauth";
-import { getValidCodexOAuth, persistCodexOAuth } from "../../providers/codex-oauth/storage.js";
+import { getValidCodexOAuth, persistCodexOAuth } from "@swarm/credentials";
 import { type CredentialKind, DEFAULT_MODEL, resolveModelString } from "./models.js";
 
 export type ResolvedCredential =

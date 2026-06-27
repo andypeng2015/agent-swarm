@@ -66,6 +66,7 @@ import {
   type Usage,
   type WebSearchItem,
 } from "@openai/codex-sdk";
+import { credentialsToAuthJson, getValidCodexOAuth } from "@swarm/credentials";
 import { SessionErrorTracker } from "@swarm/otel";
 import { buildRatingsFromLlm, fetchRetrievalsForTask, postRatings } from "../be/memory/raters/llm";
 import { getApiKey } from "../utils/api-key";
@@ -78,8 +79,6 @@ import { summarizeSession as runSummarize } from "../utils/internal-ai";
 import { scrubSecrets } from "../utils/secret-scrubber";
 import { type CodexAgentsMdHandle, writeCodexAgentsMd } from "./codex-agents-md";
 import { computeCodexCostUsd, getCodexContextWindow, resolveCodexModel } from "./codex-models";
-import { credentialsToAuthJson } from "./codex-oauth/auth-json.js";
-import { getValidCodexOAuth } from "./codex-oauth/storage.js";
 import { resolveCodexPrompt } from "./codex-skill-resolver";
 import { createCodexSwarmEventHandler } from "./codex-swarm-events";
 import { CTX_MODE_NUDGE_EVERY } from "./ctx-mode-env";

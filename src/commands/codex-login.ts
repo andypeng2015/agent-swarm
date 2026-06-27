@@ -11,9 +11,7 @@
 
 import { exec } from "node:child_process";
 import { emitKeypressEvents } from "node:readline";
-
-import { loginCodexOAuth } from "../providers/codex-oauth/flow.js";
-import { loadAllCodexOAuthSlots, storeCodexOAuth } from "../providers/codex-oauth/storage.js";
+import { loadAllCodexOAuthSlots, loginCodexOAuth, storeCodexOAuth } from "@swarm/credentials";
 import { getApiKey } from "../utils/api-key";
 
 type PromptTextFn = (label: string, defaultValue: string) => Promise<string>;

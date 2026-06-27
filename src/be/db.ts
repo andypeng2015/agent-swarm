@@ -1,4 +1,5 @@
 import { Database } from "bun:sqlite";
+import { deriveProviderFromKeyType, parseProviderMeta } from "@swarm/credentials";
 import type { RateLimitWindowTelemetry } from "@swarm/otel";
 import { telemetry } from "@swarm/otel";
 import type {
@@ -103,10 +104,8 @@ import {
   type ModelTier,
   parseModelTier,
 } from "@swarm/types";
-import { parseProviderMeta } from "@/utils/provider-metadata.ts";
 import pkg from "../../package.json";
 import { configureDbResolver } from "../prompts/resolver";
-import { deriveProviderFromKeyType } from "../utils/credentials";
 import { getCurrentRequestUserId } from "../utils/request-auth-context";
 import { scrubSecrets } from "../utils/secret-scrubber";
 import { decryptSecret, encryptSecret, getEncryptionKey, resolveEncryptionKey } from "./crypto";

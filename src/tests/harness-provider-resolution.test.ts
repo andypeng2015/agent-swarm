@@ -14,6 +14,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { unlink } from "node:fs/promises";
 import { createServer as createHttpServer, type Server } from "node:http";
+import { resolveHarnessProvider } from "@swarm/credentials";
 import {
   closeDb,
   createAgent,
@@ -24,7 +25,6 @@ import {
 } from "../be/db";
 import { validateConfigValue } from "../be/swarm-config-guard";
 import { handleConfig } from "../http/config";
-import { resolveHarnessProvider } from "../utils/harness-provider";
 
 const TEST_DB_PATH = "./test-harness-provider-resolution.sqlite";
 const TEST_PORT = 13061;

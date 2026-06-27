@@ -2,6 +2,14 @@ import { existsSync, statSync } from "node:fs";
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { ensure, initialize } from "@desplega.ai/business-use";
 import {
+  authJsonToCredentialSelection,
+  type CredentialSelection,
+  loadAllCodexOAuthSlots,
+  materializeCodexAuthJson,
+  resolveCredentialPools,
+  resolveHarnessProvider,
+} from "@swarm/credentials";
+import {
   type Attributes,
   initOtel,
   initTelemetry,
@@ -30,9 +38,6 @@ import {
 } from "../prompts/defaults.ts";
 import { renderMemoriesPrompt } from "../prompts/memories.ts";
 import { configureHttpResolver, resolveTemplateAsync } from "../prompts/resolver.ts";
-import { authJsonToCredentialSelection } from "../providers/codex-oauth/auth-json.js";
-import { materializeCodexAuthJson } from "../providers/codex-oauth/auth-json-fs.js";
-import { loadAllCodexOAuthSlots } from "../providers/codex-oauth/storage.js";
 import {
   type CostData,
   createProviderAdapter,
@@ -45,8 +50,6 @@ import { getApiKey } from "../utils/api-key.ts";
 import { computeBudgetBackoffMs } from "../utils/budget-backoff.ts";
 import { getMcpBaseUrl } from "../utils/constants.ts";
 import { getContextWindowSize } from "../utils/context-window.ts";
-import { type CredentialSelection, resolveCredentialPools } from "../utils/credentials.ts";
-import { resolveHarnessProvider } from "../utils/harness-provider.ts";
 import { prettyPrintLine, prettyPrintStderr } from "../utils/pretty-print.ts";
 import { scrubSecrets } from "../utils/secret-scrubber.ts";
 import { refreshSkillsIfChanged } from "../utils/skills-refresh.ts";

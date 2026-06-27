@@ -1,17 +1,17 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import {
-  authJsonToCredentialSelection,
-  authJsonToCredentials,
-  credentialsToAuthJson,
-} from "../providers/codex-oauth/auth-json.js";
+import type { CodexOAuthCredentials } from "@swarm/credentials";
 import {
   AUTHORIZE_URL,
+  authJsonToCredentialSelection,
+  authJsonToCredentials,
   CLIENT_ID,
   createAuthorizationFlow,
   createState,
+  credentialsToAuthJson,
   decodeJwt,
   exchangeAuthorizationCode,
   extractChatgptUserId,
+  generatePKCE,
   getAccountId,
   JWT_CLAIM_PATH,
   parseAuthorizationInput,
@@ -21,9 +21,7 @@ import {
   SCOPE,
   setFetchForTesting,
   TOKEN_URL,
-} from "../providers/codex-oauth/flow.js";
-import { generatePKCE } from "../providers/codex-oauth/pkce.js";
-import type { CodexOAuthCredentials } from "../providers/codex-oauth/types.js";
+} from "@swarm/credentials";
 
 describe("generatePKCE", () => {
   it("produces distinct verifier/challenge pairs", async () => {

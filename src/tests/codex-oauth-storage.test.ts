@@ -1,14 +1,15 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { resetFetchForTesting, setFetchForTesting } from "../providers/codex-oauth/flow.js";
+import type { CodexOAuthCredentials } from "@swarm/credentials";
 import {
   codexOAuthKeyForSlot,
   deleteCodexOAuth,
   getValidCodexOAuth,
   loadAllCodexOAuthSlots,
   loadCodexOAuth,
+  resetFetchForTesting,
+  setFetchForTesting,
   storeCodexOAuth,
-} from "../providers/codex-oauth/storage.js";
-import type { CodexOAuthCredentials } from "../providers/codex-oauth/types.js";
+} from "@swarm/credentials";
 
 const MOCK_API_URL = "http://localhost:3013";
 const MOCK_API_KEY = "test-api-key";
