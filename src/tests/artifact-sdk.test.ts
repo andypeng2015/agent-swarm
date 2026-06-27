@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, mock, test } from "bun:test";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { getBasePrompt } from "@swarm/prompt-templates";
 import { BROWSER_SDK_JS } from "../artifact-sdk/browser-sdk";
 import { getAvailablePort } from "../artifact-sdk/port";
 import {
@@ -7,7 +8,6 @@ import {
   createBunHonoFetchHandler,
   createBunResponse,
 } from "../artifact-sdk/server";
-import { getBasePrompt } from "../prompts/base-prompt";
 
 // ─── Port allocation tests ──────────────────────────────────────────────
 

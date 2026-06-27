@@ -1,5 +1,6 @@
 import type { App } from "@slack/bolt";
 import type { WebClient } from "@slack/web-api";
+import { resolveTemplate } from "@swarm/prompt-templates";
 import {
   getAgentById,
   getAgentWorkingOnThread,
@@ -7,7 +8,6 @@ import {
   getMostRecentTaskInThread,
   getTasksByAgentId,
 } from "../be/db";
-import { resolveTemplate } from "../prompts/resolver";
 import { slackContextKey } from "../tasks/context-key";
 import { createTaskWithSiblingAwareness } from "../tasks/sibling-awareness";
 import { workflowEventBus } from "../workflows/event-bus";

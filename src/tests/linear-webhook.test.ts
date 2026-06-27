@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { createHmac } from "node:crypto";
 import { unlink } from "node:fs/promises";
+import { getTemplateDefinition } from "@swarm/prompt-templates";
 import { closeDb, createTaskExtended, getTaskById, initDb } from "../be/db";
 import { createTrackerSync, getTrackerSyncByExternalId } from "../be/db-queries/tracker";
 import {
@@ -22,7 +23,6 @@ import {
   handleLinearWebhook,
   verifyLinearWebhook,
 } from "../linear/webhook";
-import { getTemplateDefinition } from "../prompts/registry";
 
 const TEST_DB_PATH = "./test-linear-webhook.sqlite";
 const TEST_SECRET = "test-webhook-secret-123";

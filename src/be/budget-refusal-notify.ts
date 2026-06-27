@@ -12,8 +12,8 @@
 // (see plan §5.1). Operators audit via
 // `SELECT ... FROM budget_refusal_notifications WHERE follow_up_task_id IS NULL`.
 
+import { resolveTemplate } from "@swarm/prompt-templates";
 import type { AgentTask } from "@swarm/types";
-import { resolveTemplate } from "../prompts/resolver";
 import {
   createTaskExtended,
   getAgentById,

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { generateDefaultClaudeMd } from "../prompts/defaults";
+import { generateDefaultClaudeMd } from "@swarm/prompt-templates";
 
 describe("generateDefaultClaudeMd", () => {
   test("should generate basic template with just name", () => {

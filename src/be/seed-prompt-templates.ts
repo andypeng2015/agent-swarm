@@ -6,14 +6,14 @@
  * prompt_templates table.
  */
 
-import { getAllTemplateDefinitions } from "../prompts/registry";
+import { getAllTemplateDefinitions } from "@swarm/prompt-templates";
 import { getPromptTemplates, resetPromptTemplateToDefault, upsertPromptTemplate } from "./db";
 
 // Side-effect imports: register ALL template definitions so they're seeded on API startup.
 // Webhook handler templates (github, gitlab, etc.) are loaded transitively by the API server's
 // handler imports, but runner/session templates are only loaded by the worker. Importing them
 // here ensures all templates are available for the render endpoint and seeded to the DB.
-import "../prompts/session-templates";
+import "@swarm/prompt-templates";
 import "../commands/templates";
 import "../tools/templates";
 

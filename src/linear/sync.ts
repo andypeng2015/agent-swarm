@@ -1,3 +1,4 @@
+import { resolveTemplate } from "@swarm/prompt-templates";
 import { isTerminalTaskStatus } from "@swarm/types";
 import { cancelTask, getAllAgents, getKv, getTaskById, incrKv, upsertKv } from "../be/db";
 import { getOAuthTokens } from "../be/db-queries/oauth";
@@ -9,7 +10,6 @@ import {
 } from "../be/db-queries/tracker";
 import { findOrCreateUserByEmail, findUserByExternalId, linkIdentity } from "../be/users";
 import { ensureToken } from "../oauth/ensure-token";
-import { resolveTemplate } from "../prompts/resolver";
 import { linearContextKey } from "../tasks/context-key";
 import { createTaskWithSiblingAwareness } from "../tasks/sibling-awareness";
 import {

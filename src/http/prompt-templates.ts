@@ -1,4 +1,9 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
+import {
+  getAllTemplateDefinitions,
+  getTemplateDefinition,
+  resolveTemplate,
+} from "@swarm/prompt-templates";
 import { z } from "zod";
 import {
   checkoutPromptTemplate,
@@ -10,8 +15,6 @@ import {
   resolvePromptTemplate,
   upsertPromptTemplate,
 } from "../be/db";
-import { getAllTemplateDefinitions, getTemplateDefinition } from "../prompts/registry";
-import { resolveTemplate } from "../prompts/resolver";
 import { interpolate } from "../utils/template";
 import { route } from "./route-def";
 import { json, jsonError } from "./utils";

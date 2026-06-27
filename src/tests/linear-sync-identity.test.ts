@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { unlink } from "node:fs/promises";
+import { getTemplateDefinition } from "@swarm/prompt-templates";
 import {
   closeDb,
   createUser,
@@ -14,7 +15,6 @@ import { getTrackerSyncByExternalId } from "../be/db-queries/tracker";
 import { findUserByExternalId, linkIdentity } from "../be/users";
 import { handleAgentSessionEvent, handleAgentSessionPrompted } from "../linear/sync";
 import { _clearRecentDeliveries } from "../linear/webhook";
-import { getTemplateDefinition } from "../prompts/registry";
 
 const TEST_DB_PATH = "./test-linear-sync-identity.sqlite";
 const UNMAPPED_NAMESPACE = "integration:unmapped:linear";

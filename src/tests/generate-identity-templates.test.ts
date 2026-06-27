@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { generateDefaultIdentityMd, generateDefaultSoulMd } from "../prompts/defaults";
+import { generateDefaultIdentityMd, generateDefaultSoulMd } from "@swarm/prompt-templates";
 
 describe("generateDefaultSoulMd", () => {
   test("should generate template with just name", () => {

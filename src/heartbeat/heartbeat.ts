@@ -1,3 +1,4 @@
+import { resolveTemplate } from "@swarm/prompt-templates";
 import type { AgentTask } from "@swarm/types";
 import {
   assignUnassignedTaskPending,
@@ -30,7 +31,6 @@ import {
   updateAgentStatus,
 } from "../be/db";
 import { repointTrackerSyncBySwarmId } from "../be/db-queries/tracker";
-import { resolveTemplate } from "../prompts/resolver";
 import {
   createRerouteDecisionTask,
   createResumeFollowUp,
@@ -40,7 +40,7 @@ import {
 import { getExecutorRegistry } from "../workflows";
 import { recoverIncompleteRuns } from "../workflows/recovery";
 // Side-effect import: registers heartbeat event templates in the in-memory registry
-import "./templates";
+import "@swarm/prompt-templates";
 
 /**
  * System tasks that must NOT be auto-resumed — mirrors `runRebootSweep`'s exclusion list

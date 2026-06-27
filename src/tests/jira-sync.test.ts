@@ -46,7 +46,7 @@ afterAll(async () => {
 const { _setBotAccountIdForTesting, handleCommentEvent, handleIssueEvent } = await import(
   "../jira/sync"
 );
-const { getTemplateDefinition } = await import("../prompts/registry");
+const { getTemplateDefinition } = await import("@swarm/prompt-templates");
 
 beforeEach(async () => {
   // Reset tracker_sync rows + tasks each test

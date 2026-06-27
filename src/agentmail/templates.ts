@@ -5,7 +5,7 @@
  * Handlers import this module for the side-effect of registration.
  */
 
-import { registerTemplate } from "../prompts/registry";
+import { registerTemplate } from "@swarm/prompt-templates";
 
 // ============================================================================
 // Email events

@@ -8,9 +8,9 @@
  * - Detects bot mentions
  */
 
+import { resolveTemplate } from "@swarm/prompt-templates";
 import { failTask, findTaskByVcs, getAllAgents, incrKv, upsertKv } from "../be/db";
 import { findOrCreateUserByEmail, findUserByExternalId, linkIdentity } from "../be/users";
-import { resolveTemplate } from "../prompts/resolver";
 import { gitlabContextKey } from "../tasks/context-key";
 import { createTaskWithSiblingAwareness } from "../tasks/sibling-awareness";
 import { GITLAB_BOT_NAME } from "./auth";

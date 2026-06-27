@@ -29,5 +29,9 @@ export * from "../../src/providers/pi-mono-extension";
 export * from "../../src/providers/pi-mono-mcp-client";
 export * from "../../src/providers/swarm-events-shared";
 export * as ProvidersTypes from "../../src/providers/types";
+// ProviderTraits does not collide with any adapter export; expose it flat so cross-package
+// (type-only) consumers like @swarm/prompt-templates/base-prompt can import it directly. The
+// rest of providers/types stays namespaced via ProvidersTypes to avoid adapter-name clashes.
+export type { ProviderTraits } from "../../src/providers/types";
 export * from "../../src/utils/aws-error-classifier";
 export * from "../../src/utils/mcp-server-fetcher";

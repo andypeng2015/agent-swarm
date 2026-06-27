@@ -9,11 +9,11 @@
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { unlink } from "node:fs/promises";
+import { getTemplateDefinition } from "@swarm/prompt-templates";
 import { closeDb, createAgent, getDb, initDb } from "../be/db";
 import { handleComment, handlePullRequestReview } from "../github/handlers";
 import { GITHUB_BOT_NAME } from "../github/mentions";
 import type { CommentEvent, PullRequestReviewEvent } from "../github/types";
-import { getTemplateDefinition } from "../prompts/registry";
 
 // Side-effect import: registers all GitHub templates on first load
 import "../github/templates";

@@ -7,8 +7,8 @@
  * still assembled here based on runtime state.
  */
 
+import type { ProviderTraits } from "@swarm/harness";
 import type { ProviderName } from "@swarm/types";
-import type { ProviderTraits } from "../providers/types";
 import { resolveTemplateAsync } from "./resolver";
 
 // Side-effect import: register all system + session templates

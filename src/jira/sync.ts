@@ -14,6 +14,7 @@
  * `swarmId = ""` — reconcilable on retry.
  */
 
+import { resolveTemplate } from "@swarm/prompt-templates";
 import { type Agent, isTerminalTaskStatus } from "@swarm/types";
 import { cancelTask, getAllAgents, getTaskById } from "../be/db";
 import { getOAuthTokens } from "../be/db-queries/oauth";
@@ -23,7 +24,6 @@ import {
   updateTrackerSyncSwarmId,
 } from "../be/db-queries/tracker";
 import { ensureToken, ensureTokenOrThrow } from "../oauth/ensure-token";
-import { resolveTemplate } from "../prompts/resolver";
 import { buildJiraContextKey } from "../tasks/context-key";
 import { createTaskWithSiblingAwareness } from "../tasks/sibling-awareness";
 import { extractMentions, extractText } from "./adf";

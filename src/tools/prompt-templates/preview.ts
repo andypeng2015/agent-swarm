@@ -1,6 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { getTemplateDefinition } from "@swarm/prompt-templates";
 import * as z from "zod";
-import { getTemplateDefinition } from "@/prompts/registry";
 import { createToolRegistrar } from "@/tools/utils";
 import { interpolate } from "@/utils/template";
 

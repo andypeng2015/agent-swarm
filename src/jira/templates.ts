@@ -6,7 +6,7 @@
  * the pattern in `src/linear/templates.ts`).
  */
 
-import { registerTemplate } from "../prompts/registry";
+import { registerTemplate } from "@swarm/prompt-templates";
 
 // ============================================================================
 // Issue events

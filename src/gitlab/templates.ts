@@ -8,7 +8,7 @@
  * and expands {{@template[id]}} references before returning the final text.
  */
 
-import { registerTemplate } from "../prompts/registry";
+import { registerTemplate } from "@swarm/prompt-templates";
 
 // ============================================================================
 // Common building blocks (GitLab-specific)

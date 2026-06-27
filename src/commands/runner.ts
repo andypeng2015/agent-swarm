@@ -27,17 +27,19 @@ import {
   withSpan,
   withSpanContext,
 } from "@swarm/otel";
-import { type ProviderName, type RepoGuidelines, resolveTaskModelSelection } from "@swarm/types";
-import type { TemplateResponse } from "../../templates/schema.ts";
-import { type BasePromptArgs, getBasePrompt } from "../prompts/base-prompt.ts";
 import {
+  type BasePromptArgs,
+  configureHttpResolver,
   generateDefaultClaudeMd,
   generateDefaultIdentityMd,
   generateDefaultSoulMd,
   generateDefaultToolsMd,
-} from "../prompts/defaults.ts";
-import { renderMemoriesPrompt } from "../prompts/memories.ts";
-import { configureHttpResolver, resolveTemplateAsync } from "../prompts/resolver.ts";
+  getBasePrompt,
+  renderMemoriesPrompt,
+  resolveTemplateAsync,
+} from "@swarm/prompt-templates";
+import { type ProviderName, type RepoGuidelines, resolveTaskModelSelection } from "@swarm/types";
+import type { TemplateResponse } from "../../templates/schema.ts";
 import {
   type CostData,
   createProviderAdapter,

@@ -1,3 +1,4 @@
+import { resolveTemplate } from "@swarm/prompt-templates";
 import {
   findTaskByAgentMailThread,
   getAgentById,
@@ -5,7 +6,6 @@ import {
   getAllAgents,
 } from "../be/db";
 import { findOrCreateUserByEmail } from "../be/users";
-import { resolveTemplate } from "../prompts/resolver";
 import { createIngressBuffer } from "../tasks/additive-ingress";
 import { agentmailContextKey } from "../tasks/context-key";
 import { createTaskWithSiblingAwareness } from "../tasks/sibling-awareness";

@@ -1,4 +1,4 @@
-import { resolveTemplate } from "@/prompts/resolver";
+import { resolveTemplate } from "@swarm/prompt-templates";
 import { createTaskWithSiblingAwareness } from "@/tasks/sibling-awareness";
 import { workflowEventBus } from "@/workflows/event-bus";
 import "@/tools/templates";

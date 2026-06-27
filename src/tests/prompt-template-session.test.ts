@@ -1,15 +1,15 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { unlink } from "node:fs/promises";
-import { closeDb, initDb } from "../be/db";
 import {
   clearTemplateDefinitions,
   getAllTemplateDefinitions,
   getTemplateDefinition,
-} from "../prompts/registry";
-import { resolveTemplate } from "../prompts/resolver";
+  resolveTemplate,
+} from "@swarm/prompt-templates";
+import { closeDb, initDb } from "../be/db";
 
 // Side-effect import: register session + system templates
-import "../prompts/session-templates";
+import "@swarm/prompt-templates";
 
 const TEST_DB_PATH = "./test-prompt-session.sqlite";
 
@@ -19,7 +19,7 @@ const TEST_DB_PATH = "./test-prompt-session.sqlite";
 async function ensureTemplatesRegistered(): Promise<void> {
   if (getTemplateDefinition("system.agent.role")) return;
   const ts = Date.now();
-  await import(`../prompts/session-templates?t=${ts}`);
+  await import(`@swarm/prompt-templates/src/prompts/session-templates?t=${ts}`);
 }
 
 beforeAll(async () => {
@@ -344,7 +344,7 @@ describe("Session templates — getBasePrompt integration", () => {
   });
 
   test("getBasePrompt uses session composite for worker", async () => {
-    const { getBasePrompt } = await import("../prompts/base-prompt");
+    const { getBasePrompt } = await import("@swarm/prompt-templates");
     const result = await getBasePrompt({
       role: "worker",
       agentId: "integration-test-worker",
@@ -369,7 +369,7 @@ describe("Session templates — getBasePrompt integration", () => {
   });
 
   test("getBasePrompt uses session composite for lead", async () => {
-    const { getBasePrompt } = await import("../prompts/base-prompt");
+    const { getBasePrompt } = await import("@swarm/prompt-templates");
     const result = await getBasePrompt({
       role: "lead",
       agentId: "integration-test-lead",
@@ -387,7 +387,7 @@ describe("Session templates — getBasePrompt integration", () => {
   });
 
   test("getBasePrompt excludes seed_scripts for pi worker", async () => {
-    const { getBasePrompt } = await import("../prompts/base-prompt");
+    const { getBasePrompt } = await import("@swarm/prompt-templates");
     const result = await getBasePrompt({
       role: "worker",
       agentId: "integration-test-pi",

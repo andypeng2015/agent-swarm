@@ -8,7 +8,7 @@
  * slash commands is pre-applied before template resolution (passed as a variable).
  */
 
-import { registerTemplate } from "../prompts/registry";
+import { registerTemplate } from "@swarm/prompt-templates";
 
 // ============================================================================
 // Task trigger prompts

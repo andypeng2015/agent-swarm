@@ -1,18 +1,17 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { unlink } from "node:fs/promises";
+import { getAllTemplateDefinitions, resolveTemplate } from "@swarm/prompt-templates";
 import { closeDb, initDb } from "../be/db";
-import { getAllTemplateDefinitions } from "../prompts/registry";
-import { resolveTemplate } from "../prompts/resolver";
 
 // Side-effect imports: register all templates from each source
 import "../gitlab/templates";
 import "../agentmail/templates";
 import "../linear/templates";
-import "../heartbeat/templates";
+import "@swarm/prompt-templates";
 import "../tools/templates";
 import "../commands/templates";
 import "../slack/templates";
-import "../prompts/session-templates";
+import "@swarm/prompt-templates";
 
 const TEST_DB_PATH = "./test-prompt-remaining.sqlite";
 
@@ -29,11 +28,11 @@ async function ensureTemplatesRegistered(): Promise<void> {
   await import(`../gitlab/templates?t=${ts}`);
   await import(`../agentmail/templates?t=${ts}`);
   await import(`../linear/templates?t=${ts}`);
-  await import(`../heartbeat/templates?t=${ts}`);
+  await import(`@swarm/prompt-templates/src/heartbeat/templates?t=${ts}`);
   await import(`../tools/templates?t=${ts}`);
   await import(`../commands/templates?t=${ts}`);
   await import(`../slack/templates?t=${ts}`);
-  await import(`../prompts/session-templates?t=${ts}`);
+  await import(`@swarm/prompt-templates/src/prompts/session-templates?t=${ts}`);
 }
 
 beforeAll(async () => {

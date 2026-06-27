@@ -19,7 +19,7 @@ import {
 
 // Side-effect import: register heartbeat templates (also done by heartbeat.ts,
 // but other test files may call clearTemplateDefinitions() in parallel)
-import "../heartbeat/templates";
+import "@swarm/prompt-templates";
 
 const TEST_DB_PATH = "./test-heartbeat-checklist.sqlite";
 
@@ -40,7 +40,7 @@ describe("Heartbeat Checklist", () => {
     getDb().run("DELETE FROM agents");
     // Re-register heartbeat templates — other test files (prompt-template-resolver,
     // prompt-template-session) call clearTemplateDefinitions() in parallel
-    await import(`../heartbeat/templates?t=${Date.now()}`);
+    await import(`@swarm/prompt-templates/src/heartbeat/templates?t=${Date.now()}`);
   });
 
   // ==========================================================================
