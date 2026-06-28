@@ -1,5 +1,6 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, mock, test } from "bun:test";
 import { unlink } from "node:fs/promises";
+import { resolveOAuthAccessToken } from "@swarm/api-server";
 import {
   clearVolatileSecretsForTesting,
   refreshSecretScrubberCache,
@@ -13,7 +14,6 @@ import {
   storeOAuthTokens,
   upsertOAuthApp,
 } from "@swarm/storage";
-import { resolveOAuthAccessToken } from "../tools/oauth-access-token";
 
 const TEST_DB_PATH = "./test-oauth-access-token-tool.sqlite";
 const originalFetch = globalThis.fetch;

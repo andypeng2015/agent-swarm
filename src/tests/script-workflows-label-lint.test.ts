@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { lintWorkflowLabels } from "../script-workflows/label-lint";
+import { lintWorkflowLabels } from "@swarm/api-server";
 
 describe("lintWorkflowLabels", () => {
   test("rejects a literal step label inside a loop", () => {

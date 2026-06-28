@@ -16,6 +16,12 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import {
+  _resetTestConnectionCache,
+  buildStatusPayload,
+  computeHealth,
+  type SetupMilestone,
+} from "@swarm/api-server";
 import { validateProviderCredentials } from "@swarm/harness";
 import {
   closeDb,
@@ -32,12 +38,6 @@ import {
   upsertOAuthApp,
 } from "@swarm/storage";
 import type { AgentCredStatus } from "@swarm/types";
-import {
-  _resetTestConnectionCache,
-  buildStatusPayload,
-  computeHealth,
-  type SetupMilestone,
-} from "../http/status";
 
 // Helper for tests: stamp an agent row with a cred_status snapshot so the
 // `/status` endpoint sees it. Mirrors what the worker boot loop does via

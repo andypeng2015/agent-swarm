@@ -15,6 +15,13 @@ import { unlink } from "node:fs/promises";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import {
+  codeLevelTriage,
+  HEARTBEAT_RESUME_PIN_GRACE_MIN,
+  MAX_RESUME_GENERATIONS,
+  RESUME_BUDGET_EXHAUSTED_REASON,
+  registerSendTaskTool,
+} from "@swarm/api-server";
+import {
   closeDb,
   createAgent,
   createTaskExtended,
@@ -35,15 +42,8 @@ import {
   createResumeFollowUp,
   RESUME_GENERATION_TAG_PREFIX,
 } from "@swarm/workflows";
-import {
-  codeLevelTriage,
-  HEARTBEAT_RESUME_PIN_GRACE_MIN,
-  MAX_RESUME_GENERATIONS,
-  RESUME_BUDGET_EXHAUSTED_REASON,
-} from "../heartbeat/heartbeat";
-import { registerSendTaskTool } from "../tools/send-task";
 // Side-effect import: registers task lifecycle templates (incl. task.reroute.decision).
-import "../tools/templates";
+import "@swarm/api-server";
 
 const TEST_DB_PATH = "./test-heartbeat-reroute-decision.sqlite";
 

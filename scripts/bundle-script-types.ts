@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 import { closeDb } from "@swarm/storage";
 import { SCRIPT_SDK_TYPES, SCRIPT_STDLIB_TYPES } from "@swarm/storage";
-import { createServer } from "../src/server";
+import { createServer } from "@swarm/api-server";
 // Import the allowlist module DIRECTLY (not via the @swarm/scripts barrel): the barrel
 // re-exports eval-harness.ts, whose top-level code calls requiredEnv("SWARM_SCRIPT_TMPDIR")
 // and throws outside the sandbox subprocess. This generator only needs the SDK metadata.

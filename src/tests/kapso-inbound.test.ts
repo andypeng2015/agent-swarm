@@ -1,6 +1,7 @@
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
 import crypto from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { handleWebhooks } from "@swarm/api-server";
 import { putKapsoNumberMapping, routeKapsoInbound } from "@swarm/integrations";
 import {
   closeDb,
@@ -12,7 +13,6 @@ import {
   initDb,
   linkIdentity,
 } from "@swarm/storage";
-import { handleWebhooks } from "../http/webhooks";
 
 const TEST_DB_PATH = "./test-kapso-inbound.sqlite";
 const HMAC_SECRET = "kapso-test-hmac-secret";

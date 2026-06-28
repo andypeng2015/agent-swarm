@@ -7,6 +7,7 @@ import {
   type Server,
   type ServerResponse,
 } from "node:http";
+import { getPathSegments, handleWorkflows, parseQueryParams } from "@swarm/api-server";
 import {
   closeDb,
   createWorkflowRun,
@@ -24,8 +25,6 @@ import type {
   WorkflowVersion,
 } from "@swarm/types";
 import { initWorkflows, stopRetryPoller } from "@swarm/workflows";
-import { getPathSegments, parseQueryParams } from "../http/utils";
-import { handleWorkflows } from "../http/workflows";
 
 const TEST_DB_PATH = "./test-workflow-http-v2.sqlite";
 const TEST_PORT = 13030;

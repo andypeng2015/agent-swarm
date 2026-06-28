@@ -9,6 +9,12 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { unlink } from "node:fs/promises";
 import {
+  codeLevelTriage,
+  MAX_RESUME_GENERATIONS,
+  RESUME_BUDGET_EXHAUSTED_REASON,
+  setBeforeHeartbeatSupersedeForTests,
+} from "@swarm/api-server";
+import {
   closeDb,
   completeTask,
   createAgent,
@@ -25,12 +31,6 @@ import {
   startTask,
 } from "@swarm/storage";
 import { RESUME_GENERATION_TAG_PREFIX } from "@swarm/workflows";
-import {
-  codeLevelTriage,
-  MAX_RESUME_GENERATIONS,
-  RESUME_BUDGET_EXHAUSTED_REASON,
-  setBeforeHeartbeatSupersedeForTests,
-} from "../heartbeat/heartbeat";
 
 const TEST_DB_PATH = "./test-heartbeat-supersede-resume.sqlite";
 

@@ -18,10 +18,13 @@ import {
   type Server,
   type ServerResponse,
 } from "node:http";
+import {
+  getPathSegments,
+  handlePages,
+  handlePagesPublic,
+  parseQueryParams,
+} from "@swarm/api-server";
 import { closeDb, initDb } from "@swarm/storage";
-import { handlePages } from "../http/pages";
-import { handlePagesPublic } from "../http/pages-public";
-import { getPathSegments, parseQueryParams } from "../http/utils";
 
 const TEST_DB_PATH = "./test-pages-view-count.sqlite";
 let BASE = "";

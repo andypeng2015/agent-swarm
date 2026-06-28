@@ -20,6 +20,7 @@ import {
   type Server,
   type ServerResponse,
 } from "node:http";
+import { getPathSegments, handleCore, handleUsers, parseQueryParams } from "@swarm/api-server";
 import {
   closeDb,
   createUser,
@@ -30,9 +31,6 @@ import {
   linkIdentity,
   upsertKv,
 } from "@swarm/storage";
-import { handleCore } from "../http/core";
-import { handleUsers } from "../http/users";
-import { getPathSegments, parseQueryParams } from "../http/utils";
 
 const TEST_DB_PATH = "./test-http-users.sqlite";
 const API_KEY = "test-users-key";

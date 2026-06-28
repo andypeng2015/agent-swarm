@@ -9,7 +9,7 @@ import {
   registerScriptUpsertTool,
 } from "@swarm/mcp-tool";
 import { initDb, seedPricingFromModelsDev, startPricingRefreshLoop } from "@swarm/storage";
-import pkg from "../package.json";
+import pkg from "../../../package.json";
 import { registerCancelTaskTool } from "./tools/cancel-task";
 import { registerContextDiffTool } from "./tools/context-diff";
 import { registerContextHistoryTool } from "./tools/context-history";

@@ -12,6 +12,16 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { Readable } from "node:stream";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import {
+  getPathSegments,
+  handleSchedules,
+  handleWorkflows,
+  parseQueryParams,
+  registerPatchWorkflowNodeTool,
+  registerPatchWorkflowTool,
+  registerUpdateScheduleTool,
+  registerUpdateWorkflowTool,
+} from "@swarm/api-server";
 import { setRequestAuth } from "@swarm/core-utils";
 import {
   closeDb,
@@ -28,13 +38,6 @@ import {
   updateScheduledTask,
   updateWorkflow,
 } from "@swarm/storage";
-import { handleSchedules } from "../http/schedules";
-import { getPathSegments, parseQueryParams } from "../http/utils";
-import { handleWorkflows } from "../http/workflows";
-import { registerUpdateScheduleTool } from "../tools/schedules/update-schedule";
-import { registerPatchWorkflowTool } from "../tools/workflows/patch-workflow";
-import { registerPatchWorkflowNodeTool } from "../tools/workflows/patch-workflow-node";
-import { registerUpdateWorkflowTool } from "../tools/workflows/update-workflow";
 
 const TEST_DB_PATH = "./test-audit-updated-by.sqlite";
 

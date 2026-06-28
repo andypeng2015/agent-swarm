@@ -3,6 +3,11 @@ import { unlink } from "node:fs/promises";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import {
+  registerManageUserTool,
+  registerResolveUserTool,
+  resolveUserInputSchema,
+} from "@swarm/api-server";
+import {
   closeDb,
   createAgent,
   createUser,
@@ -12,8 +17,6 @@ import {
   initDb,
   linkIdentity,
 } from "@swarm/storage";
-import { registerManageUserTool } from "../tools/manage-user";
-import { registerResolveUserTool, resolveUserInputSchema } from "../tools/resolve-user";
 
 const TEST_DB_PATH = "./test-mcp-tools-user.sqlite";
 

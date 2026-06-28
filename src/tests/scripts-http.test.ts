@@ -2,6 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:tes
 import { unlink } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { Readable } from "node:stream";
+import { getPathSegments, handleCore, handleScripts, parseQueryParams } from "@swarm/api-server";
 import { refreshSecretScrubberCache } from "@swarm/core-utils";
 import {
   closeDb,
@@ -12,9 +13,6 @@ import {
   listScripts,
   setScriptEmbeddingProviderForTests,
 } from "@swarm/storage";
-import { handleCore } from "../http/core";
-import { handleScripts } from "../http/scripts";
-import { getPathSegments, parseQueryParams } from "../http/utils";
 
 const TEST_DB_PATH = "./test-scripts-http.sqlite";
 const API_KEY = "test-scripts-http-key-1234567890";

@@ -1,6 +1,13 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { unlink } from "node:fs/promises";
 import {
+  checkHeartbeatChecklist,
+  createBootTriageTask,
+  gatherSystemStatus,
+  isEffectivelyEmpty,
+  runRebootSweep,
+} from "@swarm/api-server";
+import {
   closeDb,
   createAgent,
   createTaskExtended,
@@ -9,13 +16,6 @@ import {
   startTask,
   updateAgentProfile,
 } from "@swarm/storage";
-import {
-  checkHeartbeatChecklist,
-  createBootTriageTask,
-  gatherSystemStatus,
-  isEffectivelyEmpty,
-  runRebootSweep,
-} from "../heartbeat/heartbeat";
 
 // Side-effect import: register heartbeat templates (also done by heartbeat.ts,
 // but other test files may call clearTemplateDefinitions() in parallel)

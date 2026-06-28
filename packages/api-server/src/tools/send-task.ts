@@ -20,7 +20,7 @@ import {
   splitLegacyModelAlias,
 } from "@swarm/types";
 import * as z from "zod";
-import { findDuplicateTask } from "@/tools/task-dedup";
+import { findDuplicateTask } from "./task-dedup";
 
 export const sendTaskInputSchema = z.object({
   agentId: z

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { DbQueryInputSchema, resolveDbQuerySql } from "../http/db-query";
+import { DbQueryInputSchema, resolveDbQuerySql } from "@swarm/api-server";
 
 describe("db-query input compatibility", () => {
   test("canonical sql input resolves to sql", () => {

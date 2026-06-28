@@ -8,7 +8,7 @@ import "@swarm/integrations";
 import "@swarm/integrations";
 import "@swarm/integrations";
 import "@swarm/prompt-templates";
-import "../tools/templates";
+import "@swarm/api-server";
 import "../commands/templates";
 import "@swarm/integrations";
 import "@swarm/prompt-templates";
@@ -29,7 +29,7 @@ async function ensureTemplatesRegistered(): Promise<void> {
   await import(`@swarm/integrations/src/agentmail/templates?t=${ts}`);
   await import(`@swarm/integrations/src/linear/templates?t=${ts}`);
   await import(`@swarm/prompt-templates/src/heartbeat/templates?t=${ts}`);
-  await import(`../tools/templates?t=${ts}`);
+  await import(`@swarm/api-server/src/tools/templates?t=${ts}`);
   await import(`../commands/templates?t=${ts}`);
   await import(`@swarm/integrations/src/slack/templates?t=${ts}`);
   await import(`@swarm/prompt-templates/src/prompts/session-templates?t=${ts}`);

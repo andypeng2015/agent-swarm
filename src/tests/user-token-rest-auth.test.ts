@@ -6,6 +6,7 @@ import {
   type Server,
   type ServerResponse,
 } from "node:http";
+import { getPathSegments, handleCore, handleTasks, parseQueryParams } from "@swarm/api-server";
 import {
   closeDb,
   createAgent,
@@ -16,9 +17,6 @@ import {
   mintToken,
   revokeToken,
 } from "@swarm/storage";
-import { handleCore } from "../http/core";
-import { handleTasks } from "../http/tasks";
-import { getPathSegments, parseQueryParams } from "../http/utils";
 
 const TEST_DB_PATH = "./test-user-token-rest-auth.sqlite";
 const API_KEY = "test-api-key";

@@ -7,6 +7,7 @@ import {
   type ServerResponse,
 } from "node:http";
 import type { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { handleCore, handleMcp, handleMcpUser } from "@swarm/api-server";
 import {
   closeDb,
   createTaskExtended,
@@ -18,9 +19,6 @@ import {
   mintToken,
   revokeToken,
 } from "@swarm/storage";
-import { handleCore } from "../http/core";
-import { handleMcp } from "../http/mcp";
-import { handleMcpUser } from "../http/mcp-user";
 
 const TEST_DB_PATH = "./test-mcp-user-route.sqlite";
 const API_KEY = "test-mcp-user-key";

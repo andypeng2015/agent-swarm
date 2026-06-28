@@ -1,4 +1,4 @@
-import { getEnabledCapabilities } from "@/server.ts";
+import { getEnabledCapabilities } from "@swarm/api-server";
 import { type RunnerConfig, type RunnerOptions, runAgent } from "./runner.ts";
 
 export type WorkerOptions = RunnerOptions;

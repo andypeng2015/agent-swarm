@@ -8,15 +8,18 @@ import {
   type ServerResponse,
 } from "node:http";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import {
+  getPathSegments,
+  handleWorkflows,
+  parseQueryParams,
+  registerCreateWorkflowTool,
+  registerPatchWorkflowTool,
+  registerTriggerWorkflowTool,
+  registerUpdateWorkflowTool,
+} from "@swarm/api-server";
 import { closeDb, deleteWorkflow, getWorkflow, initDb } from "@swarm/storage";
 import type { Workflow, WorkflowDefinition } from "@swarm/types";
 import { initWorkflows, stopRetryPoller } from "@swarm/workflows";
-import { getPathSegments, parseQueryParams } from "../http/utils";
-import { handleWorkflows } from "../http/workflows";
-import { registerCreateWorkflowTool } from "../tools/workflows/create-workflow";
-import { registerPatchWorkflowTool } from "../tools/workflows/patch-workflow";
-import { registerTriggerWorkflowTool } from "../tools/workflows/trigger-workflow";
-import { registerUpdateWorkflowTool } from "../tools/workflows/update-workflow";
 
 const TEST_DB_PATH = "./test-workflow-mcp-trigger-schema.sqlite";
 const TEST_PORT = 13031;

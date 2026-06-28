@@ -9,11 +9,9 @@ import {
   type Server,
   type ServerResponse,
 } from "node:http";
+import { getPathSegments, handleCore, handleKv, parseQueryParams } from "@swarm/api-server";
 import { closeDb, createAgent, createTaskExtended, getDb, initDb } from "@swarm/storage";
 import { githubContextKey, linearContextKey, slackContextKey } from "@swarm/workflows";
-import { handleCore } from "../http/core";
-import { handleKv } from "../http/kv";
-import { getPathSegments, parseQueryParams } from "../http/utils";
 
 const TEST_DB_PATH = "./test-kv-ns-resolution.sqlite";
 const API_KEY = "test-kv-ns-key";

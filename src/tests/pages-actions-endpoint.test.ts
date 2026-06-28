@@ -6,9 +6,8 @@ import {
   type Server,
   type ServerResponse,
 } from "node:http";
+import { getPathSegments, handlePages, parseQueryParams } from "@swarm/api-server";
 import { closeDb, initDb } from "@swarm/storage";
-import { handlePages } from "../http/pages";
-import { getPathSegments, parseQueryParams } from "../http/utils";
 
 const TEST_DB_PATH = "./test-pages-actions-endpoint.sqlite";
 const TEST_PORT = 13062;

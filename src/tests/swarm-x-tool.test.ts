@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { registerSwarmXTool } from "@swarm/api-server";
 import { clearVolatileSecretsForTesting } from "@swarm/core-utils";
-import { registerSwarmXTool } from "../tools/swarm-x";
 
 type RegisteredTool = {
   handler: (args: unknown, extra: unknown) => Promise<unknown>;

@@ -15,7 +15,7 @@ import { getPromptTemplates, resetPromptTemplateToDefault, upsertPromptTemplate 
 // here ensures all templates are available for the render endpoint and seeded to the DB.
 import "@swarm/prompt-templates";
 import "@/commands/templates";
-import "@/tools/templates";
+import "@swarm/api-server/src/tools/templates";
 
 /**
  * Seed default templates into the DB.

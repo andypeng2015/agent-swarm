@@ -1,9 +1,8 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { unlink } from "node:fs/promises";
 import { createServer as createHttpServer, type Server } from "node:http";
+import { getPathSegments, handleAgentsRest, parseQueryParams } from "@swarm/api-server";
 import { closeDb, createAgent, initDb } from "@swarm/storage";
-import { handleAgentsRest } from "../http/agents";
-import { getPathSegments, parseQueryParams } from "../http/utils";
 
 /**
  * Phase 4 of the worker credential safe-loop plan

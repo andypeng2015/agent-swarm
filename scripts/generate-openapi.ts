@@ -1,47 +1,51 @@
-import { generateOpenApiSpec } from "../src/http/openapi";
-// Import all handler files to trigger route() registrations
-import "../src/http/active-sessions";
-import "../src/http/agents";
-import "../src/http/approval-requests";
-import "../src/http/budgets";
-import "../src/http/config";
-import "../src/http/context";
-import "../src/http/db-query";
-import "../src/http/ecosystem";
+import { generateOpenApiSpec } from "../packages/api-server/src/http/openapi";
+// Import all handler files to trigger route() registrations.
+// NOTE: order is load-bearing — the route registry is an insertion-ordered array
+// and the emitted spec preserves it, so keep this list (and its grouping) stable
+// to keep openapi.json byte-identical. These reach the moved handlers by path
+// (not the @swarm/api-server barrel) so the module-evaluation order is preserved.
+import "../packages/api-server/src/http/active-sessions";
+import "../packages/api-server/src/http/agents";
+import "../packages/api-server/src/http/approval-requests";
+import "../packages/api-server/src/http/budgets";
+import "../packages/api-server/src/http/config";
+import "../packages/api-server/src/http/context";
+import "../packages/api-server/src/http/db-query";
+import "../packages/api-server/src/http/ecosystem";
 
-import "../src/http/api-keys";
-import "../src/http/events";
-import "../src/http/heartbeat";
-import "../src/http/inbox-state";
-import "../src/http/integrations";
-import "../src/http/kv";
-import "../src/http/memory";
-import "../src/http/page-proxy";
-import "../src/http/pages";
-import "../src/http/pages-public";
-import "../src/http/prompt-templates";
-import "../src/http/poll";
-import "../src/http/pricing";
-import "../src/http/repos";
-import "../src/http/schedules";
-import "../src/http/script-runs";
-import "../src/http/session-data";
-import "../src/http/sessions";
-import "../src/http/skills";
-import "../src/http/scripts";
-import "../src/http/mcp-bridge";
-import "../src/http/mcp-oauth";
-import "../src/http/mcp-servers";
-import "../src/http/stats";
-import "../src/http/status";
-import "../src/http/tasks";
-import "../src/http/task-templates";
-import "../src/http/trackers/jira";
-import "../src/http/trackers/linear";
-import "../src/http/users";
-import "../src/http/webhooks";
-import "../src/http/workflow-events";
-import "../src/http/workflows";
+import "../packages/api-server/src/http/api-keys";
+import "../packages/api-server/src/http/events";
+import "../packages/api-server/src/http/heartbeat";
+import "../packages/api-server/src/http/inbox-state";
+import "../packages/api-server/src/http/integrations";
+import "../packages/api-server/src/http/kv";
+import "../packages/api-server/src/http/memory";
+import "../packages/api-server/src/http/page-proxy";
+import "../packages/api-server/src/http/pages";
+import "../packages/api-server/src/http/pages-public";
+import "../packages/api-server/src/http/prompt-templates";
+import "../packages/api-server/src/http/poll";
+import "../packages/api-server/src/http/pricing";
+import "../packages/api-server/src/http/repos";
+import "../packages/api-server/src/http/schedules";
+import "../packages/api-server/src/http/script-runs";
+import "../packages/api-server/src/http/session-data";
+import "../packages/api-server/src/http/sessions";
+import "../packages/api-server/src/http/skills";
+import "../packages/api-server/src/http/scripts";
+import "../packages/api-server/src/http/mcp-bridge";
+import "../packages/api-server/src/http/mcp-oauth";
+import "../packages/api-server/src/http/mcp-servers";
+import "../packages/api-server/src/http/stats";
+import "../packages/api-server/src/http/status";
+import "../packages/api-server/src/http/tasks";
+import "../packages/api-server/src/http/task-templates";
+import "../packages/api-server/src/http/trackers/jira";
+import "../packages/api-server/src/http/trackers/linear";
+import "../packages/api-server/src/http/users";
+import "../packages/api-server/src/http/webhooks";
+import "../packages/api-server/src/http/workflow-events";
+import "../packages/api-server/src/http/workflows";
 
 const version = (await Bun.file("package.json").json()).version;
 const spec = generateOpenApiSpec({ version, serverUrl: "http://localhost:3013" });

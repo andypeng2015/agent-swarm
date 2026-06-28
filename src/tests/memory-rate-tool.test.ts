@@ -16,8 +16,8 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { registerMemoryRateTool } from "@swarm/api-server";
 import { renderMemoriesPrompt } from "@swarm/prompt-templates";
-import { registerMemoryRateTool } from "../tools/memory-rate";
 
 type FetchInit = Parameters<typeof fetch>[1];
 type CallRecord = { url: string; init: FetchInit };

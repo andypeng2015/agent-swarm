@@ -24,6 +24,7 @@ import {
   REFERENCES_SOURCE_MAX_LENGTH,
   sanitizeReferencesSource,
 } from "@swarm/ai-llm";
+import { registerMemoryRateTool } from "@swarm/api-server";
 import {
   applyRating,
   closeDb,
@@ -34,7 +35,6 @@ import {
   SqliteMemoryStore,
 } from "@swarm/storage";
 import type { Subprocess } from "bun";
-import { registerMemoryRateTool } from "../tools/memory-rate";
 
 const TEST_PORT = 19127;
 const TEST_DB_PATH = `/tmp/test-memory-edges-${Date.now()}.sqlite`;

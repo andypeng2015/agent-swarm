@@ -12,11 +12,9 @@ import {
   type Server,
   type ServerResponse,
 } from "node:http";
+import { getPathSegments, handleCore, handlePricing, parseQueryParams } from "@swarm/api-server";
 import { CODEX_MODEL_PRICING } from "@swarm/harness";
 import { closeDb, getDb, getLogsByEventType, initDb } from "@swarm/storage";
-import { handleCore } from "../http/core";
-import { handlePricing } from "../http/pricing";
-import { getPathSegments, parseQueryParams } from "../http/utils";
 
 const TEST_DB_PATH = "./test-pricing-routes.sqlite";
 const API_KEY = "test-pricing-secret-key";

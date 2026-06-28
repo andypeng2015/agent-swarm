@@ -4,7 +4,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import { resolveUserByToken } from "@swarm/storage";
 import type { User } from "@swarm/types";
-import { createUserServer } from "@/server-user";
+import { createUserServer } from "../server-user";
 import { closeIdleMcpTransports, type McpTransportActivity, markMcpTransportActivity } from "./mcp";
 
 function unauthorized(res: ServerResponse): true {

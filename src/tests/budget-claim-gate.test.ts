@@ -6,6 +6,7 @@
 
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { unlink } from "node:fs/promises";
+import { handlePoll } from "@swarm/api-server";
 import {
   closeDb,
   createAgent,
@@ -17,7 +18,6 @@ import {
   incrementEmptyPollCount,
   initDb,
 } from "@swarm/storage";
-import { handlePoll } from "../http/poll";
 
 const TEST_DB_PATH = "./test-budget-claim-gate.sqlite";
 

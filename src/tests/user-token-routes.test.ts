@@ -6,10 +6,8 @@ import {
   type Server,
   type ServerResponse,
 } from "node:http";
+import { getPathSegments, handleCore, handleUsers, parseQueryParams } from "@swarm/api-server";
 import { closeDb, createUser, fingerprintApiKey, getDb, initDb } from "@swarm/storage";
-import { handleCore } from "../http/core";
-import { handleUsers } from "../http/users";
-import { getPathSegments, parseQueryParams } from "../http/utils";
 
 const TEST_DB_PATH = "./test-user-token-routes.sqlite";
 const API_KEY = "test-user-token-key";

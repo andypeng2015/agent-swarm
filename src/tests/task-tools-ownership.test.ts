@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { unlink } from "node:fs/promises";
+import { cancelTaskHandler, getTaskDetailsHandler, taskActionHandler } from "@swarm/api-server";
 import { ownerCtx, userCtx } from "@swarm/mcp-tool";
 import {
   closeDb,
@@ -10,9 +11,6 @@ import {
   getTaskById,
   initDb,
 } from "@swarm/storage";
-import { cancelTaskHandler } from "../tools/cancel-task";
-import { getTaskDetailsHandler } from "../tools/get-task-details";
-import { taskActionHandler } from "../tools/task-action";
 
 const TEST_DB_PATH = "./test-task-tools-ownership.sqlite";
 

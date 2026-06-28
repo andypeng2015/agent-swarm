@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import { closeIdleMcpTransports } from "../http/mcp";
-import { closeIdleMcpUserTransports } from "../http/mcp-user";
+import { closeIdleMcpTransports, closeIdleMcpUserTransports } from "@swarm/api-server";
 
 function fakeTransport(onClose: () => void): StreamableHTTPServerTransport {
   return {

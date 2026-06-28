@@ -3,6 +3,13 @@ import { unlink } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { Readable } from "node:stream";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import {
+  getPathSegments,
+  handleCore,
+  handleScriptRuns,
+  handleScripts,
+  parseQueryParams,
+} from "@swarm/api-server";
 import { refreshSecretScrubberCache } from "@swarm/core-utils";
 import {
   registerScriptDeleteTool,
@@ -18,10 +25,6 @@ import {
   initDb,
   setScriptEmbeddingProviderForTests,
 } from "@swarm/storage";
-import { handleCore } from "../http/core";
-import { handleScriptRuns } from "../http/script-runs";
-import { handleScripts } from "../http/scripts";
-import { getPathSegments, parseQueryParams } from "../http/utils";
 
 const TEST_DB_PATH = "./test-scripts-mcp-e2e.sqlite";
 const API_KEY = "test-scripts-mcp-key-1234567890";

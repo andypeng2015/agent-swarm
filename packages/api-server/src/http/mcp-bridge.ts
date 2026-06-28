@@ -2,7 +2,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { isMcpToolAllowedForScripts } from "@swarm/scripts";
 import { z } from "zod";
-import { createServer } from "@/server";
+import { createServer } from "../server";
 import { route } from "./route-def";
 import { json, jsonError } from "./utils";
 

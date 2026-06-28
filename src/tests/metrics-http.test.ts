@@ -7,10 +7,9 @@ import {
   type Server,
   type ServerResponse,
 } from "node:http";
+import { getPathSegments, handleMetrics, parseQueryParams } from "@swarm/api-server";
 import { closeDb, getMetricVersions, initDb } from "@swarm/storage";
 import type { Metric } from "@swarm/types";
-import { handleMetrics } from "../http/metrics";
-import { getPathSegments, parseQueryParams } from "../http/utils";
 
 const TEST_DB_PATH = "./test-metrics-http.sqlite";
 const TEST_PORT = 13083;

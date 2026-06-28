@@ -14,14 +14,14 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { unlink } from "node:fs/promises";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { closeDb, createAgent, getDb, initDb } from "@swarm/storage";
 import {
   registerKvDeleteTool,
   registerKvGetTool,
   registerKvIncrTool,
   registerKvListTool,
   registerKvSetTool,
-} from "../tools/kv";
+} from "@swarm/api-server";
+import { closeDb, createAgent, getDb, initDb } from "@swarm/storage";
 
 const TEST_DB_PATH = "./test-kv-tool.sqlite";
 

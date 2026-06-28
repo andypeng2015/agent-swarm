@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { safeRequestUrlForLog } from "../http/utils";
+import { safeRequestUrlForLog } from "@swarm/api-server";
 
 describe("safeRequestUrlForLog", () => {
   test("redacts OAuth callback query values", () => {

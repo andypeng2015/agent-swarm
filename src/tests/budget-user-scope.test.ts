@@ -7,6 +7,7 @@ import {
   type ServerResponse,
 } from "node:http";
 import type { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { handleCore, handleMcpUser, handlePoll } from "@swarm/api-server";
 import {
   __resetKillSwitchWarnedForTests,
   canClaim,
@@ -23,9 +24,6 @@ import {
   mintToken,
   upsertBudget,
 } from "@swarm/storage";
-import { handleCore } from "../http/core";
-import { handleMcpUser } from "../http/mcp-user";
-import { handlePoll } from "../http/poll";
 
 const TEST_DB_PATH = "./test-budget-user-scope.sqlite";
 const NOW = new Date("2026-04-28T15:30:00.000Z");

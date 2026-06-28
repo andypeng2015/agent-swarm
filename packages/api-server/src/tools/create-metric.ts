@@ -11,7 +11,7 @@ import {
 } from "@swarm/storage";
 import { MetricDefinitionSchema } from "@swarm/types";
 import * as z from "zod";
-import { assertSelectOnlyQuery } from "@/http/db-query";
+import { assertSelectOnlyQuery } from "../http/db-query";
 
 function slugify(input: string): string {
   const slug = input

@@ -2,9 +2,8 @@ import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:tes
 import { unlink } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { Readable } from "node:stream";
+import { getPathSegments, handleSkills, parseQueryParams } from "@swarm/api-server";
 import { closeDb, createSkill, getDb, initDb } from "@swarm/storage";
-import { handleSkills } from "../http/skills";
-import { getPathSegments, parseQueryParams } from "../http/utils";
 
 const TEST_DB_PATH = `./test-skill-files-http-${process.pid}.sqlite`;
 

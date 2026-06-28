@@ -53,7 +53,7 @@ mock.module("@swarm/storage", () => ({
   }),
 }));
 
-const { handleMemory } = await import("../http/memory");
+const { handleMemory } = await import("@swarm/api-server");
 
 type ResponseCapture = {
   statusCode: number;

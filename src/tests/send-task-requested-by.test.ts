@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { unlink } from "node:fs/promises";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import { registerSendTaskTool } from "@swarm/api-server";
 import {
   closeDb,
   createAgent,
@@ -10,7 +11,6 @@ import {
   getTaskById,
   initDb,
 } from "@swarm/storage";
-import { registerSendTaskTool } from "../tools/send-task";
 
 const TEST_DB_PATH = "./test-send-task-requested-by.sqlite";
 

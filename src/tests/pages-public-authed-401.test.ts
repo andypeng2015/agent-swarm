@@ -12,10 +12,13 @@ import {
   type Server,
   type ServerResponse,
 } from "node:http";
+import {
+  getPathSegments,
+  handlePages,
+  handlePagesPublic,
+  parseQueryParams,
+} from "@swarm/api-server";
 import { closeDb, initDb } from "@swarm/storage";
-import { handlePages } from "../http/pages";
-import { handlePagesPublic } from "../http/pages-public";
-import { getPathSegments, parseQueryParams } from "../http/utils";
 
 const TEST_DB_PATH = "./test-pages-public-authed-401.sqlite";
 const TEST_PORT = 13044;

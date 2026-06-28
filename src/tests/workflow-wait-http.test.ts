@@ -1,6 +1,7 @@
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
 import { unlink } from "node:fs/promises";
 import { createServer as createHttpServer, type Server } from "node:http";
+import { getPathSegments, handleWorkflowEvents, parseQueryParams } from "@swarm/api-server";
 import * as db from "@swarm/storage";
 import {
   closeDb,
@@ -19,8 +20,6 @@ import {
   startWorkflowExecution,
   workflowEventBus,
 } from "@swarm/workflows";
-import { getPathSegments, parseQueryParams } from "../http/utils";
-import { handleWorkflowEvents } from "../http/workflow-events";
 
 const TEST_DB_PATH = "./test-workflow-wait-http.sqlite";
 const TEST_PORT = 13041;

@@ -35,7 +35,7 @@ RUN mkdir -p scripts-runtime script-workflows-runtime && \
     bun build ./packages/scripts/src/scripts-runtime/eval-harness.ts \
       --target bun --no-splitting \
       --outfile ./scripts-runtime/eval-harness.bundle.js && \
-    bun build ./src/script-workflows/harness.ts \
+    bun build ./packages/api-server/src/script-workflows/harness.ts \
       --target bun --no-splitting \
       --outfile ./script-workflows-runtime/harness.bundle.js && \
     bun build ./packages/scripts/src/scripts-runtime/stdlib/index.ts \

@@ -1,6 +1,15 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { unlink } from "node:fs/promises";
 import {
+  codeLevelTriage,
+  getRebootAffectedTasks,
+  preflightGate,
+  runHeartbeatSweep,
+  runRebootSweep,
+  startHeartbeat,
+  stopHeartbeat,
+} from "@swarm/api-server";
+import {
   closeDb,
   createAgent,
   createTaskExtended,
@@ -19,15 +28,6 @@ import {
   updateAgentStatus,
   updateTaskClaudeSessionId,
 } from "@swarm/storage";
-import {
-  codeLevelTriage,
-  getRebootAffectedTasks,
-  preflightGate,
-  runHeartbeatSweep,
-  runRebootSweep,
-  startHeartbeat,
-  stopHeartbeat,
-} from "../heartbeat/heartbeat";
 
 const TEST_DB_PATH = "./test-heartbeat.sqlite";
 

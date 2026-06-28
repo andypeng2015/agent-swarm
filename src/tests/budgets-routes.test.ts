@@ -12,6 +12,7 @@ import {
   type Server,
   type ServerResponse,
 } from "node:http";
+import { getPathSegments, handleBudgets, handleCore, parseQueryParams } from "@swarm/api-server";
 import {
   closeDb,
   getDb,
@@ -19,9 +20,6 @@ import {
   initDb,
   recordBudgetRefusalNotification,
 } from "@swarm/storage";
-import { handleBudgets } from "../http/budgets";
-import { handleCore } from "../http/core";
-import { getPathSegments, parseQueryParams } from "../http/utils";
 
 const TEST_DB_PATH = "./test-budgets-routes.sqlite";
 const API_KEY = "test-budget-secret-key";

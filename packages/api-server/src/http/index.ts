@@ -27,9 +27,9 @@ import {
 } from "@swarm/otel";
 import { closeDb, getSwarmConfigs, upsertSwarmConfig } from "@swarm/storage";
 import { initWorkflows } from "@swarm/workflows";
-import { getEnabledCapabilities, hasCapability } from "@/server";
 import { stopHeartbeat } from "../heartbeat";
 import { startScriptRunSupervisor, stopScriptRunSupervisor } from "../script-workflows/supervisor";
+import { getEnabledCapabilities, hasCapability } from "../server";
 import { getServerSessionsProcessed } from "../server-runtime-counters";
 import { handleActiveSessions } from "./active-sessions";
 import { handleAgentRegister, handleAgentsRest } from "./agents";

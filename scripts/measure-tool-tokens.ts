@@ -9,7 +9,7 @@
  */
 
 import { closeDb, initDb } from "@swarm/storage";
-import { createServer } from "../src/server";
+import { createServer } from "@swarm/api-server";
 import { CORE_TOOLS, DEFERRED_TOOLS } from "@swarm/mcp-tool";
 
 const DB_PATH = "./measure-tokens-temp.sqlite";

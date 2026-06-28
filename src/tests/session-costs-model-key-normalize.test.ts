@@ -13,10 +13,13 @@ import {
   type ServerResponse,
 } from "node:http";
 import { normalizeModelKey } from "@swarm/ai-pricing";
+import {
+  getPathSegments,
+  handleCore,
+  handleSessionData,
+  parseQueryParams,
+} from "@swarm/api-server";
 import { closeDb, createAgent, getDb, initDb, insertPricingRow } from "@swarm/storage";
-import { handleCore } from "../http/core";
-import { handleSessionData } from "../http/session-data";
-import { getPathSegments, parseQueryParams } from "../http/utils";
 
 const TEST_DB_PATH = "./test-model-key-normalize.sqlite";
 const API_KEY = "test-model-key-normalize";

@@ -1,15 +1,15 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { unlink } from "node:fs/promises";
 import { createServer as createHttpServer, type Server } from "node:http";
-import { initAgentMail, initGitHub, resetAgentMail, resetGitHub } from "@swarm/integrations";
-import { closeDb, deleteSwarmConfig, getDb, initDb, upsertSwarmConfig } from "@swarm/storage";
 import {
   _autoReloadStatsForTests,
   _resetAutoReloadForTests,
   flushPendingIntegrationsReload,
   loadGlobalConfigsIntoEnv,
   scheduleIntegrationsReload,
-} from "../http/core";
+} from "@swarm/api-server";
+import { initAgentMail, initGitHub, resetAgentMail, resetGitHub } from "@swarm/integrations";
+import { closeDb, deleteSwarmConfig, getDb, initDb, upsertSwarmConfig } from "@swarm/storage";
 
 const TEST_DB_PATH = "./test-reload-config.sqlite";
 const TEST_PORT = 13023;

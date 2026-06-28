@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { unlink } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { Readable } from "node:stream";
+import { createServer, handleMcpBridge } from "@swarm/api-server";
 import type { SwarmConfig } from "@swarm/scripts";
 import {
   createSwarmSdk,
@@ -10,8 +11,6 @@ import {
   SDK_ALLOWLIST,
 } from "@swarm/scripts";
 import { closeDb, initDb } from "@swarm/storage";
-import { handleMcpBridge } from "../http/mcp-bridge";
-import { createServer } from "../server";
 
 const TEST_DB_PATH = "./test-sdk-allowlist.sqlite";
 

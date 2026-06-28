@@ -1,6 +1,14 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { unlink } from "node:fs/promises";
 import { createServer as createHttpServer, type Server } from "node:http";
+import {
+  getPathSegments,
+  handleConfig,
+  parseQueryParams,
+  registerDeleteConfigTool,
+  registerListConfigTool,
+  registerSetConfigTool,
+} from "@swarm/api-server";
 import { isReservedConfigKey, reservedKeyError } from "@swarm/core-utils";
 import {
   closeDb,
@@ -11,11 +19,6 @@ import {
   initDb,
   upsertSwarmConfig,
 } from "@swarm/storage";
-import { handleConfig } from "../http/config";
-import { getPathSegments, parseQueryParams } from "../http/utils";
-import { registerDeleteConfigTool } from "../tools/swarm-config/delete-config";
-import { registerListConfigTool } from "../tools/swarm-config/list-config";
-import { registerSetConfigTool } from "../tools/swarm-config/set-config";
 
 const TEST_DB_PATH = "./test-swarm-config-reserved-keys.sqlite";
 const TEST_PORT = 13047;
