@@ -20,7 +20,7 @@ the full suite green. Update #833's title/body from "Phase 0" → full migration
 | 2 — Extract L0+L1 leaves | 🔄 DONE (9): types, otel, credentials, prompt-templates, artifacts, core-utils, scripts, e2b-dispatch, ai-pricing (204c11e9). DEFERRED: swarm-templates (touches templates-ui Next app prebuild + folds schema types into @swarm/types — do with app split), api-client (NET-NEW generated from openapi + CI gate — additive, not on critical path) |
 | 3 — Extract L2 (ai-llm [+raters hoist&fold], mcp-tool) | ✅ DONE: ai-llm (0391056c, cycle-break #2 — grep be/ empty), mcp-tool (ae35a5b8) |
 | 4 — Extract L3 (harness, storage [+test-preload pivot]) | ✅ DONE: harness (eae401d0), **storage (b5c4af0e)** — the keystone. src/be/ GONE. Preload pivot via @swarm/storage/db subpath; barrel text-import fixed; 176 files moved; fresh-DB boot 96 migrations; test 5444. main MERGED in (31acccbc). |
-| 5 — Extract L4+L5 (workflows, integrations [slack-first]) | ⬜ |
+| 5 — Extract L4+L5 (workflows, integrations) | ✅ DONE: workflows (117166c0, L4), integrations (eb138d4c, L5 — one-shot, not slack-first). test 5444/0, boundaries, fresh-DB boot clean |
 | 6 — api-server + apps split + CI/Docker/openapi cutover + createServer side-effect extraction + dependency-cruiser | ⬜ |
 
 ## Invariants to keep green after EVERY step
@@ -136,7 +136,29 @@ integrations (Phase5), api-server + apps split + cutover (Phase6), swarm-templat
 ##    graph, so preload should import db.ts DIRECTLY (relative or a dedicated lightweight `@swarm/storage/db` subpath),
 ##    not the fat barrel. bunfig preload path itself stays (tests stay co-located).
 
-## Phase 5 (workflows [engine+swarm+scheduler+tasks], integrations [slack-first, one subdir at a time])
+## ✅ Phase 5 DONE — lessons for Phase 6 (api-server, the next big one)
+- **Codemod scopes src/+scripts/+deploy/ ONLY — NOT packages/.** Consumers that already live in an
+  extracted package (e.g. storage's dynamic `import("@/workflows/event-bus")`) are NOT rewritten by
+  `--package`; hand-repoint them. Grep `packages/**` for `@/<newpkg>` + relative cross-pkg imports BEFORE moving.
+- **Side-effect imports (`import "x"` with no bindings) are NOT caught by tsc** but break at runtime. Grep
+  `^import ['\"]` in the moved sources for depth-broken ones (workflows `worker-follow-up.ts` → `../tools/templates`
+  broke; fixed to depth-independent `@/tools/templates`). The `from`-based greps miss these.
+- **Intra-package `@/` absolute imports break on move** (workflows scheduler.ts `@/tasks/*`); convert to relative.
+  Cross-dir relative imports that move together (jira→`../oauth`) stay valid.
+- **Barrel must drop run-by-path CLI entrypoints** (zero-export shebang `x402/cli.ts` ran its CLI on eager barrel
+  eval → printed help at boot). Same class as the dropped scripts subprocess entrypoints. Boot-smoke catches these.
+- **Collisions:** flat-re-export symbols UNIQUE to a namespaced module (workflows getExecutorRegistry/initWorkflows/
+  createStandaloneScheduleTask; integrations keepalive start/stop + wrapper _getPendingState/_clearPendingStates).
+  GENUINE name collisions (gitlab vs github IssueEvent/handleIssue) → a subpath: physical `gitlab.ts` re-export +
+  tsconfig path, repoint the few consumers.
+- **NO package.json `exports` field for integrations** (unlike storage's `./db`): tests deep-import
+  `@swarm/integrations/src/<dir>/templates?t=<n>` for side-effect re-registration; an exports map encapsulates and
+  breaks them. Colliding `_test` name (keepalive+jira) is omitted from the flat barrel → deep-import the module directly.
+- workflows→integrations (notify/HITL slack) + storage→workflows (event-bus) inversions stay DYNAMIC via bare
+  `@swarm/*` specifiers. be→github task-lifecycle: github subscribes via `onTaskStarted` from `@swarm/storage` (consumer).
+- Phase-5 docs follow-up deferred to Phase 6 cutover: docs-site x402-payments.mdx still says `bun src/x402/cli.ts`.
+
+## Phase 5 (workflows [engine+swarm+scheduler+tasks], integrations) — DONE, see above
 ## Phase 6 (api-server + apps split + createServer side-effect→apps/api bootstrap + CI/Docker/openapi cutover +
 ##   .dependency-cruiser.cjs DAG + rewrite check-db-boundary WORKER_PATHS to package dirs + api-client generate)
 See plan-of-record §8 Phase 4/5/6 for the exact file lists + verification.
