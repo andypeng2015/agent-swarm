@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { unlink } from "node:fs/promises";
-import { closeDb, getDb, initDb } from "../be/db";
-import { seedPricingFromModelsDev } from "../be/seed-pricing";
-import { CODEX_MODEL_PRICING } from "../providers/codex-models";
+import { CODEX_MODEL_PRICING } from "@swarm/harness/codex-models";
+import { closeDb, getDb, initDb } from "@swarm/storage/db";
+import { seedPricingFromModelsDev } from "@swarm/storage/seed-pricing";
 
 const TEST_DB_PATH = "./test-migration-046.sqlite";
 

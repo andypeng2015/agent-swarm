@@ -1,25 +1,25 @@
 import { afterAll, beforeAll, describe, expect, mock, test } from "bun:test";
 import { unlink } from "node:fs/promises";
-import { closeDb, initDb } from "../be/db";
+import { closeDb, initDb } from "@swarm/storage/db";
 
 // Mock slack/app to avoid dynamic import issues in parallel test execution
-mock.module("../slack/app", () => ({
+mock.module("@swarm/integrations/slack/app", () => ({
   getSlackApp: () => null,
 }));
 
-import type { ExecutorMeta } from "../types";
-import type { ExecutorDependencies, ExecutorInput } from "../workflows/executors/base";
-import { CodeMatchExecutor, CodeMatchOutputSchema } from "../workflows/executors/code-match";
-import { NotifyExecutor } from "../workflows/executors/notify";
+import type { ExecutorMeta } from "@swarm/types";
+import type { ExecutorDependencies, ExecutorInput } from "@swarm/workflows/executors/base";
+import { CodeMatchExecutor, CodeMatchOutputSchema } from "@swarm/workflows/executors/code-match";
+import { NotifyExecutor } from "@swarm/workflows/executors/notify";
 import {
   PropertyMatchExecutor,
   PropertyMatchOutputSchema,
-} from "../workflows/executors/property-match";
-import { RawLlmExecutor } from "../workflows/executors/raw-llm";
-import { createExecutorRegistry } from "../workflows/executors/registry";
-import { ScriptExecutor, ScriptOutputSchema } from "../workflows/executors/script";
-import { ValidateExecutor, ValidateOutputSchema } from "../workflows/executors/validate";
-import { VcsExecutor, VcsOutputSchema } from "../workflows/executors/vcs";
+} from "@swarm/workflows/executors/property-match";
+import { RawLlmExecutor } from "@swarm/workflows/executors/raw-llm";
+import { createExecutorRegistry } from "@swarm/workflows/executors/registry";
+import { ScriptExecutor, ScriptOutputSchema } from "@swarm/workflows/executors/script";
+import { ValidateExecutor, ValidateOutputSchema } from "@swarm/workflows/executors/validate";
+import { VcsExecutor, VcsOutputSchema } from "@swarm/workflows/executors/vcs";
 
 const TEST_DB_PATH = "./test-workflow-executors.sqlite";
 
@@ -34,7 +34,7 @@ const mockDeps: ExecutorDependencies = {
       postedMessages.push({ channelId, content });
       return msg;
     },
-  } as unknown as typeof import("../be/db"),
+  } as unknown as typeof import("@swarm/storage/db"),
   eventBus: { emit: () => {}, on: () => {}, off: () => {} },
   interpolate: (template: string, ctx: Record<string, unknown>) => {
     return template.replace(/\{\{([^}]+)\}\}/g, (_match, path: string) => {

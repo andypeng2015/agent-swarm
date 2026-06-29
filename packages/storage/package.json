@@ -1,0 +1,31 @@
+{
+  "name": "@swarm/storage",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "tsc:check": "bun tsc --noEmit -p tsconfig.json",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "test": "bun test src --pass-with-no-tests"
+  },
+  "dependencies": {
+    "@desplega.ai/business-use": "^0.4.2",
+    "@swarm/ai-llm": "workspace:*",
+    "@swarm/ai-pricing": "workspace:*",
+    "@swarm/core-utils": "workspace:*",
+    "@swarm/credentials": "workspace:*",
+    "@swarm/otel": "workspace:*",
+    "@swarm/prompt-templates": "workspace:*",
+    "@swarm/scripts": "workspace:*",
+    "@swarm/swarm-templates": "workspace:*",
+    "@swarm/types": "workspace:*",
+    "openai": "^6.22.0",
+    "sqlite-vec": "^0.1.9",
+    "typescript": "^5",
+    "zod": "^4.2.1"
+  },
+  "exports": {
+    ".": "./src/db.ts",
+    "./*": "./src/*.ts"
+  }
+}

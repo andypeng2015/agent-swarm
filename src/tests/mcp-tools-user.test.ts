@@ -2,10 +2,13 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { unlink } from "node:fs/promises";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
-import { closeDb, createAgent, createUser, getDb, initDb } from "../be/db";
-import { getUserIdentities, type IdentityActor, linkIdentity } from "../be/users";
-import { registerManageUserTool } from "../tools/manage-user";
-import { registerResolveUserTool, resolveUserInputSchema } from "../tools/resolve-user";
+import { registerManageUserTool } from "@swarm/api-server/tools/manage-user";
+import {
+  registerResolveUserTool,
+  resolveUserInputSchema,
+} from "@swarm/api-server/tools/resolve-user";
+import { closeDb, createAgent, createUser, getDb, initDb } from "@swarm/storage/db";
+import { getUserIdentities, type IdentityActor, linkIdentity } from "@swarm/storage/users";
 
 const TEST_DB_PATH = "./test-mcp-tools-user.sqlite";
 

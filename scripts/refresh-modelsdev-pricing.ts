@@ -1,18 +1,25 @@
 #!/usr/bin/env bun
 /**
- * Refresh the vendored models.dev snapshot at `src/be/modelsdev-cache.json`.
+ * Refresh the vendored models.dev snapshot at
+ * `packages/ai-pricing/src/modelsdev-cache.json`.
  *
  * Usage: `bun run scripts/refresh-modelsdev-pricing.ts`
  *
  * Not a CI job — operators run this periodically. Prints a diff summary
  * (added / removed / changed rates) before writing so reviewers see what
- * moved. See `src/providers/pricing-sources.md` for the surrounding workflow.
+ * moved. See `packages/harness/src/pricing-sources.md` for the surrounding workflow.
  */
 
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
-const CACHE_PATH = path.join(process.cwd(), "src", "be", "modelsdev-cache.json");
+const CACHE_PATH = path.join(
+  process.cwd(),
+  "packages",
+  "ai-pricing",
+  "src",
+  "modelsdev-cache.json",
+);
 const MODELSDEV_URL = "https://models.dev/api.json";
 // Limited-availability models that are intentionally vendored even when models.dev
 // does not list them yet. Add future manual pins as "provider/model-id".

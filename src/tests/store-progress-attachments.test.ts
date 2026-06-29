@@ -8,8 +8,8 @@ import {
   getTaskAttachments,
   initDb,
   insertTaskAttachment,
-} from "../be/db";
-import { AttachmentInputSchema, TaskAttachmentSchema } from "../types";
+} from "@swarm/storage/db";
+import { AttachmentInputSchema, TaskAttachmentSchema } from "@swarm/types";
 
 const TEST_DB_PATH = "./test-store-progress-attachments.sqlite";
 

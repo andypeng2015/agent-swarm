@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { scrubOtelException, scrubOtelStatus } from "../otel-impl";
+import { scrubOtelException, scrubOtelStatus } from "@swarm/otel/impl";
 
 const SECRET = "ghp_1234567890abcdefghijklmnopqrstuv";
 

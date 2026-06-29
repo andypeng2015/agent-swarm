@@ -3,7 +3,7 @@ import {
   authJsonToCredentialSelection,
   authJsonToCredentials,
   credentialsToAuthJson,
-} from "../providers/codex-oauth/auth-json.js";
+} from "@swarm/credentials/codex-oauth/auth-json";
 import {
   AUTHORIZE_URL,
   CLIENT_ID,
@@ -21,9 +21,9 @@ import {
   SCOPE,
   setFetchForTesting,
   TOKEN_URL,
-} from "../providers/codex-oauth/flow.js";
-import { generatePKCE } from "../providers/codex-oauth/pkce.js";
-import type { CodexOAuthCredentials } from "../providers/codex-oauth/types.js";
+} from "@swarm/credentials/codex-oauth/flow";
+import { generatePKCE } from "@swarm/credentials/codex-oauth/pkce";
+import type { CodexOAuthCredentials } from "@swarm/credentials/codex-oauth/types";
 
 describe("generatePKCE", () => {
   it("produces distinct verifier/challenge pairs", async () => {

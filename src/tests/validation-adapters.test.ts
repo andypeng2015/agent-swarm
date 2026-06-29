@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { extractPassResult } from "../workflows/validation";
+import { extractPassResult } from "@swarm/workflows/validation";
 
 describe("extractPassResult — validation executor adapters", () => {
   // ─── validate executor ─────────────────────────────────────

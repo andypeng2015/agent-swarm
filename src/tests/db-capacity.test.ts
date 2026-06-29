@@ -12,7 +12,7 @@ import {
   initDb,
   startTask,
   updateAgentStatusFromCapacity,
-} from "../be/db";
+} from "@swarm/storage/db";
 
 const TEST_DB_PATH = "./test-db-capacity.sqlite";
 

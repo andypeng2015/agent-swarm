@@ -12,11 +12,11 @@ import {
   type Server,
   type ServerResponse,
 } from "node:http";
-import { closeDb, createAgent, getDb, initDb, insertPricingRow } from "../be/db";
-import { normalizeModelKey } from "../be/pricing-normalize";
-import { handleCore } from "../http/core";
-import { handleSessionData } from "../http/session-data";
-import { getPathSegments, parseQueryParams } from "../http/utils";
+import { normalizeModelKey } from "@swarm/ai-pricing/pricing-normalize";
+import { handleCore } from "@swarm/api-server/http/core";
+import { handleSessionData } from "@swarm/api-server/http/session-data";
+import { getPathSegments, parseQueryParams } from "@swarm/api-server/http/utils";
+import { closeDb, createAgent, getDb, initDb, insertPricingRow } from "@swarm/storage/db";
 
 const TEST_DB_PATH = "./test-model-key-normalize.sqlite";
 const API_KEY = "test-model-key-normalize";

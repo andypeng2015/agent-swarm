@@ -22,10 +22,10 @@ import { afterEach, describe, expect, it } from "bun:test";
 import {
   authJsonToCredentialSelection,
   credentialsToAuthJson,
-} from "../providers/codex-oauth/auth-json.js";
-import { materializeCodexAuthJson } from "../providers/codex-oauth/auth-json-fs.js";
-import { loadAllCodexOAuthSlots, persistCodexOAuth } from "../providers/codex-oauth/storage.js";
-import type { CodexOAuthCredentials } from "../providers/codex-oauth/types.js";
+} from "@swarm/credentials/codex-oauth/auth-json";
+import { materializeCodexAuthJson } from "@swarm/credentials/codex-oauth/auth-json-fs";
+import { loadAllCodexOAuthSlots, persistCodexOAuth } from "@swarm/credentials/codex-oauth/storage";
+import type { CodexOAuthCredentials } from "@swarm/credentials/codex-oauth/types";
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 

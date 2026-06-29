@@ -1,8 +1,8 @@
 /**
- * Phase 4 — pure-logic tests for `ui/src/hooks/use-dismissible-card.ts`.
+ * Phase 4 — pure-logic tests for `apps/ui/src/hooks/use-dismissible-card.ts`.
  *
- * Lives in `src/tests/` (not under `ui/`) because:
- *   - `ui/` has no test runner configured (no vitest/jest).
+ * Lives in `src/tests/` (not under `apps/ui/`) because:
+ *   - `apps/ui/` has no test runner configured (no vitest/jest).
  *   - The repo-root `bun test` already wires preload + DB fixtures.
  *   - We test the pure `deriveStorageKey()` helper plus localStorage-shape
  *     semantics by stubbing `globalThis.localStorage` — no React renderer.
@@ -22,7 +22,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 // Import the pure helper directly — the parent `use-dismissible-card.ts`
 // pulls in React + the `@/lib/config` alias chain via `useConfig`, which
 // the bun-test runner can't resolve outside Vite.
-import { deriveStorageKey } from "../../ui/src/hooks/use-dismissible-card-key.ts";
+import { deriveStorageKey } from "../../apps/ui/src/hooks/use-dismissible-card-key.ts";
 
 // Minimal in-memory localStorage shim for the round-trip / failure tests.
 class MemoryStorage {

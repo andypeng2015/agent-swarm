@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { unlink } from "node:fs/promises";
-import * as db from "../be/db";
+import * as db from "@swarm/storage/db";
 import {
   closeDb,
   createWorkflow,
@@ -10,19 +10,19 @@ import {
   getWorkflowRun,
   getWorkflowRunStepsByRunId,
   initDb,
-} from "../be/db";
-import type { Workflow, WorkflowDefinition } from "../types";
-import { startWorkflowExecution } from "../workflows/engine";
-import { InProcessEventBus } from "../workflows/event-bus";
-import type { ExecutorDependencies } from "../workflows/executors/base";
-import { createExecutorRegistry } from "../workflows/executors/registry";
-import { resumeWaitState } from "../workflows/resume";
+} from "@swarm/storage/db";
+import type { Workflow, WorkflowDefinition } from "@swarm/types";
+import { startWorkflowExecution } from "@swarm/workflows/engine";
+import { InProcessEventBus } from "@swarm/workflows/event-bus";
+import type { ExecutorDependencies } from "@swarm/workflows/executors/base";
+import { createExecutorRegistry } from "@swarm/workflows/executors/registry";
+import { resumeWaitState } from "@swarm/workflows/resume";
 
 const TEST_DB_PATH = "./test-workflow-wait-time.sqlite";
 
 const eventBus = new InProcessEventBus();
 const deps: ExecutorDependencies = {
-  db: db as typeof import("../be/db"),
+  db: db as typeof import("@swarm/storage/db"),
   eventBus,
   interpolate: (t: string) => t,
 };

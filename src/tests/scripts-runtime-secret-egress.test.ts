@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { refreshSecretScrubberCache } from "@swarm/core-utils/secret-scrubber";
 import {
   buildEgressSecrets,
   patchFetchWithEgressSubstitution,
-} from "../scripts-runtime/egress-secrets";
-import { runScript } from "../scripts-runtime/loader";
-import { refreshSecretScrubberCache } from "../utils/secret-scrubber";
+} from "@swarm/scripts/egress-secrets";
+import { runScript } from "@swarm/scripts/loader";
 
 const savedEnv = { ...process.env };
 

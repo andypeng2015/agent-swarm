@@ -1,9 +1,9 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { unlink } from "node:fs/promises";
-import { closeDb, createTaskExtended, createUser, getTaskById, initDb } from "../be/db";
-import { getTasksHandler } from "../tools/get-tasks";
-import { sendTaskHandler } from "../tools/send-task";
-import { assertOwnsTask, ownerCtx, userCtx } from "../tools/task-tool-ctx";
+import { getTasksHandler } from "@swarm/api-server/tools/get-tasks";
+import { sendTaskHandler } from "@swarm/api-server/tools/send-task";
+import { assertOwnsTask, ownerCtx, userCtx } from "@swarm/mcp-tool/task-tool-ctx";
+import { closeDb, createTaskExtended, createUser, getTaskById, initDb } from "@swarm/storage/db";
 
 const TEST_DB_PATH = "./test-task-tools-ctx.sqlite";
 

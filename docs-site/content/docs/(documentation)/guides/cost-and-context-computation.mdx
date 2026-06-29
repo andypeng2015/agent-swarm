@@ -16,7 +16,7 @@ Cost flows through three layers, each annotated with the path's `costSource` enu
 
 ### 1. Adapter (worker-local)
 
-Every adapter emits a `CostData` event with `totalCostUsd`, token breakdowns (`inputTokens`, `cacheReadTokens`, `cacheWriteTokens`, `outputTokens`, `reasoningOutputTokens`, `thinkingTokens`), and a `provider` tag. The dollar value comes from whatever the harness reports — Claude's stream-json carries it directly; Codex doesn't, so the adapter computes locally via `computeCodexCostUsd` (`src/providers/codex-models.ts`); pi-ai self-reports `stats.cost`; etc.
+Every adapter emits a `CostData` event with `totalCostUsd`, token breakdowns (`inputTokens`, `cacheReadTokens`, `cacheWriteTokens`, `outputTokens`, `reasoningOutputTokens`, `thinkingTokens`), and a `provider` tag. The dollar value comes from whatever the harness reports — Claude's stream-json carries it directly; Codex doesn't, so the adapter computes locally via `computeCodexCostUsd` (`packages/harness/src/codex-models.ts`); pi-ai self-reports `stats.cost`; etc.
 
 The adapter writes via `POST /api/session-costs` with the `provider` field set.
 
@@ -42,7 +42,7 @@ The `pricing` table starts with a boot seed from the vendored models.dev snapsho
 
 After boot, the API server runs an in-process models.dev refresher once immediately and then every 12 hours. It fetches `https://models.dev/api.json` with `If-None-Match`, projects the response through the same `buildModelsDevSeedRows()` logic, inserts a new effective row only for new models or changed prices, and prunes history to the latest two rows per `(provider, model, token_class)`.
 
-The UI path `ui/src/lib/modelsdev-cache.json` is still a symlink to the backend snapshot. The model picker keeps using that committed file for names, labels, and context windows until a separate runtime catalog endpoint exists.
+The UI path `apps/ui/src/lib/modelsdev-cache.json` is still a symlink to the backend snapshot. The model picker keeps using that committed file for names, labels, and context windows until a separate runtime catalog endpoint exists.
 
 - **Projection rules** live in `src/be/seed-pricing.ts`:
   - Anthropic models → rows under both `provider='claude'` AND `provider='claude-managed'`. Shortnames (`opus`/`sonnet`/`haiku`) also land under the current default full id.
@@ -52,7 +52,7 @@ The UI path `ui/src/lib/modelsdev-cache.json` is still a symlink to the backend 
 - **Runtime refresh**: `src/be/pricing-refresh.ts` updates pricing rows in-place after boot and every 12 hours. It only adds newer effective rows and never deletes pinned entries from the committed snapshot.
 - **Snapshot refresh procedure**: run `bun run scripts/refresh-modelsdev-pricing.ts` when the committed fallback/UI catalog needs a source update. Commit it alongside the PR.
 
-Operator reference: [`src/providers/pricing-sources.md`](https://github.com/desplega-ai/agent-swarm/blob/main/src/providers/pricing-sources.md).
+Operator reference: [`packages/harness/src/pricing-sources.md`](https://github.com/desplega-ai/agent-swarm/blob/main/packages/harness/src/pricing-sources.md).
 
 ## How context-window usage is computed
 
@@ -101,5 +101,5 @@ Fallback is 200k. Pre-Phase 4 the dated form fell to 200k unconditionally — wi
 ## Related docs
 
 - [Harness providers](./harness-providers) — provider-specific quirks
-- [`src/providers/pricing-sources.md`](https://github.com/desplega-ai/agent-swarm/blob/main/src/providers/pricing-sources.md) — operator workflow
+- [`packages/harness/src/pricing-sources.md`](https://github.com/desplega-ai/agent-swarm/blob/main/packages/harness/src/pricing-sources.md) — operator workflow
 - [`BUSINESS_USE.md`](https://github.com/desplega-ai/agent-swarm/blob/main/BUSINESS_USE.md) — flow diagrams for `task` / `agent` / `api` events

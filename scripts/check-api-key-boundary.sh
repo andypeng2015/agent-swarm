@@ -2,15 +2,15 @@
 # Enforce centralized swarm API-key resolution.
 #
 # All swarm code must read the API key via getApiKey() / setApiKey() from
-# src/utils/api-key.ts. Direct access to `process.env.API_KEY` or
+# packages/core-utils/src/api-key.ts. Direct access to `process.env.API_KEY` or
 # `process.env.AGENT_SWARM_API_KEY` outside the helper is forbidden so we keep
 # a single source of truth for the env precedence
 # (AGENT_SWARM_API_KEY > API_KEY) and can later evolve it (e.g. swap to a
 # `~/.config/agent-swarm/config.json` lookup) without hunting through 30+
 # call sites.
 #
-# Forbidden patterns (in src/, excluding the helper and tests; this includes
-# worker-side runtime code under src/scripts-runtime/):
+# Forbidden patterns (in src/, packages/, and apps/, excluding the helper and
+# tests; this includes worker-side runtime code under packages/scripts/):
 #   - process.env.API_KEY
 #   - process.env.AGENT_SWARM_API_KEY
 #
@@ -23,28 +23,28 @@
 set -euo pipefail
 
 ALLOW_FILES=(
-  src/utils/api-key.ts
+  packages/core-utils/src/api-key.ts
 )
 
 # Scan production source only — exclude tests.
 MATCHES=$(grep -rn --include='*.ts' --include='*.tsx' \
   -E 'process\.env\.(AGENT_SWARM_)?API_KEY' \
-  src/ 2>/dev/null \
+  src/ packages/ apps/ 2>/dev/null \
   | grep -v '^src/tests/' \
-  | grep -v '^src/utils/api-key\.ts:' \
+  | grep -v '^packages/core-utils/src/api-key\.ts:' \
   || true)
 
 if [ -n "$MATCHES" ]; then
-  echo "ERROR: Direct API_KEY env access detected outside src/utils/api-key.ts."
+  echo "ERROR: Direct API_KEY env access detected outside packages/core-utils/src/api-key.ts."
   echo ""
-  echo "All swarm code must use getApiKey() / setApiKey() from src/utils/api-key.ts"
+  echo "All swarm code must use getApiKey() / setApiKey() from @swarm/core-utils/api-key"
   echo "so the env-var precedence (AGENT_SWARM_API_KEY > API_KEY) stays centralized."
   echo ""
   echo "Violations:"
   echo "$MATCHES"
   echo ""
   echo "Fix: replace with"
-  echo "    import { getApiKey } from '<...>/utils/api-key';"
+  echo "    import { getApiKey } from '@swarm/core-utils/api-key';"
   echo "    const apiKey = getApiKey();"
   exit 1
 fi

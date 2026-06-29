@@ -204,8 +204,8 @@ async function testProvider(provider: string) {
 
   // Verify provider adapter can be instantiated
   try {
-    const { createProviderAdapter } = await import("../src/providers");
-    const adapter = createProviderAdapter(provider);
+    const { createProviderAdapter } = await import("@swarm/harness");
+    const adapter = await createProviderAdapter(provider);
     if (adapter.name === provider) {
       logPass(`[${provider}] Provider adapter instantiates correctly`);
     } else {

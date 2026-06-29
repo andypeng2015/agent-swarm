@@ -6,6 +6,7 @@
 
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { unlink } from "node:fs/promises";
+import { handlePoll } from "@swarm/api-server/http/poll";
 import {
   closeDb,
   createAgent,
@@ -16,8 +17,7 @@ import {
   getDb,
   incrementEmptyPollCount,
   initDb,
-} from "../be/db";
-import { handlePoll } from "../http/poll";
+} from "@swarm/storage/db";
 
 const TEST_DB_PATH = "./test-budget-claim-gate.sqlite";
 
@@ -290,7 +290,7 @@ describe("Phase 3 — MCP task-action accept gate (canClaim integration)", () =>
     // (lines extended in Phase 3) is exercised by the same predicate, so a
     // direct canClaim assertion gives us coverage parity without the
     // server-boot overhead.
-    const { canClaim } = await import("../be/budget-admission");
+    const { canClaim } = await import("@swarm/storage/budget-admission");
     const worker = createAgent({ name: "accept-w", isLead: false, status: "idle", maxTasks: 1 });
     insertBudget("agent", worker.id, 0.01);
     insertSpend(worker.id, 0.5);
@@ -306,7 +306,7 @@ describe("Phase 3 — MCP task-action accept gate (canClaim integration)", () =>
   });
 
   test("accept allows when no budgets configured", async () => {
-    const { canClaim } = await import("../be/budget-admission");
+    const { canClaim } = await import("@swarm/storage/budget-admission");
     const worker = createAgent({ name: "accept-ok", isLead: false, status: "idle", maxTasks: 1 });
     const result = canClaim(worker.id, new Date());
     expect(result.allowed).toBe(true);

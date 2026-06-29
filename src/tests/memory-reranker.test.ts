@@ -6,8 +6,8 @@ import {
   rerank,
   sourceQuality,
   usefulness,
-} from "../be/memory/reranker";
-import type { MemoryCandidate } from "../be/memory/types";
+} from "@swarm/storage/memory/reranker";
+import type { MemoryCandidate } from "@swarm/storage/memory/types";
 
 function makeCandidate(
   overrides: Partial<MemoryCandidate> & { similarity: number },

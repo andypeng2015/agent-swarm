@@ -9,7 +9,7 @@ Hub for everything test-shaped in this repo. The canonical, up-to-date testing r
 | Writing or running unit tests, the Docker smoke-test, the entrypoint round-trip checklist, the MCP handshake sequence | [LOCAL_TESTING.md](../LOCAL_TESTING.md) |
 | Running the **full guided E2E flow** (tasks, session logs, UI verification) | Invoke the `swarm-local-e2e` skill |
 | Drafting a plan with verification / E2E / QA steps | [LOCAL_TESTING.md](../LOCAL_TESTING.md) — copy command forms verbatim, don't paraphrase |
-| Preparing a frontend PR (`ui/`, `templates-ui/`) | qa-use session + screenshots required (merge gate). Per-package conventions in `ui/CLAUDE.md` |
+| Preparing a frontend PR (`apps/ui/`, `apps/templates-ui/`) | qa-use session + screenshots required (merge gate). Per-package conventions in `apps/ui/CLAUDE.md` |
 | Modifying memory-system code | [memory-system.md](./memory-system.md) — runs all four memory test files |
 | Testing Slack integration / driving the **LOCAL** dev swarm | Dev channel `#swarm-dev-2` (`C0AR967K0KZ`), bot `@dev-swarm` (`U0ALZGQCF96`). Send via `slack_send_message` MCP tool to trigger task-assignment flow |
 | Sending a task to the **PRODUCTION / deployed** swarm | Use the swarm-user MCP `mcp__agent-swarm-user__send-task` (creates an unassigned task in the production pool; read back with `mcp__agent-swarm-user__get-tasks`). **Not** the dev Slack channel. MCP may not be enabled every session — check for `mcp__agent-swarm-user__*` first |

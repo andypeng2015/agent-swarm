@@ -1,18 +1,23 @@
 #!/usr/bin/env bun
+
 /**
  * MCP Tools Documentation Generator
  *
- * This script dynamically discovers and parses tool files in src/tools/
+ * This script dynamically discovers and parses tool files in @swarm/api-server
+ * and DB-free tool shims in @swarm/mcp-tool.
  * and generates MCP.md documentation.
  *
  * Run with: bun run docs:mcp
  */
 
-import { Glob } from "bun";
 import path from "node:path";
+import { Glob } from "bun";
 
-const TOOLS_DIR = path.join(import.meta.dir, "../src/tools");
-const SERVER_FILE = path.join(import.meta.dir, "../src/server.ts");
+const TOOL_DIRS = [
+  path.join(import.meta.dir, "../packages/api-server/src/tools"),
+  path.join(import.meta.dir, "../packages/mcp-tool/src"),
+];
+const SERVER_FILE = path.join(import.meta.dir, "../packages/api-server/src/server.ts");
 const OUTPUT_FILE = path.join(import.meta.dir, "../MCP.md");
 
 interface ToolCategory {
@@ -27,6 +32,11 @@ interface ToolInfo {
   title: string;
   description: string;
   fields: FieldInfo[];
+}
+
+interface ToolSource {
+  id: string;
+  path: string;
 }
 
 interface FieldInfo {
@@ -96,17 +106,22 @@ async function discoverCategories(): Promise<ToolCategory[]> {
 /**
  * Discover all tool files in the tools directory (including subdirectories)
  */
-async function discoverToolFiles(): Promise<string[]> {
+async function discoverToolFiles(): Promise<ToolSource[]> {
   const glob = new Glob("**/*.ts");
-  const files: string[] = [];
+  const files: ToolSource[] = [];
 
-  for await (const file of glob.scan(TOOLS_DIR)) {
-    // Skip utility files and index files
-    if (file === "utils.ts" || file.endsWith("index.ts")) continue;
-    files.push(file.replace(".ts", ""));
+  for (const toolDir of TOOL_DIRS) {
+    for await (const file of glob.scan(toolDir)) {
+      // Skip utility files and index files
+      if (file === "utils.ts" || file.endsWith("index.ts")) continue;
+      files.push({
+        id: file.replace(".ts", ""),
+        path: path.join(toolDir, file),
+      });
+    }
   }
 
-  return files;
+  return files.sort((left, right) => left.id.localeCompare(right.id));
 }
 
 /**
@@ -205,10 +220,11 @@ function resolveStringConstant(constName: string, content: string): string {
 /**
  * Parse a tool file to extract metadata
  */
-async function parseToolFile(toolFileName: string): Promise<ToolInfo[]> {
-  const filePath = path.join(TOOLS_DIR, `${toolFileName}.ts`);
-  const content = await Bun.file(filePath).text();
-  const registrations = [...content.matchAll(/(?:createToolRegistrar\(server\)|register)\(\s*["']([^"']+)["']/g)];
+async function parseToolFile(toolSource: ToolSource): Promise<ToolInfo[]> {
+  const content = await Bun.file(toolSource.path).text();
+  const registrations = [
+    ...content.matchAll(/(?:createToolRegistrar\(server\)|register)\(\s*["']([^"']+)["']/g),
+  ];
   if (registrations.length === 0) return [];
 
   const infos: ToolInfo[] = [];
@@ -216,7 +232,10 @@ async function parseToolFile(toolFileName: string): Promise<ToolInfo[]> {
     const match = registrations[idx]!;
     const name = match[1]!;
     const start = match.index ?? 0;
-    const end = idx + 1 < registrations.length ? (registrations[idx + 1]!.index ?? content.length) : content.length;
+    const end =
+      idx + 1 < registrations.length
+        ? (registrations[idx + 1]!.index ?? content.length)
+        : content.length;
     const snippet = content.slice(start, end);
 
     const titleMatch = snippet.match(/title:\s*["']([^"']+)["']/);
@@ -468,8 +487,8 @@ async function generateDocs() {
 
   // Parse all tool files
   const toolInfoMap = new Map<string, ToolInfo>();
-  for (const fileName of allToolFiles) {
-    const infos = await parseToolFile(fileName);
+  for (const toolSource of allToolFiles) {
+    const infos = await parseToolFile(toolSource);
     for (const info of infos) {
       toolInfoMap.set(info.name, info);
     }
@@ -537,10 +556,7 @@ async function generateDocs() {
   const uncategorized = [...toolInfoMap.keys()].filter((name) => !categorizedTools.has(name));
 
   if (uncategorized.length > 0) {
-    markdown = markdown.replace(
-      "\n---\n\n",
-      `- [Other Tools](#other-tools)\n\n---\n\n`,
-    );
+    markdown = markdown.replace("\n---\n\n", `- [Other Tools](#other-tools)\n\n---\n\n`);
     markdown += `## Other Tools\n\n`;
     markdown += `*Tools not assigned to a capability group*\n\n`;
     for (const toolName of uncategorized) {
@@ -552,7 +568,7 @@ async function generateDocs() {
   }
 
   // Write to file
-  await Bun.write(OUTPUT_FILE, markdown);
+  await Bun.write(OUTPUT_FILE, `${markdown.trimEnd()}\n`);
   console.log(`\nGenerated ${OUTPUT_FILE}`);
 }
 

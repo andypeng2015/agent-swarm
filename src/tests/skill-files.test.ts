@@ -12,7 +12,7 @@ import {
   normalizeSkillFilePath,
   upsertSkillFile,
   upsertSkillFiles,
-} from "../be/db";
+} from "@swarm/storage/db";
 
 const TEST_DB_PATH = `./test-skill-files-${process.pid}.sqlite`;
 

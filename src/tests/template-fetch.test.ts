@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import http from "node:http";
-import type { TemplateResponse } from "../../templates/schema.ts";
-import { interpolate } from "../workflows/template.ts";
+import type { TemplateResponse } from "@swarm/types";
+import { interpolate } from "@swarm/workflows/template";
 
 const CACHE_DIR = "/tmp/test-template-cache";
 

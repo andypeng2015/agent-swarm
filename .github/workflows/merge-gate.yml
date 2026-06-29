@@ -19,6 +19,7 @@ jobs:
       test: ${{ steps.check.outputs.test }}
       pi_skills: ${{ steps.check.outputs.pi_skills }}
       openapi: ${{ steps.check.outputs.openapi }}
+      api_client: ${{ steps.check.outputs.api_client }}
       docker: ${{ steps.check.outputs.docker }}
       ui: ${{ steps.check.outputs.ui }}
       templates_workflows: ${{ steps.check.outputs.templates_workflows }}
@@ -65,28 +66,31 @@ jobs:
             fi
           }
 
-          # lint + tsc:check: biome runs on src/, tsc covers src/ (scripts excluded in tsconfig).
-          LINT=$(match '^(src/|evals/|package\.json$|bun\.lock|tsconfig\.json$|biome\.json$)')
+          # lint + tsc:check: biome runs on src/ + packages/ + apps/, tsc covers src/packages (app packages excluded in tsconfig).
+          LINT=$(match '^(src/|packages/|apps/|package\.json$|bun\.lock|tsconfig\.json$|biome\.json$)')
 
           # tests: src/ + scripts that tests import + lockfile/tsconfig.
-          TEST=$(match '^(src/|scripts/|package\.json$|bun\.lock|tsconfig\.json$)')
+          TEST=$(match '^(src/|packages/|apps/|scripts/|package\.json$|bun\.lock|tsconfig\.json$)')
 
           # pi-skills freshness: generator inputs + outputs.
           PI_SKILLS=$(match '^(plugin/commands/|plugin/pi-skills/|plugin/build-pi-skills\.ts$)')
 
           # openapi freshness: routes, types, generator, version, generated artifacts.
-          OPENAPI=$(match '^(src/http/|src/types\.ts$|scripts/generate-openapi\.ts$|openapi\.json$|docs-site/content/docs/api-reference/|package\.json$)')
+          OPENAPI=$(match '^(packages/api-server/src/(http|tools)/|packages/types/|scripts/generate-openapi\.ts$|openapi\.json$|docs-site/content/docs/api-reference/|package\.json$)')
+
+          # api-client freshness: generated from openapi.json after route/type/generator changes.
+          API_CLIENT=$(match '^(packages/api-server/src/(http|tools)/|packages/types/|packages/api-client/|scripts/generate-api-client\.ts$|scripts/generate-openapi\.ts$|openapi\.json$|package\.json$)')
 
           # docker build test: mirrors docker-and-deploy.yml paths.
-          DOCKER=$(match '^(src/|Dockerfile$|Dockerfile\.worker$|docker-entrypoint\.sh$|api-entrypoint\.sh$|package\.json$|bun\.lock|tsconfig\.json$|scripts/|templates/|plugin/|deploy/)')
+          DOCKER=$(match '^(src/|packages/|apps/|Dockerfile$|Dockerfile\.worker$|docker-entrypoint\.sh$|api-entrypoint\.sh$|package\.json$|bun\.lock|tsconfig\.json$|scripts/|plugin/|deploy/)')
 
           # ui app lint + typecheck.
-          UI=$(match '^ui/')
+          UI=$(match '^apps/ui/')
 
-          # workflow template validation: content.md changes in templates/workflows/.
-          TEMPLATES_WORKFLOWS=$(match '^(templates/workflows/|scripts/validate-template-workflows\.ts$|src/workflows/definition\.ts$|src/types\.ts$)')
+          # workflow template validation: content.md changes in packages/swarm-templates/src/workflows/.
+          TEMPLATES_WORKFLOWS=$(match '^(packages/swarm-templates/src/workflows/|scripts/validate-template-workflows\.ts$|src/workflows/definition\.ts$|packages/types/)')
 
-          for k in LINT TEST PI_SKILLS OPENAPI DOCKER UI TEMPLATES_WORKFLOWS; do
+          for k in LINT TEST PI_SKILLS OPENAPI API_CLIENT DOCKER UI TEMPLATES_WORKFLOWS; do
             v=$(eval echo \$$k)
             key=$(echo "$k" | tr '[:upper:]' '[:lower:]')
             echo "${key}=${v}" >> $GITHUB_OUTPUT
@@ -119,24 +123,27 @@ jobs:
 
       - name: Install evals dependencies
         run: bun install --frozen-lockfile
-        working-directory: evals
+        working-directory: apps/evals
 
       - name: Type check evals
         run: bun run tsc:check
-        working-directory: evals
+        working-directory: apps/evals
 
       - name: Test evals
         # evals is its own bun package; these are pure unit tests (scoring,
         # registry, normalize, scenario structure) — no E2B/network, ~0.5s.
         run: bun test
-        working-directory: evals
+        working-directory: apps/evals
 
       - name: Build evals UI
         run: bun run ui:build
-        working-directory: evals
+        working-directory: apps/evals
 
       - name: Check worker/API DB boundary
         run: bash scripts/check-db-boundary.sh
+
+      - name: Check dependency graph boundaries
+        run: bun run check:dep-boundary
 
       - name: Check API_KEY env-access boundary
         run: bash scripts/check-api-key-boundary.sh
@@ -166,7 +173,7 @@ jobs:
         run: bun install --frozen-lockfile
 
       - name: Run tests
-        # evals/ is excluded from the root run via bunfig.toml pathIgnorePatterns
+        # apps/evals/ is excluded from the root run via bunfig.toml pathIgnorePatterns
         # (it's a separate bun package with its own deps + its own CI test step in
         # the lint-and-typecheck job).
         run: bun test
@@ -232,13 +239,38 @@ jobs:
           echo "API reference docs are up to date."
       - name: Check for raw matchRoute usage
         run: |
-          UNREGISTERED=$(grep -rn "matchRoute(" src/http/ --include="*.ts" | grep -v "route-def.ts" | grep -v "utils.ts" || true)
+          UNREGISTERED=$(grep -rn "matchRoute(" packages/api-server/src/http/ --include="*.ts" | grep -v "route-def.ts" | grep -v "utils.ts" || true)
           if [ -n "$UNREGISTERED" ]; then
             echo "::error::Found raw matchRoute() calls. Convert to route() definitions:"
             echo "$UNREGISTERED"
             exit 1
           fi
           echo "No raw matchRoute() calls found."
+
+  api-client-freshness:
+    name: API Client Freshness Check
+    needs: detect-changes
+    if: needs.detect-changes.outputs.api_client == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Rebuild generated API client and check for drift
+        run: |
+          bun run docs:openapi
+          bun run generate:api-client
+          if [ -n "$(git diff --name-only packages/api-client/src/)" ]; then
+            echo "::error::Generated API client is out of date! Run 'bun run docs:openapi && bun run generate:api-client' and commit the changes."
+            git diff --stat packages/api-client/src/
+            exit 1
+          fi
+          echo "Generated API client is up to date."
 
   docker-build:
     name: Docker Build Test
@@ -270,33 +302,30 @@ jobs:
     needs: detect-changes
     if: needs.detect-changes.outputs.ui == 'true'
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ui
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v5
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
         with:
-          node-version: 22
-
-      - name: Install pnpm
-        run: npm install -g pnpm
+          bun-version: latest
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: bun install --frozen-lockfile
 
       - name: Check design tokens (no raw color literals)
-        run: pnpm run check:tokens
+        run: bun run check:tokens
+        working-directory: apps/ui
 
       - name: Run Biome linter
-        run: pnpm lint
+        run: bun run lint
+        working-directory: apps/ui
 
       - name: Run TypeScript type check
-        run: pnpm exec tsc -b
+        run: bunx tsc -b
+        working-directory: apps/ui
 
   template-workflow-validation:
     name: Validate Workflow Templates
@@ -321,7 +350,7 @@ jobs:
 
   gate:
     name: Merge Gate
-    needs: [detect-changes, lint-and-typecheck, test, pi-skills-freshness, openapi-freshness, docker-build, ui-lint, template-workflow-validation]
+    needs: [detect-changes, lint-and-typecheck, test, pi-skills-freshness, openapi-freshness, api-client-freshness, docker-build, ui-lint, template-workflow-validation]
     if: always()
     runs-on: ubuntu-latest
 

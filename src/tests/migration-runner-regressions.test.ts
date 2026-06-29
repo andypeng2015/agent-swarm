@@ -1,8 +1,8 @@
 import { Database } from "bun:sqlite";
 import { afterEach, describe, expect, test } from "bun:test";
 import { unlink } from "node:fs/promises";
-import { closeDb, initDb } from "../be/db";
-import { runMigrations } from "../be/migrations/runner";
+import { closeDb, initDb } from "@swarm/storage/db";
+import { runMigrations } from "@swarm/storage/migrations/runner";
 
 const INCOMPLETE_DB_PATH = "./test-migration-incomplete.sqlite";
 const FRESH_DB_PATH = "./test-migration-fresh.sqlite";
@@ -76,7 +76,7 @@ describe("migration regressions", () => {
 
   test("fresh DB drops source CHECK constraint on agent_tasks (Zod is the gate)", () => {
     // Migration 056 removes the SQL CHECK on agent_tasks.source — the Zod
-    // `AgentTaskSourceSchema` in src/types.ts is now the single source of
+    // `AgentTaskSourceSchema` in @swarm/types is now the single source of
     // truth for the allowed enum, and is enforced at the HTTP/MCP ingress.
     // Direct SQL inserts no longer fail on unknown sources by design;
     // adding a new source no longer requires a forward-only migration.

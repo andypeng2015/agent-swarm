@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { unlink } from "node:fs/promises";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { closeDb, createSkill, initDb, upsertSkillFile } from "../be/db";
-import { registerSkillGetFileTool } from "../tools/skills/skill-get-file";
+import { registerSkillGetFileTool } from "@swarm/api-server/tools/skills/skill-get-file";
+import { closeDb, createSkill, initDb, upsertSkillFile } from "@swarm/storage/db";
 
 const TEST_DB_PATH = `./test-skill-get-file-tool-${process.pid}.sqlite`;
 const CALLER_AGENT_ID = "bbbb0000-0000-4000-8000-000000000020";

@@ -7,7 +7,7 @@ import {
   getIdleWorkersWithCapacity,
   initDb,
   updateAgentCredentialState,
-} from "../be/db";
+} from "@swarm/storage/db";
 
 /**
  * Phase 3 of the worker credential safe-loop plan

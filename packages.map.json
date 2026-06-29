@@ -1,0 +1,400 @@
+{
+  "version": 1,
+  "mappings": [
+    {
+      "srcGlob": "packages/types/src/index.ts",
+      "packageName": "@swarm/types",
+      "subpath": "."
+    },
+    {
+      "srcGlob": "packages/types/src/tracker/**/*",
+      "packageName": "@swarm/types",
+      "root": "packages/types/src/tracker",
+      "subpathRoot": "tracker"
+    },
+
+    {
+      "srcGlob": "packages/core-utils/src/index.ts",
+      "packageName": "@swarm/core-utils",
+      "subpath": "."
+    },
+    {
+      "srcGlob": "packages/core-utils/src/api-key.ts",
+      "packageName": "@swarm/core-utils",
+      "subpath": "api-key"
+    },
+    {
+      "srcGlob": "packages/core-utils/src/capabilities.ts",
+      "packageName": "@swarm/core-utils",
+      "subpath": "capabilities"
+    },
+    {
+      "srcGlob": "packages/core-utils/src/secret-scrubber.ts",
+      "packageName": "@swarm/core-utils",
+      "subpath": "secret-scrubber"
+    },
+    {
+      "srcGlob": "packages/core-utils/src/skill-fs-writer.ts",
+      "packageName": "@swarm/core-utils",
+      "subpath": "skill-fs-writer"
+    },
+    {
+      "srcGlob": "packages/core-utils/src/constants.ts",
+      "packageName": "@swarm/core-utils",
+      "subpath": "constants"
+    },
+    {
+      "srcGlob": "packages/core-utils/src/content-sha256.ts",
+      "packageName": "@swarm/core-utils",
+      "subpath": "content-sha256"
+    },
+    {
+      "srcGlob": "packages/core-utils/src/context-window.ts",
+      "packageName": "@swarm/core-utils",
+      "subpath": "context-window"
+    },
+    {
+      "srcGlob": "packages/core-utils/src/json-schema-validator.ts",
+      "packageName": "@swarm/core-utils",
+      "subpath": "json-schema-validator"
+    },
+    {
+      "srcGlob": "packages/core-utils/src/aws-error-classifier.ts",
+      "packageName": "@swarm/core-utils",
+      "subpath": "aws-error-classifier"
+    },
+    {
+      "srcGlob": "packages/core-utils/src/mcp-server-fetcher.ts",
+      "packageName": "@swarm/core-utils",
+      "subpath": "mcp-server-fetcher"
+    },
+    {
+      "srcGlob": "packages/core-utils/src/template.ts",
+      "packageName": "@swarm/core-utils",
+      "subpath": "template"
+    },
+    {
+      "srcGlob": "packages/core-utils/src/date-utils.ts",
+      "packageName": "@swarm/core-utils",
+      "subpath": "date-utils"
+    },
+    {
+      "srcGlob": "packages/core-utils/src/swarm-config-guard.ts",
+      "packageName": "@swarm/core-utils",
+      "subpath": "swarm-config-guard"
+    },
+    {
+      "srcGlob": "packages/core-utils/src/skill-parser.ts",
+      "packageName": "@swarm/core-utils",
+      "subpath": "skill-parser"
+    },
+    {
+      "srcGlob": "packages/core-utils/src/crypto/**/*",
+      "packageName": "@swarm/core-utils",
+      "root": "packages/core-utils/src/crypto",
+      "subpathRoot": "crypto"
+    },
+    {
+      "srcGlob": "packages/core-utils/src/tool-loop-detection.ts",
+      "packageName": "@swarm/core-utils",
+      "subpath": "tool-loop-detection"
+    },
+    {
+      "srcGlob": "packages/core-utils/src/vcs/**/*",
+      "packageName": "@swarm/core-utils",
+      "root": "packages/core-utils/src/vcs",
+      "subpathRoot": "vcs"
+    },
+
+    {
+      "srcGlob": "packages/otel/src/index.ts",
+      "packageName": "@swarm/otel",
+      "subpath": "."
+    },
+    { "srcGlob": "packages/otel/src/impl.ts", "packageName": "@swarm/otel", "subpath": "impl" },
+    {
+      "srcGlob": "packages/otel/src/telemetry.ts",
+      "packageName": "@swarm/otel",
+      "subpath": "telemetry"
+    },
+    {
+      "srcGlob": "packages/otel/src/server-runtime-counters.ts",
+      "packageName": "@swarm/otel",
+      "subpath": "server-runtime-counters"
+    },
+    {
+      "srcGlob": "packages/otel/src/error-tracker.ts",
+      "packageName": "@swarm/otel",
+      "subpath": "error-tracker"
+    },
+
+    {
+      "srcGlob": "packages/ai-pricing/src/modelsdev-cache.ts",
+      "packageName": "@swarm/ai-pricing",
+      "subpath": "modelsdev-cache"
+    },
+    {
+      "srcGlob": "packages/ai-pricing/src/modelsdev-cache.json",
+      "packageName": "@swarm/ai-pricing",
+      "subpath": "modelsdev-cache.json"
+    },
+    {
+      "srcGlob": "packages/ai-pricing/src/pricing-normalize.ts",
+      "packageName": "@swarm/ai-pricing",
+      "subpath": "pricing-normalize"
+    },
+    {
+      "srcGlob": "packages/ai-pricing/src/seed-pricing.ts",
+      "packageName": "@swarm/ai-pricing",
+      "subpath": "seed-pricing"
+    },
+
+    {
+      "srcGlob": "packages/credentials/src/codex-oauth/**/*",
+      "packageName": "@swarm/credentials",
+      "root": "packages/credentials/src/codex-oauth",
+      "subpathRoot": "codex-oauth"
+    },
+    {
+      "srcGlob": "packages/credentials/src/credentials.ts",
+      "packageName": "@swarm/credentials",
+      "subpath": "credentials"
+    },
+    {
+      "srcGlob": "packages/credentials/src/harness-provider.ts",
+      "packageName": "@swarm/credentials",
+      "subpath": "harness-provider"
+    },
+    {
+      "srcGlob": "packages/credentials/src/provider-metadata.ts",
+      "packageName": "@swarm/credentials",
+      "subpath": "provider-metadata"
+    },
+
+    {
+      "srcGlob": "packages/prompt-templates/src/**/*",
+      "packageName": "@swarm/prompt-templates",
+      "root": "packages/prompt-templates/src"
+    },
+
+    {
+      "srcGlob": "packages/artifacts/src/**/*",
+      "packageName": "@swarm/artifacts",
+      "root": "packages/artifacts/src"
+    },
+
+    {
+      "srcGlob": "packages/scripts/src/**/*",
+      "packageName": "@swarm/scripts",
+      "root": "packages/scripts/src"
+    },
+
+    {
+      "srcGlob": "packages/api-client/src/**/*",
+      "packageName": "@swarm/api-client",
+      "root": "packages/api-client/src"
+    },
+
+    {
+      "srcGlob": "packages/e2b-dispatch/src/dispatch.ts",
+      "packageName": "@swarm/e2b-dispatch",
+      "subpath": "."
+    },
+    {
+      "srcGlob": "packages/e2b-dispatch/src/env.ts",
+      "packageName": "@swarm/e2b-dispatch",
+      "subpath": "env"
+    },
+
+    {
+      "srcGlob": "packages/swarm-templates/src/**/*",
+      "packageName": "@swarm/swarm-templates",
+      "root": "packages/swarm-templates/src"
+    },
+
+    {
+      "srcGlob": "packages/ai-llm/src/**/*",
+      "packageName": "@swarm/ai-llm",
+      "root": "packages/ai-llm/src"
+    },
+
+    {
+      "srcGlob": "packages/mcp-tool/src/**/*",
+      "packageName": "@swarm/mcp-tool",
+      "root": "packages/mcp-tool/src"
+    },
+
+    {
+      "srcGlob": "packages/harness/src/**/*",
+      "packageName": "@swarm/harness",
+      "root": "packages/harness/src"
+    },
+
+    {
+      "srcGlob": "packages/storage/src/**/*",
+      "packageName": "@swarm/storage",
+      "root": "packages/storage/src"
+    },
+
+    {
+      "srcGlob": "packages/workflows/src/index.ts",
+      "packageName": "@swarm/workflows",
+      "subpath": "."
+    },
+    {
+      "srcGlob": "packages/workflows/src/**/*",
+      "packageName": "@swarm/workflows",
+      "root": "packages/workflows/src"
+    },
+
+    {
+      "srcGlob": "packages/integrations/src/oauth/index.ts",
+      "packageName": "@swarm/integrations",
+      "subpath": "."
+    },
+    {
+      "srcGlob": "packages/integrations/src/agentmail/**/*",
+      "packageName": "@swarm/integrations",
+      "root": "packages/integrations/src/agentmail",
+      "subpathRoot": "agentmail"
+    },
+    {
+      "srcGlob": "packages/integrations/src/github/**/*",
+      "packageName": "@swarm/integrations",
+      "root": "packages/integrations/src/github",
+      "subpathRoot": "github"
+    },
+    {
+      "srcGlob": "packages/integrations/src/gitlab/**/*",
+      "packageName": "@swarm/integrations",
+      "root": "packages/integrations/src/gitlab",
+      "subpathRoot": "gitlab"
+    },
+    {
+      "srcGlob": "packages/integrations/src/jira/**/*",
+      "packageName": "@swarm/integrations",
+      "root": "packages/integrations/src/jira",
+      "subpathRoot": "jira"
+    },
+    {
+      "srcGlob": "packages/integrations/src/kapso/**/*",
+      "packageName": "@swarm/integrations",
+      "root": "packages/integrations/src/kapso",
+      "subpathRoot": "kapso"
+    },
+    {
+      "srcGlob": "packages/integrations/src/linear/**/*",
+      "packageName": "@swarm/integrations",
+      "root": "packages/integrations/src/linear",
+      "subpathRoot": "linear"
+    },
+    {
+      "srcGlob": "packages/integrations/src/oauth/**/*",
+      "packageName": "@swarm/integrations",
+      "root": "packages/integrations/src/oauth",
+      "subpathRoot": "oauth"
+    },
+    {
+      "srcGlob": "packages/integrations/src/slack/**/*",
+      "packageName": "@swarm/integrations",
+      "root": "packages/integrations/src/slack",
+      "subpathRoot": "slack"
+    },
+    {
+      "srcGlob": "packages/integrations/src/x/**/*",
+      "packageName": "@swarm/integrations",
+      "root": "packages/integrations/src/x",
+      "subpathRoot": "x"
+    },
+    {
+      "srcGlob": "packages/integrations/src/x402/**/*",
+      "packageName": "@swarm/integrations",
+      "root": "packages/integrations/src/x402",
+      "subpathRoot": "x402"
+    },
+
+    {
+      "srcGlob": "packages/api-server/src/server.ts",
+      "packageName": "@swarm/api-server",
+      "subpath": "server"
+    },
+    {
+      "srcGlob": "packages/api-server/src/server-user.ts",
+      "packageName": "@swarm/api-server",
+      "subpath": "server-user"
+    },
+    {
+      "srcGlob": "packages/api-server/src/http.ts",
+      "packageName": "@swarm/api-server",
+      "subpath": "http"
+    },
+    {
+      "srcGlob": "packages/api-server/src/stdio.ts",
+      "packageName": "@swarm/api-server",
+      "subpath": "stdio"
+    },
+    {
+      "srcGlob": "packages/api-server/src/http/**/*",
+      "packageName": "@swarm/api-server",
+      "root": "packages/api-server/src/http",
+      "subpathRoot": "http"
+    },
+    {
+      "srcGlob": "packages/api-server/src/tools/**/*",
+      "packageName": "@swarm/api-server",
+      "root": "packages/api-server/src/tools",
+      "subpathRoot": "tools"
+    },
+    {
+      "srcGlob": "packages/api-server/src/heartbeat/**/*",
+      "packageName": "@swarm/api-server",
+      "root": "packages/api-server/src/heartbeat",
+      "subpathRoot": "heartbeat"
+    },
+    {
+      "srcGlob": "packages/api-server/src/script-workflows/**/*",
+      "packageName": "@swarm/api-server",
+      "root": "packages/api-server/src/script-workflows",
+      "subpathRoot": "script-workflows"
+    },
+
+    {
+      "srcGlob": "apps/api/src/bootstrap.ts",
+      "packageName": "@swarm/app-api",
+      "subpath": "bootstrap"
+    },
+    {
+      "srcGlob": "apps/api/src/http.ts",
+      "packageName": "@swarm/app-api",
+      "subpath": "http"
+    },
+    {
+      "srcGlob": "apps/api/src/stdio.ts",
+      "packageName": "@swarm/app-api",
+      "subpath": "stdio"
+    },
+    {
+      "srcGlob": "apps/cli/src/cli.tsx",
+      "packageName": "@swarm/app-cli",
+      "subpath": "cli"
+    },
+    {
+      "srcGlob": "apps/cli/src/commands/**/*",
+      "packageName": "@swarm/app-cli",
+      "root": "apps/cli/src/commands",
+      "subpathRoot": "commands"
+    },
+    {
+      "srcGlob": "apps/cli/src/hooks/**/*",
+      "packageName": "@swarm/app-cli",
+      "root": "apps/cli/src/hooks",
+      "subpathRoot": "hooks"
+    },
+    {
+      "srcGlob": "apps/cli/src/utils/**/*",
+      "packageName": "@swarm/app-cli",
+      "root": "apps/cli/src/utils",
+      "subpathRoot": "utils"
+    }
+  ]
+}

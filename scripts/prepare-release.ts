@@ -1,9 +1,9 @@
 #!/usr/bin/env bun
 
 /**
- * prepare-release — regenerate everything that derives from package.json's version.
+ * prepare-release — regenerate everything that derives from apps/cli/package.json's version.
  *
- * Run this after bumping the `version` field in package.json, then commit the
+ * Run this after bumping the `version` field in apps/cli/package.json, then commit the
  * regenerated files alongside the bump. These are the artifacts CI gates on:
  *
  *   - sync-chart-version → charts/agent-swarm/Chart.yaml (helm-publish + docker-and-deploy)
@@ -32,8 +32,10 @@ const GENERATED_PATHS = [
   "docs-site/content/docs/api-reference",
 ];
 
+const CLI_PACKAGE_JSON = "apps/cli/package.json";
+
 async function main(): Promise<void> {
-  const version = ((await Bun.file("package.json").json()) as { version: string }).version;
+  const version = ((await Bun.file(CLI_PACKAGE_JSON).json()) as { version: string }).version;
   console.log(`\nPreparing release artifacts for version ${version}\n`);
 
   for (const [i, step] of STEPS.entries()) {

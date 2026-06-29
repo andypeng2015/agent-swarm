@@ -5,25 +5,41 @@
 # must NEVER import database modules directly — workers communicate with the
 # API exclusively via HTTP.
 #
+# DB owner paths:
+#   packages/storage/  packages/workflows/
+#
 # Worker-side paths:
-#   src/commands/  src/hooks/  src/providers/  src/prompts/  src/scripts-runtime/  src/cli.tsx  src/claude.ts
+#   apps/cli/src/  src/hooks/  src/prompts/  src/cli.tsx
+#   packages/{types,core-utils,otel,ai-pricing,credentials,prompt-templates,artifacts,scripts,
+#             api-client,e2b-dispatch,swarm-templates,ai-llm,mcp-tool,harness}/
 #   plugin/opencode-plugins/  (runs inside the opencode subprocess in the worker)
 #
 # Forbidden patterns:
-#   - import/from be/db (direct DB module)
+#   - static import/from @swarm/storage, @swarm/workflows, or legacy be/db
 #   - import/from bun:sqlite (raw SQLite driver)
 
 set -euo pipefail
 
 WORKER_PATHS=(
-  src/commands/
+  apps/cli/src/
   src/hooks/
-  src/providers/
   src/prompts/
-  src/scripts-runtime/
   src/utils/
+  packages/types/
+  packages/core-utils/
+  packages/otel/
+  packages/ai-pricing/
+  packages/credentials/
+  packages/prompt-templates/
+  packages/artifacts/
+  packages/scripts/
+  packages/api-client/
+  packages/e2b-dispatch/
+  packages/swarm-templates/
+  packages/ai-llm/
+  packages/mcp-tool/
+  packages/harness/
   src/cli.tsx
-  src/claude.ts
   plugin/opencode-plugins/
 )
 
@@ -34,8 +50,10 @@ for path in "${WORKER_PATHS[@]}"; do
     continue
   fi
 
-  # Check for imports from be/db
-  MATCHES=$(grep -rn --include='*.ts' --include='*.tsx' -E 'from\s+["\x27].*be/db' "$path" 2>/dev/null || true)
+  # Check for static imports from DB-owning packages or legacy be/db paths.
+  MATCHES=$(grep -rn --include='*.ts' --include='*.tsx' \
+    -E '(from\s+["\x27](@swarm/(storage|workflows)|.*be/db)|import\s+["\x27]@swarm/(storage|workflows))' \
+    "$path" 2>/dev/null || true)
   if [ -n "$MATCHES" ]; then
     VIOLATIONS="${VIOLATIONS}${MATCHES}\n"
   fi
@@ -56,8 +74,8 @@ if [ -n "$VIOLATIONS" ]; then
   echo "Violations:"
   echo -e "$VIOLATIONS"
   echo ""
-  echo "Fix: Move DB-dependent logic to src/be/, src/http/, or src/tools/ (API-side),"
-  echo "or extract pure functions to a shared module (e.g., src/prompts/)."
+  echo "Fix: Move DB-dependent logic to packages/storage/, packages/workflows/, src/http/, or src/tools/ (API-side),"
+  echo "or extract pure functions to a shared package (e.g., @swarm/core-utils)."
   exit 1
 fi
 

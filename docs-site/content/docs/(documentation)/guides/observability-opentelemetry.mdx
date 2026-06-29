@@ -102,7 +102,7 @@ Agent Swarm sets resource attributes once per process:
 | Attribute | Source |
 |-----------|--------|
 | `service.name` | Per process: API → `<base>-api`, workers → `<base>`; base from `OTEL_SERVICE_NAME` (default `agent-swarm`) |
-| `service.version` | `package.json` version |
+| `service.version` | `apps/cli/package.json` version |
 | `service.namespace` | `OTEL_RESOURCE_ATTRIBUTES` or `agent-swarm` |
 | `service.instance.id` | `AGENT_ID` or a generated UUID |
 | `deployment.environment` | `OTEL_RESOURCE_ATTRIBUTES`, `NODE_ENV`, or `development` |

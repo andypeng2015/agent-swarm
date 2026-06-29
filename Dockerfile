@@ -8,11 +8,38 @@ WORKDIR /build
 
 # Copy package files first for better layer caching
 COPY package.json bun.lock* ./
+COPY apps/ui/package.json ./apps/ui/package.json
+COPY apps/templates-ui/package.json ./apps/templates-ui/package.json
+COPY apps/evals/package.json ./apps/evals/package.json
+COPY apps/api/package.json ./apps/api/package.json
+COPY packages/types/package.json ./packages/types/package.json
+COPY packages/core-utils/package.json ./packages/core-utils/package.json
+COPY packages/otel/package.json ./packages/otel/package.json
+COPY packages/ai-pricing/package.json ./packages/ai-pricing/package.json
+COPY packages/credentials/package.json ./packages/credentials/package.json
+COPY packages/prompt-templates/package.json ./packages/prompt-templates/package.json
+COPY packages/artifacts/package.json ./packages/artifacts/package.json
+COPY packages/scripts/package.json ./packages/scripts/package.json
+COPY packages/api-client/package.json ./packages/api-client/package.json
+COPY packages/e2b-dispatch/package.json ./packages/e2b-dispatch/package.json
+COPY packages/swarm-templates/package.json ./packages/swarm-templates/package.json
+COPY packages/ai-llm/package.json ./packages/ai-llm/package.json
+COPY packages/mcp-tool/package.json ./packages/mcp-tool/package.json
+COPY packages/harness/package.json ./packages/harness/package.json
+COPY packages/storage/package.json ./packages/storage/package.json
+COPY packages/workflows/package.json ./packages/workflows/package.json
+COPY packages/integrations/package.json ./packages/integrations/package.json
+COPY packages/api-server/package.json ./packages/api-server/package.json
 RUN bun install --frozen-lockfile
+
+# Bun workspaces keep optional platform packages under node_modules/.bun.
+RUN mkdir -p extensions && \
+    cp node_modules/.bun/sqlite-vec-linux-*/node_modules/sqlite-vec-linux-*/vec0.so extensions/vec0.so
 
 # Copy source files
 COPY src/ ./src/
-COPY templates/ ./templates/
+COPY packages/ ./packages/
+COPY apps/ ./apps/
 COPY tsconfig.json ./
 
 # Pre-bundle script runtime files into self-contained JS bundles.
@@ -20,16 +47,16 @@ COPY tsconfig.json ./
 # spawned subprocesses — bun run /$bunfs/eval-harness.ts fails in the harness
 # subprocess. Pre-building to real .js files on disk fixes this.
 RUN mkdir -p scripts-runtime script-workflows-runtime && \
-    bun build ./src/scripts-runtime/eval-harness.ts \
+    bun build ./packages/scripts/src/eval-harness.ts \
       --target bun --no-splitting \
       --outfile ./scripts-runtime/eval-harness.bundle.js && \
-    bun build ./src/script-workflows/harness.ts \
+    bun build ./packages/api-server/src/script-workflows/harness.ts \
       --target bun --no-splitting \
       --outfile ./script-workflows-runtime/harness.bundle.js && \
-    bun build ./src/scripts-runtime/stdlib/index.ts \
+    bun build ./packages/scripts/src/stdlib/index.ts \
       --target bun --no-splitting \
       --outfile ./scripts-runtime/stdlib.bundle.js && \
-    bun build ./src/scripts-runtime/swarm-sdk.ts \
+    bun build ./packages/scripts/src/swarm-sdk.ts \
       --target bun --no-splitting \
       --outfile ./scripts-runtime/swarm-sdk.bundle.js && \
     bun build ./node_modules/zod/index.js \
@@ -53,7 +80,7 @@ RUN mkdir -p script-types/node_modules && cd node_modules && \
       | tar -xf - -C /build/script-types/node_modules
 
 # Compile HTTP server to standalone binary
-RUN bun build ./src/http.ts --compile --compile-exec-argv='--expose-gc' --outfile ./agent-swarm-api
+RUN bun build ./apps/api/src/http.ts --compile --compile-exec-argv='--expose-gc' --outfile ./agent-swarm-api
 
 # Stage 2: Minimal runtime image
 FROM debian:bookworm-slim
@@ -84,17 +111,15 @@ RUN chmod +x /usr/local/bin/agent-swarm-api
 COPY package.json ./
 
 # Copy migration SQL files (compiled binary can't read from /$bunfs virtual filesystem)
-COPY src/be/migrations/*.sql /app/migrations/
+COPY packages/storage/src/migrations/*.sql /app/migrations/
 
 # Copy vendored models.dev pricing snapshot so the compiled binary can seed
 # pricing rows from a real filesystem path at runtime.
-COPY src/be/modelsdev-cache.json /app/src/be/modelsdev-cache.json
+COPY packages/ai-pricing/src/modelsdev-cache.json /app/packages/ai-pricing/src/modelsdev-cache.json
 
 # Copy sqlite-vec native extension on real disk. `bun build --compile` embeds JS
 # into /$bunfs/ but not native .so files, and dlopen can't load from /$bunfs/.
-# The glob matches whichever arch-specific sqlite-vec optional dep bun installed
-# for this build (sqlite-vec-linux-x64 or sqlite-vec-linux-arm64).
-COPY --from=builder /build/node_modules/sqlite-vec-linux-*/vec0.so /app/extensions/vec0.so
+COPY --from=builder /build/extensions/vec0.so /app/extensions/vec0.so
 
 # Copy script runtime bundles — needed by the harness subprocess.
 # The compiled binary can't share its /$bunfs/ virtual filesystem with spawned

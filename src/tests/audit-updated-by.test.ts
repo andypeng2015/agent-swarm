@@ -12,7 +12,14 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { Readable } from "node:stream";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
-import { resolveHttpAuditUserId, resolveTaskAuditUserId } from "../be/audit-user";
+import { handleSchedules } from "@swarm/api-server/http/schedules";
+import { getPathSegments, parseQueryParams } from "@swarm/api-server/http/utils";
+import { handleWorkflows } from "@swarm/api-server/http/workflows";
+import { registerUpdateScheduleTool } from "@swarm/api-server/tools/schedules/update-schedule";
+import { registerPatchWorkflowTool } from "@swarm/api-server/tools/workflows/patch-workflow";
+import { registerPatchWorkflowNodeTool } from "@swarm/api-server/tools/workflows/patch-workflow-node";
+import { registerUpdateWorkflowTool } from "@swarm/api-server/tools/workflows/update-workflow";
+import { resolveHttpAuditUserId, resolveTaskAuditUserId } from "@swarm/storage/audit-user";
 import {
   closeDb,
   createAgent,
@@ -25,15 +32,8 @@ import {
   initDb,
   updateScheduledTask,
   updateWorkflow,
-} from "../be/db";
-import { handleSchedules } from "../http/schedules";
-import { getPathSegments, parseQueryParams } from "../http/utils";
-import { handleWorkflows } from "../http/workflows";
-import { registerUpdateScheduleTool } from "../tools/schedules/update-schedule";
-import { registerPatchWorkflowTool } from "../tools/workflows/patch-workflow";
-import { registerPatchWorkflowNodeTool } from "../tools/workflows/patch-workflow-node";
-import { registerUpdateWorkflowTool } from "../tools/workflows/update-workflow";
-import { setRequestAuth } from "../utils/request-auth-context";
+} from "@swarm/storage/db";
+import { setRequestAuth } from "@swarm/storage/request-auth-context";
 
 const TEST_DB_PATH = "./test-audit-updated-by.sqlite";
 

@@ -1,17 +1,18 @@
 #!/usr/bin/env bun
+
 /**
  * CI check: every MCP tool in ALL_TOOLS must be either registered in
  * SDK_TOOL_NAME_MAP (exposed to swarm-scripts) or explicitly excluded below.
  *
  * When you add a new MCP tool, this script forces you to decide:
- *   1. Add it to SDK_TOOL_NAME_MAP in src/scripts-runtime/sdk-allowlist.ts, OR
+ *   1. Add it to SDK_TOOL_NAME_MAP in packages/scripts/src/sdk-allowlist.ts, OR
  *   2. Add it to EXCLUDED_TOOLS below with a reason.
  *
  * Modelled on scripts/check-db-boundary.sh.
  */
 
-import { SDK_TOOL_NAME_MAP } from "../src/scripts-runtime/sdk-allowlist";
-import { ALL_TOOLS } from "../src/tools/tool-config";
+import { ALL_TOOLS } from "@swarm/mcp-tool/tool-config";
+import { SDK_TOOL_NAME_MAP } from "@swarm/scripts/sdk-allowlist";
 
 // Tools intentionally NOT exposed to the scripts SDK.
 // Each entry must have a reason — reviewers will check.
@@ -25,11 +26,11 @@ const EXCLUDED_TOOLS: Record<string, string> = {
   "send-whatsapp-message": "external messaging — not yet exposed to scripts",
   "reply-whatsapp-message": "external messaging — not yet exposed to scripts",
   "get-oauth-access-token": "credential management — security-sensitive, not for scripts",
-  "credential-bindings": "credential binding management — lead-only security control, not for scripts",
-  "script-connections": "script connection registration — lead-only security control, not for scripts",
+  "credential-bindings":
+    "credential binding management — lead-only security control, not for scripts",
   "skill-install-remote": "admin-only remote skill management",
   "skill-sync-remote": "admin-only remote skill management",
-  "swarm_x": "external command router — dispatches to third-party services",
+  swarm_x: "external command router — dispatches to third-party services",
 };
 
 const sdkToolNames = new Set(Object.values(SDK_TOOL_NAME_MAP));
@@ -54,24 +55,14 @@ let failed = false;
 if (unregistered.length > 0) {
   failed = true;
   console.error("ERROR: MCP tools not registered in the scripts SDK!\n");
-  console.error(
-    "The following tools are in ALL_TOOLS (src/tools/tool-config.ts) but are",
-  );
-  console.error(
-    "neither in SDK_TOOL_NAME_MAP (src/scripts-runtime/sdk-allowlist.ts)",
-  );
-  console.error(
-    "nor in EXCLUDED_TOOLS (scripts/check-sdk-tool-registration.ts):\n",
-  );
+  console.error("The following tools are in ALL_TOOLS (@swarm/mcp-tool/tool-config) but are");
+  console.error("neither in SDK_TOOL_NAME_MAP (packages/scripts/src/sdk-allowlist.ts)");
+  console.error("nor in EXCLUDED_TOOLS (scripts/check-sdk-tool-registration.ts):\n");
   for (const t of unregistered.sort()) {
     console.error(`  - ${t}`);
   }
-  console.error(
-    "\nFix: add each tool to SDK_TOOL_NAME_MAP (to expose it to scripts)",
-  );
-  console.error(
-    "or to EXCLUDED_TOOLS in this file (with a reason why it's excluded).",
-  );
+  console.error("\nFix: add each tool to SDK_TOOL_NAME_MAP (to expose it to scripts)");
+  console.error("or to EXCLUDED_TOOLS in this file (with a reason why it's excluded).");
 }
 
 if (staleExclusions.length > 0) {

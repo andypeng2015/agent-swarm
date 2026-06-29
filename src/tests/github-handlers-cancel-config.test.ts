@@ -11,6 +11,9 @@
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { unlink } from "node:fs/promises";
+import { handleIssue, handlePullRequest } from "@swarm/integrations/github/handlers";
+import { GITHUB_BOT_NAME } from "@swarm/integrations/github/mentions";
+import type { IssueEvent, PullRequestEvent } from "@swarm/integrations/github/types";
 import {
   closeDb,
   createAgent,
@@ -21,10 +24,7 @@ import {
   getTaskById,
   initDb,
   upsertSwarmConfig,
-} from "../be/db";
-import { handleIssue, handlePullRequest } from "../github/handlers";
-import { GITHUB_BOT_NAME } from "../github/mentions";
-import type { IssueEvent, PullRequestEvent } from "../github/types";
+} from "@swarm/storage/db";
 
 const TEST_DB_PATH = "./test-github-handlers-cancel-config.sqlite";
 

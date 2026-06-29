@@ -14,7 +14,7 @@ import {
   type SkillFsEntry,
   SWARM_MARKER_FILE,
   writeSkillsToFilesystem,
-} from "../utils/skill-fs-writer";
+} from "@swarm/core-utils/skill-fs-writer";
 
 const FAKE_HOME = join(tmpdir(), `skill-fs-writer-test-${process.pid}`);
 

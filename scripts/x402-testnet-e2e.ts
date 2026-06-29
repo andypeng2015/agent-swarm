@@ -14,15 +14,15 @@
  */
 
 import Openfort from "@openfort/openfort-node";
+import { createX402Client } from "@swarm/integrations/x402/client";
 import {
-  x402ResourceServer,
   HTTPFacilitatorClient,
   x402HTTPResourceServer,
+  x402ResourceServer,
 } from "@x402/core/server";
 import { registerExactEvmScheme as registerServerEvmScheme } from "@x402/evm/exact/server";
-import { createPublicClient, http, parseAbi, verifyTypedData, type Address, type Hex } from "viem";
+import { type Address, createPublicClient, type Hex, http, parseAbi, verifyTypedData } from "viem";
 import { baseSepolia } from "viem/chains";
-import { createX402Client } from "../src/x402/client.ts";
 
 // ─── Config ────────────────────────────────────────────────────────────
 const FACILITATOR_URL = "https://x402.org/facilitator";

@@ -5,18 +5,18 @@
  * the registerMessageHandler callback) to verify that task creation is suppressed
  * when a Slack message @-mentions a different agent (e.g. Devin) but NOT our bot.
  *
- * Mutation resistance: removing the guard from src/slack/assistant.ts or
- * src/slack/handlers.ts causes the co-mention message to reach
+ * Mutation resistance: removing the guard from the Slack assistant or handler
+ * modules causes the co-mention message to reach
  * createTaskWithSiblingAwareness, which fails the `not.toHaveBeenCalled()` assertions.
  *
  * Complements slack-assistant-comention.test.ts (pure helper-function unit tests).
  * Regression for task 4ae1f3b5 — "<@U0831BS93V1> Are you here?" spawned an unwanted task.
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
-import * as dbModule from "../be/db";
-import * as slackEnrichModule from "../slack/enrich";
-import * as slackEventDedupModule from "../slack/event-dedup";
-import * as siblingAwarenessModule from "../tasks/sibling-awareness";
+import * as slackEnrichModule from "@swarm/integrations/slack/enrich";
+import * as slackEventDedupModule from "@swarm/integrations/slack/event-dedup";
+import * as dbModule from "@swarm/storage/db";
+import * as siblingAwarenessModule from "@swarm/workflows/tasks/sibling-awareness";
 
 // ---------------------------------------------------------------------------
 // Production-handler spies.
@@ -26,8 +26,8 @@ import * as siblingAwarenessModule from "../tasks/sibling-awareness";
 // regression test on the real production handlers without leaking fake modules.
 // ---------------------------------------------------------------------------
 
-let createAssistantFn: typeof import("../slack/assistant").createAssistant;
-let registerMessageHandlerFn: typeof import("../slack/handlers").registerMessageHandler;
+let createAssistantFn: typeof import("@swarm/integrations/slack/assistant").createAssistant;
+let registerMessageHandlerFn: typeof import("@swarm/integrations/slack/handlers").registerMessageHandler;
 
 let createTaskWithSiblingAwarenessSpy: any;
 let getAgentWorkingOnThreadSpy: any;
@@ -90,8 +90,10 @@ beforeAll(async () => {
 
   installSpyImplementations();
 
-  ({ createAssistant: createAssistantFn } = await import("../slack/assistant"));
-  ({ registerMessageHandler: registerMessageHandlerFn } = await import("../slack/handlers"));
+  ({ createAssistant: createAssistantFn } = await import("@swarm/integrations/slack/assistant"));
+  ({ registerMessageHandler: registerMessageHandlerFn } = await import(
+    "@swarm/integrations/slack/handlers"
+  ));
 });
 
 beforeEach(() => {

@@ -9,8 +9,8 @@ import {
   initDb,
   pauseTask,
   startTask,
-} from "../be/db";
-import { AgentTaskSchema } from "../types";
+} from "@swarm/storage/db";
+import { AgentTaskSchema } from "@swarm/types";
 
 const TEST_DB_PATH = "./test-task-working-dir.sqlite";
 

@@ -1,12 +1,12 @@
 /**
- * Tests for `resolveServiceName` (`src/otel-impl.ts`) — the per-process OTel
+ * Tests for `resolveServiceName` (`@swarm/otel/impl`) — the per-process OTel
  * `service.name` resolver. The API process must report `agent-swarm-api` and
  * the worker `agent-swarm`, even when a shared `OTEL_SERVICE_NAME` env var is
  * set identically across both (as our compose/deploy env does).
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { resolveServiceName } from "../otel-impl";
+import { resolveServiceName } from "@swarm/otel/impl";
 
 describe("resolveServiceName", () => {
   let savedServiceName: string | undefined;

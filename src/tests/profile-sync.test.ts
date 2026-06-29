@@ -16,7 +16,7 @@ import {
   syncProfileFilesToServer,
   TOOLS_MD_PATH,
   WORKSPACE_CLAUDE_MD_PATH,
-} from "../commands/profile-sync";
+} from "@swarm/app-cli/commands/profile-sync";
 
 const MARKER_START = "# === Agent-managed setup (from DB) ===";
 const MARKER_END = "# === End agent-managed setup ===";

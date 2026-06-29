@@ -34,16 +34,16 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { unlink } from "node:fs/promises";
+import { buildRatingsFromLlm } from "@swarm/ai-llm/memory/raters/llm";
+import { closeDb, createAgent, createSessionLogs, getDb, initDb } from "@swarm/storage/db";
+import { SqliteMemoryStore } from "@swarm/storage/memory/providers/sqlite-store";
+import { ImplicitCitationRater } from "@swarm/storage/memory/raters/implicit-citation";
+import { recordRetrievals } from "@swarm/storage/memory/raters/retrieval";
+import { runServerRaters } from "@swarm/storage/memory/raters/run-server-raters";
+import { applyRating } from "@swarm/storage/memory/raters/store";
+import { rerank } from "@swarm/storage/memory/reranker";
+import type { MemoryCandidate } from "@swarm/storage/memory/types";
 import type { Subprocess } from "bun";
-import { closeDb, createAgent, createSessionLogs, getDb, initDb } from "../be/db";
-import { SqliteMemoryStore } from "../be/memory/providers/sqlite-store";
-import { ImplicitCitationRater } from "../be/memory/raters/implicit-citation";
-import { buildRatingsFromLlm } from "../be/memory/raters/llm";
-import { recordRetrievals } from "../be/memory/raters/retrieval";
-import { runServerRaters } from "../be/memory/raters/run-server-raters";
-import { applyRating } from "../be/memory/raters/store";
-import { rerank } from "../be/memory/reranker";
-import type { MemoryCandidate } from "../be/memory/types";
 
 const TEST_PORT = 19131;
 const TEST_DB_PATH = `/tmp/test-memory-rater-e2e-${Date.now()}.sqlite`;

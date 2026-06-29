@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { matchRoute } from "../http/utils";
+import { matchRoute } from "@swarm/api-server/http/utils";
 
 describe("matchRoute", () => {
   // --- Method matching ---

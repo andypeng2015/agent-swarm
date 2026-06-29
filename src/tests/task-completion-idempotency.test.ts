@@ -13,8 +13,8 @@ import {
   getTaskById,
   initDb,
   startTask,
-} from "../be/db";
-import { createWorkerTaskFollowUp } from "../tasks/worker-follow-up";
+} from "@swarm/storage/db";
+import { createWorkerTaskFollowUp } from "@swarm/workflows/tasks/worker-follow-up";
 
 const TEST_DB_PATH = "./test-task-completion-idempotency.sqlite";
 

@@ -1,13 +1,13 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { unlink } from "node:fs/promises";
-import { closeDb, initDb } from "../be/db";
+import { closeDb, initDb } from "@swarm/storage/db";
 import {
   getSeedState,
   runSeeder,
   type Seeder,
   type SeederRunOptions,
   type SeedItem,
-} from "../be/seed";
+} from "@swarm/storage/seed";
 
 const TEST_DB_PATH = "./test-seed.sqlite";
 

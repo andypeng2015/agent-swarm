@@ -2,7 +2,10 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { validateClaudeCredentials, validateOpencodeCredentials } from "../utils/credentials";
+import {
+  validateClaudeCredentials,
+  validateOpencodeCredentials,
+} from "@swarm/credentials/credentials";
 
 // ─── validateClaudeCredentials ───────────────────────────────────────────────
 

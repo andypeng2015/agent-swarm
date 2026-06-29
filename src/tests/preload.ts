@@ -1,4 +1,4 @@
-import { closeDb, getDb, initDb } from "../be/db";
+import { closeDb, getDb, initDb } from "@swarm/storage/db";
 
 const testTemplateGlobals = globalThis as typeof globalThis & {
   __testMigrationTemplate?: Uint8Array;

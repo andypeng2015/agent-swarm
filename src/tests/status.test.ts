@@ -17,6 +17,13 @@ import { unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  _resetTestConnectionCache,
+  buildStatusPayload,
+  computeHealth,
+  type SetupMilestone,
+} from "@swarm/api-server/http/status";
+import { validateProviderCredentials } from "@swarm/harness/provider-credentials";
+import {
   closeDb,
   createAgent,
   getDb,
@@ -27,16 +34,9 @@ import {
   setAgentHarnessProvider,
   updateAgentActivity,
   updateAgentCredStatus,
-} from "../be/db";
-import { storeOAuthTokens, upsertOAuthApp } from "../be/db-queries/oauth";
-import { validateProviderCredentials } from "../commands/provider-credentials";
-import {
-  _resetTestConnectionCache,
-  buildStatusPayload,
-  computeHealth,
-  type SetupMilestone,
-} from "../http/status";
-import type { AgentCredStatus } from "../types";
+} from "@swarm/storage/db";
+import { storeOAuthTokens, upsertOAuthApp } from "@swarm/storage/db-queries/oauth";
+import type { AgentCredStatus } from "@swarm/types";
 
 // Helper for tests: stamp an agent row with a cred_status snapshot so the
 // `/status` endpoint sees it. Mirrors what the worker boot loop does via

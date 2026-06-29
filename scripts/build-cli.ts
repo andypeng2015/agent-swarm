@@ -1,11 +1,15 @@
 import { chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 
-const outfile = "dist/cli.js";
+const distDir = "apps/cli/dist";
+const outfile = `${distDir}/cli.js`;
 
+// The monorepo split moved the publishable CLI artifact under apps/cli.
+// Clear the former root dist output so low-disk build hosts do not carry both.
 await rm("dist", { recursive: true, force: true });
-await mkdir("dist", { recursive: true });
+await rm(distDir, { recursive: true, force: true });
+await mkdir(distDir, { recursive: true });
 
-await Bun.$`bun build ./src/cli.tsx --target=node --format=esm --splitting --outdir=dist --entry-naming=cli.js`.quiet();
+await Bun.$`bun build ./apps/cli/src/cli.tsx --target=node --format=esm --splitting --outdir=${distDir} --entry-naming=cli.js`.quiet();
 
 const built = await readFile(outfile, "utf8");
 const withNodeShebang = built.replace(/^#!\/usr\/bin\/env bun/, "#!/usr/bin/env node");

@@ -1,6 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { unlink } from "node:fs/promises";
-import { z } from "zod";
 import {
   closeDb,
   createWorkflow,
@@ -8,17 +7,18 @@ import {
   getWorkflowRun,
   getWorkflowRunStepsByRunId,
   initDb,
-} from "../be/db";
-import type { Workflow, WorkflowDefinition } from "../types";
-import { startWorkflowExecution } from "../workflows/engine";
-import { InProcessEventBus } from "../workflows/event-bus";
+} from "@swarm/storage/db";
+import type { Workflow, WorkflowDefinition } from "@swarm/types";
+import { startWorkflowExecution } from "@swarm/workflows/engine";
+import { InProcessEventBus } from "@swarm/workflows/event-bus";
 import {
   BaseExecutor,
   type ExecutorDependencies,
   type ExecutorResult,
-} from "../workflows/executors/base";
-import { ExecutorRegistry } from "../workflows/executors/registry";
-import { setupWorkflowResumeListener } from "../workflows/resume";
+} from "@swarm/workflows/executors/base";
+import { ExecutorRegistry } from "@swarm/workflows/executors/registry";
+import { setupWorkflowResumeListener } from "@swarm/workflows/resume";
+import { z } from "zod";
 
 const TEST_DB_PATH = "./test-workflow-hitl-routing.sqlite";
 
@@ -47,7 +47,7 @@ class MockHITLExecutor extends BaseExecutor<
   protected async execute(
     config: z.infer<typeof MockHITLExecutor.schema>,
     _context: Readonly<Record<string, unknown>>,
-    meta: import("../types").ExecutorMeta,
+    meta: import("@swarm/types").ExecutorMeta,
   ): Promise<ExecutorResult<z.infer<typeof MockHITLExecutor.outSchema>>> {
     // Create a real approval request in the DB so resumeFromApprovalResolution can find it
     const requestId = crypto.randomUUID();
@@ -90,7 +90,7 @@ class MockAsyncTaskExecutor extends BaseExecutor<
   protected async execute(
     _config: z.infer<typeof MockAsyncTaskExecutor.schema>,
     _context: Readonly<Record<string, unknown>>,
-    meta: import("../types").ExecutorMeta,
+    meta: import("@swarm/types").ExecutorMeta,
   ): Promise<ExecutorResult<z.infer<typeof MockAsyncTaskExecutor.outSchema>>> {
     this.lastMeta = { runId: meta.runId, stepId: meta.stepId, nodeId: meta.nodeId };
     return {
@@ -120,10 +120,10 @@ class EchoExecutor extends BaseExecutor<typeof EchoExecutor.schema, typeof EchoE
 
 // ─── Helpers ──────────────────────────────────────────────────
 
-import * as db from "../be/db";
+import * as db from "@swarm/storage/db";
 
 const mockDeps: ExecutorDependencies = {
-  db: db as typeof import("../be/db"),
+  db: db as typeof import("@swarm/storage/db"),
   eventBus: { emit: () => {}, on: () => {}, off: () => {} },
   interpolate: (t: string) => t,
 };

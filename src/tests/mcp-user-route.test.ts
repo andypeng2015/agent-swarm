@@ -7,11 +7,18 @@ import {
   type ServerResponse,
 } from "node:http";
 import type { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import { closeDb, createTaskExtended, createUser, getDb, getTaskById, initDb } from "../be/db";
-import { type IdentityActor, mintToken, revokeToken } from "../be/users";
-import { handleCore } from "../http/core";
-import { handleMcp } from "../http/mcp";
-import { handleMcpUser } from "../http/mcp-user";
+import { handleCore } from "@swarm/api-server/http/core";
+import { handleMcp } from "@swarm/api-server/http/mcp";
+import { handleMcpUser } from "@swarm/api-server/http/mcp-user";
+import {
+  closeDb,
+  createTaskExtended,
+  createUser,
+  getDb,
+  getTaskById,
+  initDb,
+} from "@swarm/storage/db";
+import { type IdentityActor, mintToken, revokeToken } from "@swarm/storage/users";
 
 const TEST_DB_PATH = "./test-mcp-user-route.sqlite";
 const API_KEY = "test-mcp-user-key";

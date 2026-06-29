@@ -12,11 +12,39 @@ FROM ghcr.io/j178/prek:v${PREK_VERSION} AS prek
 FROM oven/bun:1.3.11 AS builder
 WORKDIR /build
 COPY package.json bun.lock* ./
+COPY apps/ui/package.json ./apps/ui/package.json
+COPY apps/templates-ui/package.json ./apps/templates-ui/package.json
+COPY apps/evals/package.json ./apps/evals/package.json
+COPY apps/api/package.json ./apps/api/package.json
+COPY packages/types/package.json ./packages/types/package.json
+COPY packages/core-utils/package.json ./packages/core-utils/package.json
+COPY packages/otel/package.json ./packages/otel/package.json
+COPY packages/ai-pricing/package.json ./packages/ai-pricing/package.json
+COPY packages/credentials/package.json ./packages/credentials/package.json
+COPY packages/prompt-templates/package.json ./packages/prompt-templates/package.json
+COPY packages/artifacts/package.json ./packages/artifacts/package.json
+COPY packages/scripts/package.json ./packages/scripts/package.json
+COPY packages/api-client/package.json ./packages/api-client/package.json
+COPY packages/e2b-dispatch/package.json ./packages/e2b-dispatch/package.json
+COPY packages/swarm-templates/package.json ./packages/swarm-templates/package.json
+COPY packages/ai-llm/package.json ./packages/ai-llm/package.json
+COPY packages/mcp-tool/package.json ./packages/mcp-tool/package.json
+COPY packages/harness/package.json ./packages/harness/package.json
+COPY packages/storage/package.json ./packages/storage/package.json
+COPY packages/workflows/package.json ./packages/workflows/package.json
+COPY packages/integrations/package.json ./packages/integrations/package.json
+COPY packages/api-server/package.json ./packages/api-server/package.json
+COPY apps/cli/package.json ./apps/cli/package.json
 RUN bun install --frozen-lockfile
 COPY src/ ./src/
-COPY templates/ ./templates/
+COPY packages/ ./packages/
+COPY apps/ ./apps/
 COPY tsconfig.json ./
-RUN bun build ./src/cli.tsx --compile --compile-exec-argv='--expose-gc' --outfile ./agent-swarm
+RUN bun build ./apps/cli/src/cli.tsx --compile --compile-exec-argv='--expose-gc' --outfile ./agent-swarm
+RUN if grep -a -F 'bun:sqlite' ./agent-swarm >/dev/null; then \
+      echo "ERROR: worker binary contains bun:sqlite; apps/cli must stay DB-free" >&2; \
+      exit 1; \
+    fi
 
 # Stage 2: Full development environment
 FROM ubuntu:24.04
@@ -66,7 +94,9 @@ RUN apt-get update \
 # Install GitLab CLI (glab) for GitLab integration
 ARG GLAB_VERSION=1.89.0
 ARG TARGETARCH
-RUN curl -fsSL "https://gitlab.com/api/v4/projects/gitlab-org%2Fcli/packages/generic/glab/${GLAB_VERSION}/glab_${GLAB_VERSION}_linux_${TARGETARCH}.deb" -o /tmp/glab.deb \
+RUN glab_arch="${TARGETARCH:-$(dpkg --print-architecture)}" \
+    && case "${glab_arch}" in amd64|arm64) ;; *) echo "Unsupported glab arch: ${glab_arch}" >&2; exit 1 ;; esac \
+    && curl -fsSL "https://gitlab.com/api/v4/projects/gitlab-org%2Fcli/packages/generic/glab/${GLAB_VERSION}/glab_${GLAB_VERSION}_linux_${glab_arch}.deb" -o /tmp/glab.deb \
     && dpkg -i /tmp/glab.deb \
     && rm /tmp/glab.deb
 
@@ -127,13 +157,13 @@ RUN which codex && codex --version
 # The @openai/codex-sdk bundled inside the compiled agent-swarm binary cannot
 # resolve `require.resolve("@openai/codex")` at runtime because the globally-
 # installed package is not part of the Bun bundle. Point the SDK at the global
-# Codex CLI wrapper via CODEX_PATH_OVERRIDE so `src/providers/codex-adapter.ts`
+# Codex CLI wrapper via CODEX_PATH_OVERRIDE so `packages/harness/src/codex-adapter.ts`
 # forwards it to `new Codex({ codexPathOverride })`. The wrapper is a node
 # shebang script that resolves the platform-specific native binary itself.
 ENV CODEX_PATH_OVERRIDE=/usr/bin/codex
 
 # Baseline ~/.codex/config.toml for the worker user. The `model` key must stay
-# in sync with CODEX_DEFAULT_MODEL in src/providers/codex-models.ts (enforced by
+# in sync with CODEX_DEFAULT_MODEL in packages/harness/src/codex-models.ts (enforced by
 # scripts/check-codex-default-model.sh).
 RUN mkdir -p /home/worker/.codex && \
     printf '%s\n' \

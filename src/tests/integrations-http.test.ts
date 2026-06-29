@@ -1,9 +1,18 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { unlink } from "node:fs/promises";
 import { createServer as createHttpServer, type Server } from "node:http";
-import { closeDb, deleteSwarmConfig, getSwarmConfigs, initDb, upsertSwarmConfig } from "../be/db";
-import { type ClaudeManagedTestClient, createIntegrationsHandler } from "../http/integrations";
-import { getPathSegments } from "../http/utils";
+import {
+  type ClaudeManagedTestClient,
+  createIntegrationsHandler,
+} from "@swarm/api-server/http/integrations";
+import { getPathSegments } from "@swarm/api-server/http/utils";
+import {
+  closeDb,
+  deleteSwarmConfig,
+  getSwarmConfigs,
+  initDb,
+  upsertSwarmConfig,
+} from "@swarm/storage/db";
 
 // ---------------------------------------------------------------------------
 // Tests for POST /api/integrations/claude-managed/test

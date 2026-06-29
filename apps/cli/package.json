@@ -1,0 +1,69 @@
+{
+  "name": "@desplega.ai/agent-swarm",
+  "version": "1.103.0",
+  "description": "Multi-agent orchestration for Claude Code, Codex, Gemini CLI, and other AI coding assistants",
+  "license": "MIT",
+  "author": "desplega.sh <contact@desplega.sh>",
+  "maintainers": [
+    {
+      "name": "Taras",
+      "email": "t@desplega.sh"
+    }
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/desplega-ai/agent-swarm.git"
+  },
+  "bugs": {
+    "url": "https://github.com/desplega-ai/agent-swarm/issues"
+  },
+  "homepage": "https://github.com/desplega-ai/agent-swarm#readme",
+  "type": "module",
+  "bin": {
+    "agent-swarm": "dist/cli.js"
+  },
+  "files": [
+    "dist/"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "config": {
+    "name": "agent-swarm"
+  },
+  "exports": {
+    "./cli": "./src/cli.tsx",
+    "./commands/*": "./src/commands/*",
+    "./hooks/*": "./src/hooks/*",
+    "./utils/*": "./src/utils/*"
+  },
+  "scripts": {
+    "build": "cd ../.. && bun run build:cli",
+    "prepack": "cd ../.. && bun run build:cli",
+    "tsc:check": "bun tsc -p tsconfig.json --noEmit",
+    "lint": "biome check src",
+    "lint:fix": "biome check --write src",
+    "test": "bun test src --pass-with-no-tests"
+  },
+  "devDependencies": {
+    "@anthropic-ai/sdk": "^0.93.0",
+    "@desplega.ai/business-use": "^0.4.2",
+    "@inkjs/ui": "^2.0.0",
+    "@swarm/ai-llm": "workspace:*",
+    "@swarm/artifacts": "workspace:*",
+    "@swarm/app-api": "workspace:*",
+    "@swarm/core-utils": "workspace:*",
+    "@swarm/credentials": "workspace:*",
+    "@swarm/e2b-dispatch": "workspace:*",
+    "@swarm/harness": "workspace:*",
+    "@swarm/integrations": "workspace:*",
+    "@swarm/otel": "workspace:*",
+    "@swarm/prompt-templates": "workspace:*",
+    "@swarm/types": "workspace:*",
+    "@types/bun": "latest",
+    "@types/react": "^19.2.7",
+    "hono": "^4.12.3",
+    "ink": "^6.5.1",
+    "react": "^19.2.3"
+  }
+}

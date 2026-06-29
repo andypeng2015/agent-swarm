@@ -5,6 +5,8 @@ on:
     branches:
       - main
     paths:
+      - "apps/**"
+      - "packages/**"
       - "src/**"
       - "Dockerfile"
       - "Dockerfile.worker"
@@ -15,7 +17,6 @@ on:
       - "tsconfig.json"
       - "scripts/**"
       - "charts/agent-swarm/Chart.yaml"
-      - "templates/**"
       - "plugin/**"
       - "deploy/**"
       - ".github/workflows/docker-and-deploy.yml"
@@ -48,10 +49,13 @@ jobs:
       - name: Check for version change
         id: check
         run: |
-          NEW_VERSION=$(jq -r '.version' package.json)
+          NEW_VERSION=$(jq -r '.version' apps/cli/package.json)
           echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
 
-          OLD_VERSION=$(git show ${{ github.event.before }}:package.json 2>/dev/null | jq -r '.version' 2>/dev/null || echo "")
+          OLD_VERSION=$(git show ${{ github.event.before }}:apps/cli/package.json 2>/dev/null | jq -r '.version' 2>/dev/null || echo "")
+          if [ -z "$OLD_VERSION" ]; then
+            OLD_VERSION=$(git show ${{ github.event.before }}:package.json 2>/dev/null | jq -r '.version' 2>/dev/null || echo "")
+          fi
           if [ "$OLD_VERSION" != "$NEW_VERSION" ] && [ -n "$OLD_VERSION" ]; then
             echo "version_changed=true" >> $GITHUB_OUTPUT
             echo "::notice::Version changed: $OLD_VERSION -> $NEW_VERSION"
@@ -604,6 +608,7 @@ jobs:
 
       - name: Publish to npm
         if: steps.check.outputs.skip != 'true'
+        working-directory: apps/cli
         run: npm publish --access public --provenance
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

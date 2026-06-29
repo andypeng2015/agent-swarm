@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { unlink } from "node:fs/promises";
+import { telemetry } from "@swarm/otel/telemetry";
 import {
   cancelTask,
   closeDb,
@@ -10,8 +11,7 @@ import {
   getDb,
   initDb,
   updateTaskClaudeSessionId,
-} from "../be/db";
-import { telemetry } from "../telemetry";
+} from "@swarm/storage/db";
 
 const TEST_DB_PATH = "./test-task-lifecycle-telemetry.sqlite";
 const WORKER_ID = "bbbb0000-0000-4000-8000-000000000002";

@@ -22,11 +22,11 @@ import {
   type Server,
   type ServerResponse,
 } from "node:http";
-import { closeDb, initDb } from "../be/db";
-import { handlePages } from "../http/pages";
-import { handlePagesPublic } from "../http/pages-public";
-import { getPathSegments, parseQueryParams } from "../http/utils";
-import { signPageSession } from "../utils/page-session";
+import { handlePages } from "@swarm/api-server/http/pages";
+import { handlePagesPublic } from "@swarm/api-server/http/pages-public";
+import { getPathSegments, parseQueryParams } from "@swarm/api-server/http/utils";
+import { closeDb, initDb } from "@swarm/storage/db";
+import { signPageSession } from "@swarm/storage/page-session";
 
 const TEST_DB_PATH = "./test-pages-authed-mode.sqlite";
 const TEST_PORT = 13049;

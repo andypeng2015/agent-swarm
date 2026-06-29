@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { deleteSwarmConfig, upsertSwarmConfig } from "../be/db";
-import { buildScriptCredentialBindings } from "../be/script-credential-broker";
+import { clearVolatileSecretsForTesting, scrubSecrets } from "@swarm/core-utils/secret-scrubber";
 import {
   CREDENTIAL_BINDINGS_CONFIG_KEY,
   type CredentialBindingStore,
@@ -8,9 +7,10 @@ import {
   DEFAULT_CREDENTIAL_BINDINGS,
   patchFetchWithCredentialBroker,
   SwarmConfigCredentialBindingStore,
-} from "../scripts-runtime/credential-broker";
-import type { SwarmConfig } from "../types";
-import { clearVolatileSecretsForTesting, scrubSecrets } from "../utils/secret-scrubber";
+} from "@swarm/scripts/credential-broker";
+import { deleteSwarmConfig, upsertSwarmConfig } from "@swarm/storage/db";
+import { buildScriptCredentialBindings } from "@swarm/storage/script-credential-broker";
+import type { SwarmConfig } from "@swarm/types";
 
 const originalFetch = globalThis.fetch;
 

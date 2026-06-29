@@ -10,10 +10,10 @@ import {
   test,
 } from "bun:test";
 import { unlink } from "node:fs/promises";
-import { closeDb, getDb, initDb } from "../be/db";
-import { upsertOAuthApp } from "../be/db-queries/oauth";
-import { getJiraMetadata } from "../jira/metadata";
-import * as wrapperModule from "../oauth/wrapper";
+import { getJiraMetadata } from "@swarm/integrations/jira/metadata";
+import * as wrapperModule from "@swarm/integrations/oauth/wrapper";
+import { closeDb, getDb, initDb } from "@swarm/storage/db";
+import { upsertOAuthApp } from "@swarm/storage/db-queries/oauth";
 
 const TEST_DB_PATH = "./test-jira-oauth.sqlite";
 
@@ -48,7 +48,7 @@ afterAll(async () => {
   await unlink(`${TEST_DB_PATH}-shm`).catch(() => {});
 });
 
-const { handleJiraCallback } = await import("../jira/oauth");
+const { handleJiraCallback } = await import("@swarm/integrations/jira/oauth");
 
 beforeEach(() => {
   exchangeCodeSpy.mockClear();

@@ -1,17 +1,24 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, mock, test } from "bun:test";
 import { unlink } from "node:fs/promises";
-import { closeDb, initDb } from "../be/db";
-import { createTrackerSync, getTrackerSync, updateTrackerSync } from "../be/db-queries/tracker";
-import { initLinearOutboundSync, teardownLinearOutboundSync } from "../linear/outbound";
-import { taskSessionMap } from "../linear/sync";
-import { workflowEventBus } from "../workflows/event-bus";
+import {
+  initLinearOutboundSync,
+  teardownLinearOutboundSync,
+} from "@swarm/integrations/linear/outbound";
+import { taskSessionMap } from "@swarm/integrations/linear/sync";
+import { closeDb, initDb } from "@swarm/storage/db";
+import {
+  createTrackerSync,
+  getTrackerSync,
+  updateTrackerSync,
+} from "@swarm/storage/db-queries/tracker";
+import { workflowEventBus } from "@swarm/workflows/event-bus";
 
 const TEST_DB_PATH = "./test-linear-outbound-sync.sqlite";
 
 // Mock the Linear client module
 const mockCreateComment = mock(() => Promise.resolve({ success: true }));
 
-mock.module("../linear/client", () => ({
+mock.module("@swarm/integrations/linear/client", () => ({
   getLinearClient: () => ({
     createComment: mockCreateComment,
   }),
@@ -24,7 +31,7 @@ const mockPostAgentSessionThought = mock(() => Promise.resolve());
 const mockPostAgentSessionAction = mock(() => Promise.resolve());
 const mockEndAgentSession = mock(() => Promise.resolve());
 
-mock.module("../linear/sync", () => ({
+mock.module("@swarm/integrations/linear/sync", () => ({
   postAgentSessionThought: mockPostAgentSessionThought,
   postAgentSessionAction: mockPostAgentSessionAction,
   endAgentSession: mockEndAgentSession,

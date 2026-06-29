@@ -1,7 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import crypto from "node:crypto";
 import { unlink } from "node:fs/promises";
-import { z } from "zod";
 import {
   closeDb,
   createWorkflow,
@@ -9,12 +8,13 @@ import {
   initDb,
   updateWorkflow,
   upsertSwarmConfig,
-} from "../be/db";
-import type { Workflow } from "../types";
-import { startWorkflowExecution } from "../workflows/engine";
-import { BaseExecutor, type ExecutorResult } from "../workflows/executors/base";
-import { ExecutorRegistry } from "../workflows/executors/registry";
-import { handleWebhookTrigger, verifyHmacSignature, WebhookError } from "../workflows/triggers";
+} from "@swarm/storage/db";
+import type { Workflow } from "@swarm/types";
+import { startWorkflowExecution } from "@swarm/workflows/engine";
+import { BaseExecutor, type ExecutorResult } from "@swarm/workflows/executors/base";
+import { ExecutorRegistry } from "@swarm/workflows/executors/registry";
+import { handleWebhookTrigger, verifyHmacSignature, WebhookError } from "@swarm/workflows/triggers";
+import { z } from "zod";
 
 const TEST_DB_PATH = "./test-workflow-triggers-v2.sqlite";
 

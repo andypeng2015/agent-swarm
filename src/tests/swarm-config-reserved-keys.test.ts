@@ -1,6 +1,13 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { unlink } from "node:fs/promises";
 import { createServer as createHttpServer, type Server } from "node:http";
+import { handleConfig } from "@swarm/api-server/http/config";
+import { getPathSegments, parseQueryParams } from "@swarm/api-server/http/utils";
+import { registerDeleteConfigTool } from "@swarm/api-server/tools/swarm-config/delete-config";
+import { registerListConfigTool } from "@swarm/api-server/tools/swarm-config/list-config";
+import { registerSetConfigTool } from "@swarm/api-server/tools/swarm-config/set-config";
+import { isReservedConfigKey, reservedKeyError } from "@swarm/core-utils/swarm-config-guard";
+import { CREDENTIAL_BINDINGS_CONFIG_KEY } from "@swarm/scripts/credential-broker";
 import {
   closeDb,
   createAgent,
@@ -10,14 +17,7 @@ import {
   getSwarmConfigs,
   initDb,
   upsertSwarmConfig,
-} from "../be/db";
-import { isReservedConfigKey, reservedKeyError } from "../be/swarm-config-guard";
-import { handleConfig } from "../http/config";
-import { getPathSegments, parseQueryParams } from "../http/utils";
-import { CREDENTIAL_BINDINGS_CONFIG_KEY } from "../scripts-runtime/credential-broker";
-import { registerDeleteConfigTool } from "../tools/swarm-config/delete-config";
-import { registerListConfigTool } from "../tools/swarm-config/list-config";
-import { registerSetConfigTool } from "../tools/swarm-config/set-config";
+} from "@swarm/storage/db";
 
 const TEST_DB_PATH = "./test-swarm-config-reserved-keys.sqlite";
 const TEST_PORT = 13047;

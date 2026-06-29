@@ -10,8 +10,8 @@ import {
   resolveIntegrationToggles,
   runE2BCommand,
   swarmGroupMembers,
-} from "../commands/e2b";
-import { buildOnboardDashboardUrl } from "../commands/onboard/dashboard-url";
+} from "@swarm/app-cli/commands/e2b";
+import { buildOnboardDashboardUrl } from "@swarm/app-cli/commands/onboard/dashboard-url";
 import {
   buildImageTemplate,
   buildTemplateArgs,
@@ -24,7 +24,7 @@ import {
   setTemplateVisibility,
   ttlRemaining,
   waitForAgentRegistration,
-} from "../e2b/dispatch";
+} from "@swarm/e2b-dispatch";
 import {
   parseDotenv,
   parseKeyValue,
@@ -32,7 +32,7 @@ import {
   redactWithEnv,
   resolveSwarmApiKey,
   selectEnv,
-} from "../e2b/env";
+} from "@swarm/e2b-dispatch/env";
 
 describe("E2B env helpers", () => {
   test("parses common dotenv forms", () => {

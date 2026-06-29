@@ -1,0 +1,50 @@
+{
+  "name": "@swarm/integrations",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/oauth/index.ts",
+    "./agentmail": "./src/agentmail/index.ts",
+    "./agentmail/*": "./src/agentmail/*.ts",
+    "./github": "./src/github/index.ts",
+    "./github/*": "./src/github/*.ts",
+    "./gitlab": "./src/gitlab/index.ts",
+    "./gitlab/*": "./src/gitlab/*.ts",
+    "./jira": "./src/jira/index.ts",
+    "./jira/*": "./src/jira/*.ts",
+    "./kapso/*": "./src/kapso/*.ts",
+    "./linear": "./src/linear/index.ts",
+    "./linear/*": "./src/linear/*.ts",
+    "./oauth": "./src/oauth/index.ts",
+    "./oauth/*": "./src/oauth/*.ts",
+    "./slack": "./src/slack/index.ts",
+    "./slack/*": "./src/slack/*.ts",
+    "./x/*": "./src/x/*.ts",
+    "./x402": "./src/x402/index.ts",
+    "./x402/*": "./src/x402/*.ts"
+  },
+  "scripts": {
+    "tsc:check": "bun tsc --noEmit -p tsconfig.json",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "test": "bun test src"
+  },
+  "dependencies": {
+    "@linear/sdk": "^77.0.0",
+    "@openfort/openfort-node": "^0.9.1",
+    "@slack/bolt": "^4.6.0",
+    "@slack/web-api": "^7.13.0",
+    "@swarm/core-utils": "workspace:*",
+    "@swarm/prompt-templates": "workspace:*",
+    "@swarm/storage": "workspace:*",
+    "@swarm/types": "workspace:*",
+    "@swarm/workflows": "workspace:*",
+    "@x402/core": "^2.5.0",
+    "@x402/evm": "^2.5.0",
+    "@x402/fetch": "^2.5.0",
+    "oauth4webapi": "^3.8.5",
+    "svix": "^1.62.0",
+    "viem": "^2.46.3"
+  }
+}

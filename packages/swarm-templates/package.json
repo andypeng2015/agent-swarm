@@ -1,0 +1,25 @@
+{
+  "name": "@swarm/swarm-templates",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/schema.ts",
+    "./schema": "./src/schema.ts",
+    "./package.json": "./package.json",
+    "./community/*": "./src/community/*",
+    "./official/*": "./src/official/*",
+    "./schedules/*": "./src/schedules/*",
+    "./skills/*": "./src/skills/*",
+    "./workflows/*": "./src/workflows/*"
+  },
+  "scripts": {
+    "tsc:check": "bun tsc --noEmit -p tsconfig.json",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "test": "bun test src --pass-with-no-tests"
+  },
+  "dependencies": {
+    "@swarm/types": "workspace:*"
+  }
+}

@@ -1,9 +1,9 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { unlink } from "node:fs/promises";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { closeDb, createAgent, createSkill, getSkillById, initDb } from "../be/db";
-import { registerSkillDeleteTool } from "../tools/skills/skill-delete";
-import { registerSkillUpdateTool } from "../tools/skills/skill-update";
+import { registerSkillDeleteTool } from "@swarm/api-server/tools/skills/skill-delete";
+import { registerSkillUpdateTool } from "@swarm/api-server/tools/skills/skill-update";
+import { closeDb, createAgent, createSkill, getSkillById, initDb } from "@swarm/storage/db";
 
 const TEST_DB_PATH = "./test-skill-update-scope.sqlite";
 

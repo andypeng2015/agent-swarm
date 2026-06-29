@@ -1,15 +1,15 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { unlink } from "node:fs/promises";
-import { closeDb, initDb, upsertPromptTemplate } from "../be/db";
-import { getAllTemplateDefinitions, getTemplateDefinition } from "../prompts/registry";
-import { resolveTemplate } from "../prompts/resolver";
+import { getAllTemplateDefinitions, getTemplateDefinition } from "@swarm/prompt-templates/registry";
+import { resolveTemplate } from "@swarm/prompt-templates/resolver";
+import { closeDb, initDb, upsertPromptTemplate } from "@swarm/storage/db";
 // Side-effect import: registers all GitHub templates
-import "../github/templates";
+import "@swarm/integrations/github/templates";
 
 async function ensureTemplatesRegistered(): Promise<void> {
   if (getTemplateDefinition("github.pull_request.assigned")) return;
   const ts = Date.now();
-  await import(`../github/templates?t=${ts}`);
+  await import(`@swarm/integrations/github/templates?t=${ts}`);
 }
 
 const TEST_DB_PATH = "./test-prompt-github.sqlite";

@@ -9,8 +9,8 @@ import {
   toggleAgentSkill,
   uninstallSkill,
   updateSkill,
-} from "../be/db";
-import { computeAgentSkillsSignature } from "../be/skill-sync";
+} from "@swarm/storage/db";
+import { computeAgentSkillsSignature } from "@swarm/storage/skill-sync";
 
 const TEST_DB_PATH = `./test-skills-signature-${process.pid}.sqlite`;
 

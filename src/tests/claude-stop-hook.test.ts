@@ -19,8 +19,8 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import type { RunStopHookSessionSummaryDeps } from "../hooks/hook";
-import { runStopHookSessionSummary } from "../hooks/hook";
+import type { RunStopHookSessionSummaryDeps } from "@swarm/app-cli/hooks/hook";
+import { runStopHookSessionSummary } from "@swarm/app-cli/hooks/hook";
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 

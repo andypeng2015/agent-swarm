@@ -9,24 +9,24 @@
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { unlink } from "node:fs/promises";
-import { closeDb, createAgent, getDb, initDb } from "../be/db";
-import { handleComment, handlePullRequestReview } from "../github/handlers";
-import { GITHUB_BOT_NAME } from "../github/mentions";
-import type { CommentEvent, PullRequestReviewEvent } from "../github/types";
-import { getTemplateDefinition } from "../prompts/registry";
+import { handleComment, handlePullRequestReview } from "@swarm/integrations/github/handlers";
+import { GITHUB_BOT_NAME } from "@swarm/integrations/github/mentions";
+import type { CommentEvent, PullRequestReviewEvent } from "@swarm/integrations/github/types";
+import { getTemplateDefinition } from "@swarm/prompt-templates/registry";
+import { closeDb, createAgent, getDb, initDb } from "@swarm/storage/db";
 
 // Side-effect import: registers all GitHub templates on first load
-import "../github/templates";
+import "@swarm/integrations/github/templates";
 
 async function ensureTemplatesRegistered(): Promise<void> {
   if (getTemplateDefinition("github.pull_request.review_submitted")) return;
   const ts = Date.now();
-  await import(`../github/templates?t=${ts}`);
+  await import(`@swarm/integrations/github/templates?t=${ts}`);
 }
 
 // Mock GitHub App credentials so fetchReviewComments can obtain a token
 // without a real RSA key. Must come before the handlers import is evaluated.
-mock.module("../github/app", () => ({
+mock.module("@swarm/integrations/github/app", () => ({
   getInstallationToken: async (installationId: number) => {
     if (installationId > 0) return "mock-token-for-tests";
     return null;

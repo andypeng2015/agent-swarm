@@ -2,7 +2,7 @@
 
 import { spawnSync } from "node:child_process";
 
-const PACKAGE_JSON = "package.json";
+const PACKAGE_JSON = "apps/cli/package.json";
 const CHART_YAML = "charts/agent-swarm/Chart.yaml";
 
 type ChartVersions = {

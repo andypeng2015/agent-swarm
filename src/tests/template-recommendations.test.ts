@@ -1,19 +1,19 @@
 /**
- * Phase 3 — unit tests for `ui/src/lib/template-recommendations.ts`.
+ * Phase 3 — unit tests for `apps/ui/src/lib/template-recommendations.ts`.
  *
- * Lives in `src/tests/` (not under `ui/`) because `ui/` has no test runner
+ * Lives in `src/tests/` (not under `apps/ui/`) because `apps/ui/` has no test runner
  * configured. The recommendation lib is pure logic with only a `StatusResponse`
  * type import, so the cross-tree relative import works without aliases.
  */
 
 import { describe, expect, test } from "bun:test";
-import type { StatusResponse } from "../../ui/src/api/types.ts";
+import type { StatusResponse } from "../../apps/ui/src/api/types.ts";
 import {
   type DetectedIntegration,
   detectedFromStatus,
   recommendTemplates,
   topRecommendation,
-} from "../../ui/src/lib/template-recommendations.ts";
+} from "../../apps/ui/src/lib/template-recommendations.ts";
 
 function makeStatus(overrides: {
   slack?: "unverified" | "configured" | "verified";

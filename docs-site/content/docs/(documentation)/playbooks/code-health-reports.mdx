@@ -12,7 +12,7 @@ description: Run recurring Code Maat + D3.js code-health reports for any Git rep
       "How to bootstrap a recurring Code Maat + D3.js report for any Git repository, publish it as a stable Page, and refresh it on a weekly schedule.",
     step: [
       { "@type": "HowToStep", name: "Choose repository and scope", text: "Pick a repo URL, branch, report slug, and path scope such as src or packages/core/src." },
-      { "@type": "HowToStep", name: "Install the community template", text: "Copy run.sh, report.mjs, and lead-prompt.md from templates/community/code-health-reports into a workspace outside the target repository." },
+      { "@type": "HowToStep", name: "Install the community template", text: "Copy run.sh, report.mjs, and lead-prompt.md from packages/swarm-templates/src/community/code-health-reports into a workspace outside the target repository." },
       { "@type": "HowToStep", name: "Run once manually", text: "The runner installs Java, Node, Lizard, and the Code Maat standalone JAR when missing, then generates CSV metrics and a static D3 report." },
       { "@type": "HowToStep", name: "Publish a stable report Page", text: "Create the Page once from latest.html, save the Page ID, and update that same Page on every refresh." },
       { "@type": "HowToStep", name: "Schedule weekly refreshes", text: "Use the weekly-code-health-reports schedule template. The default cron is 0 21 * * 0 in UTC." }
@@ -61,7 +61,7 @@ The first run installs or downloads what it needs. You do not pre-install Code M
 
 ### Community template
 
-- **[`templates/community/code-health-reports`](https://github.com/desplega-ai/agent-swarm/tree/main/templates/community/code-health-reports)** — the reusable package with:
+- **[`packages/swarm-templates/src/community/code-health-reports`](https://github.com/desplega-ai/agent-swarm/tree/main/packages/swarm-templates/src/community/code-health-reports)** — the reusable package with:
   - `PLAYBOOK.md` — the full drop-in playbook.
   - `run.sh` — parameterized runner.
   - `report.mjs` — static report generator.
@@ -105,9 +105,9 @@ Use a workspace outside the target repository so report artifacts and downloaded
 
 ```bash
 mkdir -p /workspace/code-maat
-cp templates/community/code-health-reports/run.sh /workspace/code-maat/
-cp templates/community/code-health-reports/report.mjs /workspace/code-maat/
-cp templates/community/code-health-reports/lead-prompt.md /workspace/code-maat/
+cp packages/swarm-templates/src/community/code-health-reports/run.sh /workspace/code-maat/
+cp packages/swarm-templates/src/community/code-health-reports/report.mjs /workspace/code-maat/
+cp packages/swarm-templates/src/community/code-health-reports/lead-prompt.md /workspace/code-maat/
 chmod +x /workspace/code-maat/run.sh
 ```
 

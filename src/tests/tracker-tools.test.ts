@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { unlink } from "node:fs/promises";
-import { closeDb, initDb } from "../be/db";
-import { getOAuthApp, storeOAuthTokens, upsertOAuthApp } from "../be/db-queries/oauth";
+import { closeDb, initDb } from "@swarm/storage/db";
+import { getOAuthApp, storeOAuthTokens, upsertOAuthApp } from "@swarm/storage/db-queries/oauth";
 import {
   createTrackerAgentMapping,
   createTrackerSync,
@@ -9,7 +9,7 @@ import {
   getAllTrackerAgentMappings,
   getAllTrackerSyncs,
   getTrackerSync,
-} from "../be/db-queries/tracker";
+} from "@swarm/storage/db-queries/tracker";
 
 const TEST_DB_PATH = "./test-tracker-tools.sqlite";
 

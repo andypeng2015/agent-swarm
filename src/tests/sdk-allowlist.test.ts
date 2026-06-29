@@ -2,16 +2,16 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { unlink } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { Readable } from "node:stream";
-import { closeDb, initDb } from "../be/db";
-import { handleMcpBridge } from "../http/mcp-bridge";
+import { handleMcpBridge } from "@swarm/api-server/http/mcp-bridge";
+import { createServer } from "@swarm/api-server/server";
 import {
   isMcpToolAllowedForScripts,
   mcpToolNameForSdkMethod,
   SDK_ALLOWLIST,
-} from "../scripts-runtime/sdk-allowlist";
-import type { SwarmConfig } from "../scripts-runtime/swarm-config";
-import { createSwarmSdk } from "../scripts-runtime/swarm-sdk";
-import { createServer } from "../server";
+} from "@swarm/scripts/sdk-allowlist";
+import type { SwarmConfig } from "@swarm/scripts/swarm-config";
+import { createSwarmSdk } from "@swarm/scripts/swarm-sdk";
+import { closeDb, initDb } from "@swarm/storage/db";
 
 const TEST_DB_PATH = "./test-sdk-allowlist.sqlite";
 
@@ -56,7 +56,7 @@ describe("script SDK allowlist", () => {
   });
 
   test("bundled swarm-sdk.d.ts exposes only allowlisted methods", async () => {
-    const types = await Bun.file("src/scripts-runtime/types/swarm-sdk.d.ts").text();
+    const types = await Bun.file("packages/scripts/src/types/swarm-sdk.d.ts").text();
     for (const name of SDK_ALLOWLIST) {
       expect(types).toContain(`${name}(args`);
     }
@@ -81,7 +81,7 @@ describe("script SDK allowlist", () => {
   });
 
   test("bundled swarm-sdk.d.ts uses triggerData (not input) for workflow_trigger", async () => {
-    const types = await Bun.file("src/scripts-runtime/types/swarm-sdk.d.ts").text();
+    const types = await Bun.file("packages/scripts/src/types/swarm-sdk.d.ts").text();
     expect(types).toContain("workflow_trigger(args: { id: string; triggerData?");
     expect(types).not.toContain("workflow_trigger(args: { id: string; input?");
   });

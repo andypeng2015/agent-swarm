@@ -9,7 +9,7 @@ import {
   getSessionLogsByTaskId,
   getTaskById,
   initDb,
-} from "../be/db";
+} from "@swarm/storage/db";
 
 const TEST_DB_PATH = "./test-session-logs.sqlite";
 const TEST_PORT = 13014;

@@ -1,14 +1,14 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { unlink } from "node:fs/promises";
-import { closeDb, getPromptTemplates, initDb, upsertPromptTemplate } from "../be/db";
-import { seedDefaultTemplates } from "../be/seed-prompt-templates";
 import {
   clearTemplateDefinitions,
   getAllTemplateDefinitions,
   getTemplateDefinition,
   registerTemplate,
-} from "../prompts/registry";
-import { resolveTemplate } from "../prompts/resolver";
+} from "@swarm/prompt-templates/registry";
+import { resolveTemplate } from "@swarm/prompt-templates/resolver";
+import { closeDb, getPromptTemplates, initDb, upsertPromptTemplate } from "@swarm/storage/db";
+import { seedDefaultTemplates } from "@swarm/storage/seed-prompt-templates";
 
 const TEST_DB_PATH = "./test-prompt-resolver.sqlite";
 

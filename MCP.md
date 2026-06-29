@@ -24,6 +24,7 @@
   - [get-config](#get-config)
   - [list-config](#list-config)
   - [delete-config](#delete-config)
+  - [credential-bindings](#credential-bindings)
   - [get-repos](#get-repos)
   - [update-repo](#update-repo)
   - [list-prompt-templates](#list-prompt-templates)
@@ -73,6 +74,7 @@
 - [Memory Tools](#memory-tools)
   - [memory-search](#memory-search)
   - [memory-get](#memory-get)
+  - [memory-edit](#memory-edit)
   - [memory-delete](#memory-delete)
   - [memory_rate](#memory_rate)
   - [inject-learning](#inject-learning)
@@ -296,6 +298,14 @@ Delete a swarm configuration entry by its ID. Use list-config to find config IDs
 |-----------|------|----------|---------|-------------|
 | `id` | `string` | Yes | - | The config entry ID to delete. |
 
+### credential-bindings
+
+**Credential Bindings**
+
+Lead-only management for scripts-runtime credential broker bindings. Bindings map config keys to allowed egress hosts; scripts consume them only through fetch-layer placeholder substitution.
+
+*No parameters*
+
 ### get-repos
 
 **Get Repos**
@@ -320,7 +330,6 @@ Update a repo's configuration including guidelines (PR checks, merge policy, rev
 | `clonePath` | `string` | No | - | New clone path. |
 | `defaultBranch` | `string` | No | - | New default branch. |
 | `autoClone` | `boolean` | No | - | Whether to auto-clone. |
-| `hooks` | `object \| null` | No | - | Hook install config. Set `{ enabled: true }` to opt into best-effort worker git-hook installation. |
 
 ### list-prompt-templates
 
@@ -548,12 +557,7 @@ Register an AgentMail inbox ID to route incoming emails to this agent. When emai
 
 Provision a Kapso WhatsApp phone number for native inbound routing. Lead-only. Points the number's Kapso webhook at the swarm's native handler (signed with KAPSO_WEBHOOK_HMAC_SECRET) and stores a KV mapping so inbound messages route to an agent (defaults to the lead, or a workflow if workflowId is given). Returns the stored mapping + the registered webhook URL.
 
-| Parameter | Type | Required | Default | Description |
-|-----------|------|----------|---------|-------------|
-| `phoneNumberId` | `string` | Yes | - | Kapso/Meta phone-number ID to provision (KAPSO_PHONE_NUMBER_ID). |
-| `agentId` | `string` | No | - | Agent to route inbound messages to as a `kapso-inbound` task. Defaults to the lead agent when omitted. |
-| `workflowId` | `string` | No | - | Advanced override: dispatch inbound via this workflow's webhook trigger instead of a task. |
-| `name` | `string` | No | - | Human-friendly display name for the number. |
+*No parameters*
 
 ### unregister-kapso-number
 
@@ -561,9 +565,7 @@ Provision a Kapso WhatsApp phone number for native inbound routing. Lead-only. P
 
 Remove a Kapso phone number's native routing mapping from the KV store. Lead-only. Inbound messages for the number stop routing through the native handler. The Kapso-side webhook is not deleted automatically — remove it in the Kapso dashboard if you want deliveries to stop.
 
-| Parameter | Type | Required | Default | Description |
-|-----------|------|----------|---------|-------------|
-| `phoneNumberId` | `string` | Yes | - | Kapso/Meta phone-number ID whose mapping should be removed. |
+*No parameters*
 
 ### send-whatsapp-message
 
@@ -833,6 +835,23 @@ Retrieve the full content of a specific memory by its ID. Use memory-search to f
 |-----------|------|----------|---------|-------------|
 | `memoryId` | `uuid` | Yes | - | The ID of the memory to retrieve. |
 | `intent` | `string` | Yes | - | Why you are retrieving this memory. Required. E.g. 'need full details of the auth fix pattern'. |
+
+### memory-edit
+
+**Edit a memory**
+
+Edit a single memory in place while preserving its ID, usefulness posterior, and audit history. Two modes: 'replace' overwrites the entire content (requires `content`); 'exact' performs a surgical find-and-replace of `oldString` with `newString` within the existing content (fails if `oldString` is missing or ambiguous). Use 'replace' for full rewrites, 'exact' for targeted edits.
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `memoryId` | `uuid` | No | - | The memory ID to edit. |
+| `key` | `string` | No | - | Structured key alternative to memoryId. |
+| `mode` | `replace \| exact` | No | "replace" | 'replace' overwrites the entire memory content; 'exact' finds a unique substring (oldString) and replaces it with newString. |
+| `content` | `string` | No | - | Full replacement content. Required for 'replace' mode, ignored in 'exact'. |
+| `oldString` | `string` | No | - | Substring to find in existing content. Required for 'exact' mode. Must appear exactly once. |
+| `newString` | `string` | No | - | Replacement for oldString. Required for 'exact' mode. Can be empty to delete. |
+| `intent` | `string` | Yes | - | Why you are editing this memory. |
+| `expectedVersion` | `number` | No | - | - |
 
 ### memory-delete
 
@@ -1115,6 +1134,103 @@ Stores a config-driven dashboard backed by read-only SQL widget queries. Calls a
 | `slug` | `string` | No | - | URL-safe slug. Defaults to the kebab-cased title. |
 | `description` | `string` | No | - | Short description shown in the dashboard. |
 
+### mcp-server-create
+
+**Create MCP Server**
+
+Create a new MCP server definition. Agent-scope servers are auto-installed for the creating agent. Swarm/global scope requires lead.
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `name` | `string` | Yes | - | Server name |
+| `description` | `string` | No | - | Server description |
+| `transport` | `stdio \| http \| sse` | Yes | - | Transport type |
+| `scope` | `global \| swarm \| agent` | No | "agent" | Scope: agent (personal), swarm (shared), or global. Default: agent |
+| `command` | `string` | No | - | Command to run (required for stdio transport) |
+| `args` | `string` | No | - | JSON array of command arguments (stdio only) |
+| `url` | `string` | No | - | Server URL (required for http/sse transport) |
+| `headers` | `string` | No | - | JSON object of non-secret headers (http/sse only) |
+| `envConfigKeys` | `string` | No | - | JSON object mapping env var names to config key paths |
+| `headerConfigKeys` | `string` | No | - | JSON object mapping header names to config key paths for secret headers |
+| `extraAuthorizeParams` | `string` | No | - | JSON object string of extra OAuth authorize-request params, e.g. {"access_type":"offline","prompt":"consent"} |
+
+### mcp-server-delete
+
+**Delete MCP Server**
+
+Delete an MCP server definition. Only the owning agent or lead can delete.
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `id` | `string` | Yes | - | ID of the MCP server to delete |
+
+### mcp-server-get
+
+**Get MCP Server**
+
+Get MCP server details by ID or name. Name resolution uses scope cascade: agent > swarm > global.
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `id` | `string` | No | - | MCP server ID |
+| `name` | `string` | No | - | MCP server name (resolved with scope cascade) |
+
+### mcp-server-install
+
+**Install MCP Server**
+
+Install an MCP server for an agent. Self-install is always allowed; cross-agent install requires lead.
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `mcpServerId` | `string` | Yes | - | ID of the MCP server to install |
+| `agentId` | `string` | No | - | Target agent (default: calling agent). Lead can install for others. |
+
+### mcp-server-list
+
+**List MCP Servers**
+
+List MCP servers with optional filters. Use installedOnly to see servers installed for the calling agent.
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `scope` | `global \| swarm \| agent` | No | - | Filter by scope |
+| `transport` | `stdio \| http \| sse` | No | - | Filter by transport type |
+| `search` | `string` | No | - | Search by name or description |
+| `installedOnly` | `boolean` | No | - | Only show servers installed for the calling agent |
+
+### mcp-server-uninstall
+
+**Uninstall MCP Server**
+
+Uninstall an MCP server from an agent. Self-uninstall is always allowed; cross-agent requires lead.
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `mcpServerId` | `string` | Yes | - | ID of the MCP server to uninstall |
+| `agentId` | `string` | No | - | Target agent (default: calling agent) |
+
+### mcp-server-update
+
+**Update MCP Server**
+
+Update an MCP server's configuration. Only the owner or lead can update.
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `id` | `string` | Yes | - | ID of the MCP server to update |
+| `name` | `string` | No | - | New name |
+| `description` | `string` | No | - | New description |
+| `transport` | `stdio \| http \| sse` | No | - | New transport type |
+| `command` | `string` | No | - | New command (stdio) |
+| `args` | `string` | No | - | New JSON array of arguments (stdio) |
+| `url` | `string` | No | - | New URL (http/sse) |
+| `headers` | `string` | No | - | New JSON object of non-secret headers |
+| `envConfigKeys` | `string` | No | - | New env config key mappings |
+| `headerConfigKeys` | `string` | No | - | New header config key mappings |
+| `extraAuthorizeParams` | `string` | No | - | JSON object string of extra OAuth authorize-request params, e.g. {"access_type":"offline","prompt":"consent"} |
+| `isEnabled` | `boolean` | No | - | Toggle enabled/disabled |
+
 ### post-message
 
 **Post Message**
@@ -1127,6 +1243,21 @@ Posts a message to a channel for cross-agent communication.
 | `content` | `string` | Yes | - | Message content. |
 | `replyTo` | `uuid` | No | - | Message ID to reply to (for threading). |
 | `mentions` | `array` | No | - | Agent IDs to @mention (they'll see it in unread). |
+
+### read-messages
+
+**Read Messages**
+
+Reads messages from a channel. If no channel is specified, returns unread messages from ALL channels. Supports filtering by unread, mentions, and time range. Automatically marks messages as read.
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `channel` | `string` | No | - | Channel name or ID. If omitted, returns unread messages from all channels. |
+| `limit` | `number` | No | 20 | Max messages to return per channel (default: 20). |
+| `since` | `unknown` | No | - | Only messages after this ISO timestamp. |
+| `unreadOnly` | `boolean` | No | false | Only return unread messages. |
+| `mentionsOnly` | `boolean` | No | false | Only return messages that @mention you. |
+| `markAsRead` | `boolean` | No | true | Update your read position after fetching (default: true). |
 
 ### launch-script-run
 
@@ -1157,108 +1288,16 @@ Posts a message to a channel for cross-agent communication.
 | `limit` | `number` | No | 50 | Maximum runs to return. |
 | `offset` | `number` | No | 0 | Pagination offset. |
 
-### read-messages
+### skill-create
 
-**Read Messages**
+**Create Skill**
 
-Reads messages from a channel. If no channel is specified, returns unread messages from ALL channels. Supports filtering by unread, mentions, and time range. Automatically marks messages as read.
-
-| Parameter | Type | Required | Default | Description |
-|-----------|------|----------|---------|-------------|
-| `channel` | `string` | No | - | Channel name or ID. If omitted, returns unread messages from all channels. |
-| `limit` | `number` | No | 20 | Max messages to return per channel (default: 20). |
-| `since` | `unknown` | No | - | Only messages after this ISO timestamp. |
-| `unreadOnly` | `boolean` | No | false | Only return unread messages. |
-| `mentionsOnly` | `boolean` | No | false | Only return messages that @mention you. |
-| `markAsRead` | `boolean` | No | true | Update your read position after fetching (default: true). |
-
-### tracker-map-agent
-
-**Map Agent to Tracker User**
-
-Map a swarm agent to an external tracker user (for assignment sync).
+Create a personal skill from SKILL.md content. Parses frontmatter for name, description, and metadata.
 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
-| `provider` | `string` | Yes | - | Tracker provider (e.g. 'linear', 'jira') |
-| `agentId` | `string` | Yes | - | The swarm agent ID |
-| `externalUserId` | `string` | Yes | - | The external user ID in the tracker |
-| `agentName` | `string` | Yes | - | Display name for the agent mapping |
-
-### tracker-unlink
-
-**Unlink Tracker Sync**
-
-Remove a tracker sync mapping by ID.
-
-| Parameter | Type | Required | Default | Description |
-|-----------|------|----------|---------|-------------|
-| `syncId` | `string` | Yes | - | The tracker sync mapping ID to remove |
-
-### tracker-status
-
-**Tracker Status**
-
-Show all connected trackers and their OAuth status (token expiry, workspace info). Proactively refreshes near-expiry tokens before reporting, so the returned `tokenExpiresAt` reflects the row that subsequent API calls (and direct DB reads) will see.
-
-*No parameters*
-
-### tracker-link-task
-
-**Link Task to Tracker**
-
-Link a swarm task to an external tracker issue.
-
-| Parameter | Type | Required | Default | Description |
-|-----------|------|----------|---------|-------------|
-| `provider` | `string` | Yes | - | Tracker provider (e.g. 'linear', 'jira') |
-| `swarmTaskId` | `string` | Yes | - | The swarm task ID to link |
-| `externalId` | `string` | Yes | - | The external issue ID in the tracker |
-| `externalIdentifier` | `string` | No | - | Human-readable identifier (e.g. 'ENG-42') |
-| `externalUrl` | `string` | No | - | URL to the external issue |
-
-### tracker-sync-status
-
-**Tracker Sync Status**
-
-Show all tracker sync mappings with their state.
-
-| Parameter | Type | Required | Default | Description |
-|-----------|------|----------|---------|-------------|
-| `provider` | `string` | No | - | Filter by provider (e.g. 'linear', 'jira') |
-| `entityType` | `task` | No | - | Filter by entity type |
-
-### skill-install
-
-**Install Skill**
-
-Install/assign a skill to an agent. Leads can install for other agents.
-
-| Parameter | Type | Required | Default | Description |
-|-----------|------|----------|---------|-------------|
-| `skillId` | `string` | Yes | - | ID of the skill to install |
-| `agentId` | `string` | No | - | Target agent (default: calling agent). Lead can install for others. |
-
-### skill-uninstall
-
-**Uninstall Skill**
-
-Remove a skill from an agent.
-
-| Parameter | Type | Required | Default | Description |
-|-----------|------|----------|---------|-------------|
-| `skillId` | `string` | Yes | - | ID of the skill to uninstall |
-| `agentId` | `string` | No | - | Target agent (default: calling agent) |
-
-### skill-publish
-
-**Publish Skill**
-
-Publish a personal skill to swarm scope. Creates an approval task for the lead agent.
-
-| Parameter | Type | Required | Default | Description |
-|-----------|------|----------|---------|-------------|
-| `skillId` | `string` | Yes | - | ID of the personal skill to publish |
+| `content` | `string` | Yes | - | Full SKILL.md content (YAML frontmatter + markdown body) |
+| `scope` | `agent \| swarm` | No | "agent" | Scope: agent (personal) or swarm (shared). Default: agent |
 
 ### skill-delete
 
@@ -1269,30 +1308,6 @@ Delete a skill. Only the owning agent or lead can delete.
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
 | `skillId` | `string` | Yes | - | ID of the skill to delete |
-
-### skill-sync-remote
-
-**Sync Remote Skills**
-
-Check and update remote skills from their GitHub sources. Compares content and updates if changed.
-
-| Parameter | Type | Required | Default | Description |
-|-----------|------|----------|---------|-------------|
-| `skillId` | `string` | No | - | Sync a specific skill, or all remote skills if omitted |
-| `force` | `boolean` | No | false | Force re-fetch even if hash matches |
-
-### skill-install-remote
-
-**Install Remote Skill**
-
-Fetch and install a remote skill from a GitHub repository. Fetches SKILL.md via GitHub raw content API.
-
-| Parameter | Type | Required | Default | Description |
-|-----------|------|----------|---------|-------------|
-| `sourceRepo` | `string` | Yes | - | GitHub repo (e.g. "vercel-labs/skills") |
-| `sourcePath` | `string` | No | - | Path within repo (e.g. "skills/nextjs") |
-| `scope` | `global \| swarm` | No | "global" | Scope for the installed skill |
-| `isComplex` | `boolean` | No | false | If true, registers for npx install (metadata only) |
 
 ### skill-get
 
@@ -1316,29 +1331,29 @@ Fetch a bundled reference file from a complex skill by skillId and relative path
 | `skillId` | `string` | Yes | - | Skill ID |
 | `path` | `string` | Yes | - | Relative path, e.g. references/animations.md |
 
-### skill-search
+### skill-install
 
-**Search Skills**
+**Install Skill**
 
-Search skills by keyword (name and description).
-
-| Parameter | Type | Required | Default | Description |
-|-----------|------|----------|---------|-------------|
-| `query` | `string` | Yes | - | Search query |
-| `limit` | `number` | No | 20 | - |
-
-### skill-update
-
-**Update Skill**
-
-Update a skill's content or settings. Re-parses frontmatter if content changes.
+Install/assign a skill to an agent. Leads can install for other agents.
 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
-| `skillId` | `string` | No | - | Skill ID to update |
-| `content` | `string` | No | - | New SKILL.md content (re-parses frontmatter) |
-| `isEnabled` | `boolean` | No | - | Toggle enabled/disabled |
-| `scope` | `agent \| swarm` | No | - | Scope: agent (personal) or swarm (shared). Only leads can promote a skill to swarm scope (used by the skill-approval flow). |
+| `skillId` | `string` | Yes | - | ID of the skill to install |
+| `agentId` | `string` | No | - | Target agent (default: calling agent). Lead can install for others. |
+
+### skill-install-remote
+
+**Install Remote Skill**
+
+Fetch and install a remote skill from a GitHub repository. Fetches SKILL.md via GitHub raw content API.
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `sourceRepo` | `string` | Yes | - | GitHub repo (e.g. "vercel-labs/skills") |
+| `sourcePath` | `string` | No | - | Path within repo (e.g. "skills/nextjs") |
+| `scope` | `global \| swarm` | No | "global" | Scope for the installed skill |
+| `isComplex` | `boolean` | No | false | If true, registers for npx install (metadata only) |
 
 ### skill-list
 
@@ -1354,110 +1369,114 @@ List available skills with optional filters.
 | `installedOnly` | `boolean` | No | - | Only show skills installed for calling agent |
 | `includeContent` | `boolean` | No | false | Include full content (default false) |
 
-### skill-create
+### skill-publish
 
-**Create Skill**
+**Publish Skill**
 
-Create a personal skill from SKILL.md content. Parses frontmatter for name, description, and metadata.
-
-| Parameter | Type | Required | Default | Description |
-|-----------|------|----------|---------|-------------|
-| `content` | `string` | Yes | - | Full SKILL.md content (YAML frontmatter + markdown body) |
-| `scope` | `agent \| swarm` | No | "agent" | Scope: agent (personal) or swarm (shared). Default: agent |
-
-### mcp-server-get
-
-**Get MCP Server**
-
-Get MCP server details by ID or name. Name resolution uses scope cascade: agent > swarm > global.
+Publish a personal skill to swarm scope. Creates an approval task for the lead agent.
 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
-| `id` | `string` | No | - | MCP server ID |
-| `name` | `string` | No | - | MCP server name (resolved with scope cascade) |
+| `skillId` | `string` | Yes | - | ID of the personal skill to publish |
 
-### mcp-server-create
+### skill-search
 
-**Create MCP Server**
+**Search Skills**
 
-Create a new MCP server definition. Agent-scope servers are auto-installed for the creating agent. Swarm/global scope requires lead.
-
-| Parameter | Type | Required | Default | Description |
-|-----------|------|----------|---------|-------------|
-| `name` | `string` | Yes | - | Server name |
-| `description` | `string` | No | - | Server description |
-| `transport` | `stdio \| http \| sse` | Yes | - | Transport type |
-| `scope` | `global \| swarm \| agent` | No | "agent" | Scope: agent (personal), swarm (shared), or global. Default: agent |
-| `command` | `string` | No | - | Command to run (required for stdio transport) |
-| `args` | `string` | No | - | JSON array of command arguments (stdio only) |
-| `url` | `string` | No | - | Server URL (required for http/sse transport) |
-| `headers` | `string` | No | - | JSON object of non-secret headers (http/sse only) |
-| `envConfigKeys` | `string` | No | - | JSON object mapping env var names to config key paths |
-| `headerConfigKeys` | `string` | No | - | JSON object mapping header names to config key paths for secret headers |
-| `extraAuthorizeParams` | `string` | No | - | JSON object string of extra OAuth authorize-request params, e.g. {"access_type":"offline","prompt":"consent"} |
-
-### mcp-server-install
-
-**Install MCP Server**
-
-Install an MCP server for an agent. Self-install is always allowed; cross-agent install requires lead.
+Search skills by keyword (name and description).
 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
-| `mcpServerId` | `string` | Yes | - | ID of the MCP server to install |
-| `agentId` | `string` | No | - | Target agent (default: calling agent). Lead can install for others. |
+| `query` | `string` | Yes | - | Search query |
+| `limit` | `number` | No | 20 | - |
 
-### mcp-server-uninstall
+### skill-sync-remote
 
-**Uninstall MCP Server**
+**Sync Remote Skills**
 
-Uninstall an MCP server from an agent. Self-uninstall is always allowed; cross-agent requires lead.
+Check and update remote skills from their GitHub sources. Compares content and updates if changed.
 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
-| `mcpServerId` | `string` | Yes | - | ID of the MCP server to uninstall |
+| `skillId` | `string` | No | - | Sync a specific skill, or all remote skills if omitted |
+| `force` | `boolean` | No | false | Force re-fetch even if hash matches |
+
+### skill-uninstall
+
+**Uninstall Skill**
+
+Remove a skill from an agent.
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `skillId` | `string` | Yes | - | ID of the skill to uninstall |
 | `agentId` | `string` | No | - | Target agent (default: calling agent) |
 
-### mcp-server-list
+### skill-update
 
-**List MCP Servers**
+**Update Skill**
 
-List MCP servers with optional filters. Use installedOnly to see servers installed for the calling agent.
-
-| Parameter | Type | Required | Default | Description |
-|-----------|------|----------|---------|-------------|
-| `scope` | `global \| swarm \| agent` | No | - | Filter by scope |
-| `transport` | `stdio \| http \| sse` | No | - | Filter by transport type |
-| `search` | `string` | No | - | Search by name or description |
-| `installedOnly` | `boolean` | No | - | Only show servers installed for the calling agent |
-
-### mcp-server-update
-
-**Update MCP Server**
-
-Update an MCP server's configuration. Only the owner or lead can update.
+Update a skill's content or settings. Re-parses frontmatter if content changes.
 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
-| `id` | `string` | Yes | - | ID of the MCP server to update |
-| `name` | `string` | No | - | New name |
-| `description` | `string` | No | - | New description |
-| `transport` | `stdio \| http \| sse` | No | - | New transport type |
-| `command` | `string` | No | - | New command (stdio) |
-| `args` | `string` | No | - | New JSON array of arguments (stdio) |
-| `url` | `string` | No | - | New URL (http/sse) |
-| `headers` | `string` | No | - | New JSON object of non-secret headers |
-| `envConfigKeys` | `string` | No | - | New env config key mappings |
-| `headerConfigKeys` | `string` | No | - | New header config key mappings |
-| `extraAuthorizeParams` | `string` | No | - | JSON object string of extra OAuth authorize-request params, e.g. {"access_type":"offline","prompt":"consent"} |
+| `skillId` | `string` | No | - | Skill ID to update |
+| `content` | `string` | No | - | New SKILL.md content (re-parses frontmatter) |
 | `isEnabled` | `boolean` | No | - | Toggle enabled/disabled |
+| `scope` | `agent \| swarm` | No | - | Scope: agent (personal) or swarm (shared). Only leads can promote a skill to swarm scope (used by the skill-approval flow). |
 
-### mcp-server-delete
+### tracker-link-task
 
-**Delete MCP Server**
+**Link Task to Tracker**
 
-Delete an MCP server definition. Only the owning agent or lead can delete.
+Link a swarm task to an external tracker issue.
 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
-| `id` | `string` | Yes | - | ID of the MCP server to delete |
+| `provider` | `string` | Yes | - | Tracker provider (e.g. 'linear', 'jira') |
+| `swarmTaskId` | `string` | Yes | - | The swarm task ID to link |
+| `externalId` | `string` | Yes | - | The external issue ID in the tracker |
+| `externalIdentifier` | `string` | No | - | Human-readable identifier (e.g. 'ENG-42') |
+| `externalUrl` | `string` | No | - | URL to the external issue |
+
+### tracker-map-agent
+
+**Map Agent to Tracker User**
+
+Map a swarm agent to an external tracker user (for assignment sync).
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `provider` | `string` | Yes | - | Tracker provider (e.g. 'linear', 'jira') |
+| `agentId` | `string` | Yes | - | The swarm agent ID |
+| `externalUserId` | `string` | Yes | - | The external user ID in the tracker |
+| `agentName` | `string` | Yes | - | Display name for the agent mapping |
+
+### tracker-status
+
+**Tracker Status**
+
+Show all connected trackers and their OAuth status (token expiry, workspace info). Proactively refreshes near-expiry tokens before reporting, so the returned `tokenExpiresAt` reflects the row that subsequent API calls (and direct DB reads) will see.
+
+*No parameters*
+
+### tracker-sync-status
+
+**Tracker Sync Status**
+
+Show all tracker sync mappings with their state.
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `provider` | `string` | No | - | Filter by provider (e.g. 'linear', 'jira') |
+| `entityType` | `task` | No | - | Filter by entity type |
+
+### tracker-unlink
+
+**Unlink Tracker Sync**
+
+Remove a tracker sync mapping by ID.
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `syncId` | `string` | Yes | - | The tracker sync mapping ID to remove |

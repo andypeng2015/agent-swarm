@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { unlink } from "node:fs/promises";
+import { getBasePrompt } from "@swarm/prompt-templates/base-prompt";
 import {
   closeDb,
   completeTask,
@@ -8,14 +9,13 @@ import {
   failTask,
   getAgentById,
   initDb,
-} from "../be/db";
-import { SqliteMemoryStore } from "../be/memory/providers/sqlite-store";
+} from "@swarm/storage/db";
 import {
   isAutomaticOrRecurringTaskCompletion,
   isScheduledTaskCompletion,
   shouldPersistTaskCompletionMemory,
-} from "../memory/automatic-task-gate";
-import { getBasePrompt } from "../prompts/base-prompt";
+} from "@swarm/storage/memory/automatic-task-gate";
+import { SqliteMemoryStore } from "@swarm/storage/memory/providers/sqlite-store";
 
 const TEST_DB_PATH = "./test-self-improvement.sqlite";
 

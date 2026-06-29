@@ -5,14 +5,14 @@ import {
   type Server,
   type ServerResponse,
 } from "node:http";
-import { handleCore } from "../http/core";
+import { handleCore } from "@swarm/api-server/http/core";
 // Importing the handlers here is load-bearing: each import populates
 // `routeRegistry` as a side effect via the `route()` factory, which is what
 // the auth middleware consults.
-import "../http/webhooks";
-import "../http/mcp-oauth";
-import "../http/trackers/linear";
-import "../http/workflows";
+import "@swarm/api-server/http/webhooks";
+import "@swarm/api-server/http/mcp-oauth";
+import "@swarm/api-server/http/trackers/linear";
+import "@swarm/api-server/http/workflows";
 
 const API_KEY = "test-secret-key";
 

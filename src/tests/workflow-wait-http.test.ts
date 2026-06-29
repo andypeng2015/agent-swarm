@@ -1,7 +1,9 @@
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
 import { unlink } from "node:fs/promises";
 import { createServer as createHttpServer, type Server } from "node:http";
-import * as db from "../be/db";
+import { getPathSegments, parseQueryParams } from "@swarm/api-server/http/utils";
+import { handleWorkflowEvents } from "@swarm/api-server/http/workflow-events";
+import * as db from "@swarm/storage/db";
 import {
   closeDb,
   createWorkflow,
@@ -9,21 +11,22 @@ import {
   getWaitStateByStepId,
   getWorkflowRunStepsByRunId,
   initDb,
-} from "../be/db";
-import { getPathSegments, parseQueryParams } from "../http/utils";
-import { handleWorkflowEvents } from "../http/workflow-events";
-import type { Workflow, WorkflowDefinition } from "../types";
-import { startWorkflowExecution } from "../workflows/engine";
-import { workflowEventBus } from "../workflows/event-bus";
-import type { ExecutorDependencies } from "../workflows/executors/base";
-import { createExecutorRegistry } from "../workflows/executors/registry";
-import { _resetWaitBusSubscriptionsForTests, initWaitBusSubscriptions } from "../workflows/resume";
+} from "@swarm/storage/db";
+import type { Workflow, WorkflowDefinition } from "@swarm/types";
+import { startWorkflowExecution } from "@swarm/workflows/engine";
+import { workflowEventBus } from "@swarm/workflows/event-bus";
+import type { ExecutorDependencies } from "@swarm/workflows/executors/base";
+import { createExecutorRegistry } from "@swarm/workflows/executors/registry";
+import {
+  _resetWaitBusSubscriptionsForTests,
+  initWaitBusSubscriptions,
+} from "@swarm/workflows/resume";
 
 const TEST_DB_PATH = "./test-workflow-wait-http.sqlite";
 const TEST_PORT = 13041;
 
 const deps: ExecutorDependencies = {
-  db: db as typeof import("../be/db"),
+  db: db as typeof import("@swarm/storage/db"),
   eventBus: workflowEventBus,
   interpolate: (t: string) => t,
 };

@@ -15,6 +15,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { unlink } from "node:fs/promises";
 import { createServer as createHttpServer, type Server } from "node:http";
+import { handleAgentRegister, handleAgentsRest } from "@swarm/api-server/http/agents";
 import {
   closeDb,
   createAgent,
@@ -24,8 +25,7 @@ import {
   getSwarmConfigs,
   initDb,
   setAgentHarnessProvider,
-} from "../be/db";
-import { handleAgentRegister, handleAgentsRest } from "../http/agents";
+} from "@swarm/storage/db";
 
 const TEST_DB_PATH = "./test-agents-harness-provider.sqlite";
 const TEST_PORT = 13059 + (process.pid % 1000);

@@ -6,7 +6,7 @@ import {
   encryptSecret,
   IV_BYTES,
   TAG_BYTES,
-} from "../be/crypto/secrets-cipher";
+} from "@swarm/core-utils/crypto/secrets-cipher";
 
 function freshKey(): Buffer {
   return randomBytes(AES_KEY_BYTES);

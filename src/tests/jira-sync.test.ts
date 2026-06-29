@@ -1,13 +1,13 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { unlink } from "node:fs/promises";
-import { closeDb, completeTask, createAgent, getDb, getTaskById, initDb } from "../be/db";
-import { upsertOAuthApp } from "../be/db-queries/oauth";
+import { closeDb, completeTask, createAgent, getDb, getTaskById, initDb } from "@swarm/storage/db";
+import { upsertOAuthApp } from "@swarm/storage/db-queries/oauth";
 import {
   createTrackerSync,
   createTrackerSyncIfAbsent,
   getTrackerSyncByExternalId,
   updateTrackerSync,
-} from "../be/db-queries/tracker";
+} from "@swarm/storage/db-queries/tracker";
 
 const TEST_DB_PATH = "./test-jira-sync.sqlite";
 const BOT_ACCOUNT_ID = "bot-account-12345";
@@ -44,9 +44,9 @@ afterAll(async () => {
 // Import sync handlers AFTER seeding so module-level side effects (template
 // registration) see a healthy DB.
 const { _setBotAccountIdForTesting, handleCommentEvent, handleIssueEvent } = await import(
-  "../jira/sync"
+  "@swarm/integrations/jira/sync"
 );
-const { getTemplateDefinition } = await import("../prompts/registry");
+const { getTemplateDefinition } = await import("@swarm/prompt-templates/registry");
 
 beforeEach(async () => {
   // Reset tracker_sync rows + tasks each test
@@ -55,7 +55,7 @@ beforeEach(async () => {
   _setBotAccountIdForTesting(BOT_ACCOUNT_ID);
   // Re-register Jira templates if a parallel test file has cleared the registry.
   if (!getTemplateDefinition("jira.issue.assigned")) {
-    await import(`../jira/templates?t=${Date.now()}`);
+    await import(`@swarm/integrations/jira/templates?t=${Date.now()}`);
   }
 });
 

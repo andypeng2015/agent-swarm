@@ -50,7 +50,7 @@ To stop routing, the lead calls `unregister-kapso-number` (also lead-only). The 
 
 ### 3. Install the skill
 
-The `kapso-whatsapp` skill is the canonical reference for any WhatsApp interaction beyond plain text. It ships as a template skill at `templates/skills/kapso-whatsapp` and is recommended (auto-installable) on the integration's dashboard card.
+The `kapso-whatsapp` skill is the canonical reference for any WhatsApp interaction beyond plain text. It ships as a template skill at `packages/swarm-templates/src/skills/kapso-whatsapp` and is recommended (auto-installable) on the integration's dashboard card.
 
 ## How it works
 
@@ -72,4 +72,4 @@ Inbound events are filtered to `message.kapso.direction == "inbound"` — the sw
 ## Reference
 
 - [Kapso](https://kapso.ai) — platform vendor.
-- `kapso-whatsapp` skill — `templates/skills/kapso-whatsapp/SKILL.md` in this repo.
+- `kapso-whatsapp` skill — `packages/swarm-templates/src/skills/kapso-whatsapp/SKILL.md` in this repo.

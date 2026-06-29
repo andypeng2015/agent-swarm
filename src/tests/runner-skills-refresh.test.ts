@@ -10,7 +10,10 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { refreshSkillsIfChanged, type SkillsRefreshContext } from "../utils/skills-refresh";
+import {
+  refreshSkillsIfChanged,
+  type SkillsRefreshContext,
+} from "@swarm/app-cli/utils/skills-refresh";
 
 // ── Bun.serve() stub backing fake signature/list endpoints ───────────────────
 

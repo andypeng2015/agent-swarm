@@ -12,7 +12,7 @@ import {
   getUserById,
   initDb,
   updateUser,
-} from "../be/db";
+} from "@swarm/storage/db";
 import {
   findOrCreateUserByEmail,
   findUserByEmail,
@@ -27,7 +27,7 @@ import {
   resolveUserByToken,
   revokeToken,
   unlinkIdentity,
-} from "../be/users";
+} from "@swarm/storage/users";
 
 const TEST_DB_PATH = "./test-user-identity.sqlite";
 

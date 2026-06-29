@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { loadX402Config } from "../x402/config.ts";
+import { loadX402Config } from "@swarm/integrations/x402/config";
 
 describe("loadX402Config", () => {
   const originalEnv = { ...process.env };

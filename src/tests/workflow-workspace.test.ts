@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { EventEmitter } from "node:events";
 import { unlink } from "node:fs/promises";
-import * as db from "../be/db";
+import * as db from "@swarm/storage/db";
 import {
   closeDb,
   createAgent,
@@ -10,10 +10,10 @@ import {
   initDb,
   listWorkflows,
   updateWorkflow,
-} from "../be/db";
-import { WorkflowSchema } from "../types";
-import { startWorkflowExecution } from "../workflows/engine";
-import { createExecutorRegistry } from "../workflows/executors/registry";
+} from "@swarm/storage/db";
+import { WorkflowSchema } from "@swarm/types";
+import { startWorkflowExecution } from "@swarm/workflows/engine";
+import { createExecutorRegistry } from "@swarm/workflows/executors/registry";
 
 const TEST_DB_PATH = "./test-wf-workspace.sqlite";
 

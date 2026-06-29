@@ -12,7 +12,7 @@ import {
   resetPromptTemplateToDefault,
   resolvePromptTemplate,
   upsertPromptTemplate,
-} from "../be/db";
+} from "@swarm/storage/db";
 
 const TEST_DB_PATH = "./test-prompt-templates.sqlite";
 

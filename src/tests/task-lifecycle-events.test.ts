@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { emitTaskStarted, onTaskStarted } from "../be/task-lifecycle-events";
-import type { AgentTask } from "../types";
+import { emitTaskStarted, onTaskStarted } from "@swarm/storage/task-lifecycle-events";
+import type { AgentTask } from "@swarm/types";
 
 function makeTask(overrides: Partial<AgentTask> = {}): AgentTask {
   return {

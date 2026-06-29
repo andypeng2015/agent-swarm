@@ -7,17 +7,17 @@ import {
   createWorkflowRunStep,
   getTaskById,
   initDb,
-} from "../be/db";
-import type { ExecutorMeta } from "../types";
-import { AgentTaskExecutor } from "../workflows/executors/agent-task";
-import type { ExecutorDependencies } from "../workflows/executors/base";
+} from "@swarm/storage/db";
+import type { ExecutorMeta } from "@swarm/types";
+import { AgentTaskExecutor } from "@swarm/workflows/executors/agent-task";
+import type { ExecutorDependencies } from "@swarm/workflows/executors/base";
 
 const TEST_DB_PATH = "./test-workflow-agent-task.sqlite";
 
 // ─── Mock Dependencies ───────────────────────────────────────
 
 const mockDeps: ExecutorDependencies = {
-  db: null as unknown as typeof import("../be/db"),
+  db: null as unknown as typeof import("@swarm/storage/db"),
   eventBus: { emit: () => {}, on: () => {}, off: () => {} },
   interpolate: (template: string, ctx: Record<string, unknown>) => {
     return template.replace(/\{\{([^}]+)\}\}/g, (_match, path: string) => {
@@ -50,8 +50,8 @@ beforeAll(async () => {
   initDb(TEST_DB_PATH);
 
   // Wire up real DB as dependency after init
-  const db = await import("../be/db");
-  (mockDeps as { db: typeof import("../be/db") }).db = db;
+  const db = await import("@swarm/storage/db");
+  (mockDeps as { db: typeof import("@swarm/storage/db") }).db = db;
 
   // Create prerequisite workflow records for FK constraints
   const wf = createWorkflow({

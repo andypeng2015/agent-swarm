@@ -1,0 +1,22 @@
+{
+  "name": "@swarm/ai-pricing",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./modelsdev-cache": "./src/modelsdev-cache.ts",
+    "./modelsdev-cache.json": "./src/modelsdev-cache.json",
+    "./pricing-normalize": "./src/pricing-normalize.ts",
+    "./seed-pricing": "./src/seed-pricing.ts"
+  },
+  "scripts": {
+    "tsc:check": "bun tsc --noEmit -p tsconfig.json",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "test": "bun test src"
+  },
+  "dependencies": {
+    "@swarm/types": "workspace:*"
+  }
+}

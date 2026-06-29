@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { unlink } from "node:fs/promises";
-import { closeDb, createAgent, getDb, initDb } from "../be/db";
-import { applyEditMode, SqliteMemoryStore } from "../be/memory/providers/sqlite-store";
+import { closeDb, createAgent, getDb, initDb } from "@swarm/storage/db";
+import { applyEditMode, SqliteMemoryStore } from "@swarm/storage/memory/providers/sqlite-store";
 
 const TEST_DB_PATH = "./test-memory-edit.sqlite";
 const agentId = "aaaa0000-0000-4000-8000-000000000201";

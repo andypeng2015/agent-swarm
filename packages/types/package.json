@@ -1,0 +1,16 @@
+{
+  "name": "@swarm/types",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./tracker/types": "./src/tracker/types.ts"
+  },
+  "scripts": {
+    "tsc:check": "bun tsc --noEmit -p tsconfig.json",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "test": "bun test src"
+  }
+}

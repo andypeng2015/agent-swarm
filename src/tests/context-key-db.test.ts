@@ -7,8 +7,8 @@ import {
   createTaskExtended,
   getInProgressTasksByContextKey,
   initDb,
-} from "../be/db";
-import { slackContextKey } from "../tasks/context-key";
+} from "@swarm/storage/db";
+import { slackContextKey } from "@swarm/workflows/tasks/context-key";
 
 const TEST_DB_PATH = "./test-context-key-db.sqlite";
 

@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { unlinkSync } from "node:fs";
+import { routeMessage } from "@swarm/integrations/slack/router";
 import {
   closeDb,
   createAgent,
@@ -8,8 +9,7 @@ import {
   getInProgressSlackTasks,
   getMostRecentTaskInThread,
   initDb,
-} from "../be/db";
-import { routeMessage } from "../slack/router";
+} from "@swarm/storage/db";
 
 const TEST_DB_PATH = "./test-slack-thread-followups.sqlite";
 

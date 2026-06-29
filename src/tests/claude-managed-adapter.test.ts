@@ -1,18 +1,18 @@
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
 import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { createProviderAdapter } from "../providers";
 import {
   ClaudeManagedAdapter,
   composeManagedUserMessage,
   type ManagedAgentsClient,
   normalizeRepoUrl,
-} from "../providers/claude-managed-adapter";
+} from "@swarm/harness/claude-managed-adapter";
 import {
   CLAUDE_MANAGED_MODEL_PRICING,
   computeClaudeManagedCostUsd,
-} from "../providers/claude-managed-models";
-import type { ProviderEvent, ProviderSessionConfig } from "../providers/types";
+} from "@swarm/harness/claude-managed-models";
+import { createProviderAdapter } from "@swarm/harness/index";
+import type { ProviderEvent, ProviderSessionConfig } from "@swarm/harness/types";
 
 // Stash + restore env vars so this file plays nicely with the rest of the
 // suite (other tests don't expect MANAGED_AGENT_ID / MANAGED_ENVIRONMENT_ID
@@ -932,7 +932,7 @@ describe("ClaudeManagedAdapter (Phase 5) — cancellation + tool-loop detection"
   test("throttle constants match the codex pre-extraction values", async () => {
     // Validates the shared module's exported throttle windows. If anyone
     // changes them this test breaks loudly — the plan's hard constraint.
-    const shared = await import("../providers/swarm-events-shared");
+    const shared = await import("@swarm/harness/swarm-events-shared");
     expect(shared.CANCELLATION_THROTTLE_MS).toBe(500);
     expect(shared.HEARTBEAT_THROTTLE_MS).toBe(5_000);
     expect(shared.ACTIVITY_THROTTLE_MS).toBe(5_000);
@@ -1059,7 +1059,7 @@ describe("ClaudeManagedAdapter (Phase 5) — cancellation + tool-loop detection"
     // as the session key. We use a unique taskId per test run so we don't
     // contaminate other tests. After 15 identical tool_use events the
     // detector returns blocked=true (REPEAT_CRITICAL_THRESHOLD = 15 in
-    // src/hooks/tool-loop-detection.ts).
+    // @swarm/core-utils/tool-loop-detection).
     const taskId = `task-loop-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
     // Fetch stub: cancel poll always returns empty (we want the LOOP path,

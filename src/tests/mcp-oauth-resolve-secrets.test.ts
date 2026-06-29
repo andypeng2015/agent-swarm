@@ -2,9 +2,9 @@ import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test
 import { unlink } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { createServer as createHttpServer, type Server } from "node:http";
-import { closeDb, createAgent, createMcpServer, initDb, installMcpServer } from "../be/db";
-import { setMcpServerAuthMethod, upsertMcpOAuthToken } from "../be/db-queries/mcp-oauth";
-import { handleMcpServers } from "../http/mcp-servers";
+import { handleMcpServers } from "@swarm/api-server/http/mcp-servers";
+import { closeDb, createAgent, createMcpServer, initDb, installMcpServer } from "@swarm/storage/db";
+import { setMcpServerAuthMethod, upsertMcpOAuthToken } from "@swarm/storage/db-queries/mcp-oauth";
 
 const TEST_DB_PATH = "./test-mcp-oauth-resolve-secrets.sqlite";
 const TEST_PORT = 13041;

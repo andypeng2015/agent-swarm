@@ -1,5 +1,5 @@
 /**
- * Unit tests for the Devin REST API client (`src/providers/devin-api.ts`).
+ * Unit tests for the Devin REST API client (`packages/harness/src/devin-api.ts`).
  *
  * A minimal `node:http` mock server returns canned JSON responses based on the
  * request path and method. The test sets `DEVIN_API_BASE_URL` so the client
@@ -8,7 +8,7 @@
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import * as devinApi from "../providers/devin-api";
+import * as devinApi from "@swarm/harness/devin-api";
 
 const TEST_PORT = 13050;
 const TEST_BASE_URL = `http://localhost:${TEST_PORT}`;

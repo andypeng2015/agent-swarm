@@ -4,7 +4,7 @@ import {
   resolveClaudeManagedSetupConfig,
   runClaudeManagedSetup,
   runClaudeManagedSetupFlow,
-} from "../commands/claude-managed-setup";
+} from "@swarm/app-cli/commands/claude-managed-setup";
 
 /**
  * Mocked-fetch / mocked-Anthropic-SDK tests for `claude-managed-setup`.

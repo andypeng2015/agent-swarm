@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { buildWorkflowCtx } from "../script-workflows/workflow-ctx";
+import { buildWorkflowCtx } from "@swarm/api-server/script-workflows/workflow-ctx";
 
 describe("workflow-ctx: ctx.swarm proxy tool name resolution", () => {
   test("non-mechanical SDK→MCP mappings are routed correctly", async () => {

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { humanizeToolName, toolCallToProgress } from "../commands/runner";
+import { humanizeToolName, toolCallToProgress } from "@swarm/app-cli/commands/runner";
 
 describe("toolCallToProgress", () => {
   // --- Core Claude Code tools ---

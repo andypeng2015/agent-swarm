@@ -1,1 +1,0 @@
-export { registerScriptConnectionsTool } from "./tool";

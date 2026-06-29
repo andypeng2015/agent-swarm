@@ -9489,6 +9489,26 @@
         }
       }
     },
+    "/api/scripts/reembed": {
+      "post": {
+        "operationId": "scripts_reembed",
+        "summary": "Rebuild reusable script embeddings",
+        "description": "API-key authenticated maintenance route. Recomputes embeddings for all non-scratch scripts.",
+        "tags": [
+          "Scripts"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Script embeddings rebuilt"
+          }
+        }
+      }
+    },
     "/api/scripts/{name}": {
       "delete": {
         "operationId": "scripts_delete",

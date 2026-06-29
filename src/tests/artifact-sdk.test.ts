@@ -1,13 +1,13 @@
 import { afterAll, beforeAll, describe, expect, mock, test } from "bun:test";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
-import { BROWSER_SDK_JS } from "../artifact-sdk/browser-sdk";
-import { getAvailablePort } from "../artifact-sdk/port";
+import { BROWSER_SDK_JS } from "@swarm/artifacts/browser-sdk";
+import { getAvailablePort } from "@swarm/artifacts/port";
 import {
   createArtifactServer,
   createBunHonoFetchHandler,
   createBunResponse,
-} from "../artifact-sdk/server";
-import { getBasePrompt } from "../prompts/base-prompt";
+} from "@swarm/artifacts/server";
+import { getBasePrompt } from "@swarm/prompt-templates/base-prompt";
 
 // ─── Port allocation tests ──────────────────────────────────────────────
 
@@ -468,7 +468,7 @@ describe("createArtifactServer", () => {
 
 describe("createTunnel", () => {
   test("module exports createTunnel function", async () => {
-    const tunnelMod = await import("../artifact-sdk/tunnel");
+    const tunnelMod = await import("@swarm/artifacts/tunnel");
     expect(typeof tunnelMod.createTunnel).toBe("function");
   });
 });
@@ -477,13 +477,13 @@ describe("createTunnel", () => {
 
 describe("artifact-sdk index exports", () => {
   test("exports createArtifactServer", async () => {
-    const sdk = await import("../artifact-sdk/index");
+    const sdk = await import("@swarm/artifacts");
     expect(typeof sdk.createArtifactServer).toBe("function");
   });
 
   test("createArtifactServer from index is same as from server", async () => {
-    const sdk = await import("../artifact-sdk/index");
-    const { createArtifactServer: direct } = await import("../artifact-sdk/server");
+    const sdk = await import("@swarm/artifacts");
+    const { createArtifactServer: direct } = await import("@swarm/artifacts/server");
     expect(sdk.createArtifactServer).toBe(direct);
   });
 });
@@ -492,12 +492,12 @@ describe("artifact-sdk index exports", () => {
 
 describe("artifact CLI command", () => {
   test("runArtifact module exports correctly", async () => {
-    const mod = await import("../commands/artifact");
+    const mod = await import("@swarm/app-cli/commands/artifact");
     expect(typeof mod.runArtifact).toBe("function");
   });
 
   test("runArtifact with unknown subcommand calls printHelp (no crash)", async () => {
-    const { runArtifact } = await import("../commands/artifact");
+    const { runArtifact } = await import("@swarm/app-cli/commands/artifact");
     // "help" and unknown subcommands should just print help and return
     const consoleSpy = mock(() => {});
     const origLog = console.log;
@@ -516,7 +516,7 @@ describe("artifact CLI command", () => {
   });
 
   test("runArtifact with no subcommand defaults to help", async () => {
-    const { runArtifact } = await import("../commands/artifact");
+    const { runArtifact } = await import("@swarm/app-cli/commands/artifact");
     const consoleSpy = mock(() => {});
     const origLog = console.log;
     console.log = consoleSpy;
@@ -579,7 +579,7 @@ describe("artifact CLI command", () => {
       console.log = consoleSpy;
 
       try {
-        const { runArtifact } = await import("../commands/artifact");
+        const { runArtifact } = await import("@swarm/app-cli/commands/artifact");
         await runArtifact("list", { additionalArgs: [] });
 
         const output = consoleSpy.mock.calls.map((c) => c[0]).join("\n");
@@ -612,7 +612,7 @@ describe("artifact CLI command", () => {
       console.log = consoleSpy;
 
       try {
-        const { runArtifact } = await import("../commands/artifact");
+        const { runArtifact } = await import("@swarm/app-cli/commands/artifact");
         await runArtifact("list", { additionalArgs: [] });
 
         const output = consoleSpy.mock.calls.map((c) => c[0]).join("\n");
@@ -663,7 +663,7 @@ describe("artifact CLI command", () => {
       console.log = consoleSpy;
 
       try {
-        const { runArtifact } = await import("../commands/artifact");
+        const { runArtifact } = await import("@swarm/app-cli/commands/artifact");
         await runArtifact("list", { additionalArgs: [] });
 
         const output = consoleSpy.mock.calls.map((c) => c[0]).join("\n");
@@ -719,7 +719,7 @@ describe("artifact CLI command", () => {
       console.log = consoleSpy;
 
       try {
-        const { runArtifact } = await import("../commands/artifact");
+        const { runArtifact } = await import("@swarm/app-cli/commands/artifact");
         await runArtifact("stop", { additionalArgs: ["my-report"] });
 
         expect(deletedServiceId).toBe("svc-to-delete");

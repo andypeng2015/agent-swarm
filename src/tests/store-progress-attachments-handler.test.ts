@@ -21,6 +21,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import crypto from "node:crypto";
 import { unlink } from "node:fs/promises";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { registerStoreProgressTool } from "@swarm/api-server/tools/store-progress";
 import {
   closeDb,
   completeTask,
@@ -31,8 +32,7 @@ import {
   initDb,
   startTask,
   upsertSwarmConfig,
-} from "../be/db";
-import { registerStoreProgressTool } from "../tools/store-progress";
+} from "@swarm/storage/db";
 
 const TEST_DB_PATH = "./test-store-progress-attachments-handler.sqlite";
 

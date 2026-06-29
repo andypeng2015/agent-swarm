@@ -1,0 +1,27 @@
+{
+  "name": "@swarm/otel",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./impl": "./src/impl.ts",
+    "./telemetry": "./src/telemetry.ts",
+    "./server-runtime-counters": "./src/server-runtime-counters.ts",
+    "./error-tracker": "./src/error-tracker.ts"
+  },
+  "scripts": {
+    "tsc:check": "bun tsc --noEmit -p tsconfig.json",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "test": "bun test src"
+  },
+  "dependencies": {
+    "@opentelemetry/api": "^1.9.1",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.218.0",
+    "@opentelemetry/resources": "^2.7.1",
+    "@opentelemetry/sdk-node": "^0.218.0",
+    "@opentelemetry/semantic-conventions": "^1.41.1",
+    "@swarm/core-utils": "workspace:*"
+  }
+}

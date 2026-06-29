@@ -16,8 +16,8 @@ import {
   listRecentSessions,
   listWorkflows,
   updateAgentProfile,
-} from "../be/db";
-import type { Page, Workflow } from "../types";
+} from "@swarm/storage/db";
+import type { Page, Workflow } from "@swarm/types";
 
 const TEST_DB_PATH = "./test-list-endpoint-slimming.sqlite";
 

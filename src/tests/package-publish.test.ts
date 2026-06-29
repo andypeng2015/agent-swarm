@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 const REPO_ROOT = join(import.meta.dir, "../..");
+const CLI_PACKAGE_ROOT = join(REPO_ROOT, "apps/cli");
 const tempDir = mkdtempSync(join(tmpdir(), "agent-swarm-pack-"));
 
 setDefaultTimeout(30_000);
@@ -15,13 +16,19 @@ afterAll(() => {
 
 describe("published package", () => {
   test("version command works from the packaged node bin", () => {
-    const tarballPath = join(tempDir, "agent-swarm.tgz");
     const unpackDir = join(tempDir, "unpacked");
 
-    execSync(`bun pm pack --filename ${JSON.stringify(tarballPath)}`, {
-      cwd: REPO_ROOT,
+    rmSync(unpackDir, { force: true, recursive: true });
+
+    const packOutput = execSync(`npm pack --pack-destination ${JSON.stringify(tempDir)} --json`, {
+      cwd: CLI_PACKAGE_ROOT,
+      encoding: "utf-8",
+      env: { ...process.env, npm_config_cache: join(tempDir, "npm-cache") },
       stdio: "pipe",
     });
+    const [{ filename }] = JSON.parse(packOutput) as Array<{ filename: string }>;
+    const tarballPath = join(tempDir, filename);
+
     execSync(
       `mkdir -p ${JSON.stringify(unpackDir)} && tar -xzf ${JSON.stringify(tarballPath)} -C ${JSON.stringify(unpackDir)}`,
       {
@@ -32,7 +39,8 @@ describe("published package", () => {
 
     // Symlink repo node_modules so top-level imports resolve without a network install
     execSync(
-      `ln -s ${JSON.stringify(join(REPO_ROOT, "node_modules"))} ${JSON.stringify(join(unpackDir, "package", "node_modules"))}`,
+      `rm -rf ${JSON.stringify(join(unpackDir, "package", "node_modules"))} && ` +
+        `ln -s ${JSON.stringify(join(REPO_ROOT, "node_modules"))} ${JSON.stringify(join(unpackDir, "package", "node_modules"))}`,
       { stdio: "pipe" },
     );
 

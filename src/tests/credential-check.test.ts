@@ -1,17 +1,17 @@
 import { describe, expect, mock, test } from "bun:test";
+import { checkClaudeCredentials } from "@swarm/harness/claude-adapter";
+import { checkClaudeManagedCredentials } from "@swarm/harness/claude-managed-adapter";
+import { checkCodexCredentials } from "@swarm/harness/codex-adapter";
+import { checkDevinCredentials } from "@swarm/harness/devin-adapter";
+import { checkOpencodeCredentials } from "@swarm/harness/opencode-adapter";
+import { checkPiMonoCredentials } from "@swarm/harness/pi-mono-adapter";
 import {
   buildCredStatusReport,
   checkProviderCredentials,
   isCredCheckDisabled,
   REQUIRED_CRED_VARS_BY_PROVIDER,
-} from "../commands/provider-credentials";
-import { checkClaudeCredentials } from "../providers/claude-adapter";
-import { checkClaudeManagedCredentials } from "../providers/claude-managed-adapter";
-import { checkCodexCredentials } from "../providers/codex-adapter";
-import { checkDevinCredentials } from "../providers/devin-adapter";
-import { checkOpencodeCredentials } from "../providers/opencode-adapter";
-import { checkPiMonoCredentials } from "../providers/pi-mono-adapter";
-import { AgentCredStatusSchema } from "../types";
+} from "@swarm/harness/provider-credentials";
+import { AgentCredStatusSchema } from "@swarm/types";
 
 /** Build a stub `fs` whose `existsSync` returns true only for paths in the set. */
 function fsWith(present: Set<string>): { existsSync(p: string): boolean } {
@@ -919,7 +919,7 @@ describe("runBedrockSdkProbeAndEnumerate — intersection logic", () => {
       },
     }));
 
-    const { runBedrockSdkProbeAndEnumerate } = await import("../providers/pi-mono-adapter");
+    const { runBedrockSdkProbeAndEnumerate } = await import("@swarm/harness/pi-mono-adapter");
     const usable = await runBedrockSdkProbeAndEnumerate("us-east-1");
     const ids = usable.map((m) => m.id);
 

@@ -36,8 +36,8 @@ import {
   resolveClaudeBinary,
   resolveClaudeBinaryArgv,
   resolveClaudeBridgeEnabled,
-} from "../providers/claude-adapter";
-import type { ProviderSessionConfig } from "../providers/types";
+} from "@swarm/harness/claude-adapter";
+import type { ProviderSessionConfig } from "@swarm/harness/types";
 
 const LEGACY_BRIDGE_COMPAT_BINARY = "shan" + "non";
 const LEGACY_BRIDGE_COMPAT_PACKAGE = `@dexh/${LEGACY_BRIDGE_COMPAT_BINARY}`;

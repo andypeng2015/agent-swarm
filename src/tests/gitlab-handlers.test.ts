@@ -1,5 +1,18 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { unlink } from "node:fs/promises";
+import { GITLAB_BOT_NAME } from "@swarm/integrations/gitlab/auth";
+import {
+  handleIssue,
+  handleMergeRequest,
+  handleNote,
+  handlePipeline,
+} from "@swarm/integrations/gitlab/handlers";
+import type {
+  IssueEvent,
+  MergeRequestEvent,
+  NoteEvent,
+  PipelineEvent,
+} from "@swarm/integrations/gitlab/types";
 import {
   closeDb,
   createAgent,
@@ -11,11 +24,8 @@ import {
   getKv,
   getTaskById,
   initDb,
-} from "../be/db";
-import { findUserByExternalId, linkIdentity } from "../be/users";
-import { GITLAB_BOT_NAME } from "../gitlab/auth";
-import { handleIssue, handleMergeRequest, handleNote, handlePipeline } from "../gitlab/handlers";
-import type { IssueEvent, MergeRequestEvent, NoteEvent, PipelineEvent } from "../gitlab/types";
+} from "@swarm/storage/db";
+import { findUserByExternalId, linkIdentity } from "@swarm/storage/users";
 
 const TEST_DB_PATH = "./test-gitlab-handlers.sqlite";
 

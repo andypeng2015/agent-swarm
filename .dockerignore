@@ -53,7 +53,7 @@ coverage/
 # Documentation
 *.md
 !cc-plugin/**/*.md
-!templates/skills/**/*.md
+!packages/swarm-templates/src/**/*.md
 
 # Other dockerfiles and compose files
 Dockerfile
@@ -61,5 +61,6 @@ docker-compose.yml
 docker-compose.*.yml
 !docker-compose.worker.yml
 
-# Eval harness sub-project (own package, never part of images)
-evals/
+# Eval harness sub-project (own package, never part of images except workspace manifest)
+evals/*
+!evals/package.json

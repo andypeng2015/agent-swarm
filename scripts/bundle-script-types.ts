@@ -1,11 +1,8 @@
 #!/usr/bin/env bun
-import { closeDb } from "../src/be/db";
-import {
-  SCRIPT_STDLIB_TYPES,
-  scriptSdkTypesWithGeneratedApis,
-} from "../src/be/scripts/typecheck";
-import { createServer } from "../src/server";
-import { SDK_ALLOWLIST, mcpToolNameForSdkMethod } from "../src/scripts-runtime/sdk-allowlist";
+import { createServer } from "@swarm/api-server/server";
+import { mcpToolNameForSdkMethod, SDK_ALLOWLIST } from "@swarm/scripts/sdk-allowlist";
+import { closeDb } from "@swarm/storage/db";
+import { SCRIPT_SDK_TYPES, SCRIPT_STDLIB_TYPES } from "@swarm/storage/scripts/typecheck";
 
 type RegisteredTools = Record<string, unknown>;
 
@@ -21,13 +18,13 @@ async function main() {
     throw new Error(`SDK_ALLOWLIST points at missing MCP tools: ${missing.join(", ")}`);
   }
 
-  await Bun.$`mkdir -p src/scripts-runtime/types`;
+  await Bun.$`mkdir -p packages/scripts/src/types`;
   await Bun.write(
-    "src/scripts-runtime/types/swarm-sdk.d.ts",
-    `declare module "swarm-sdk" {\n${scriptSdkTypesWithGeneratedApis().replace(/^/gm, "  ")}\n}\n`,
+    "packages/scripts/src/types/swarm-sdk.d.ts",
+    `declare module "swarm-sdk" {\n${SCRIPT_SDK_TYPES.replace(/^/gm, "  ")}\n}\n`,
   );
-  await Bun.write("src/scripts-runtime/types/stdlib.d.ts", SCRIPT_STDLIB_TYPES.trimStart());
-  await Bun.$`bunx biome format --write src/scripts-runtime/types/swarm-sdk.d.ts src/scripts-runtime/types/stdlib.d.ts`;
+  await Bun.write("packages/scripts/src/types/stdlib.d.ts", SCRIPT_STDLIB_TYPES.trimStart());
+  await Bun.$`bunx biome format --write packages/scripts/src/types/swarm-sdk.d.ts packages/scripts/src/types/stdlib.d.ts`;
 }
 
 main()

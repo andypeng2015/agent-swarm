@@ -297,7 +297,7 @@ Re-run with `--force` to recreate the agent + environment from scratch (rare —
 
 ### Model Selection
 
-Default: `claude-sonnet-4-6`. Override per-worker via `MANAGED_AGENT_MODEL`, or per-task via the standard `task.model` field. Cost computation lives in [`src/providers/claude-managed-models.ts`](https://github.com/desplega-ai/agent-swarm/blob/main/src/providers/claude-managed-models.ts) — token rates per [Anthropic pricing](https://platform.claude.com/docs/en/about-claude/pricing) plus Anthropic's $0.08/session-hour runtime fee.
+Default: `claude-sonnet-4-6`. Override per-worker via `MANAGED_AGENT_MODEL`, or per-task via the standard `task.model` field. Cost computation lives in [`packages/harness/src/claude-managed-models.ts`](https://github.com/desplega-ai/agent-swarm/blob/main/packages/harness/src/claude-managed-models.ts) — token rates per [Anthropic pricing](https://platform.claude.com/docs/en/about-claude/pricing) plus Anthropic's $0.08/session-hour runtime fee.
 
 ### claude-managed Specifics
 

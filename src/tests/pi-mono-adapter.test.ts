@@ -6,7 +6,7 @@ import {
   extractPiAssistantText,
   PiMonoAdapter,
   resolveModel,
-} from "../providers/pi-mono-adapter";
+} from "@swarm/harness/pi-mono-adapter";
 
 describe("PiMonoAdapter", () => {
   test("name is 'pi'", () => {
@@ -366,9 +366,9 @@ describe("Cost aggregation from SessionStats", () => {
 // ============================================================================
 
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
-import { PiMonoSession } from "../providers/pi-mono-adapter";
-import type { ProviderEvent, ProviderResult, ProviderSessionConfig } from "../providers/types";
-import { classifyAwsSdkError } from "../utils/aws-error-classifier";
+import { classifyAwsSdkError } from "@swarm/core-utils/aws-error-classifier";
+import { PiMonoSession } from "@swarm/harness/pi-mono-adapter";
+import type { ProviderEvent, ProviderResult, ProviderSessionConfig } from "@swarm/harness/types";
 
 function makeSessionConfig(logFile: string): ProviderSessionConfig {
   return {

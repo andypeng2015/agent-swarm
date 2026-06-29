@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { unlinkSync } from "node:fs";
+import { extractTaskFromMessage, routeMessage } from "@swarm/integrations/slack/router";
 import {
   closeDb,
   createAgent,
@@ -8,8 +9,7 @@ import {
   getTasksByAgentId,
   getTasksByStatus,
   initDb,
-} from "../be/db";
-import { extractTaskFromMessage, routeMessage } from "../slack/router";
+} from "@swarm/storage/db";
 
 const TEST_DB_PATH = "./test-slack-queue-offline.sqlite";
 

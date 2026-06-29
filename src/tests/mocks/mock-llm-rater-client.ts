@@ -10,7 +10,7 @@ import type {
   LlmRaterClient,
   LlmRaterInput,
   LlmRaterResult,
-} from "../../be/memory/raters/llm-client";
+} from "@swarm/ai-llm/memory/raters/llm-client";
 
 export type MockResultMap = Record<string, LlmRaterResult | null>;
 

@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { unlink } from "node:fs/promises";
-import { __resetKillSwitchWarnedForTests, canClaim } from "../be/budget-admission";
+import { __resetKillSwitchWarnedForTests, canClaim } from "@swarm/storage/budget-admission";
 import {
   closeDb,
   createAgent,
@@ -11,7 +11,7 @@ import {
   hasBudgetRefusalNotificationToday,
   initDb,
   recordBudgetRefusalNotification,
-} from "../be/db";
+} from "@swarm/storage/db";
 
 const TEST_DB_PATH = "./test-budget-admission.sqlite";
 

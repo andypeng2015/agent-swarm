@@ -1,0 +1,28 @@
+{
+  "name": "@swarm/prompt-templates",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./base-prompt": "./src/base-prompt.ts",
+    "./command-templates": "./src/command-templates.ts",
+    "./defaults": "./src/defaults.ts",
+    "./heartbeat/templates": "./src/heartbeat/templates.ts",
+    "./memories": "./src/memories.ts",
+    "./registry": "./src/registry.ts",
+    "./resolver": "./src/resolver.ts",
+    "./session-templates": "./src/session-templates.ts",
+    "./tool-templates": "./src/tool-templates.ts"
+  },
+  "scripts": {
+    "tsc:check": "bun tsc --noEmit -p tsconfig.json",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "test": "bun test src --pass-with-no-tests"
+  },
+  "dependencies": {
+    "@swarm/core-utils": "workspace:*",
+    "@swarm/types": "workspace:*"
+  }
+}

@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { unlink } from "node:fs/promises";
-import { closeDb, getDb, initDb } from "../be/db";
+import { closeDb, getDb, initDb } from "@swarm/storage/db";
 import {
   deleteScript,
   getScript,
@@ -8,8 +8,8 @@ import {
   insertScript,
   listScripts,
   upsertScriptByName,
-} from "../be/scripts/db";
-import { setScriptEmbeddingProviderForTests } from "../be/scripts/embeddings";
+} from "@swarm/storage/scripts/db";
+import { setScriptEmbeddingProviderForTests } from "@swarm/storage/scripts/embeddings";
 
 const TEST_DB_PATH = "./test-scripts-db.sqlite";
 

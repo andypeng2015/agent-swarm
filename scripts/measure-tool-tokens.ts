@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+
 /**
  * Measures token overhead from MCP tool definitions.
  *
@@ -8,9 +9,9 @@
  * Usage: bun scripts/measure-tool-tokens.ts
  */
 
-import { closeDb, initDb } from "../src/be/db";
-import { createServer } from "../src/server";
-import { CORE_TOOLS, DEFERRED_TOOLS } from "../src/tools/tool-config";
+import { createServer } from "@swarm/api-server/server";
+import { CORE_TOOLS, DEFERRED_TOOLS } from "@swarm/mcp-tool/tool-config";
+import { closeDb, initDb } from "@swarm/storage/db";
 
 const DB_PATH = "./measure-tokens-temp.sqlite";
 

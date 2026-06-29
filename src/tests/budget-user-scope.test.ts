@@ -7,7 +7,10 @@ import {
   type ServerResponse,
 } from "node:http";
 import type { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import { __resetKillSwitchWarnedForTests, canClaim } from "../be/budget-admission";
+import { handleCore } from "@swarm/api-server/http/core";
+import { handleMcpUser } from "@swarm/api-server/http/mcp-user";
+import { handlePoll } from "@swarm/api-server/http/poll";
+import { __resetKillSwitchWarnedForTests, canClaim } from "@swarm/storage/budget-admission";
 import {
   closeDb,
   createAgent,
@@ -19,11 +22,8 @@ import {
   getTaskById,
   initDb,
   upsertBudget,
-} from "../be/db";
-import { type IdentityActor, mintToken } from "../be/users";
-import { handleCore } from "../http/core";
-import { handleMcpUser } from "../http/mcp-user";
-import { handlePoll } from "../http/poll";
+} from "@swarm/storage/db";
+import { type IdentityActor, mintToken } from "@swarm/storage/users";
 
 const TEST_DB_PATH = "./test-budget-user-scope.sqlite";
 const NOW = new Date("2026-04-28T15:30:00.000Z");

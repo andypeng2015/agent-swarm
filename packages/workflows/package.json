@@ -1,0 +1,34 @@
+{
+  "name": "@swarm/workflows",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./executors": "./src/executors/index.ts",
+    "./executors/*": "./src/executors/*.ts",
+    "./scheduler": "./src/scheduler/index.ts",
+    "./scheduler/*": "./src/scheduler/*.ts",
+    "./tasks/*": "./src/tasks/*.ts",
+    "./*": "./src/*.ts"
+  },
+  "scripts": {
+    "tsc:check": "bun tsc --noEmit -p tsconfig.json",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "test": "bun test src"
+  },
+  "dependencies": {
+    "@ai-sdk/openai": "^3.0.41",
+    "@desplega.ai/business-use": "^0.4.2",
+    "@swarm/core-utils": "workspace:*",
+    "@swarm/otel": "workspace:*",
+    "@swarm/prompt-templates": "workspace:*",
+    "@swarm/scripts": "workspace:*",
+    "@swarm/storage": "workspace:*",
+    "@swarm/types": "workspace:*",
+    "ai": "^6.0.116",
+    "cron-parser": "^5.4.0",
+    "zod": "^4.2.1"
+  }
+}

@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { unlink } from "node:fs/promises";
+import { buildResumeContextPreamble } from "@swarm/app-cli/commands/context-preamble";
 import {
   cancelTask,
   closeDb,
@@ -14,14 +15,13 @@ import {
   startTask,
   supersedeTask,
   updateAgentStatus,
-} from "../be/db";
+} from "@swarm/storage/db";
 import {
   createTrackerSync,
   getTrackerSync,
   getTrackerSyncByExternalId,
-} from "../be/db-queries/tracker";
-import { buildResumeContextPreamble } from "../commands/context-preamble";
-import { createResumeFollowUp } from "../tasks/worker-follow-up";
+} from "@swarm/storage/db-queries/tracker";
+import { createResumeFollowUp } from "@swarm/workflows/tasks/worker-follow-up";
 
 const TEST_DB_PATH = "./test-task-supersede-resume.sqlite";
 

@@ -20,7 +20,7 @@ A *harness provider* is the runtime that actually drives an LLM: it owns the sub
 
 ## 1. The `ProviderAdapter` contract
 
-Source of truth: [`src/providers/types.ts`](https://github.com/desplega-ai/agent-swarm/blob/main/src/providers/types.ts).
+Source of truth: [`packages/harness/src/types.ts`](https://github.com/desplega-ai/agent-swarm/blob/main/packages/harness/src/types.ts).
 
 ```ts
 export interface ProviderAdapter {
@@ -99,10 +99,10 @@ The runner consumes these events (not the provider's native ones) to post progre
 
 | File | Transport | Auth |
 |---|---|---|
-| [`src/providers/claude-adapter.ts`](https://github.com/desplega-ai/agent-swarm/blob/main/src/providers/claude-adapter.ts) | `Bun.spawn` of `claude` CLI with `--output-format stream-json`, JSONL stdout parsing | `CLAUDE_CODE_OAUTH_TOKEN` or `ANTHROPIC_API_KEY` |
-| [`src/providers/pi-mono-adapter.ts`](https://github.com/desplega-ai/agent-swarm/blob/main/src/providers/pi-mono-adapter.ts) | In-process via `createAgentSession` from `@earendil-works/pi-coding-agent`; no subprocess | `ANTHROPIC_API_KEY` / `OPENROUTER_API_KEY` / `~/.pi/agent/auth.json` — or, when `BEDROCK_AUTH_MODE=sdk` or `MODEL_OVERRIDE=amazon-bedrock/*`, AWS SDK default chain (probed via `ListFoundationModels`; see [pi-mono + Amazon Bedrock](#pi-mono--amazon-bedrock-auth) below) |
-| [`src/providers/codex-adapter.ts`](https://github.com/desplega-ai/agent-swarm/blob/main/src/providers/codex-adapter.ts) | Parent adapter spawns `src/commands/codex-session-runner.ts`, sends session config over stdin, and receives line-delimited events/results over stdout; the child hosts `@openai/codex-sdk` `Codex` / `Thread` and streams `ThreadEvent`s back | `OPENAI_API_KEY` or ChatGPT OAuth stored in `swarm_config.codex_oauth` (see §6) |
-| [`src/providers/claude-managed-adapter.ts`](https://github.com/desplega-ai/agent-swarm/blob/main/src/providers/claude-managed-adapter.ts) | Anthropic SDK `client.beta.sessions.events.stream` (SSE); session executes in Anthropic's managed cloud sandbox, worker is a thin relay | `ANTHROPIC_API_KEY` plus pre-existing `MANAGED_AGENT_ID` + `MANAGED_ENVIRONMENT_ID` from one-time `claude-managed-setup` CLI (see §13) |
+| [`packages/harness/src/claude-adapter.ts`](https://github.com/desplega-ai/agent-swarm/blob/main/packages/harness/src/claude-adapter.ts) | `Bun.spawn` of `claude` CLI with `--output-format stream-json`, JSONL stdout parsing | `CLAUDE_CODE_OAUTH_TOKEN` or `ANTHROPIC_API_KEY` |
+| [`packages/harness/src/pi-mono-adapter.ts`](https://github.com/desplega-ai/agent-swarm/blob/main/packages/harness/src/pi-mono-adapter.ts) | In-process via `createAgentSession` from `@earendil-works/pi-coding-agent`; no subprocess | `ANTHROPIC_API_KEY` / `OPENROUTER_API_KEY` / `~/.pi/agent/auth.json` — or, when `BEDROCK_AUTH_MODE=sdk` or `MODEL_OVERRIDE=amazon-bedrock/*`, AWS SDK default chain (probed via `ListFoundationModels`; see [pi-mono + Amazon Bedrock](#pi-mono--amazon-bedrock-auth) below) |
+| [`packages/harness/src/codex-adapter.ts`](https://github.com/desplega-ai/agent-swarm/blob/main/packages/harness/src/codex-adapter.ts) | Parent adapter spawns `src/commands/codex-session-runner.ts`, sends session config over stdin, and receives line-delimited events/results over stdout; the child hosts `@openai/codex-sdk` `Codex` / `Thread` and streams `ThreadEvent`s back | `OPENAI_API_KEY` or ChatGPT OAuth stored in `swarm_config.codex_oauth` (see §6) |
+| [`packages/harness/src/claude-managed-adapter.ts`](https://github.com/desplega-ai/agent-swarm/blob/main/packages/harness/src/claude-managed-adapter.ts) | Anthropic SDK `client.beta.sessions.events.stream` (SSE); session executes in Anthropic's managed cloud sandbox, worker is a thin relay | `ANTHROPIC_API_KEY` plus pre-existing `MANAGED_AGENT_ID` + `MANAGED_ENVIRONMENT_ID` from one-time `claude-managed-setup` CLI (see §13) |
 
 ### pi-mono + Amazon Bedrock auth
 
@@ -188,7 +188,7 @@ Every adapter emits one `CostData` row per CLI invocation and one or more `conte
 
 Full story: [Cost & context computation](./cost-and-context-computation).
 
-All four are wired together by the factory at [`src/providers/index.ts`](https://github.com/desplega-ai/agent-swarm/blob/main/src/providers/index.ts):
+All four are wired together by the factory at [`packages/harness/src/index.ts`](https://github.com/desplega-ai/agent-swarm/blob/main/packages/harness/src/index.ts):
 
 ```ts
 export async function createProviderAdapter(provider: string): Promise<ProviderAdapter> {
@@ -291,7 +291,7 @@ The sync lives in [`src/commands/profile-sync.ts`](https://github.com/desplega-a
 
 Notes:
 
-- **Harness-agnostic, runner-driven.** Because the sync runs in the runner — at the single point where every completed session converges, including crashes — it does **not** depend on the harness emitting a shutdown event. This is what makes it reliable for `codex`/`opencode` (which previously had no sync path) and for `pi` (whose in-extension `session_shutdown` sync could silently not-fire). The Claude plugin Stop hook ([`src/hooks/hook.ts`](https://github.com/desplega-ai/agent-swarm/blob/main/src/hooks/hook.ts)) and the pi extension ([`src/providers/pi-mono-extension.ts`](https://github.com/desplega-ai/agent-swarm/blob/main/src/providers/pi-mono-extension.ts)) still run their own sync; the runner-level call is the authoritative backstop.
+- **Harness-agnostic, runner-driven.** Because the sync runs in the runner — at the single point where every completed session converges, including crashes — it does **not** depend on the harness emitting a shutdown event. This is what makes it reliable for `codex`/`opencode` (which previously had no sync path) and for `pi` (whose in-extension `session_shutdown` sync could silently not-fire). The Claude plugin Stop hook ([`src/hooks/hook.ts`](https://github.com/desplega-ai/agent-swarm/blob/main/src/hooks/hook.ts)) and the pi extension ([`packages/harness/src/pi-mono-extension.ts`](https://github.com/desplega-ai/agent-swarm/blob/main/packages/harness/src/pi-mono-extension.ts)) still run their own sync; the runner-level call is the authoritative backstop.
 - **Idempotent.** The profile route only writes a new `context_versions` row when the content hash changes (`updateAgentProfile` in `src/be/db.ts`), so a redundant sync — pi's extension + runner double-POST, or an unchanged file — collapses to a no-op.
 - **Non-fatal but visible.** A failed sync never fails the task, but unlike the original copies it checks `resp.ok` and logs a scrubbed warning instead of silently swallowing the error.
 - **Lead edits now survive unchanged sessions.** The previous "Rule 19" reversion problem is resolved for identity-file syncs: if the agent never changed the local file, the session-end sync skips it and preserves the newer DB-side content from `update-profile`. Files the agent explicitly edits still sync normally, which keeps self-evolution working without clobbering lead-driven profile changes.
@@ -355,13 +355,13 @@ Constructed at [`runner.ts:3102`](https://github.com/desplega-ai/agent-swarm/blo
 
 All three open the file with `Bun.file(config.logFile).writer()` and append JSONL lines.
 
-- **Claude** ([`claude-adapter.ts`](https://github.com/desplega-ai/agent-swarm/blob/main/src/providers/claude-adapter.ts)):
+- **Claude** ([`claude-adapter.ts`](https://github.com/desplega-ai/agent-swarm/blob/main/packages/harness/src/claude-adapter.ts)):
   - Raw NDJSON stdout from the Claude CLI is piped through (L284).
   - stderr wrapped as `{type: "stderr", content, timestamp}` (L321–323).
   - File handle closed at L329.
-- **Pi-mono** ([`pi-mono-adapter.ts`](https://github.com/desplega-ai/agent-swarm/blob/main/src/providers/pi-mono-adapter.ts)):
+- **Pi-mono** ([`pi-mono-adapter.ts`](https://github.com/desplega-ai/agent-swarm/blob/main/packages/harness/src/pi-mono-adapter.ts)):
   - **Every** normalized `ProviderEvent` is written as `{...event, timestamp}` inside `emit()` (L167–187). Closed in `runSession`'s `finally` at L327.
-- **Codex** ([`codex-adapter.ts`](https://github.com/desplega-ai/agent-swarm/blob/main/src/providers/codex-adapter.ts)):
+- **Codex** ([`codex-adapter.ts`](https://github.com/desplega-ai/agent-swarm/blob/main/packages/harness/src/codex-adapter.ts)):
   - Every `ProviderEvent` written with timestamp in `emit()` (L347–374).
   - Raw SDK `ThreadEvent` mirrored as `raw_log` at L466.
   - Closed at L734.
@@ -390,7 +390,7 @@ adapter emits raw_log  ─▶  runner flushLogBuffer  ─▶  POST /api/session-
 - Runner upload: [`runner.ts:1814–1833`](https://github.com/desplega-ai/agent-swarm/blob/main/src/commands/runner.ts). Only `raw_log` triggers the remote push; `raw_stderr` is pretty-printed to worker stdout only (L1834–1836).
 - API write: [`src/http/session-data.ts`](https://github.com/desplega-ai/agent-swarm/blob/main/src/http/session-data.ts) L135–153 → `createSessionLogs` in `src/be/db`.
 - API read: same file L155–166 — `GET /api/tasks/{taskId}/session-logs` → `getSessionLogsByTaskId`.
-- UI hook: `useTaskSessionLogs` in [`ui/src/api/hooks/use-tasks.ts`](https://github.com/desplega-ai/agent-swarm/blob/main/ui/src/api/hooks/use-tasks.ts), consumed at `ui/src/pages/tasks/[id]/page.tsx:42` and rendered by `<SessionLogViewer />` at `ui/src/components/shared/session-log-viewer.tsx`.
+- UI hook: `useTaskSessionLogs` in [`apps/ui/src/api/hooks/use-tasks.ts`](https://github.com/desplega-ai/agent-swarm/blob/main/apps/ui/src/api/hooks/use-tasks.ts), consumed at `apps/ui/src/pages/tasks/[id]/page.tsx:42` and rendered by `<SessionLogViewer />` at `apps/ui/src/components/shared/session-log-viewer.tsx`.
 
 ### What this means for a new provider
 
@@ -418,9 +418,9 @@ The swarm API exposes its MCP server at `{apiUrl}/mcp`. Tools are defined under 
 
 | Provider | Wiring | File |
 |---|---|---|
-| **Claude** | Discovers an existing `.mcp.json` (walking up from `cwd`), injects `X-Source-Task-Id` into the `agent-swarm` entry, writes a per-session copy to `/tmp/mcp-<taskId>.json`, launches CLI with `--mcp-config <path> --strict-mcp-config`. | [`claude-adapter.ts`](https://github.com/desplega-ai/agent-swarm/blob/main/src/providers/claude-adapter.ts) L117–184, L251 |
-| **Pi** | Constructs `McpHttpClient(apiUrl, apiKey, agentId, taskId)`, calls `listTools()`, wraps each as a pi-mono `ToolDefinition` with prefix `mcp__<name>__`. | [`pi-mono-adapter.ts`](https://github.com/desplega-ai/agent-swarm/blob/main/src/providers/pi-mono-adapter.ts) L410–421, [`pi-mono-mcp-client.ts`](https://github.com/desplega-ai/agent-swarm/blob/main/src/providers/pi-mono-mcp-client.ts) L53 |
-| **Codex** | `buildCodexConfig` registers `mcp_servers["agent-swarm"] = { url: "{apiUrl}/mcp", http_headers: { Authorization, X-Agent-ID, X-Source-Task-Id }, bearer_token_env_var, startup_timeout_sec }`. Passed to `new Codex({ config })`. | [`codex-adapter.ts`](https://github.com/desplega-ai/agent-swarm/blob/main/src/providers/codex-adapter.ts) L132–243, L857–861 |
+| **Claude** | Discovers an existing `.mcp.json` (walking up from `cwd`), injects `X-Source-Task-Id` into the `agent-swarm` entry, writes a per-session copy to `/tmp/mcp-<taskId>.json`, launches CLI with `--mcp-config <path> --strict-mcp-config`. | [`claude-adapter.ts`](https://github.com/desplega-ai/agent-swarm/blob/main/packages/harness/src/claude-adapter.ts) L117–184, L251 |
+| **Pi** | Constructs `McpHttpClient(apiUrl, apiKey, agentId, taskId)`, calls `listTools()`, wraps each as a pi-mono `ToolDefinition` with prefix `mcp__<name>__`. | [`pi-mono-adapter.ts`](https://github.com/desplega-ai/agent-swarm/blob/main/packages/harness/src/pi-mono-adapter.ts) L410–421, [`pi-mono-mcp-client.ts`](https://github.com/desplega-ai/agent-swarm/blob/main/packages/harness/src/pi-mono-mcp-client.ts) L53 |
+| **Codex** | `buildCodexConfig` registers `mcp_servers["agent-swarm"] = { url: "{apiUrl}/mcp", http_headers: { Authorization, X-Agent-ID, X-Source-Task-Id }, bearer_token_env_var, startup_timeout_sec }`. Passed to `new Codex({ config })`. | [`codex-adapter.ts`](https://github.com/desplega-ai/agent-swarm/blob/main/packages/harness/src/codex-adapter.ts) L132–243, L857–861 |
 
 ### Required headers
 
@@ -446,11 +446,11 @@ Pretty labels at [`runner.ts:254–317`](https://github.com/desplega-ai/agent-sw
 
 Each reference adapter fails **open** (the run continues without MCP tools), but the agent is effectively blind to the swarm:
 
-- Pi: `try/catch` around discovery ([`pi-mono-adapter.ts` L409–424](https://github.com/desplega-ai/agent-swarm/blob/main/src/providers/pi-mono-adapter.ts)) — on failure, `customTools = []`.
+- Pi: `try/catch` around discovery ([`pi-mono-adapter.ts` L409–424](https://github.com/desplega-ai/agent-swarm/blob/main/packages/harness/src/pi-mono-adapter.ts)) — on failure, `customTools = []`.
 - Codex: adds the `agent-swarm` entry unconditionally; failures fetching *installed* servers are non-fatal (`codex-adapter.ts` L217–229).
 - Claude: `createSessionMcpConfig` returns `null` if nothing found; CLI runs without `--mcp-config`.
 
-Even if the in-process MCP connection fails, the **runner** and the adapter's own swarm-event hooks still talk to the swarm HTTP API directly for lifecycle, heartbeat, and cancellation polling — see [`src/providers/codex-swarm-events.ts`](https://github.com/desplega-ai/agent-swarm/blob/main/src/providers/codex-swarm-events.ts) and [`src/providers/pi-mono-extension.ts`](https://github.com/desplega-ai/agent-swarm/blob/main/src/providers/pi-mono-extension.ts) L1–50. That is the safety net; MCP is what lets the *model* call tools.
+Even if the in-process MCP connection fails, the **runner** and the adapter's own swarm-event hooks still talk to the swarm HTTP API directly for lifecycle, heartbeat, and cancellation polling — see [`packages/harness/src/codex-swarm-events.ts`](https://github.com/desplega-ai/agent-swarm/blob/main/packages/harness/src/codex-swarm-events.ts) and [`packages/harness/src/pi-mono-extension.ts`](https://github.com/desplega-ai/agent-swarm/blob/main/packages/harness/src/pi-mono-extension.ts) L1–50. That is the safety net; MCP is what lets the *model* call tools.
 
 ---
 
@@ -488,9 +488,9 @@ If the runner reuses an existing repo clone that has local changes, `ensureRepoF
 
 ### How each adapter delivers the prompt
 
-- **Claude** — CLI flag: `cmd.push("--append-system-prompt", this.config.systemPrompt)` at [`claude-adapter.ts:245–247`](https://github.com/desplega-ai/agent-swarm/blob/main/src/providers/claude-adapter.ts).
-- **Codex** — written into `AGENTS.md` in `cwd` inside a `<swarm_system_prompt>` block. The Codex SDK has no `--append-system-prompt` equivalent; this file is the only channel. Entry: `writeCodexAgentsMd(config.cwd, config.systemPrompt)` at [`codex-adapter.ts:761`](https://github.com/desplega-ai/agent-swarm/blob/main/src/providers/codex-adapter.ts); implementation at [`codex-agents-md.ts:56–119`](https://github.com/desplega-ai/agent-swarm/blob/main/src/providers/codex-agents-md.ts). If an `AGENTS.md` exists, the block is prepended; otherwise stacked atop any `CLAUDE.md`. Cleanup in the session `finally` at `codex-adapter.ts:738`.
-- **Pi** — SDK parameter: `new DefaultResourceLoader({ appendSystemPrompt: [config.systemPrompt], ... })` passed via `CreateAgentSessionOptions` at [`pi-mono-adapter.ts:508–519`](https://github.com/desplega-ai/agent-swarm/blob/main/src/providers/pi-mono-adapter.ts).
+- **Claude** — CLI flag: `cmd.push("--append-system-prompt", this.config.systemPrompt)` at [`claude-adapter.ts:245–247`](https://github.com/desplega-ai/agent-swarm/blob/main/packages/harness/src/claude-adapter.ts).
+- **Codex** — written into `AGENTS.md` in `cwd` inside a `<swarm_system_prompt>` block. The Codex SDK has no `--append-system-prompt` equivalent; this file is the only channel. Entry: `writeCodexAgentsMd(config.cwd, config.systemPrompt)` at [`codex-adapter.ts:761`](https://github.com/desplega-ai/agent-swarm/blob/main/packages/harness/src/codex-adapter.ts); implementation at [`codex-agents-md.ts:56–119`](https://github.com/desplega-ai/agent-swarm/blob/main/packages/harness/src/codex-agents-md.ts). If an `AGENTS.md` exists, the block is prepended; otherwise stacked atop any `CLAUDE.md`. Cleanup in the session `finally` at `codex-adapter.ts:738`.
+- **Pi** — SDK parameter: `new DefaultResourceLoader({ appendSystemPrompt: [config.systemPrompt], ... })` passed via `CreateAgentSessionOptions` at [`pi-mono-adapter.ts:508–519`](https://github.com/desplega-ai/agent-swarm/blob/main/packages/harness/src/pi-mono-adapter.ts).
 
 ### What this means for a new provider
 
@@ -518,7 +518,7 @@ Skills are the swarm's portable procedural knowledge — reusable markdown files
     formatCommand(name: string): string { return `/${name}`; }
     ```
 
-    See [`claude-adapter.ts:601`](https://github.com/desplega-ai/agent-swarm/blob/main/src/providers/claude-adapter.ts).
+    See [`claude-adapter.ts:601`](https://github.com/desplega-ai/agent-swarm/blob/main/packages/harness/src/claude-adapter.ts).
   </Tab>
   <Tab value="Prefixed slash-commands">
     **Pi.** Pi-mono supports skills but namespaces them:
@@ -527,12 +527,12 @@ Skills are the swarm's portable procedural knowledge — reusable markdown files
     formatCommand(name: string): string { return `/skill:${name}`; }
     ```
 
-    See [`pi-mono-adapter.ts:541`](https://github.com/desplega-ai/agent-swarm/blob/main/src/providers/pi-mono-adapter.ts). Skills live at `~/.pi/agent/skills/<name>/SKILL.md`.
+    See [`pi-mono-adapter.ts:541`](https://github.com/desplega-ai/agent-swarm/blob/main/packages/harness/src/pi-mono-adapter.ts). Skills live at `~/.pi/agent/skills/<name>/SKILL.md`.
   </Tab>
   <Tab value="Inline resolver">
     **Codex and OpenCode.** These SDKs have no `SKILL.md` mechanism, so the adapter resolves the skill itself before calling the model:
 
-    - [`src/providers/codex-skill-resolver.ts`](https://github.com/desplega-ai/agent-swarm/blob/main/src/providers/codex-skill-resolver.ts) intercepts a leading `/<name>` in the user prompt.
+    - [`packages/harness/src/codex-skill-resolver.ts`](https://github.com/desplega-ai/agent-swarm/blob/main/packages/harness/src/codex-skill-resolver.ts) intercepts a leading `/<name>` in the user prompt.
     - Codex reads `${CODEX_SKILLS_DIR ?? ~/.codex/skills}/<name>/SKILL.md`.
     - OpenCode reads `${OPENCODE_SKILLS_DIR ?? ~/.opencode/skills}/<name>/SKILL.md`.
     - **Inlines** the SKILL.md content into the prompt before calling the provider SDK.
@@ -564,7 +564,7 @@ Assume you are adding a provider called `foo`. Follow every step; "optional" is 
 
 ### Step 1 — Scaffold the adapter
 
-Create `src/providers/foo-adapter.ts`:
+Create `packages/harness/src/foo-adapter.ts`:
 
 ```ts
 import type {
@@ -612,7 +612,7 @@ class FooSession implements ProviderSession {
 
 ### Step 2 — Register in the factory
 
-Edit [`src/providers/index.ts`](https://github.com/desplega-ai/agent-swarm/blob/main/src/providers/index.ts):
+Edit [`packages/harness/src/index.ts`](https://github.com/desplega-ai/agent-swarm/blob/main/packages/harness/src/index.ts):
 
 ```ts
 import { FooAdapter } from "./foo-adapter";
@@ -636,9 +636,9 @@ This is the heart of the adapter. For each event your SDK / CLI emits, decide wh
 - Non-fatal diagnostics → `raw_log` / `raw_stderr`.
 
 **Reference code:**
-- Claude JSONL branching: [`src/providers/claude-adapter.ts`](https://github.com/desplega-ai/agent-swarm/blob/main/src/providers/claude-adapter.ts) around L368–470.
-- Codex `ThreadEvent` dispatcher: [`src/providers/codex-adapter.ts`](https://github.com/desplega-ai/agent-swarm/blob/main/src/providers/codex-adapter.ts) around L463–618.
-- Pi `AgentSessionEvent` dispatcher: [`src/providers/pi-mono-adapter.ts`](https://github.com/desplega-ai/agent-swarm/blob/main/src/providers/pi-mono-adapter.ts) around L161+.
+- Claude JSONL branching: [`packages/harness/src/claude-adapter.ts`](https://github.com/desplega-ai/agent-swarm/blob/main/packages/harness/src/claude-adapter.ts) around L368–470.
+- Codex `ThreadEvent` dispatcher: [`packages/harness/src/codex-adapter.ts`](https://github.com/desplega-ai/agent-swarm/blob/main/packages/harness/src/codex-adapter.ts) around L463–618.
+- Pi `AgentSessionEvent` dispatcher: [`packages/harness/src/pi-mono-adapter.ts`](https://github.com/desplega-ai/agent-swarm/blob/main/packages/harness/src/pi-mono-adapter.ts) around L161+.
 
 ### Step 4 — Emit `CostData`
 
@@ -659,14 +659,14 @@ emit({
 });
 ```
 
-If your SDK returns tokens but not USD, compute cost from a pricing table (see [`src/providers/codex-models.ts`](https://github.com/desplega-ai/agent-swarm/blob/main/src/providers/codex-models.ts) for the Codex model/pricing resolver pattern).
+If your SDK returns tokens but not USD, compute cost from a pricing table (see [`packages/harness/src/codex-models.ts`](https://github.com/desplega-ai/agent-swarm/blob/main/packages/harness/src/codex-models.ts) for the Codex model/pricing resolver pattern).
 
 ### Step 5 — Model selection
 
 `ProviderSessionConfig.model` is set by the runner from `opts.model || process.env.MODEL_OVERRIDE || ""` and may be overridden per task (`task.model`). Decide:
 
 - What is the provider default when `model === ""`? Read it from a provider-specific env var (`CODEX_DEFAULT_MODEL` is the existing convention).
-- Do you accept shortnames (`"sonnet"`, `"gpt-5"`) and expand to full IDs? If so, build a resolver — see `resolveCodexModel` in [`src/providers/codex-models.ts`](https://github.com/desplega-ai/agent-swarm/blob/main/src/providers/codex-models.ts) and `resolveModel` in [`src/providers/pi-mono-adapter.ts`](https://github.com/desplega-ai/agent-swarm/blob/main/src/providers/pi-mono-adapter.ts).
+- Do you accept shortnames (`"sonnet"`, `"gpt-5"`) and expand to full IDs? If so, build a resolver — see `resolveCodexModel` in [`packages/harness/src/codex-models.ts`](https://github.com/desplega-ai/agent-swarm/blob/main/packages/harness/src/codex-models.ts) and `resolveModel` in [`packages/harness/src/pi-mono-adapter.ts`](https://github.com/desplega-ai/agent-swarm/blob/main/packages/harness/src/pi-mono-adapter.ts).
 
 ### Step 6 — Credentials & auth
 
@@ -674,7 +674,7 @@ Three patterns are already in the codebase; pick the one that fits your provider
 
 <Tabs items={["Env-var only", "OAuth in swarm_config", "File-based"]}>
   <Tab value="Env-var only">
-    Claude-style. Validate at adapter start; throw a clear error if missing. Example: `validateClaudeCredentials()` in [`src/providers/claude-adapter.ts`](https://github.com/desplega-ai/agent-swarm/blob/main/src/providers/claude-adapter.ts).
+    Claude-style. Validate at adapter start; throw a clear error if missing. Example: `validateClaudeCredentials()` in [`packages/harness/src/claude-adapter.ts`](https://github.com/desplega-ai/agent-swarm/blob/main/packages/harness/src/claude-adapter.ts).
   </Tab>
   <Tab value="OAuth in swarm_config">
     Codex ChatGPT-style. See §6 below. This is the most involved path but required for desktop-login-style flows.
@@ -709,8 +709,8 @@ Always include the swarm's own MCP server with an `X-Source-Task-Id` header so n
 
 The adapter is responsible for polling swarm-side signals during a run. Pattern files:
 
-- Codex: [`src/providers/codex-swarm-events.ts`](https://github.com/desplega-ai/agent-swarm/blob/main/src/providers/codex-swarm-events.ts) — throttled `fireAndForget` fetches for cancel/heartbeat/activity/context-usage, attached via `this.listeners.push(...)` inside the session.
-- Pi: [`src/providers/pi-mono-extension.ts`](https://github.com/desplega-ai/agent-swarm/blob/main/src/providers/pi-mono-extension.ts) — `createSwarmHooksExtension` passed into `DefaultResourceLoader({ extensionFactories: [swarmExtension] })`.
+- Codex: [`packages/harness/src/codex-swarm-events.ts`](https://github.com/desplega-ai/agent-swarm/blob/main/packages/harness/src/codex-swarm-events.ts) — throttled `fireAndForget` fetches for cancel/heartbeat/activity/context-usage, attached via `this.listeners.push(...)` inside the session.
+- Pi: [`packages/harness/src/pi-mono-extension.ts`](https://github.com/desplega-ai/agent-swarm/blob/main/packages/harness/src/pi-mono-extension.ts) — `createSwarmHooksExtension` passed into `DefaultResourceLoader({ extensionFactories: [swarmExtension] })`.
 - Claude: external hook process reads a task file (`/tmp/agent-swarm-task-<pid>.json`) written by `claude-adapter.ts` L31–43; hook logic lives under `src/hooks/` (e.g. [`tool-loop-detection.ts`](https://github.com/desplega-ai/agent-swarm/blob/main/src/hooks/tool-loop-detection.ts)).
 
 Tool-loop detection (`src/hooks/tool-loop-detection.ts::checkToolLoop`) is reusable — call it from your event translator when you see `tool_start`.
@@ -721,7 +721,7 @@ Skills are the swarm's portable procedural knowledge (`/review-pr`, `/implement-
 
 - **Claude**: native slash-commands, so `formatCommand(name) => "/" + name` (`claude-adapter.ts` L601).
 - **Pi**: prefixed, `formatCommand(name) => "/skill:" + name` (`pi-mono-adapter.ts` L541); resolved from `~/.pi/agent/skills/<name>/SKILL.md`.
-- **Codex**: no native skills support → [`src/providers/codex-skill-resolver.ts`](https://github.com/desplega-ai/agent-swarm/blob/main/src/providers/codex-skill-resolver.ts) intercepts a leading `/<name>` in the prompt, reads `${CODEX_SKILLS_DIR ?? ~/.codex/skills}/<name>/SKILL.md`, and inlines it before calling `thread.runStreamed`. The system prompt is delivered by writing `AGENTS.md` into `cwd` (see [`codex-agents-md.ts`](https://github.com/desplega-ai/agent-swarm/blob/main/src/providers/codex-agents-md.ts)).
+- **Codex**: no native skills support → [`packages/harness/src/codex-skill-resolver.ts`](https://github.com/desplega-ai/agent-swarm/blob/main/packages/harness/src/codex-skill-resolver.ts) intercepts a leading `/<name>` in the prompt, reads `${CODEX_SKILLS_DIR ?? ~/.codex/skills}/<name>/SKILL.md`, and inlines it before calling `thread.runStreamed`. The system prompt is delivered by writing `AGENTS.md` into `cwd` (see [`codex-agents-md.ts`](https://github.com/desplega-ai/agent-swarm/blob/main/packages/harness/src/codex-agents-md.ts)).
 - **OpenCode**: no native `SKILL.md` support → uses the same inline resolver, reads `${OPENCODE_SKILLS_DIR ?? ~/.opencode/skills}/<name>/SKILL.md`, and inlines it before calling `client.session.prompt`.
 
 Pick the model that matches your runtime; if your provider has no native skill mechanism, follow the Codex inline-resolver pattern.
@@ -741,8 +741,8 @@ Edit [`docker-entrypoint.sh`](https://github.com/desplega-ai/agent-swarm/blob/ma
 
 If your provider needs a user-interactive OAuth flow (like Codex's ChatGPT login), add a CLI command:
 
-1. Implement PKCE + local callback server. Reference: [`src/providers/codex-oauth/flow.ts`](https://github.com/desplega-ai/agent-swarm/blob/main/src/providers/codex-oauth/flow.ts) — `createAuthorizationFlow` (URL with `code_challenge=S256`), `startLocalOAuthServer` (`node:http` on `127.0.0.1:1455/auth/callback`), `exchangeAuthorizationCode`.
-2. Add storage helpers at `src/providers/<foo>-oauth/storage.ts` that `PUT /api/config` with `{ scope: "global", key: "<foo>_oauth", value: JSON.stringify(creds), isSecret: true }`. See `storeCodexOAuth` and `getValidCodexOAuth` (with auto-refresh) in [`src/providers/codex-oauth/storage.ts`](https://github.com/desplega-ai/agent-swarm/blob/main/src/providers/codex-oauth/storage.ts).
+1. Implement PKCE + local callback server. Reference: [`packages/credentials/src/codex-oauth/flow.ts`](https://github.com/desplega-ai/agent-swarm/blob/main/packages/credentials/src/codex-oauth/flow.ts) — `createAuthorizationFlow` (URL with `code_challenge=S256`), `startLocalOAuthServer` (`node:http` on `127.0.0.1:1455/auth/callback`), `exchangeAuthorizationCode`.
+2. Add storage helpers at `packages/harness/src/<foo>-oauth/storage.ts` that `PUT /api/config` with `{ scope: "global", key: "<foo>_oauth", value: JSON.stringify(creds), isSecret: true }`. See `storeCodexOAuth` and `getValidCodexOAuth` (with auto-refresh) in [`packages/credentials/src/codex-oauth/storage.ts`](https://github.com/desplega-ai/agent-swarm/blob/main/packages/credentials/src/codex-oauth/storage.ts).
 3. Add the CLI command at `src/commands/<foo>-login.ts`. Reference: [`src/commands/codex-login.ts`](https://github.com/desplega-ai/agent-swarm/blob/main/src/commands/codex-login.ts) — uses `promptHiddenInput` for masked API-key entry and attempts to auto-open the browser via `open` / `start` / `xdg-open` by platform.
 4. Register the command in [`src/cli.tsx`](https://github.com/desplega-ai/agent-swarm/blob/main/src/cli.tsx) (non-UI command: `console.log` + `process.exit(0)` style) and update `COMMAND_HELP`.
 5. In `docker-entrypoint.sh`, restore credentials at boot by fetching them from `/api/config/resolved?includeSecrets=true&key=<foo>_oauth` and writing the provider's expected auth-file format (see the codex block, L13–71, for the jq-based reshape).
@@ -753,7 +753,7 @@ If your provider needs a user-interactive OAuth flow (like Codex's ChatGPT login
 Update union-type entries that enumerate providers:
 
 - [`src/types.ts`](https://github.com/desplega-ai/agent-swarm/blob/main/src/types.ts) — `HarnessProvider` union.
-- [`templates/schema.ts`](https://github.com/desplega-ai/agent-swarm/blob/main/templates/schema.ts) — template provider enum.
+- [`packages/types/src/index.ts`](https://github.com/desplega-ai/agent-swarm/blob/main/packages/types/src/index.ts) — template provider enum.
 - Any migration that stores a provider column — **do not modify existing migrations**; create a new one under `src/be/migrations/` if a schema update is needed.
 
 ### Step 13 — Prompts
@@ -809,9 +809,9 @@ This is documented separately because it is the most involved integration.
 └────────────────────────────┘
 ```
 
-**Key files:** `src/providers/codex-oauth/{flow.ts,storage.ts,auth-json.ts,pkce.ts,types.ts}`, `src/commands/codex-login.ts`, `docker-entrypoint.sh` L13–71, adapter fallback `codex-adapter.ts` L810–844.
+**Key files:** `packages/credentials/src/codex-oauth/{flow.ts,storage.ts,auth-json.ts,pkce.ts,types.ts}`, `src/commands/codex-login.ts`, `docker-entrypoint.sh` L13–71, adapter fallback `codex-adapter.ts` L810–844.
 
-The shape conversion (our flat `{access, refresh, expires, accountId}` → Codex CLI's `{auth_mode: "chatgpt", tokens: {...}}`) lives in `credentialsToAuthJson()` at [`src/providers/codex-oauth/auth-json.ts`](https://github.com/desplega-ai/agent-swarm/blob/main/src/providers/codex-oauth/auth-json.ts) L37–49.
+The shape conversion (our flat `{access, refresh, expires, accountId}` → Codex CLI's `{auth_mode: "chatgpt", tokens: {...}}`) lives in `credentialsToAuthJson()` at [`packages/credentials/src/codex-oauth/auth-json.ts`](https://github.com/desplega-ai/agent-swarm/blob/main/packages/credentials/src/codex-oauth/auth-json.ts) L37–49.
 
 See also: [Codex OAuth setup guide](/docs/guides/provider-auth/codex-oauth).
 
@@ -844,22 +844,22 @@ Manual verification:
 
 | Concern | File(s) |
 |---|---|
-| Adapter implementation | `src/providers/<foo>-adapter.ts` |
-| Factory registration | `src/providers/index.ts` |
-| Types / enums | `src/types.ts`, `templates/schema.ts` |
+| Adapter implementation | `packages/harness/src/<foo>-adapter.ts` |
+| Factory registration | `packages/harness/src/index.ts` |
+| Types / enums | `packages/types/src/index.ts` |
 | Prompts (optional) | `src/prompts/<foo>/` |
-| OAuth (optional) | `src/providers/<foo>-oauth/*`, `src/commands/<foo>-login.ts` |
+| OAuth (optional) | `packages/harness/src/<foo>-oauth/*`, `src/commands/<foo>-login.ts` |
 | Setup CLI (optional, e.g. claude-managed) | `src/commands/<foo>-setup.ts` |
 | CLI wiring | `src/cli.tsx` (`COMMAND_HELP`, command routing) |
 | Docker bootstrap | `docker-entrypoint.sh`, `Dockerfile.worker` |
-| Hooks (optional) | `src/hooks/*`, `src/providers/<foo>-swarm-events.ts` |
-| Skills resolver (if provider lacks native support) | `src/providers/<foo>-skill-resolver.ts` |
-| Models / pricing (optional) | `src/providers/<foo>-models.ts` |
+| Hooks (optional) | `src/hooks/*`, `packages/harness/src/<foo>-swarm-events.ts` |
+| Skills resolver (if provider lacks native support) | `packages/harness/src/<foo>-skill-resolver.ts` |
+| Models / pricing (optional) | `packages/harness/src/<foo>-models.ts` |
 | Tests | `src/tests/<foo>-*.test.ts` |
-| Integrations UI (optional) | `ui/src/lib/integrations-catalog.ts` |
+| Integrations UI (optional) | `apps/ui/src/lib/integrations-catalog.ts` |
 | Docs | `CLAUDE.md`, `README.md`, this guide, [Harness Configuration](/docs/guides/harness-configuration) |
 
-**claude-managed reference files:** `src/providers/claude-managed-adapter.ts`, `src/providers/claude-managed-swarm-events.ts`, `src/providers/claude-managed-models.ts`, `src/commands/claude-managed-setup.ts`, `ui/src/lib/integrations-catalog.ts`.
+**claude-managed reference files:** `packages/harness/src/claude-managed-adapter.ts`, `packages/harness/src/claude-managed-swarm-events.ts`, `packages/harness/src/claude-managed-models.ts`, `src/commands/claude-managed-setup.ts`, `apps/ui/src/lib/integrations-catalog.ts`.
 
 ---
 
@@ -913,7 +913,7 @@ Skills are **not** synced into a filesystem path on the worker (the worker doesn
 
 ### f. SDK shape deviations to be aware of
 
-The Anthropic Beta SDK has a few non-obvious surface differences from the conventional Anthropic `messages.create` API. The header comments in [`src/providers/claude-managed-adapter.ts`](https://github.com/desplega-ai/agent-swarm/blob/main/src/providers/claude-managed-adapter.ts) (top-of-file block, ~L13–35) document them in detail, but the highlights for anyone reading the code:
+The Anthropic Beta SDK has a few non-obvious surface differences from the conventional Anthropic `messages.create` API. The header comments in [`packages/harness/src/claude-managed-adapter.ts`](https://github.com/desplega-ai/agent-swarm/blob/main/packages/harness/src/claude-managed-adapter.ts) (top-of-file block, ~L13–35) document them in detail, but the highlights for anyone reading the code:
 
 - **Resource type is `github_repository`, not `github_repo`.** The SDK type is `BetaGitHubRepositoryResource` and the literal field is `type: "github_repository"`.
 - **`events.send` takes `{ events: [...] }` — an array, not a single event arg.** The naming makes it look like `events.send(event)` would work; it would not.
@@ -929,5 +929,5 @@ The Anthropic Beta SDK has a few non-obvious surface differences from the conven
 - [Harness Configuration](/docs/guides/harness-configuration) — how to **use** the existing providers.
 - [Codex OAuth setup](/docs/guides/provider-auth/codex-oauth) — end-user OAuth flow.
 - [`CLAUDE.md`](https://github.com/desplega-ai/agent-swarm/blob/main/CLAUDE.md) — project-wide rules, especially "Architecture invariants" (DB boundary) and "Secret scrubbing".
-- [`src/providers/types.ts`](https://github.com/desplega-ai/agent-swarm/blob/main/src/providers/types.ts) — canonical interface definitions.
-- [`src/providers/codex-adapter.ts`](https://github.com/desplega-ai/agent-swarm/blob/main/src/providers/codex-adapter.ts) — the most feature-complete reference (OAuth + skills resolver + hooks + model resolver).
+- [`packages/harness/src/types.ts`](https://github.com/desplega-ai/agent-swarm/blob/main/packages/harness/src/types.ts) — canonical interface definitions.
+- [`packages/harness/src/codex-adapter.ts`](https://github.com/desplega-ai/agent-swarm/blob/main/packages/harness/src/codex-adapter.ts) — the most feature-complete reference (OAuth + skills resolver + hooks + model resolver).

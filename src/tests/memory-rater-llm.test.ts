@@ -17,9 +17,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { unlink } from "node:fs/promises";
-import type { Subprocess } from "bun";
-import { closeDb, createAgent, getDb, initDb } from "../be/db";
-import { SqliteMemoryStore } from "../be/memory/providers/sqlite-store";
 import {
   buildRatingsFromLlm,
   buildSummaryWithRatingsPrompt,
@@ -31,9 +28,12 @@ import {
   postRatings,
   type RetrievalRow,
   SummaryWithRatingsSchema,
-} from "../be/memory/raters/llm";
-import { getRegisteredRaters, SERVER_RATERS } from "../be/memory/raters/registry";
-import type { RatingEvent } from "../be/memory/raters/types";
+} from "@swarm/ai-llm/memory/raters/llm";
+import type { RatingEvent } from "@swarm/ai-llm/memory/raters/types";
+import { closeDb, createAgent, getDb, initDb } from "@swarm/storage/db";
+import { SqliteMemoryStore } from "@swarm/storage/memory/providers/sqlite-store";
+import { getRegisteredRaters, SERVER_RATERS } from "@swarm/storage/memory/raters/registry";
+import type { Subprocess } from "bun";
 import { MockLlmRaterClient } from "./mocks/mock-llm-rater-client";
 
 // ─────────────────────────────────────────────────────────────────────────────

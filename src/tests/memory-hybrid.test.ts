@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { unlink } from "node:fs/promises";
-import { closeDb, createAgent, getDb, initDb } from "../be/db";
-import { computeRrfScore, SqliteMemoryStore } from "../be/memory/providers/sqlite-store";
+import { closeDb, createAgent, getDb, initDb, isSqliteVecAvailable } from "@swarm/storage/db";
+import { computeRrfScore, SqliteMemoryStore } from "@swarm/storage/memory/providers/sqlite-store";
 
 const TEST_DB_PATH = "./test-memory-hybrid.sqlite";
 const agentId = "aaaa0000-0000-4000-8000-000000000101";
@@ -48,6 +48,16 @@ describe("computeRrfScore", () => {
 describe("memory hybrid search", () => {
   let store: SqliteMemoryStore;
   let prevHybridFlag: string | undefined;
+
+  function skipVecAssertionsWhenUnavailable(): boolean {
+    if (isSqliteVecAvailable()) return false;
+
+    const health = store.getHealth();
+    expect(health.sqliteVec.extensionLoaded).toBe(false);
+    expect(health.retrievalMode).toBe("fallback");
+    expect(health.reasons).toContain("sqlite_vec_extension_unavailable");
+    return true;
+  }
 
   beforeAll(async () => {
     prevHybridFlag = process.env.MEMORY_HYBRID_SEARCH;
@@ -124,6 +134,12 @@ describe("memory hybrid search", () => {
 
     expect(results.some((result) => result.id === exact.id)).toBe(true);
     expect(new Set(results.map((result) => result.id)).size).toBe(results.length);
+    if (skipVecAssertionsWhenUnavailable()) {
+      expect(results.find((result) => result.id === exact.id)?.retrievalSource).toBe("fts");
+      expect(results.find((result) => result.id === semantic.id)).toBeUndefined();
+      return;
+    }
+
     expect(results.find((result) => result.id === exact.id)?.retrievalSource).toBe("hybrid");
     expect(results.find((result) => result.id === semantic.id)?.retrievalSource).toBe("vec");
   });
@@ -154,6 +170,12 @@ describe("memory hybrid search", () => {
 
     const bothResult = results.find((result) => result.id === both.id);
     const vectorOnlyResult = results.find((result) => result.id === vectorOnly.id);
+    if (skipVecAssertionsWhenUnavailable()) {
+      expect(bothResult?.retrievalSource).toBe("fts");
+      expect(vectorOnlyResult).toBeUndefined();
+      return;
+    }
+
     expect(bothResult?.retrievalSource).toBe("hybrid");
     expect(vectorOnlyResult?.retrievalSource).toBe("vec");
     expect(bothResult!.similarity).toBeGreaterThan(vectorOnlyResult!.similarity);

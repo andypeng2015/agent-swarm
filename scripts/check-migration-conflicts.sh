@@ -1,7 +1,7 @@
 #!/bin/bash
 # Detect DB migration numbering conflicts.
 #
-# Migrations live in src/be/migrations/NNN_descriptive_name.sql and are applied
+# Migrations live in packages/storage/src/migrations/NNN_descriptive_name.sql and are applied
 # forward-only in numeric NNN order. Two PRs branched off the same main can each
 # add a migration with the same NNN; in isolation each PR looks fine, so the
 # collision slips past review and lands two files sharing one NNN.
@@ -24,7 +24,7 @@
 
 set -euo pipefail
 
-MIGRATIONS_DIR="src/be/migrations"
+MIGRATIONS_DIR="packages/storage/src/migrations"
 
 if [ ! -d "$MIGRATIONS_DIR" ]; then
   echo "ERROR: migrations directory not found: $MIGRATIONS_DIR"

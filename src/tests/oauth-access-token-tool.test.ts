@@ -1,18 +1,18 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, mock, test } from "bun:test";
 import { unlink } from "node:fs/promises";
-import { closeDb, initDb } from "../be/db";
+import { resolveOAuthAccessToken } from "@swarm/api-server/tools/oauth-access-token";
+import {
+  clearVolatileSecretsForTesting,
+  refreshSecretScrubberCache,
+  scrubSecrets,
+} from "@swarm/core-utils/secret-scrubber";
+import { closeDb, initDb } from "@swarm/storage/db";
 import {
   deleteOAuthTokens,
   getOAuthTokens,
   storeOAuthTokens,
   upsertOAuthApp,
-} from "../be/db-queries/oauth";
-import { resolveOAuthAccessToken } from "../tools/oauth-access-token";
-import {
-  clearVolatileSecretsForTesting,
-  refreshSecretScrubberCache,
-  scrubSecrets,
-} from "../utils/secret-scrubber";
+} from "@swarm/storage/db-queries/oauth";
 
 const TEST_DB_PATH = "./test-oauth-access-token-tool.sqlite";
 const originalFetch = globalThis.fetch;

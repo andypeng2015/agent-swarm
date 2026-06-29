@@ -1,5 +1,9 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { unlinkSync } from "node:fs";
+import { createScheduleInputSchema } from "@swarm/api-server/tools/schedules/create-schedule";
+import { updateScheduleInputSchema } from "@swarm/api-server/tools/schedules/update-schedule";
+import { sendTaskInputSchema } from "@swarm/api-server/tools/send-task";
+import { taskActionInputSchema } from "@swarm/api-server/tools/task-action";
 import {
   closeDb,
   createAgent,
@@ -11,18 +15,14 @@ import {
   initDb,
   updateScheduledTask,
   upsertSwarmConfig,
-} from "../be/db";
-import { runScheduleNow } from "../scheduler";
-import { createScheduleInputSchema } from "../tools/schedules/create-schedule";
-import { updateScheduleInputSchema } from "../tools/schedules/update-schedule";
-import { sendTaskInputSchema } from "../tools/send-task";
-import { taskActionInputSchema } from "../tools/task-action";
+} from "@swarm/storage/db";
 import {
   parseModelTier,
   resolveModelTier,
   resolveTaskModelSelection,
   splitLegacyModelAlias,
-} from "../types";
+} from "@swarm/types";
+import { runScheduleNow } from "@swarm/workflows/scheduler";
 
 const TEST_DB_PATH = "./test-model-control.sqlite";
 
@@ -244,7 +244,7 @@ describe("Model Control - Schedule to Task Propagation", () => {
     await runScheduleNow(schedule.id);
 
     // Find the created task by its template text
-    const { getDb } = await import("../be/db");
+    const { getDb } = await import("@swarm/storage/db");
     const row = getDb()
       .query("SELECT id FROM agent_tasks WHERE task = ? ORDER BY createdAt DESC LIMIT 1")
       .get("Propagated model task (manual)") as { id: string } | null;
@@ -264,7 +264,7 @@ describe("Model Control - Schedule to Task Propagation", () => {
 
     await runScheduleNow(schedule.id);
 
-    const { getDb } = await import("../be/db");
+    const { getDb } = await import("@swarm/storage/db");
     const row = getDb()
       .query("SELECT id FROM agent_tasks WHERE task = ? ORDER BY createdAt DESC LIMIT 1")
       .get("Propagated no-model task") as { id: string } | null;
@@ -285,7 +285,7 @@ describe("Model Control - Schedule to Task Propagation", () => {
 
     await runScheduleNow(schedule.id);
 
-    const { getDb } = await import("../be/db");
+    const { getDb } = await import("@swarm/storage/db");
     const row = getDb()
       .query("SELECT id FROM agent_tasks WHERE task = ? ORDER BY createdAt DESC LIMIT 1")
       .get("Propagated model tier task (manual)") as { id: string } | null;

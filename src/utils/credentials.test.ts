@@ -5,7 +5,7 @@ import {
   resolveCredentialPools,
   selectRandomCredential,
   validateClaudeCredentials,
-} from "./credentials.ts";
+} from "@swarm/credentials/credentials";
 
 describe("selectRandomCredential", () => {
   it("returns single value as-is when no commas", () => {

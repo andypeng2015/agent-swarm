@@ -1,13 +1,13 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { unlink } from "node:fs/promises";
-import { closeDb, initDb } from "../be/db";
+import { _test, stopOAuthKeepalive } from "@swarm/integrations/oauth/keepalive";
+import { closeDb, initDb } from "@swarm/storage/db";
 import {
   deleteOAuthTokens,
   getOAuthTokens,
   storeOAuthTokens,
   upsertOAuthApp,
-} from "../be/db-queries/oauth";
-import { _test, stopOAuthKeepalive } from "../oauth/keepalive";
+} from "@swarm/storage/db-queries/oauth";
 
 const TEST_DB_PATH = "./test-oauth-keepalive.sqlite";
 

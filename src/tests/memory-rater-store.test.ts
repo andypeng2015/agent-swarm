@@ -1,9 +1,9 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { unlink } from "node:fs/promises";
-import { closeDb, createAgent, getDb, initDb } from "../be/db";
-import { SqliteMemoryStore } from "../be/memory/providers/sqlite-store";
-import { applyRating, ExplicitSelfDuplicateError } from "../be/memory/raters/store";
-import type { RatingEvent } from "../be/memory/raters/types";
+import type { RatingEvent } from "@swarm/ai-llm/memory/raters/types";
+import { closeDb, createAgent, getDb, initDb } from "@swarm/storage/db";
+import { SqliteMemoryStore } from "@swarm/storage/memory/providers/sqlite-store";
+import { applyRating, ExplicitSelfDuplicateError } from "@swarm/storage/memory/raters/store";
 
 const TEST_DB_PATH = "./test-memory-rater-store.sqlite";
 

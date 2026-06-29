@@ -1,11 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { NativeScriptExecutor } from "../scripts-runtime/executors/native";
-import type {
-  ExecutorInput,
-  ExecutorOutput,
-  ScriptExecutor,
-} from "../scripts-runtime/executors/types";
-import { DEFAULT_SCRIPT_RESOURCES } from "../scripts-runtime/executors/types";
+import { NativeScriptExecutor } from "@swarm/scripts/executors/native";
+import type { ExecutorInput, ExecutorOutput, ScriptExecutor } from "@swarm/scripts/executors/types";
+import { DEFAULT_SCRIPT_RESOURCES } from "@swarm/scripts/executors/types";
 
 const payload = {
   system: {

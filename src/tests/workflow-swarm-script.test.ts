@@ -1,6 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { unlink } from "node:fs/promises";
-import { z } from "zod";
 import {
   closeDb,
   createAgent,
@@ -9,26 +8,27 @@ import {
   getWorkflowRun,
   getWorkflowRunStepsByRunId,
   initDb,
-} from "../be/db";
-import { upsertScriptByName } from "../be/scripts/db";
-import { setScriptEmbeddingProviderForTests } from "../be/scripts/embeddings";
-import type { Workflow, WorkflowDefinition } from "../types";
-import { startWorkflowExecution } from "../workflows/engine";
-import { InProcessEventBus } from "../workflows/event-bus";
+} from "@swarm/storage/db";
+import { upsertScriptByName } from "@swarm/storage/scripts/db";
+import { setScriptEmbeddingProviderForTests } from "@swarm/storage/scripts/embeddings";
+import type { Workflow, WorkflowDefinition } from "@swarm/types";
+import { startWorkflowExecution } from "@swarm/workflows/engine";
+import { InProcessEventBus } from "@swarm/workflows/event-bus";
 import {
   BaseExecutor,
   type ExecutorDependencies,
   type ExecutorResult,
-} from "../workflows/executors/base";
-import { ExecutorRegistry } from "../workflows/executors/registry";
+} from "@swarm/workflows/executors/base";
+import { ExecutorRegistry } from "@swarm/workflows/executors/registry";
 import {
   SWARM_SCRIPT_DEFAULT_TIMEOUT_MS,
   SWARM_SCRIPT_MAX_TIMEOUT_MS,
   SWARM_SCRIPT_MIN_TIMEOUT_MS,
   SwarmScriptConfigSchema,
   SwarmScriptExecutor,
-} from "../workflows/executors/swarm-script";
-import { interpolate } from "../workflows/template";
+} from "@swarm/workflows/executors/swarm-script";
+import { interpolate } from "@swarm/workflows/template";
+import { z } from "zod";
 
 const TEST_DB_PATH = "./test-workflow-swarm-script.sqlite";
 const API_KEY = "test-workflow-swarm-script-key-1234567890";
@@ -115,7 +115,7 @@ beforeAll(async () => {
   agentId = agent.id;
 
   const eventBus = new InProcessEventBus();
-  const db = await import("../be/db");
+  const db = await import("@swarm/storage/db");
   deps = {
     db,
     eventBus,

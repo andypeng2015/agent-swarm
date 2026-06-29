@@ -14,6 +14,7 @@
 
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { unlink } from "node:fs/promises";
+import { handlePoll } from "@swarm/api-server/http/poll";
 import {
   closeDb,
   createAgent,
@@ -22,9 +23,8 @@ import {
   getBudgetRefusalNotification,
   getDb,
   initDb,
-} from "../be/db";
-import { handlePoll } from "../http/poll";
-import { workflowEventBus } from "../workflows/event-bus";
+} from "@swarm/storage/db";
+import { workflowEventBus } from "@swarm/workflows/event-bus";
 
 const TEST_DB_PATH = "./test-budget-refusal-notification.sqlite";
 

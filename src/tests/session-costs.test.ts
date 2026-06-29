@@ -13,8 +13,8 @@ import {
   getSessionCostsByTaskId,
   getSessionCostsFiltered,
   initDb,
-} from "../be/db";
-import type { SessionCost } from "../types";
+} from "@swarm/storage/db";
+import type { SessionCost } from "@swarm/types";
 
 const TEST_DB_PATH = "./test-session-costs.sqlite";
 const TEST_PORT = 13016;

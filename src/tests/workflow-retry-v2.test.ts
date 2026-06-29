@@ -1,6 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { unlink } from "node:fs/promises";
-import { z } from "zod";
 import {
   closeDb,
   createWorkflow,
@@ -14,19 +13,20 @@ import {
   initDb,
   updateWorkflowRun,
   updateWorkflowRunStep,
-} from "../be/db";
-import type { RetryPolicy, Workflow, WorkflowDefinition } from "../types";
-import { startWorkflowExecution } from "../workflows/engine";
-import { workflowEventBus } from "../workflows/event-bus";
+} from "@swarm/storage/db";
+import type { RetryPolicy, Workflow, WorkflowDefinition } from "@swarm/types";
+import { startWorkflowExecution } from "@swarm/workflows/engine";
+import { workflowEventBus } from "@swarm/workflows/event-bus";
 import {
   BaseExecutor,
   type ExecutorDependencies,
   type ExecutorResult,
-} from "../workflows/executors/base";
-import { ExecutorRegistry } from "../workflows/executors/registry";
-import { recoverIncompleteRuns } from "../workflows/recovery";
-import { calculateDelay, startRetryPoller, stopRetryPoller } from "../workflows/retry-poller";
-import { interpolate } from "../workflows/template";
+} from "@swarm/workflows/executors/base";
+import { ExecutorRegistry } from "@swarm/workflows/executors/registry";
+import { recoverIncompleteRuns } from "@swarm/workflows/recovery";
+import { calculateDelay, startRetryPoller, stopRetryPoller } from "@swarm/workflows/retry-poller";
+import { interpolate } from "@swarm/workflows/template";
+import { z } from "zod";
 
 const TEST_DB_PATH = "./test-workflow-retry-v2.sqlite";
 
@@ -92,10 +92,10 @@ class NotifyStubExecutor extends BaseExecutor<
 
 // ─── Mock Dependencies ───────────────────────────────────────
 
-import * as db from "../be/db";
+import * as db from "@swarm/storage/db";
 
 const mockDeps: ExecutorDependencies = {
-  db: db as typeof import("../be/db"),
+  db: db as typeof import("@swarm/storage/db"),
   eventBus: workflowEventBus,
   interpolate: (template, ctx) => interpolate(template, ctx).result,
 };

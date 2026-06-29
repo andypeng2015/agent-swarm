@@ -3,7 +3,7 @@ import {
   markKapsoMessageRead,
   sendKapsoReaction,
   sendKapsoText,
-} from "../integrations/kapso/client";
+} from "@swarm/integrations/kapso/client";
 
 const originalFetch = globalThis.fetch;
 

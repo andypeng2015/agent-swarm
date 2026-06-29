@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { createProviderAdapter } from "../providers";
-import { ClaudeAdapter } from "../providers/claude-adapter";
-import { OpencodeAdapter } from "../providers/opencode-adapter";
-import { PiMonoAdapter } from "../providers/pi-mono-adapter";
-import type { CostData, ProviderEvent } from "../providers/types";
+import { ClaudeAdapter } from "@swarm/harness/claude-adapter";
+import { createProviderAdapter } from "@swarm/harness/index";
+import { OpencodeAdapter } from "@swarm/harness/opencode-adapter";
+import { PiMonoAdapter } from "@swarm/harness/pi-mono-adapter";
+import type { CostData, ProviderEvent } from "@swarm/harness/types";
 
 describe("createProviderAdapter", () => {
   test("returns ClaudeAdapter for 'claude'", async () => {

@@ -13,8 +13,8 @@ import {
   getTaskUrl,
   markdownToSlack,
   type TreeNode,
-} from "../slack/blocks";
-import type { TaskAttachment } from "../types";
+} from "@swarm/integrations/slack/blocks";
+import type { TaskAttachment } from "@swarm/types";
 
 describe("markdownToSlack", () => {
   test("converts bold correctly without italic interference", () => {

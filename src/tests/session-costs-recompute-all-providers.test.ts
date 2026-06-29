@@ -10,10 +10,10 @@ import {
   type Server,
   type ServerResponse,
 } from "node:http";
-import { closeDb, createAgent, getDb, initDb, insertPricingRow } from "../be/db";
-import { handleCore } from "../http/core";
-import { handleSessionData } from "../http/session-data";
-import { getPathSegments, parseQueryParams } from "../http/utils";
+import { handleCore } from "@swarm/api-server/http/core";
+import { handleSessionData } from "@swarm/api-server/http/session-data";
+import { getPathSegments, parseQueryParams } from "@swarm/api-server/http/utils";
+import { closeDb, createAgent, getDb, initDb, insertPricingRow } from "@swarm/storage/db";
 
 const TEST_DB_PATH = "./test-recompute-all-providers.sqlite";
 const API_KEY = "test-recompute-all";

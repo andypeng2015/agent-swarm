@@ -12,7 +12,7 @@ let historyImpl: (args: Record<string, unknown>) => Promise<{
   messages?: Array<Record<string, unknown>>;
 }> = () => Promise.resolve({ messages: [] });
 
-mock.module("../slack/app", () => ({
+mock.module("@swarm/integrations/slack/app", () => ({
   getSlackApp: () => ({
     client: {
       auth: { test: () => Promise.resolve({ user_id: "UBOT123" }) },
@@ -32,14 +32,14 @@ mock.module("../slack/app", () => ({
   }),
 }));
 
+import { fetchChannelActivity } from "@swarm/integrations/slack/channel-activity";
 import {
   closeDb,
   getAllChannelActivityCursors,
   getChannelActivityCursor,
   initDb,
   upsertChannelActivityCursor,
-} from "../be/db";
-import { fetchChannelActivity } from "../slack/channel-activity";
+} from "@swarm/storage/db";
 
 const TEST_DB_PATH = `./test-channel-activity-${process.pid}.sqlite`;
 

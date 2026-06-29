@@ -1,12 +1,12 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { rm, unlink } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import { closeDb, createAgent, getDb, initDb, listScriptRunJournalSteps } from "../be/db";
-import { handleCore } from "../http/core";
-import { handleScriptRuns } from "../http/script-runs";
-import { handleScripts } from "../http/scripts";
-import { getPathSegments, parseQueryParams } from "../http/utils";
-import { refreshSecretScrubberCache } from "../utils/secret-scrubber";
+import { handleCore } from "@swarm/api-server/http/core";
+import { handleScriptRuns } from "@swarm/api-server/http/script-runs";
+import { handleScripts } from "@swarm/api-server/http/scripts";
+import { getPathSegments, parseQueryParams } from "@swarm/api-server/http/utils";
+import { refreshSecretScrubberCache } from "@swarm/core-utils/secret-scrubber";
+import { closeDb, createAgent, getDb, initDb, listScriptRunJournalSteps } from "@swarm/storage/db";
 
 const TEST_DB_PATH = "./test-script-workflows-runtime-e2e.sqlite";
 const WORKFLOW_RUNTIME_DIR = "./test-script-workflows-runtime";
@@ -93,7 +93,7 @@ beforeAll(async () => {
   process.env.APP_URL = "https://app.example.test";
   delete process.env.SCRIPT_RUN_SUPERVISOR_DISABLE;
   await rm(WORKFLOW_RUNTIME_DIR, { recursive: true, force: true });
-  await Bun.$`bun build ./src/script-workflows/harness.ts --target bun --no-splitting --outfile ${WORKFLOW_RUNTIME_DIR}/harness.bundle.js`.quiet();
+  await Bun.$`bun build ./packages/api-server/src/script-workflows/harness.ts --target bun --no-splitting --outfile ${WORKFLOW_RUNTIME_DIR}/harness.bundle.js`.quiet();
   process.env.SCRIPT_WORKFLOW_RUNTIME_DIR = WORKFLOW_RUNTIME_DIR;
   refreshSecretScrubberCache();
 

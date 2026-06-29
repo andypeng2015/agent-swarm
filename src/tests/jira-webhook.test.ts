@@ -10,14 +10,14 @@ import {
   test,
 } from "bun:test";
 import { unlink } from "node:fs/promises";
-import { closeDb, getDb, initDb } from "../be/db";
-import { upsertOAuthApp } from "../be/db-queries/oauth";
+import * as syncModule from "@swarm/integrations/jira/sync";
+import { closeDb, getDb, initDb } from "@swarm/storage/db";
+import { upsertOAuthApp } from "@swarm/storage/db-queries/oauth";
 import {
   createTrackerSync,
   hasTrackerDelivery,
   markTrackerDelivery,
-} from "../be/db-queries/tracker";
-import * as syncModule from "../jira/sync";
+} from "@swarm/storage/db-queries/tracker";
 
 const TEST_DB_PATH = "./test-jira-webhook.sqlite";
 const TEST_TOKEN = "test-jira-webhook-token-deadbeefcafe1234";
@@ -31,7 +31,7 @@ const commentHandler = spyOn(syncModule, "handleCommentEvent").mockResolvedValue
 const issueDeleteHandler = spyOn(syncModule, "handleIssueDeleteEvent").mockResolvedValue(undefined);
 
 const { handleJiraWebhook, isDuplicateDelivery, synthesizeDeliveryId, verifyJiraWebhookToken } =
-  await import("../jira/webhook");
+  await import("@swarm/integrations/jira/webhook");
 
 beforeAll(() => {
   initDb(TEST_DB_PATH);

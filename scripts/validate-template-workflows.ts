@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-// Validates all workflow templates embedded in templates/workflows/*\/content.md.
+// Validates all workflow templates embedded in @swarm/swarm-templates/workflows/*/content.md.
 //
 // Each content.md contains exactly one fenced json code block with the workflow
 // definition. This script extracts and validates each definition against
@@ -10,10 +10,17 @@
 
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { WorkflowDefinitionSchema } from "../src/types";
-import { validateDefinition } from "../src/workflows/definition";
+import { WorkflowDefinitionSchema } from "@swarm/types";
+import { validateDefinition } from "@swarm/workflows/definition";
 
-const TEMPLATES_DIR = join(import.meta.dir, "..", "templates", "workflows");
+const TEMPLATES_DIR = join(
+  import.meta.dir,
+  "..",
+  "packages",
+  "swarm-templates",
+  "src",
+  "workflows",
+);
 
 const KNOWN_EXECUTOR_TYPES = new Set([
   "agent-task",

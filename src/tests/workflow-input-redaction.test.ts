@@ -1,6 +1,5 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { unlink } from "node:fs/promises";
-import { z } from "zod";
 import {
   closeDb,
   createWorkflow,
@@ -8,21 +7,22 @@ import {
   getWorkflowRunStepsByRunId,
   initDb,
   upsertSwarmConfig,
-} from "../be/db";
-import type { WorkflowDefinition } from "../types";
-import { startWorkflowExecution } from "../workflows/engine";
+} from "@swarm/storage/db";
+import type { WorkflowDefinition } from "@swarm/types";
+import { startWorkflowExecution } from "@swarm/workflows/engine";
 import {
   BaseExecutor,
   type ExecutorDependencies,
   type ExecutorResult,
-} from "../workflows/executors/base";
-import { ExecutorRegistry } from "../workflows/executors/registry";
+} from "@swarm/workflows/executors/base";
+import { ExecutorRegistry } from "@swarm/workflows/executors/registry";
 import {
   getSecretInputKeys,
   REDACTED_SECRET_VALUE,
   redactSecretsForStorage,
   resolveInputs,
-} from "../workflows/input";
+} from "@swarm/workflows/input";
+import { z } from "zod";
 
 const TEST_DB_PATH = "./test-workflow-input-redaction.sqlite";
 
@@ -195,7 +195,7 @@ describe("end-to-end — workflow step persistence redacts secrets", () => {
 
     const registry = new ExecutorRegistry();
     const deps: ExecutorDependencies = {
-      db: {} as typeof import("../be/db"),
+      db: {} as typeof import("@swarm/storage/db"),
       eventBus: { emit: () => {}, on: () => {}, off: () => {} },
       interpolate: (t: string) => t,
     };

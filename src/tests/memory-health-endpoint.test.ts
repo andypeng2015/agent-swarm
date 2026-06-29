@@ -1,10 +1,10 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { unlink } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { closeDb, initDb } from "../be/db";
-import { EMBEDDING_DIMENSIONS } from "../be/memory/constants";
-import { handleMemory } from "../http/memory";
-import { getPathSegments } from "../http/utils";
+import { handleMemory } from "@swarm/api-server/http/memory";
+import { getPathSegments } from "@swarm/api-server/http/utils";
+import { closeDb, initDb } from "@swarm/storage/db";
+import { EMBEDDING_DIMENSIONS } from "@swarm/storage/memory/constants";
 
 const TEST_DB_PATH = "./test-memory-health-endpoint.sqlite";
 

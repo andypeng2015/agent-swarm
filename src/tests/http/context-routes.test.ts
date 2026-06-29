@@ -17,6 +17,9 @@ import {
   type Server,
   type ServerResponse,
 } from "node:http";
+import { handleContext } from "@swarm/api-server/http/context";
+import { handleCore } from "@swarm/api-server/http/core";
+import { getPathSegments, parseQueryParams } from "@swarm/api-server/http/utils";
 import {
   closeDb,
   createAgent,
@@ -24,10 +27,7 @@ import {
   getContextSnapshotsByTaskId,
   getContextSummaryByTaskId,
   initDb,
-} from "../../be/db";
-import { handleContext } from "../../http/context";
-import { handleCore } from "../../http/core";
-import { getPathSegments, parseQueryParams } from "../../http/utils";
+} from "@swarm/storage/db";
 
 const TEST_DB_PATH = "./test-context-routes.sqlite";
 const API_KEY = "test-context-routes";

@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { unlink } from "node:fs/promises";
-import { closeDb, initDb } from "../be/db";
-import { createServer } from "../server";
-import { ALL_TOOLS, CORE_TOOLS, DEFERRED_TOOLS } from "../tools/tool-config";
+import { createServer } from "@swarm/api-server/server";
+import { ALL_TOOLS, CORE_TOOLS, DEFERRED_TOOLS } from "@swarm/mcp-tool/tool-config";
+import { closeDb, initDb } from "@swarm/storage/db";
 
 const TEST_DB_PATH = "./test-tool-annotations.sqlite";
 

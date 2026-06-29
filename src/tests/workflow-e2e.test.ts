@@ -9,18 +9,18 @@ import {
   getWorkflowRun,
   getWorkflowRunStepsByRunId,
   initDb,
-} from "../be/db";
-import { upsertScriptByName } from "../be/scripts/db";
-import { setScriptEmbeddingProviderForTests } from "../be/scripts/embeddings";
-import type { Workflow, WorkflowDefinition } from "../types";
-import { startWorkflowExecution } from "../workflows/engine";
-import { InProcessEventBus } from "../workflows/event-bus";
-import { AgentTaskExecutor } from "../workflows/executors/agent-task";
-import type { ExecutorDependencies } from "../workflows/executors/base";
-import { ExecutorRegistry } from "../workflows/executors/registry";
-import { SwarmScriptExecutor } from "../workflows/executors/swarm-script";
-import { setupWorkflowResumeListener } from "../workflows/resume";
-import { interpolate } from "../workflows/template";
+} from "@swarm/storage/db";
+import { upsertScriptByName } from "@swarm/storage/scripts/db";
+import { setScriptEmbeddingProviderForTests } from "@swarm/storage/scripts/embeddings";
+import type { Workflow, WorkflowDefinition } from "@swarm/types";
+import { startWorkflowExecution } from "@swarm/workflows/engine";
+import { InProcessEventBus } from "@swarm/workflows/event-bus";
+import { AgentTaskExecutor } from "@swarm/workflows/executors/agent-task";
+import type { ExecutorDependencies } from "@swarm/workflows/executors/base";
+import { ExecutorRegistry } from "@swarm/workflows/executors/registry";
+import { SwarmScriptExecutor } from "@swarm/workflows/executors/swarm-script";
+import { setupWorkflowResumeListener } from "@swarm/workflows/resume";
+import { interpolate } from "@swarm/workflows/template";
 
 const TEST_DB_PATH = "./test-workflow-e2e.sqlite";
 const API_KEY = "test-workflow-e2e-key-1234567890";
@@ -99,7 +99,7 @@ beforeAll(async () => {
   agentId = agent.id;
 
   eventBus = new InProcessEventBus();
-  const db = await import("../be/db");
+  const db = await import("@swarm/storage/db");
   const deps: ExecutorDependencies = {
     db,
     eventBus,

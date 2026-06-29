@@ -1,0 +1,30 @@
+{
+  "name": "@swarm/harness",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "tsc:check": "bun tsc --noEmit -p tsconfig.json",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "test": "bun test src"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.93.0",
+    "@earendil-works/pi-ai": "^0.80.2",
+    "@earendil-works/pi-coding-agent": "^0.80.2",
+    "@openai/codex-sdk": "^0.142.3",
+    "@opencode-ai/sdk": "^1.17.11",
+    "@opentelemetry/api": "^1.9.1",
+    "@swarm/ai-llm": "workspace:*",
+    "@swarm/core-utils": "workspace:*",
+    "@swarm/credentials": "workspace:*",
+    "@swarm/otel": "workspace:*",
+    "@swarm/types": "workspace:*",
+    "date-fns": "^4.1.0",
+    "typebox": "1.1.38"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./*": "./src/*.ts"
+  }
+}

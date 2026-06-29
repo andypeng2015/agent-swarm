@@ -19,7 +19,7 @@
 import { Database } from "bun:sqlite";
 import { faker } from "@faker-js/faker";
 import { dirname, resolve } from "node:path";
-import { runMigrations } from "../src/be/migrations/runner";
+import { runMigrations } from "@swarm/storage/migrations/runner";
 
 // Deterministic seed for reproducible output
 faker.seed(42);
@@ -318,11 +318,11 @@ const FILE_INDEX_PATHS = [
   "src/be/memory/providers/sqlite-store.ts",
   "src/http/memory.ts",
   "src/http/route-def.ts",
-  "src/providers/claude.ts",
-  "src/providers/codex.ts",
-  "src/utils/secret-scrubber.ts",
-  "ui/src/api/client.ts",
-  "ui/src/pages/memory/page.tsx",
+  "packages/harness/src/claude.ts",
+  "packages/harness/src/codex-adapter.ts",
+  "packages/core-utils/src/secret-scrubber.ts",
+  "apps/ui/src/api/client.ts",
+  "apps/ui/src/pages/memory/page.tsx",
   "runbooks/local-development.md",
   "CLAUDE.md",
   "openapi.json",
@@ -1020,7 +1020,7 @@ function generateSessionConversation(taskIndex: number): string[] {
         {
           type: "tool_result",
           tool_use_id: "toolu_01A",
-          content: '1→import { verifyToken } from "./jwt-utils";\n2→import { getUserById } from "../be/db";\n3→\n4→export async function authenticate(token: string) {\n5→  const payload = verifyToken(token);\n6→  return getUserById(payload.sub);\n7→}',
+          content: '1→import { verifyToken } from "./jwt-utils";\n2→import { getUserById } from "@swarm/storage/db";\n3→\n4→export async function authenticate(token: string) {\n5→  const payload = verifyToken(token);\n6→  return getUserById(payload.sub);\n7→}',
         },
       ], "claude-opus-4-6"),
       logLine("assistant", [

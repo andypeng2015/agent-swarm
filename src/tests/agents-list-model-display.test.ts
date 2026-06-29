@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   getAgentModelDisplay,
   getAgentModelPresentation,
-} from "../../ui/src/lib/agents-list-model-display";
+} from "../../apps/ui/src/lib/agents-list-model-display";
 
 describe("agents list model display", () => {
   test("shows configured and last-used models when they diverge", () => {

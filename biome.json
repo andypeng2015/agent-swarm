@@ -7,7 +7,15 @@
   },
   "files": {
     "ignoreUnknown": false,
-    "includes": ["**", "!src/be/seed-scripts/catalog", "!src/be/modelsdev-cache.json", "!mockups"]
+    "includes": [
+      "**",
+      "!packages/ai-pricing/src/modelsdev-cache.json",
+      "!packages/storage/src/seed-scripts/catalog",
+      "!src/be/seed-scripts/catalog",
+      "!src/be/modelsdev-cache.json",
+      "!apps/templates-ui",
+      "!mockups"
+    ]
   },
   "formatter": {
     "enabled": true,

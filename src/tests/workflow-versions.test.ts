@@ -7,9 +7,9 @@ import {
   getWorkflowVersions,
   initDb,
   updateWorkflow,
-} from "../be/db";
-import type { Workflow } from "../types";
-import { snapshotWorkflow } from "../workflows/version";
+} from "@swarm/storage/db";
+import type { Workflow } from "@swarm/types";
+import { snapshotWorkflow } from "@swarm/workflows/version";
 
 const TEST_DB_PATH = "./test-workflow-versions.sqlite";
 

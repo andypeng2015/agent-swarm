@@ -1,18 +1,18 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { unlink } from "node:fs/promises";
-import { closeDb, initDb } from "../be/db";
-import { getAllTemplateDefinitions } from "../prompts/registry";
-import { resolveTemplate } from "../prompts/resolver";
+import { getAllTemplateDefinitions } from "@swarm/prompt-templates/registry";
+import { resolveTemplate } from "@swarm/prompt-templates/resolver";
+import { closeDb, initDb } from "@swarm/storage/db";
 
 // Side-effect imports: register all templates from each source
-import "../gitlab/templates";
-import "../agentmail/templates";
-import "../linear/templates";
-import "../heartbeat/templates";
-import "../tools/templates";
-import "../commands/templates";
-import "../slack/templates";
-import "../prompts/session-templates";
+import "@swarm/integrations/gitlab/templates";
+import "@swarm/integrations/agentmail/templates";
+import "@swarm/integrations/linear/templates";
+import "@swarm/prompt-templates/command-templates";
+import "@swarm/prompt-templates/heartbeat/templates";
+import "@swarm/integrations/slack/templates";
+import "@swarm/prompt-templates/session-templates";
+import "@swarm/prompt-templates/tool-templates";
 
 const TEST_DB_PATH = "./test-prompt-remaining.sqlite";
 
@@ -26,14 +26,14 @@ async function ensureTemplatesRegistered(): Promise<void> {
   // clearTemplateDefinitions() in beforeEach/beforeAll, and since Bun shares
   // module state across parallel test files, a single-template check is racy.
   const ts = Date.now();
-  await import(`../gitlab/templates?t=${ts}`);
-  await import(`../agentmail/templates?t=${ts}`);
-  await import(`../linear/templates?t=${ts}`);
-  await import(`../heartbeat/templates?t=${ts}`);
-  await import(`../tools/templates?t=${ts}`);
-  await import(`../commands/templates?t=${ts}`);
-  await import(`../slack/templates?t=${ts}`);
-  await import(`../prompts/session-templates?t=${ts}`);
+  await import(`@swarm/integrations/gitlab/templates?t=${ts}`);
+  await import(`@swarm/integrations/agentmail/templates?t=${ts}`);
+  await import(`@swarm/integrations/linear/templates?t=${ts}`);
+  await import(`@swarm/prompt-templates/command-templates?t=${ts}`);
+  await import(`@swarm/prompt-templates/heartbeat/templates?t=${ts}`);
+  await import(`@swarm/integrations/slack/templates?t=${ts}`);
+  await import(`@swarm/prompt-templates/session-templates?t=${ts}`);
+  await import(`@swarm/prompt-templates/tool-templates?t=${ts}`);
 }
 
 beforeAll(async () => {

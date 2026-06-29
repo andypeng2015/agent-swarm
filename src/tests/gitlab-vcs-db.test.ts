@@ -7,7 +7,7 @@ import {
   findTaskByVcs,
   getTaskById,
   initDb,
-} from "../be/db";
+} from "@swarm/storage/db";
 
 const TEST_DB_PATH = "./test-gitlab-vcs-db.sqlite";
 
@@ -129,7 +129,7 @@ describe("findTaskByVcs", () => {
     });
 
     // Complete the task
-    const db = require("../be/db");
+    const db = require("@swarm/storage/db");
     db.startTask(task.id);
     db.completeTask(task.id, "Done");
 

@@ -15,8 +15,8 @@ import {
   resolveWaitState,
   updateWorkflowRun,
   updateWorkflowRunStep,
-} from "../be/db";
-import type { WorkflowDefinition } from "../types";
+} from "@swarm/storage/db";
+import type { WorkflowDefinition } from "@swarm/types";
 
 const TEST_DB_PATH = "./test-workflow-wait-state-queries.sqlite";
 

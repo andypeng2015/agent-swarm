@@ -2,8 +2,12 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ClaudeAdapter, createSessionMcpConfig, mergeMcpConfig } from "../providers/claude-adapter";
-import type { ProviderSessionConfig } from "../providers/types";
+import {
+  ClaudeAdapter,
+  createSessionMcpConfig,
+  mergeMcpConfig,
+} from "@swarm/harness/claude-adapter";
+import type { ProviderSessionConfig } from "@swarm/harness/types";
 
 /** Minimal config for testing — sessions won't actually spawn in these unit tests */
 function makeConfig(overrides: Partial<ProviderSessionConfig> = {}): ProviderSessionConfig {

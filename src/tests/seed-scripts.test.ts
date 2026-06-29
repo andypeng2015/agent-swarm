@@ -2,19 +2,19 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { cp, mkdir, readdir, rm, unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
-import { closeDb, initDb } from "../be/db";
-import { getScript, listScripts, upsertScriptByName } from "../be/scripts/db";
-import { setScriptEmbeddingProviderForTests } from "../be/scripts/embeddings";
-import { typecheckScript } from "../be/scripts/typecheck";
-import { runSeeder } from "../be/seed";
-import { SEED_SCRIPTS, scriptsSeeder } from "../be/seed-scripts";
-import bootTriage from "../be/seed-scripts/catalog/boot-triage";
-import compoundInsights from "../be/seed-scripts/catalog/compound-insights";
+import { extractScriptSignature } from "@swarm/scripts/extract-signature";
+import { validateScriptImports } from "@swarm/scripts/import-allowlist";
+import { closeDb, initDb } from "@swarm/storage/db";
+import { getScript, listScripts, upsertScriptByName } from "@swarm/storage/scripts/db";
+import { setScriptEmbeddingProviderForTests } from "@swarm/storage/scripts/embeddings";
+import { typecheckScript } from "@swarm/storage/scripts/typecheck";
+import { runSeeder } from "@swarm/storage/seed";
+import { SEED_SCRIPTS, scriptsSeeder } from "@swarm/storage/seed-scripts";
+import bootTriage from "@swarm/storage/seed-scripts/catalog/boot-triage";
+import compoundInsights from "@swarm/storage/seed-scripts/catalog/compound-insights";
 import opsCatalogAudit, {
   renderPage as renderOpsCatalogAuditPage,
-} from "../be/seed-scripts/catalog/ops-catalog-audit";
-import { extractScriptSignature } from "../scripts-runtime/extract-signature";
-import { validateScriptImports } from "../scripts-runtime/import-allowlist";
+} from "@swarm/storage/seed-scripts/catalog/ops-catalog-audit";
 
 const TEST_DB_PATH = "./test-seed-scripts.sqlite";
 
@@ -67,7 +67,7 @@ describe("seed-scripts catalog", () => {
   });
 
   test("inline catalog files stay in sync with their runtime files", async () => {
-    const catalogDir = join(import.meta.dir, "../be/seed-scripts/catalog");
+    const catalogDir = join(import.meta.dir, "../../packages/storage/src/seed-scripts/catalog");
     const inlineFiles = ["boot-triage", "catalog-report", "compound-insights", "ops-catalog-audit"];
 
     for (const name of inlineFiles) {

@@ -6,11 +6,11 @@ import {
   type Server,
   type ServerResponse,
 } from "node:http";
-import { closeDb, createAgent, createUser, getDb, initDb } from "../be/db";
-import { type IdentityActor, mintToken, revokeToken } from "../be/users";
-import { handleCore } from "../http/core";
-import { handleTasks } from "../http/tasks";
-import { getPathSegments, parseQueryParams } from "../http/utils";
+import { handleCore } from "@swarm/api-server/http/core";
+import { handleTasks } from "@swarm/api-server/http/tasks";
+import { getPathSegments, parseQueryParams } from "@swarm/api-server/http/utils";
+import { closeDb, createAgent, createUser, getDb, initDb } from "@swarm/storage/db";
+import { type IdentityActor, mintToken, revokeToken } from "@swarm/storage/users";
 
 const TEST_DB_PATH = "./test-user-token-rest-auth.sqlite";
 const API_KEY = "test-api-key";

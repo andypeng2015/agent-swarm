@@ -107,7 +107,7 @@ The dashboard's pi harness model picker prefers the worker-reported live list wh
 
 ### Bedrock probe card (Credentials tab)
 
-A dedicated **AWS Bedrock** card appears in the Credentials tab for all `pi`-harness agents. It renders a read-only ready/blocked/pending classification at parity with the main credentials card, plus region, probe timestamp, usable model count, and error text when blocked. Implemented in `ui/src/pages/agents/[id]/credentials-panel.tsx` (`BedrockProbeCard`).
+A dedicated **AWS Bedrock** card appears in the Credentials tab for all `pi`-harness agents. It renders a read-only ready/blocked/pending classification at parity with the main credentials card, plus region, probe timestamp, usable model count, and error text when blocked. Implemented in `apps/ui/src/pages/agents/[id]/credentials-panel.tsx` (`BedrockProbeCard`).
 
 | Dot color | State | Meaning |
 |-----------|-------|---------|
@@ -146,7 +146,7 @@ Internal refactors that don't change observable behavior don't need a doc update
 ## Adding a new provider
 
 1. Read the docs-site guide's "Reference implementations" section to see how `claude`, `pi`, `codex`, and `devin` are wired.
-2. Implement the `ProviderAdapter` in `src/providers/<name>/`.
+2. Implement the `ProviderAdapter` in `packages/harness/src/<name>/`.
 3. Wire factory dispatch in `src/commands/runner.ts`.
 4. Branch in `docker-entrypoint.sh` for credential restoration if the provider needs auth files.
 5. Update the docs-site guide:
@@ -237,7 +237,7 @@ claude-bridge is an env-based alternate binary on the existing `claude` adapter,
 
 This runbook applies when modifying:
 
-- `src/providers/*`
+- `packages/harness/src/*`
 - `src/commands/runner.ts` (provider dispatch)
 - `src/prompts/*` (system-prompt composition)
 - `docker-entrypoint.sh` (provider branches)

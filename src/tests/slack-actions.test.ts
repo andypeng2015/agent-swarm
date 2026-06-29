@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { unlinkSync } from "node:fs";
+import { buildCancelledBlocks, getTaskLink } from "@swarm/integrations/slack/blocks";
 import {
   cancelTask,
   closeDb,
@@ -8,8 +9,7 @@ import {
   getLeadAgent,
   getTaskById,
   initDb,
-} from "../be/db";
-import { buildCancelledBlocks, getTaskLink } from "../slack/blocks";
+} from "@swarm/storage/db";
 
 const TEST_DB_PATH = "./test-slack-actions.sqlite";
 

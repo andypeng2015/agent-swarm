@@ -10,9 +10,9 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { unlink } from "node:fs/promises";
 import type { IncomingMessage } from "node:http";
 import { Readable } from "node:stream";
-import { resolveHttpAuditUserId, resolveTaskAuditUserId } from "../be/audit-user";
-import { closeDb, createAgent, createTaskExtended, createUser, initDb } from "../be/db";
-import { setRequestAuth } from "../utils/request-auth-context";
+import { resolveHttpAuditUserId, resolveTaskAuditUserId } from "@swarm/storage/audit-user";
+import { closeDb, createAgent, createTaskExtended, createUser, initDb } from "@swarm/storage/db";
+import { setRequestAuth } from "@swarm/storage/request-auth-context";
 
 const TEST_DB_PATH = "./test-audit-user.sqlite";
 

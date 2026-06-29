@@ -2,11 +2,11 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { unlink } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { Readable } from "node:stream";
-import { closeDb, createMcpServer, initDb } from "../be/db";
-import { getMcpOAuthToken } from "../be/db-queries/mcp-oauth";
-import { handleCore } from "../http/core";
-import { handleMcpOAuth } from "../http/mcp-oauth";
-import { getPathSegments, parseQueryParams } from "../http/utils";
+import { handleCore } from "@swarm/api-server/http/core";
+import { handleMcpOAuth } from "@swarm/api-server/http/mcp-oauth";
+import { getPathSegments, parseQueryParams } from "@swarm/api-server/http/utils";
+import { closeDb, createMcpServer, initDb } from "@swarm/storage/db";
+import { getMcpOAuthToken } from "@swarm/storage/db-queries/mcp-oauth";
 
 const API_KEY = "test-secret-key";
 const TEST_DB_PATH = "./test-mcp-oauth-manual-client.sqlite";

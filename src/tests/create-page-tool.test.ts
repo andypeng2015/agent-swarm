@@ -14,10 +14,11 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import crypto from "node:crypto";
 import { unlink } from "node:fs/promises";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { closeDb, getPageBySlug, getPageVersions, initDb } from "../be/db";
-import { registerCreatePageTool } from "../tools/create-page";
+import { registerCreatePageTool } from "@swarm/api-server/tools/create-page";
+import { closeDb, getPageBySlug, getPageVersions, initDb } from "@swarm/storage/db";
 
 const TEST_DB_PATH = "./test-create-page-tool.sqlite";
+const SERVER_MODULE = "@swarm/api-server/server";
 
 type RegisteredTool = {
   handler: (args: unknown, extra: unknown) => Promise<unknown>;
@@ -196,19 +197,19 @@ describe("create_page MCP tool capability gating", () => {
       // Default capabilities don't include 'pages' (step-3 enforced).
       process.env.CAPABILITIES = "core,task-pool,profiles,services,scheduling,memory,workflows";
       // Force a fresh module evaluation so the capability check re-runs.
-      delete require.cache[require.resolve("../server")];
-      const without = await import("../server");
+      delete require.cache[require.resolve(SERVER_MODULE)];
+      const without = await import(SERVER_MODULE);
       expect(without.hasCapability("pages")).toBe(false);
 
       process.env.CAPABILITIES =
         "core,task-pool,profiles,services,scheduling,memory,workflows,pages";
-      delete require.cache[require.resolve("../server")];
-      const withPages = await import("../server");
+      delete require.cache[require.resolve(SERVER_MODULE)];
+      const withPages = await import(SERVER_MODULE);
       expect(withPages.hasCapability("pages")).toBe(true);
     } finally {
       if (orig === undefined) delete process.env.CAPABILITIES;
       else process.env.CAPABILITIES = orig;
-      delete require.cache[require.resolve("../server")];
+      delete require.cache[require.resolve(SERVER_MODULE)];
     }
   });
 });

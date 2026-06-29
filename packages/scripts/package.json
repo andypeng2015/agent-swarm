@@ -1,0 +1,27 @@
+{
+  "name": "@swarm/scripts",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/swarm-sdk.ts",
+    "./credential-broker": "./src/credential-broker/index.ts",
+    "./credential-broker/*": "./src/credential-broker/*.ts",
+    "./executors/*": "./src/executors/*.ts",
+    "./stdlib": "./src/stdlib/index.ts",
+    "./stdlib/*": "./src/stdlib/*.ts",
+    "./*": "./src/*.ts"
+  },
+  "scripts": {
+    "tsc:check": "bun tsc --noEmit -p tsconfig.json",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "test": "bun test src"
+  },
+  "dependencies": {
+    "@swarm/core-utils": "workspace:*",
+    "@swarm/types": "workspace:*",
+    "typescript": "^5.9.3",
+    "zod": "4.2.1"
+  }
+}

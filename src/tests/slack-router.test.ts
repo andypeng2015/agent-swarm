@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { unlinkSync } from "node:fs";
-import { closeDb, createAgent, createTaskExtended, initDb } from "../be/db";
-import { routeMessage } from "../slack/router";
-import type { Agent } from "../types";
+import { routeMessage } from "@swarm/integrations/slack/router";
+import { closeDb, createAgent, createTaskExtended, initDb } from "@swarm/storage/db";
+import type { Agent } from "@swarm/types";
 
 const TEST_DB_PATH = "./test-slack-router.sqlite";
 

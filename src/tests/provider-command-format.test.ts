@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { ClaudeAdapter } from "../providers/claude-adapter";
-import { CodexAdapter } from "../providers/codex-adapter";
-import { createProviderAdapter } from "../providers/index";
-import { OpencodeAdapter } from "../providers/opencode-adapter";
-import { PiMonoAdapter } from "../providers/pi-mono-adapter";
+import { ClaudeAdapter } from "@swarm/harness/claude-adapter";
+import { CodexAdapter } from "@swarm/harness/codex-adapter";
+import { createProviderAdapter } from "@swarm/harness/index";
+import { OpencodeAdapter } from "@swarm/harness/opencode-adapter";
+import { PiMonoAdapter } from "@swarm/harness/pi-mono-adapter";
 
 describe("ProviderAdapter.formatCommand", () => {
   const claude = new ClaudeAdapter();

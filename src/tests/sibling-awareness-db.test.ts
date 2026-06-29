@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { unlinkSync } from "node:fs";
-import { closeDb, completeTask, createAgent, createTaskExtended, initDb } from "../be/db";
-import { slackContextKey } from "../tasks/context-key";
-import { applySiblingAwareness } from "../tasks/sibling-awareness";
+import { closeDb, completeTask, createAgent, createTaskExtended, initDb } from "@swarm/storage/db";
+import { slackContextKey } from "@swarm/workflows/tasks/context-key";
+import { applySiblingAwareness } from "@swarm/workflows/tasks/sibling-awareness";
 
 const TEST_DB_PATH = "./test-sibling-awareness-db.sqlite";
 

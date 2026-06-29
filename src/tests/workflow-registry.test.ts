@@ -1,21 +1,21 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { unlink } from "node:fs/promises";
-import { z } from "zod";
-import { closeDb, initDb } from "../be/db";
-import type { ExecutorMeta, WorkflowDefinition } from "../types";
+import { closeDb, initDb } from "@swarm/storage/db";
+import type { ExecutorMeta, WorkflowDefinition } from "@swarm/types";
 import {
   findEntryNodes,
   generateEdges,
   getSuccessors,
   validateDefinition,
-} from "../workflows/definition";
+} from "@swarm/workflows/definition";
 import {
   BaseExecutor,
   type ExecutorDependencies,
   type ExecutorInput,
   type ExecutorResult,
-} from "../workflows/executors/base";
-import { ExecutorRegistry } from "../workflows/executors/registry";
+} from "@swarm/workflows/executors/base";
+import { ExecutorRegistry } from "@swarm/workflows/executors/registry";
+import { z } from "zod";
 
 const TEST_DB_PATH = "./test-workflow-registry.sqlite";
 
@@ -74,7 +74,7 @@ class TestBranchExecutor extends BaseExecutor<
 // ─── Mock Dependencies ───────────────────────────────────────
 
 const mockDeps: ExecutorDependencies = {
-  db: {} as typeof import("../be/db"),
+  db: {} as typeof import("@swarm/storage/db"),
   eventBus: { emit: () => {}, on: () => {}, off: () => {} },
   interpolate: (t: string) => t,
 };
@@ -449,7 +449,7 @@ describe("Workflow Registry & Definition (Phase 1)", () => {
   // ---------------------------------------------------------------------------
   describe("DB integration", () => {
     test("creates and retrieves a workflow with new fields", async () => {
-      const db = await import("../be/db");
+      const db = await import("@swarm/storage/db");
       // biome-ignore lint/suspicious/noTemplateCurlyInString: testing env var input syntax
       const envVarRef = "${API_KEY}";
       const workflow = db.createWorkflow({
@@ -491,7 +491,7 @@ describe("Workflow Registry & Definition (Phase 1)", () => {
     });
 
     test("creates and retrieves workflow versions", async () => {
-      const db = await import("../be/db");
+      const db = await import("@swarm/storage/db");
       const workflow = db.createWorkflow({
         name: "test-versioned-workflow",
         definition: {
@@ -540,7 +540,7 @@ describe("Workflow Registry & Definition (Phase 1)", () => {
     });
 
     test("retry-related step queries work", async () => {
-      const db = await import("../be/db");
+      const db = await import("@swarm/storage/db");
       const workflow = db.createWorkflow({
         name: "test-retry-queries",
         definition: {

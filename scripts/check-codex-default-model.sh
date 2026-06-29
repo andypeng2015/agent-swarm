@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 # Verify the baseline Codex model in Dockerfile.worker matches
-# CODEX_DEFAULT_MODEL exported by src/providers/codex-models.ts.
+# CODEX_DEFAULT_MODEL exported by packages/harness/src/codex-models.ts.
 # Run from the repo root (or any subdirectory).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DOCKERFILE="$ROOT/Dockerfile.worker"
-MODELS_TS="$ROOT/src/providers/codex-models.ts"
+MODELS_TS="$ROOT/packages/harness/src/codex-models.ts"
 
 if [ ! -f "$DOCKERFILE" ] || [ ! -f "$MODELS_TS" ]; then
-  echo "check-codex-default-model: missing Dockerfile.worker or src/providers/codex-models.ts" >&2
+  echo "check-codex-default-model: missing Dockerfile.worker or packages/harness/src/codex-models.ts" >&2
   exit 1
 fi
 
@@ -24,7 +24,7 @@ fi
 if [ "$dockerfile_model" != "$ts_default" ]; then
   echo "check-codex-default-model: MISMATCH" >&2
   echo "  Dockerfile.worker baseline: $dockerfile_model" >&2
-  echo "  src/providers/codex-models.ts CODEX_DEFAULT_MODEL: $ts_default" >&2
+  echo "  packages/harness/src/codex-models.ts CODEX_DEFAULT_MODEL: $ts_default" >&2
   exit 1
 fi
 

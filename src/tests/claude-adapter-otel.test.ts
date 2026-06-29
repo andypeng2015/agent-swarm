@@ -19,8 +19,8 @@ import {
   buildClaudeCodeOtelEnv,
   buildClaudeCodeRuntimeEnv,
   ClaudeAdapter,
-} from "../providers/claude-adapter";
-import type { ProviderSessionConfig } from "../providers/types";
+} from "@swarm/harness/claude-adapter";
+import type { ProviderSessionConfig } from "@swarm/harness/types";
 
 // Example IDs from the task — trace af2c8371…, span adff4f24… (the orphaned
 // `claude_code.interaction` root this gate is meant to re-parent).

@@ -1,5 +1,5 @@
 /**
- * Unit tests for `summarizeSessionForPi` in `src/providers/pi-mono-extension.ts`.
+ * Unit tests for `summarizeSessionForPi` in `packages/harness/src/pi-mono-extension.ts`.
  *
  * Plan: thoughts/taras/plans/2026-05-10-fix-session-summarization-workers.md
  * → Phase 1 § "Test coverage"
@@ -19,8 +19,8 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import type { SummarizeSessionForPiDeps, SwarmHooksConfig } from "../providers/pi-mono-extension";
-import { summarizeSessionForPi } from "../providers/pi-mono-extension";
+import type { SummarizeSessionForPiDeps, SwarmHooksConfig } from "@swarm/harness/pi-mono-extension";
+import { summarizeSessionForPi } from "@swarm/harness/pi-mono-extension";
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 

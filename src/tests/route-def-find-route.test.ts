@@ -3,11 +3,11 @@ import { describe, expect, test } from "bun:test";
 // Importing the barrel server side-effect loads every `route()` definition
 // (handlers register themselves in `routeRegistry` at import time). Without
 // this, the registry is empty and `findRoute` always returns undefined.
-import "../http/tasks";
-import "../http/agents";
-import "../http/sessions";
+import "@swarm/api-server/http/tasks";
+import "@swarm/api-server/http/agents";
+import "@swarm/api-server/http/sessions";
 
-import { describeRequestRoute, findRoute } from "../http/route-def";
+import { describeRequestRoute, findRoute } from "@swarm/api-server/http/route-def";
 
 describe("findRoute", () => {
   test("matches a parameterized GET /api/tasks/{id}", () => {

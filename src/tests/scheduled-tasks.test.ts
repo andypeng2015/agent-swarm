@@ -11,9 +11,9 @@ import {
   getScheduledTasks,
   initDb,
   updateScheduledTask,
-} from "../be/db";
-import { calculateNextRun, runScheduleNow } from "../scheduler";
-import type { ScheduledTask } from "../types";
+} from "@swarm/storage/db";
+import type { ScheduledTask } from "@swarm/types";
+import { calculateNextRun, runScheduleNow } from "@swarm/workflows/scheduler";
 
 const TEST_DB_PATH = "./test-scheduled-tasks.sqlite";
 

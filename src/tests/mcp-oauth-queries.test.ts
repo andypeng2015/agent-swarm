@@ -7,7 +7,7 @@ import {
   getMcpServerById,
   initDb,
   updateMcpServer,
-} from "../be/db";
+} from "@swarm/storage/db";
 import {
   consumeMcpOAuthPending,
   deleteMcpOAuthToken,
@@ -20,7 +20,7 @@ import {
   markMcpOAuthTokenStatus,
   setMcpServerAuthMethod,
   upsertMcpOAuthToken,
-} from "../be/db-queries/mcp-oauth";
+} from "@swarm/storage/db-queries/mcp-oauth";
 
 const TEST_DB_PATH = "./test-mcp-oauth-queries.sqlite";
 
@@ -83,7 +83,7 @@ describe("mcp_oauth_tokens encryption roundtrip", () => {
     upsertMcpOAuthToken({ ...base(server.id), accessToken: "UNIQUE_PLAINTEXT_TOKEN_ABC" });
 
     // Use raw SQL to inspect the row bypassing the decrypt helper.
-    const { getDb } = await import("../be/db");
+    const { getDb } = await import("@swarm/storage/db");
     const row = getDb()
       .query("SELECT accessToken FROM mcp_oauth_tokens WHERE mcpServerId = ?")
       .get(server.id) as { accessToken: string } | null;
@@ -217,7 +217,7 @@ describe("mcp_oauth_pending (state PK)", () => {
     });
 
     // Backdate createdAt via direct update.
-    const { getDb } = require("../be/db");
+    const { getDb } = require("@swarm/storage/db");
     getDb()
       .query("UPDATE mcp_oauth_pending SET createdAt = ? WHERE state = ?")
       .run(new Date(Date.now() - 60 * 60_000).toISOString(), "state-gc-old");

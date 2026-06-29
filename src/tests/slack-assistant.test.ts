@@ -8,7 +8,7 @@ import {
   getLeadAgent,
   getTaskById,
   initDb,
-} from "../be/db";
+} from "@swarm/storage/db";
 
 const TEST_DB_PATH = "./test-slack-assistant.sqlite";
 

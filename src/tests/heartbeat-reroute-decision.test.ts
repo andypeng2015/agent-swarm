@@ -7,13 +7,21 @@
  * Phase 3 extends this file with the heartbeat reaper that invokes it.
  *
  * Mirrors heartbeat-supersede-resume.test.ts's own-sqlite-file setup, plus the
- * `../tools/templates` side-effect import so `task.reroute.decision` resolves.
+ * `@swarm/prompt-templates/tool-templates` side-effect import so
+ * `task.reroute.decision` resolves.
  */
 
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { unlink } from "node:fs/promises";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import {
+  codeLevelTriage,
+  HEARTBEAT_RESUME_PIN_GRACE_MIN,
+  MAX_RESUME_GENERATIONS,
+  RESUME_BUDGET_EXHAUSTED_REASON,
+} from "@swarm/api-server/heartbeat/heartbeat";
+import { registerSendTaskTool } from "@swarm/api-server/tools/send-task";
 import {
   closeDb,
   createAgent,
@@ -26,23 +34,16 @@ import {
   initDb,
   startTask,
   supersedeTask,
-} from "../be/db";
-import { createTrackerSync, getTrackerSync } from "../be/db-queries/tracker";
-import {
-  codeLevelTriage,
-  HEARTBEAT_RESUME_PIN_GRACE_MIN,
-  MAX_RESUME_GENERATIONS,
-  RESUME_BUDGET_EXHAUSTED_REASON,
-} from "../heartbeat/heartbeat";
+} from "@swarm/storage/db";
+import { createTrackerSync, getTrackerSync } from "@swarm/storage/db-queries/tracker";
 import {
   CRASH_RECOVERY_PIN_TAG,
   createRerouteDecisionTask,
   createResumeFollowUp,
   RESUME_GENERATION_TAG_PREFIX,
-} from "../tasks/worker-follow-up";
-import { registerSendTaskTool } from "../tools/send-task";
+} from "@swarm/workflows/tasks/worker-follow-up";
 // Side-effect import: registers task lifecycle templates (incl. task.reroute.decision).
-import "../tools/templates";
+import "@swarm/prompt-templates/tool-templates";
 
 const TEST_DB_PATH = "./test-heartbeat-reroute-decision.sqlite";
 

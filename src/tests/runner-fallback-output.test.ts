@@ -7,7 +7,7 @@ import {
   ensureTaskFinished,
   getBridgeFailureDiagnostics,
   handleStructuredOutputFallback,
-} from "../commands/runner";
+} from "@swarm/app-cli/commands/runner";
 
 // Configurable mock responses per test
 let mockGetTask: Record<string, unknown> | null = null;
@@ -321,7 +321,7 @@ describe("ensureTaskFinished", () => {
       logs: [],
     };
     // Force a non-claude adapter via env. The factory at
-    // src/providers/index.ts accepts "pi" (NOT "pi-mono") — the prior
+    // packages/harness/src/index.ts accepts "pi" (NOT "pi-mono") — the prior
     // test value was a typo that silently fell into the unknown-provider
     // error path instead of exercising the pi branch.
     const origProvider = process.env.HARNESS_PROVIDER;

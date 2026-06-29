@@ -1,0 +1,26 @@
+{
+  "name": "@swarm/app-api",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./bootstrap": "./src/bootstrap.ts",
+    "./http": "./src/http.ts",
+    "./stdio": "./src/stdio.ts"
+  },
+  "scripts": {
+    "tsc:check": "bun tsc -p tsconfig.json --noEmit",
+    "lint": "biome check src",
+    "lint:fix": "biome check --write src",
+    "test": "bun test src --pass-with-no-tests"
+  },
+  "dependencies": {
+    "@swarm/ai-llm": "workspace:*",
+    "@swarm/api-server": "workspace:*",
+    "@swarm/integrations": "workspace:*",
+    "@swarm/storage": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  }
+}

@@ -1,12 +1,12 @@
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
 import { unlink } from "node:fs/promises";
-import { closeDb, createMcpServer, initDb } from "../be/db";
+import { ensureMcpToken } from "@swarm/integrations/oauth/ensure-mcp-token";
+import { closeDb, createMcpServer, initDb } from "@swarm/storage/db";
 import {
   getMcpOAuthToken,
   type UpsertMcpOAuthTokenInput,
   upsertMcpOAuthToken,
-} from "../be/db-queries/mcp-oauth";
-import { ensureMcpToken } from "../oauth/ensure-mcp-token";
+} from "@swarm/storage/db-queries/mcp-oauth";
 
 const TEST_DB_PATH = "./test-mcp-oauth-ensure-token.sqlite";
 

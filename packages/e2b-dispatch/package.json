@@ -1,0 +1,20 @@
+{
+  "name": "@swarm/e2b-dispatch",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/dispatch.ts",
+    "./env": "./src/env.ts"
+  },
+  "scripts": {
+    "tsc:check": "bun tsc --noEmit -p tsconfig.json",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "test": "bun test src --pass-with-no-tests"
+  },
+  "dependencies": {
+    "@swarm/core-utils": "workspace:*",
+    "e2b": "2.26.0"
+  }
+}

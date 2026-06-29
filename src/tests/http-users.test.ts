@@ -20,11 +20,11 @@ import {
   type Server,
   type ServerResponse,
 } from "node:http";
-import { closeDb, createUser, getBudget, getDb, initDb, upsertKv } from "../be/db";
-import { fingerprintApiKey, linkIdentity } from "../be/users";
-import { handleCore } from "../http/core";
-import { handleUsers } from "../http/users";
-import { getPathSegments, parseQueryParams } from "../http/utils";
+import { handleCore } from "@swarm/api-server/http/core";
+import { handleUsers } from "@swarm/api-server/http/users";
+import { getPathSegments, parseQueryParams } from "@swarm/api-server/http/utils";
+import { closeDb, createUser, getBudget, getDb, initDb, upsertKv } from "@swarm/storage/db";
+import { fingerprintApiKey, linkIdentity } from "@swarm/storage/users";
 
 const TEST_DB_PATH = "./test-http-users.sqlite";
 const API_KEY = "test-users-key";

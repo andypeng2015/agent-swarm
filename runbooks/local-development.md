@@ -113,7 +113,7 @@ Branch selection is currently hardcoded to `"main"`; per-task branch overrides w
 
 ### Cost computation
 
-Managed-agents reports only token counts on `span.model_request_end`. The adapter computes USD locally using `src/providers/claude-managed-models.ts` (rates per [Anthropic pricing](https://platform.claude.com/docs/en/about-claude/pricing)) and adds Anthropic's `$0.08/session-hour` runtime fee, billed by wallclock duration. Both components surface on the swarm `result` event's `cost.totalCostUsd`. Unknown model strings fall back to `$0` with a single deduplicated `console.warn`.
+Managed-agents reports only token counts on `span.model_request_end`. The adapter computes USD locally using `packages/harness/src/claude-managed-models.ts` (rates per [Anthropic pricing](https://platform.claude.com/docs/en/about-claude/pricing)) and adds Anthropic's `$0.08/session-hour` runtime fee, billed by wallclock duration. Both components surface on the swarm `result` event's `cost.totalCostUsd`. Unknown model strings fall back to `$0` with a single deduplicated `console.warn`.
 
 ## Portless dev
 

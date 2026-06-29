@@ -14,8 +14,8 @@ import {
   listAllPages,
   listPagesByAgent,
   updatePage,
-} from "../be/db";
-import { snapshotPage } from "../pages/version";
+} from "@swarm/storage/db";
+import { snapshotPage } from "@swarm/storage/pages/version";
 
 const TEST_DB_PATH = "./test-pages-storage.sqlite";
 

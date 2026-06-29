@@ -1,6 +1,20 @@
 import { afterAll, beforeAll, describe, expect, mock, test } from "bun:test";
 import { unlinkSync } from "node:fs";
 import {
+  _getLastRenderedTree,
+  _getTaskMessages,
+  _getTaskToTree,
+  _getTreeLastUpdateTime,
+  _getTreeMessages,
+  _isDMChannel,
+  _postInitialDMTreeMessage,
+  buildTreeNodes,
+  processTreeMessages,
+  registerTreeMessage,
+  startTaskWatcher,
+  stopTaskWatcher,
+} from "@swarm/integrations/slack/watcher";
+import {
   cancelTask,
   closeDb,
   completeTask,
@@ -15,21 +29,7 @@ import {
   setSlackMessageTracking,
   startTask,
   updateTaskProgress,
-} from "../be/db";
-import {
-  _getLastRenderedTree,
-  _getTaskMessages,
-  _getTaskToTree,
-  _getTreeLastUpdateTime,
-  _getTreeMessages,
-  _isDMChannel,
-  _postInitialDMTreeMessage,
-  buildTreeNodes,
-  processTreeMessages,
-  registerTreeMessage,
-  startTaskWatcher,
-  stopTaskWatcher,
-} from "../slack/watcher";
+} from "@swarm/storage/db";
 
 const TEST_DB_PATH = "./test-slack-watcher.sqlite";
 
@@ -493,7 +493,7 @@ const mockChatUpdate = mock(() => Promise.resolve({ ok: true }));
 const mockChatPostMessage = mock(() => Promise.resolve({ ok: true, ts: "mock.dm.tree.000001" }));
 const mockSetStatus = mock(() => Promise.resolve({ ok: true }));
 
-mock.module("../slack/app", () => ({
+mock.module("@swarm/integrations/slack/app", () => ({
   getSlackApp: () => ({
     client: {
       chat: {
@@ -796,7 +796,7 @@ describe("DM unification — postInitialDMTreeMessage", () => {
     startTask(task.id);
 
     // Re-fetch the task to get in_progress status
-    const { getTaskById } = await import("../be/db");
+    const { getTaskById } = await import("@swarm/storage/db");
     const freshTask = getTaskById(task.id)!;
 
     const messageTs = await _postInitialDMTreeMessage(freshTask);
@@ -818,7 +818,7 @@ describe("DM unification — postInitialDMTreeMessage", () => {
       slackUserId: "U_DM2",
     });
 
-    const { getTaskById } = await import("../be/db");
+    const { getTaskById } = await import("@swarm/storage/db");
     const freshTask = getTaskById(task.id)!;
 
     const messageTs = await _postInitialDMTreeMessage(freshTask);

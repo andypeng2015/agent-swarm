@@ -1,6 +1,6 @@
 /**
  * Unit + integration tests for the `memory_rate` MCP tool and the
- * conditional system-prompt addendum from `src/prompts/memories.ts`.
+ * conditional system-prompt addendum from `@swarm/prompt-templates/memories`.
  *
  * Plan: thoughts/taras/plans/2026-05-05-memory-rater-v1.5/step-5.md §7
  *
@@ -16,8 +16,8 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { renderMemoriesPrompt } from "../prompts/memories";
-import { registerMemoryRateTool } from "../tools/memory-rate";
+import { registerMemoryRateTool } from "@swarm/api-server/tools/memory-rate";
+import { renderMemoriesPrompt } from "@swarm/prompt-templates/memories";
 
 type FetchInit = Parameters<typeof fetch>[1];
 type CallRecord = { url: string; init: FetchInit };

@@ -1,15 +1,15 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { unlink } from "node:fs/promises";
-import { closeDb, getDb, initDb } from "../be/db";
-import { serializeEmbedding } from "../be/embedding";
-import type { EmbeddingProvider } from "../be/memory/types";
-import { getScript, upsertScriptByName } from "../be/scripts/db";
+import { closeDb, getDb, initDb } from "@swarm/storage/db";
+import { serializeEmbedding } from "@swarm/storage/embedding";
+import type { EmbeddingProvider } from "@swarm/storage/memory/types";
+import { getScript, upsertScriptByName } from "@swarm/storage/scripts/db";
 import {
   reembedAllScripts,
   searchScripts,
   setScriptEmbeddingProviderForTests,
-} from "../be/scripts/embeddings";
-import { runScriptsMaintenanceCommand } from "../be/scripts/maintenance";
+} from "@swarm/storage/scripts/embeddings";
+import { runScriptsMaintenanceCommand } from "@swarm/storage/scripts/maintenance";
 
 const TEST_DB_PATH = "./test-scripts-embeddings.sqlite";
 

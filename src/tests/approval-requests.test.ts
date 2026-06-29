@@ -15,10 +15,10 @@ import {
   resolveApprovalRequest,
   startTask,
   updateApprovalRequestNotifications,
-} from "../be/db";
-import type { ExecutorMeta } from "../types";
-import type { ExecutorDependencies, ExecutorInput } from "../workflows/executors/base";
-import { HumanInTheLoopExecutor } from "../workflows/executors/human-in-the-loop";
+} from "@swarm/storage/db";
+import type { ExecutorMeta } from "@swarm/types";
+import type { ExecutorDependencies, ExecutorInput } from "@swarm/workflows/executors/base";
+import { HumanInTheLoopExecutor } from "@swarm/workflows/executors/human-in-the-loop";
 
 const TEST_DB_PATH = "./test-approval-requests.sqlite";
 const TEST_PORT = 13031;
@@ -535,7 +535,7 @@ describe("Approval Requests", () => {
       db: {
         createApprovalRequest,
         getApprovalRequestByStepId,
-      } as unknown as typeof import("../be/db"),
+      } as unknown as typeof import("@swarm/storage/db"),
       eventBus: { emit: () => {}, on: () => {}, off: () => {} },
       interpolate: (template: string) => template,
     };

@@ -1,9 +1,9 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { unlinkSync } from "node:fs";
-import { closeDb, createAgent, createTaskExtended, initDb } from "../be/db";
-import { isBotMessage } from "../slack/handlers";
-import { hasOtherUserMention, routeMessage } from "../slack/router";
-import type { Agent } from "../types";
+import { isBotMessage } from "@swarm/integrations/slack/handlers";
+import { hasOtherUserMention, routeMessage } from "@swarm/integrations/slack/router";
+import { closeDb, createAgent, createTaskExtended, initDb } from "@swarm/storage/db";
+import type { Agent } from "@swarm/types";
 
 const TEST_DB_PATH = "./test-slack-bot-filter.sqlite";
 

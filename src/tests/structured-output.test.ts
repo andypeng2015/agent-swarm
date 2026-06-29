@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { unlink } from "node:fs/promises";
+import { validateJsonSchema } from "@swarm/core-utils/json-schema-validator";
 import {
   closeDb,
   createTaskExtended,
@@ -8,8 +9,7 @@ import {
   createWorkflowRunStep,
   getTaskById,
   initDb,
-} from "../be/db";
-import { validateJsonSchema } from "../workflows/json-schema-validator";
+} from "@swarm/storage/db";
 
 const TEST_DB_PATH = "./test-structured-output.sqlite";
 
@@ -231,7 +231,7 @@ describe("Resume — structured output JSON parsing", () => {
 
 describe("AgentTaskConfigSchema — outputSchema", () => {
   test("accepts outputSchema in config", async () => {
-    const { AgentTaskExecutor } = await import("../workflows/executors/agent-task");
+    const { AgentTaskExecutor } = await import("@swarm/workflows/executors/agent-task");
     const executor = new AgentTaskExecutor({
       db: {} as any,
       eventBus: { emit: () => {}, on: () => {}, off: () => {} },
@@ -254,7 +254,7 @@ describe("AgentTaskConfigSchema — outputSchema", () => {
   });
 
   test("accepts followUpConfig in config", async () => {
-    const { AgentTaskExecutor } = await import("../workflows/executors/agent-task");
+    const { AgentTaskExecutor } = await import("@swarm/workflows/executors/agent-task");
     const executor = new AgentTaskExecutor({
       db: {} as any,
       eventBus: { emit: () => {}, on: () => {}, off: () => {} },
@@ -280,11 +280,11 @@ describe("AgentTaskConfigSchema — outputSchema", () => {
 
 describe("Workflow agent-task creates task with outputSchema", () => {
   test("outputSchema flows from executor config to created task", async () => {
-    const { AgentTaskExecutor } = await import("../workflows/executors/agent-task");
-    const db = await import("../be/db");
+    const { AgentTaskExecutor } = await import("@swarm/workflows/executors/agent-task");
+    const db = await import("@swarm/storage/db");
 
     const executor = new AgentTaskExecutor({
-      db: db as typeof import("../be/db"),
+      db: db as typeof import("@swarm/storage/db"),
       eventBus: { emit: () => {}, on: () => {}, off: () => {} },
       interpolate: (t: string) => t,
     });
@@ -328,11 +328,11 @@ describe("Workflow agent-task creates task with outputSchema", () => {
   });
 
   test("followUpConfig flows from executor config to created task", async () => {
-    const { AgentTaskExecutor } = await import("../workflows/executors/agent-task");
-    const db = await import("../be/db");
+    const { AgentTaskExecutor } = await import("@swarm/workflows/executors/agent-task");
+    const db = await import("@swarm/storage/db");
 
     const executor = new AgentTaskExecutor({
-      db: db as typeof import("../be/db"),
+      db: db as typeof import("@swarm/storage/db"),
       eventBus: { emit: () => {}, on: () => {}, off: () => {} },
       interpolate: (t: string) => t,
     });

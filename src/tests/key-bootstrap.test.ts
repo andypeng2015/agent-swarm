@@ -7,8 +7,8 @@ import {
   __resetEncryptionKeyForTests,
   getEncryptionKey,
   resolveEncryptionKey,
-} from "../be/crypto/key-bootstrap";
-import { AES_KEY_BYTES } from "../be/crypto/secrets-cipher";
+} from "@swarm/core-utils/crypto/key-bootstrap";
+import { AES_KEY_BYTES } from "@swarm/core-utils/crypto/secrets-cipher";
 
 const ENV_KEY = "SECRETS_ENCRYPTION_KEY";
 const ENV_KEY_FILE = "SECRETS_ENCRYPTION_KEY_FILE";

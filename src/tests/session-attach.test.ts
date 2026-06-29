@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { unlink } from "node:fs/promises";
 import { createServer as createHttpServer, type Server } from "node:http";
+import { SessionErrorTracker, trackErrorFromJson } from "@swarm/otel/error-tracker";
 import {
   closeDb,
   createAgent,
@@ -8,8 +9,7 @@ import {
   getTaskById,
   initDb,
   updateTaskClaudeSessionId,
-} from "../be/db";
-import { SessionErrorTracker, trackErrorFromJson } from "../utils/error-tracker";
+} from "@swarm/storage/db";
 
 const TEST_DB_PATH = "./test-session-attach.sqlite";
 const TEST_PORT = 13022;

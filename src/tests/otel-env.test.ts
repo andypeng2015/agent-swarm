@@ -1,5 +1,5 @@
 /**
- * Tests for the shared harness-OTEL env helper (`src/providers/otel-env.ts`).
+ * Tests for the shared harness-OTEL env helper (`packages/harness/src/otel-env.ts`).
  *
  * `buildOtelTraceparentEnv` is the W3C trace-context builder that both the
  * claude and codex adapters call to nest a harness subprocess's spans inside
@@ -11,7 +11,7 @@
 
 import { describe, expect, test } from "bun:test";
 import type { Span } from "@opentelemetry/api";
-import { buildOtelTraceparentEnv, isHarnessOtelEnabled } from "../providers/otel-env";
+import { buildOtelTraceparentEnv, isHarnessOtelEnabled } from "@swarm/harness/otel-env";
 
 const TRACE_ID = "af2c8371b1f4dcafc9ac8e2fae1ed712";
 const SPAN_ID = "adff4f24ca4f3c26";

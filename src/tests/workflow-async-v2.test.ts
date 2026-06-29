@@ -1,6 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { unlink } from "node:fs/promises";
-import { z } from "zod";
 import {
   closeDb,
   completeTask,
@@ -11,19 +10,20 @@ import {
   getWorkflowRun,
   getWorkflowRunStepsByRunId,
   initDb,
-} from "../be/db";
-import type { Workflow, WorkflowDefinition } from "../types";
-import { startWorkflowExecution } from "../workflows/engine";
-import { InProcessEventBus, workflowEventBus } from "../workflows/event-bus";
-import { AgentTaskExecutor } from "../workflows/executors/agent-task";
+} from "@swarm/storage/db";
+import type { Workflow, WorkflowDefinition } from "@swarm/types";
+import { startWorkflowExecution } from "@swarm/workflows/engine";
+import { type WorkflowEventBus, workflowEventBus } from "@swarm/workflows/event-bus";
+import { AgentTaskExecutor } from "@swarm/workflows/executors/agent-task";
 import {
   BaseExecutor,
   type ExecutorDependencies,
   type ExecutorResult,
-} from "../workflows/executors/base";
-import { ExecutorRegistry } from "../workflows/executors/registry";
-import { setupWorkflowResumeListener } from "../workflows/resume";
-import { interpolate } from "../workflows/template";
+} from "@swarm/workflows/executors/base";
+import { ExecutorRegistry } from "@swarm/workflows/executors/registry";
+import { setupWorkflowResumeListener } from "@swarm/workflows/resume";
+import { interpolate } from "@swarm/workflows/template";
+import { z } from "zod";
 
 const TEST_DB_PATH = "./test-workflow-async-v2.sqlite";
 
@@ -64,10 +64,10 @@ class NotifyStubExecutor extends BaseExecutor<
 
 // ─── Mock Dependencies ───────────────────────────────────────
 
-import * as db from "../be/db";
+import * as db from "@swarm/storage/db";
 
 const mockDeps: ExecutorDependencies = {
-  db: db as typeof import("../be/db"),
+  db: db as typeof import("@swarm/storage/db"),
   eventBus: workflowEventBus,
   interpolate: (template, ctx) => interpolate(template, ctx).result,
 };
@@ -91,6 +91,45 @@ function makeWorkflow(def: WorkflowDefinition, overrides?: Partial<Workflow>): W
   });
   createdWorkflowIds.push(workflow.id);
   return { ...workflow, ...overrides };
+}
+
+async function waitFor(
+  description: string,
+  predicate: () => boolean,
+  timeoutMs = 1000,
+): Promise<void> {
+  const startedAt = Date.now();
+  while (!predicate()) {
+    if (Date.now() - startedAt > timeoutMs) {
+      throw new Error(`Timed out waiting for ${description}`);
+    }
+    await new Promise((r) => setTimeout(r, 10));
+  }
+}
+
+type WorkflowEventHandler = (data: unknown) => void | Promise<void>;
+
+class AwaitableEventBus implements WorkflowEventBus {
+  private readonly handlers = new Map<string, Set<WorkflowEventHandler>>();
+
+  emit(event: string, data: unknown): void {
+    void this.emitAndWait(event, data);
+  }
+
+  on(event: string, handler: (data: unknown) => void): void {
+    const handlers = this.handlers.get(event) ?? new Set<WorkflowEventHandler>();
+    handlers.add(handler as WorkflowEventHandler);
+    this.handlers.set(event, handlers);
+  }
+
+  off(event: string, handler: (data: unknown) => void): void {
+    this.handlers.get(event)?.delete(handler as WorkflowEventHandler);
+  }
+
+  async emitAndWait(event: string, data: unknown): Promise<void> {
+    const handlers = Array.from(this.handlers.get(event) ?? []);
+    await Promise.all(handlers.map((handler) => handler(data)));
+  }
 }
 
 // ─── Setup / Teardown ────────────────────────────────────────
@@ -409,7 +448,7 @@ describe("Workflow Async v2 (Phase 4)", () => {
   describe("Fan-out → Convergence with async tasks", () => {
     test("fan-out to 3 parallel agent-tasks, converge on merge node — no duplicate steps", async () => {
       // Use isolated event bus to prevent interference from other test files' listeners
-      const localBus = new InProcessEventBus();
+      const localBus = new AwaitableEventBus();
       const localDeps: ExecutorDependencies = { ...mockDeps, eventBus: localBus };
       const localRegistry = new ExecutorRegistry();
       localRegistry.register(new EchoExecutor(localDeps));
@@ -471,14 +510,18 @@ describe("Workflow Async v2 (Phase 4)", () => {
       const taskA = getTaskByWorkflowRunStepId(
         reviewSteps.find((s) => s.nodeId === "review-a")!.id,
       )!;
-      completeTask(taskA.id, "output-a");
-      localBus.emit("task.completed", {
+      completeTask(taskA.id, "output-a", { emitLifecycleEvent: false });
+      await localBus.emitAndWait("task.completed", {
         taskId: taskA.id,
         output: "output-a",
         workflowRunId: runId,
         workflowRunStepId: reviewSteps.find((s) => s.nodeId === "review-a")!.id,
       });
-      await new Promise((r) => setTimeout(r, 10));
+      await waitFor("review-a completion", () =>
+        getWorkflowRunStepsByRunId(runId).some(
+          (s) => s.nodeId === "review-a" && s.status === "completed",
+        ),
+      );
 
       // After A completes — merge should NOT have been created yet (B, C still pending)
       steps = getWorkflowRunStepsByRunId(runId);
@@ -488,14 +531,18 @@ describe("Workflow Async v2 (Phase 4)", () => {
       const taskB = getTaskByWorkflowRunStepId(
         reviewSteps.find((s) => s.nodeId === "review-b")!.id,
       )!;
-      completeTask(taskB.id, "output-b");
-      localBus.emit("task.completed", {
+      completeTask(taskB.id, "output-b", { emitLifecycleEvent: false });
+      await localBus.emitAndWait("task.completed", {
         taskId: taskB.id,
         output: "output-b",
         workflowRunId: runId,
         workflowRunStepId: reviewSteps.find((s) => s.nodeId === "review-b")!.id,
       });
-      await new Promise((r) => setTimeout(r, 10));
+      await waitFor("review-b completion", () =>
+        getWorkflowRunStepsByRunId(runId).some(
+          (s) => s.nodeId === "review-b" && s.status === "completed",
+        ),
+      );
 
       // After B completes — merge STILL should not exist (C still pending)
       steps = getWorkflowRunStepsByRunId(runId);
@@ -505,25 +552,26 @@ describe("Workflow Async v2 (Phase 4)", () => {
       const taskC = getTaskByWorkflowRunStepId(
         reviewSteps.find((s) => s.nodeId === "review-c")!.id,
       )!;
-      completeTask(taskC.id, "output-c");
-      localBus.emit("task.completed", {
+      completeTask(taskC.id, "output-c", { emitLifecycleEvent: false });
+      await localBus.emitAndWait("task.completed", {
         taskId: taskC.id,
         output: "output-c",
         workflowRunId: runId,
         workflowRunStepId: reviewSteps.find((s) => s.nodeId === "review-c")!.id,
       });
-      await new Promise((r) => setTimeout(r, 10));
+      await waitFor("merge completion", () => {
+        const latestSteps = getWorkflowRunStepsByRunId(runId);
+        return latestSteps.some((s) => s.nodeId === "merge" && s.status === "completed");
+      });
 
       // Now ALL 3 are done — merge should execute exactly ONCE
-      // Allow extra time for serialized queue processing
-      await new Promise((r) => setTimeout(r, 10));
-
       steps = getWorkflowRunStepsByRunId(runId);
       const mergeSteps = steps.filter((s) => s.nodeId === "merge");
       expect(mergeSteps).toHaveLength(1);
       expect(mergeSteps[0]!.status).toBe("completed");
 
       // Workflow run should be completed
+      await waitFor("workflow completion", () => getWorkflowRun(runId)?.status === "completed");
       const run = getWorkflowRun(runId)!;
       expect(run.status).toBe("completed");
     });

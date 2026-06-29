@@ -1,0 +1,25 @@
+{
+  "name": "@swarm/ai-llm",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./memory/raters/*": "./src/memory/raters/*.ts",
+    "./*": "./src/*.ts"
+  },
+  "scripts": {
+    "tsc:check": "bun tsc --noEmit -p tsconfig.json",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "test": "bun test src --pass-with-no-tests"
+  },
+  "dependencies": {
+    "@earendil-works/pi-ai": "^0.80.2",
+    "@swarm/core-utils": "workspace:*",
+    "@swarm/credentials": "workspace:*",
+    "@swarm/types": "workspace:*",
+    "typebox": "1.1.38",
+    "zod": "4.2.1"
+  }
+}

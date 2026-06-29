@@ -1,6 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { unlink } from "node:fs/promises";
-import { z } from "zod";
 import {
   closeDb,
   createWorkflow,
@@ -8,16 +7,17 @@ import {
   getWorkflowRun,
   getWorkflowRunStepsByRunId,
   initDb,
-} from "../be/db";
-import type { Workflow, WorkflowDefinition } from "../types";
-import { validateDefinition } from "../workflows/definition";
-import { startWorkflowExecution, TriggerSchemaError } from "../workflows/engine";
+} from "@swarm/storage/db";
+import type { Workflow, WorkflowDefinition } from "@swarm/types";
+import { validateDefinition } from "@swarm/workflows/definition";
+import { startWorkflowExecution, TriggerSchemaError } from "@swarm/workflows/engine";
 import {
   BaseExecutor,
   type ExecutorDependencies,
   type ExecutorResult,
-} from "../workflows/executors/base";
-import { ExecutorRegistry } from "../workflows/executors/registry";
+} from "@swarm/workflows/executors/base";
+import { ExecutorRegistry } from "@swarm/workflows/executors/registry";
+import { z } from "zod";
 
 const TEST_DB_PATH = "./test-workflow-integration-io.sqlite";
 
@@ -110,7 +110,7 @@ class PassthroughExecutor extends BaseExecutor<
 // ─── Mock Dependencies ───────────────────────────────────────
 
 const mockDeps: ExecutorDependencies = {
-  db: {} as typeof import("../be/db"),
+  db: {} as typeof import("@swarm/storage/db"),
   eventBus: { emit: () => {}, on: () => {}, off: () => {} },
   interpolate: (t: string) => t,
 };

@@ -1,8 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { createHmac } from "node:crypto";
 import { unlink } from "node:fs/promises";
-import { closeDb, createTaskExtended, getTaskById, initDb } from "../be/db";
-import { createTrackerSync, getTrackerSyncByExternalId } from "../be/db-queries/tracker";
 import {
   buildSkipMessage,
   DEFAULT_ALLOWED_STATE_TYPES,
@@ -10,19 +8,21 @@ import {
   getLinearGateConfig,
   SWARM_READY_LABEL,
   shouldCreateTaskFromLinearEvent,
-} from "../linear/gate";
+} from "@swarm/integrations/linear/gate";
 import {
   handleAgentSessionEvent,
   handleIssueDelete,
   handleIssueUpdate,
   mapLinearStatusToSwarm,
-} from "../linear/sync";
+} from "@swarm/integrations/linear/sync";
 import {
   _clearRecentDeliveries,
   handleLinearWebhook,
   verifyLinearWebhook,
-} from "../linear/webhook";
-import { getTemplateDefinition } from "../prompts/registry";
+} from "@swarm/integrations/linear/webhook";
+import { getTemplateDefinition } from "@swarm/prompt-templates/registry";
+import { closeDb, createTaskExtended, getTaskById, initDb } from "@swarm/storage/db";
+import { createTrackerSync, getTrackerSyncByExternalId } from "@swarm/storage/db-queries/tracker";
 
 const TEST_DB_PATH = "./test-linear-webhook.sqlite";
 const TEST_SECRET = "test-webhook-secret-123";
@@ -48,7 +48,7 @@ beforeEach(async () => {
   _clearRecentDeliveries();
   // Re-register Linear templates if cleared by parallel test files
   if (!getTemplateDefinition("linear.issue.assigned")) {
-    await import(`../linear/templates?t=${Date.now()}`);
+    await import(`@swarm/integrations/linear/templates?t=${Date.now()}`);
   }
 });
 
@@ -248,7 +248,7 @@ describe("handleAgentSessionEvent", () => {
       source: "linear",
       taskType: "linear-issue",
     });
-    const { getDb } = await import("../be/db");
+    const { getDb } = await import("@swarm/storage/db");
     getDb().query("UPDATE agent_tasks SET status = 'completed' WHERE id = ?").run(originalTask.id);
 
     createTrackerSync({
@@ -298,7 +298,7 @@ describe("handleAgentSessionEvent", () => {
       source: "linear",
       taskType: "linear-issue",
     });
-    const { getDb } = await import("../be/db");
+    const { getDb } = await import("@swarm/storage/db");
     getDb().query("UPDATE agent_tasks SET status = 'failed' WHERE id = ?").run(originalTask.id);
 
     createTrackerSync({
@@ -490,7 +490,7 @@ describe("handleIssueDelete", () => {
       source: "linear",
     });
     // Manually complete the task to test guard
-    const { getDb } = await import("../be/db");
+    const { getDb } = await import("@swarm/storage/db");
     getDb().query("UPDATE agent_tasks SET status = 'completed' WHERE id = ?").run(task.id);
 
     createTrackerSync({

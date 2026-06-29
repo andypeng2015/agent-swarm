@@ -1,0 +1,40 @@
+{
+  "name": "@swarm/core-utils",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./api-key": "./src/api-key.ts",
+    "./capabilities": "./src/capabilities.ts",
+    "./constants": "./src/constants.ts",
+    "./content-sha256": "./src/content-sha256.ts",
+    "./context-window": "./src/context-window.ts",
+    "./json-schema-validator": "./src/json-schema-validator.ts",
+    "./crypto": "./src/crypto/index.ts",
+    "./crypto/index": "./src/crypto/index.ts",
+    "./crypto/key-bootstrap": "./src/crypto/key-bootstrap.ts",
+    "./crypto/secrets-cipher": "./src/crypto/secrets-cipher.ts",
+    "./date-utils": "./src/date-utils.ts",
+    "./aws-error-classifier": "./src/aws-error-classifier.ts",
+    "./mcp-server-fetcher": "./src/mcp-server-fetcher.ts",
+    "./secret-scrubber": "./src/secret-scrubber.ts",
+    "./skill-fs-writer": "./src/skill-fs-writer.ts",
+    "./skill-parser": "./src/skill-parser.ts",
+    "./swarm-config-guard": "./src/swarm-config-guard.ts",
+    "./template": "./src/template.ts",
+    "./tool-loop-detection": "./src/tool-loop-detection.ts",
+    "./vcs": "./src/vcs/index.ts",
+    "./vcs/index": "./src/vcs/index.ts",
+    "./vcs/types": "./src/vcs/types.ts"
+  },
+  "scripts": {
+    "tsc:check": "bun tsc --noEmit -p tsconfig.json",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "test": "bun test src --pass-with-no-tests"
+  },
+  "dependencies": {
+    "@swarm/types": "workspace:*"
+  }
+}
