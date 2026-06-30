@@ -40,6 +40,7 @@ function isConnected(nodes: WorkflowNode[]): boolean {
   if (nodes.length === 0) return false;
   const targeted = new Set(nodes.flatMap(nextTargets));
   const entry = nodes.find((n) => !targeted.has(n.id)) ?? nodes[0];
+  if (!entry) return false;
   const byId = new Map(nodes.map((n) => [n.id, n]));
   const seen = new Set<string>();
   const queue = [entry.id];

@@ -203,64 +203,76 @@ describe("spec'd scenario shapes (v9 orchestration substrate)", () => {
   });
 
   test("workflow-authoring grades workflow DAG behavior without a judge", () => {
-    const s = byId.get("workflow-authoring");
+    const s = byId.get("workflow-authoring")!;
+    const outcome = s.outcome!;
+    const gates = outcome.gates!;
+    const dimensions = outcome.dimensions!;
     expect(s).toBeDefined();
-    expect(s?.workers ?? 1).toBe(1);
-    expect(s?.tasks.length).toBe(1);
-    expect(s?.outcome.gates.map((g) => g.name)).toContain("workflow-exists");
-    expect(s?.outcome.dimensions.map((d) => d.name)).toEqual([
+    expect(s.workers ?? 1).toBe(1);
+    expect(s.tasks.length).toBe(1);
+    expect(gates.map((g) => g.name)).toContain("workflow-exists");
+    expect(dimensions.map((d) => d.name)).toEqual([
       "workflow-dag",
       "trigger-schema",
       "correctness",
     ]);
-    expect(s?.outcome.dimensions.some((d) => d.judge)).toBe(false);
+    expect(dimensions.some((d) => d.judge)).toBe(false);
   });
 
   test("script-authoring grades upsert/run behavior and source discipline", () => {
-    const s = byId.get("script-authoring");
+    const s = byId.get("script-authoring")!;
+    const outcome = s.outcome!;
+    const gates = outcome.gates!;
+    const dimensions = outcome.dimensions!;
     expect(s).toBeDefined();
-    expect(s?.workers ?? 1).toBe(1);
-    expect(s?.outcome.gates.map((g) => g.name)).toContain("script-created");
-    expect(s?.outcome.dimensions.map((d) => d.name)).toEqual([
+    expect(s.workers ?? 1).toBe(1);
+    expect(gates.map((g) => g.name)).toContain("script-created");
+    expect(dimensions.map((d) => d.name)).toEqual([
       "script-behavior",
       "correctness",
       "reusability",
     ]);
-    expect(`${s?.tasks[0]?.description}`).toMatch(/script-upsert/);
-    expect(`${s?.tasks[0]?.description}`).toMatch(/script-run/);
+    expect(`${s.tasks[0]?.description}`).toMatch(/script-upsert/);
+    expect(`${s.tasks[0]?.description}`).toMatch(/script-run/);
   });
 
   test("delegation-chain uses a lead plus three workers and grades dependsOn chains", () => {
-    const s = byId.get("delegation-chain");
+    const s = byId.get("delegation-chain")!;
+    const outcome = s.outcome!;
+    const dimensions = outcome.dimensions!;
     expect(s).toBeDefined();
-    expect(scenarioWorkerCount(s?.workers)).toBe(3);
-    expect(s?.lead?.template).toBe("lead");
-    expect(s?.seed?.sqlDump).toBe("sql-audit-history.sql");
-    expect(s?.tasks[0]?.worker).toBe("lead");
-    expect(s?.outcome.dimensions.map((d) => d.name)).toEqual(["delegation-chain", "correctness"]);
+    expect(scenarioWorkerCount(s.workers)).toBe(3);
+    expect(s.lead?.template).toBe("lead");
+    expect(s.seed?.sqlDump).toBe("sql-audit-history.sql");
+    expect(s.tasks[0]?.worker).toBe("lead");
+    expect(dimensions.map((d) => d.name)).toEqual(["delegation-chain", "correctness"]);
   });
 
   test("tool-routing grades MCP tool selection from session logs", () => {
-    const s = byId.get("tool-routing");
+    const s = byId.get("tool-routing")!;
+    const outcome = s.outcome!;
+    const dimensions = outcome.dimensions!;
     expect(s).toBeDefined();
-    expect(s?.workers ?? 1).toBe(1);
-    expect((s?.seed?.memories ?? []).join("\n")).toMatch(/Project Alpha/);
-    expect(s?.outcome.dimensions.map((d) => d.name)).toEqual(["tool-selection", "correctness"]);
-    expect(`${s?.tasks[0]?.description}`).toMatch(/KV/);
-    expect(`${s?.tasks[0]?.description}`).toMatch(/Avoid raw curl/);
+    expect(s.workers ?? 1).toBe(1);
+    expect((s.seed?.memories ?? []).join("\n")).toMatch(/Project Alpha/);
+    expect(dimensions.map((d) => d.name)).toEqual(["tool-selection", "correctness"]);
+    expect(`${s.tasks[0]?.description}`).toMatch(/KV/);
+    expect(`${s.tasks[0]?.description}`).toMatch(/Avoid raw curl/);
   });
 
   test("structured-output-adherence forwards a real task outputSchema", () => {
-    const s = byId.get("structured-output-adherence");
+    const s = byId.get("structured-output-adherence")!;
+    const outcome = s.outcome!;
+    const dimensions = outcome.dimensions!;
     expect(s).toBeDefined();
-    expect(s?.tasks[0]?.outputSchema).toBeDefined();
-    expect(s?.tasks[0]?.outputSchema?.required).toEqual([
+    expect(s.tasks[0]?.outputSchema).toBeDefined();
+    expect(s.tasks[0]?.outputSchema?.required).toEqual([
       "summary",
       "risks",
       "nextAction",
       "confidence",
     ]);
-    expect(s?.outcome.dimensions.map((d) => d.name)).toEqual(["instruction-following"]);
+    expect(dimensions.map((d) => d.name)).toEqual(["instruction-following"]);
   });
 });
 
