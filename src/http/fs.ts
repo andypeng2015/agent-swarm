@@ -360,6 +360,7 @@ function canMutateTask(
   req: IncomingMessage,
 ): boolean {
   const auth = getRequestAuth(req);
+  if (auth?.kind === "operator") return true;
   if (auth?.kind === "user") return true;
   if (!myAgentId) return false;
   const agent = getAgentById(myAgentId);

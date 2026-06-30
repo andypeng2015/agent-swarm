@@ -110,6 +110,16 @@ function authedFetch(path: string, init: RequestInit = {}): Promise<Response> {
   });
 }
 
+function operatorFetch(path: string, init: RequestInit = {}): Promise<Response> {
+  return fetch(url(path), {
+    ...init,
+    headers: {
+      Authorization: `Bearer ${API_KEY}`,
+      ...((init.headers as Record<string, string>) ?? {}),
+    },
+  });
+}
+
 describe("/api/fs REST", () => {
   test("401 without Authorization header", async () => {
     const res = await fetch(url(`/api/fs/tasks/${taskId}/files`), {
@@ -153,6 +163,22 @@ describe("/api/fs REST", () => {
     expect(await download.text()).toBe("hello from local fs");
 
     const del = await authedFetch(`/api/fs/tasks/${taskId}/files/${attachment.id}`, {
+      method: "DELETE",
+    });
+    expect(del.status).toBe(204);
+    expect(getTaskAttachments(taskId)).toEqual([]);
+  });
+
+  test("operator API key can upload and delete without X-Agent-ID for dashboard use", async () => {
+    const upload = await operatorFetch(`/api/fs/tasks/${taskId}/files?name=dashboard.txt`, {
+      method: "POST",
+      body: Buffer.from("from dashboard"),
+      headers: { "Content-Type": "text/plain" },
+    });
+    expect(upload.status).toBe(201);
+    const attachment = await upload.json();
+
+    const del = await operatorFetch(`/api/fs/tasks/${taskId}/files/${attachment.id}`, {
       method: "DELETE",
     });
     expect(del.status).toBe(204);
