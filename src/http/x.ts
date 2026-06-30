@@ -15,7 +15,7 @@ import { runScript } from "../scripts-runtime/loader";
 import { scrubObject, scrubSecrets } from "../utils/secret-scrubber";
 import { validateJsonSchema } from "../workflows/json-schema-validator";
 import { route } from "./route-def";
-import { json, jsonError, parseBody } from "./utils";
+import { BODY_TOO_LARGE, enforceContentLengthCap, json, jsonError, parseBody } from "./utils";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // `/api/x/*` — externally-exposed swarm-created assets. v1 ships exactly one:
@@ -38,6 +38,10 @@ const DEFAULT_TIMEOUT_MS = 60_000;
 const MIN_TIMEOUT_MS = 1_000;
 const MAX_TIMEOUT_MS = 300_000;
 const TIMEOUT_HEADER = "x-swarm-timeout-ms";
+// Args are a JSON payload, not a file upload — 1MB matches the sandbox's own
+// stdout cap. Applies even to authMode: 'none' endpoints, where the caller is
+// otherwise fully unauthenticated.
+const MAX_BODY_BYTES = 1 * 1024 * 1024;
 
 const scriptApiRoute = route({
   method: "post",
@@ -138,6 +142,8 @@ export async function handleX(
     }
   }
 
+  if (enforceContentLengthCap(req, res, MAX_BODY_BYTES) === BODY_TOO_LARGE) return true;
+
   // The whole JSON body is the script's `args`.
   let args: unknown;
   try {
@@ -192,10 +198,12 @@ export async function handleX(
     args: args ?? null,
     fsMode: "none",
     agentId: endpoint.agentId,
+    // timeoutMs only raises the wall-clock limit (network-bound scripts can use
+    // the full window); the CPU ulimit (`ulimit -t`) is intentionally left at
+    // the runtime default rather than scaled with the caller-controlled
+    // timeout, so an external caller can't use a long X-Swarm-Timeout-Ms to
+    // burn proportionally more CPU per request.
     timeoutMs,
-    // ulimit `-t` is CPU seconds; align it with the wall-clock timeout so
-    // network-bound scripts can use the full window while CPU stays bounded.
-    resources: { cpuTimeSec: Math.ceil(timeoutMs / 1000) },
     egressSecrets: buildScriptCredentialBindings({ agentId: endpoint.agentId }),
     apiConnections: getScriptApiConnectionDescriptors({ agentId: endpoint.agentId }),
   });

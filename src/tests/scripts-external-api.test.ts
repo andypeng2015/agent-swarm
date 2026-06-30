@@ -123,6 +123,7 @@ async function dispatch(
   const auth = init.auth === undefined ? API_KEY : init.auth;
   if (auth !== null) headers.authorization = `Bearer ${auth}`;
   if (init.agentId !== undefined) headers["x-agent-id"] = init.agentId;
+  if (init.body !== undefined) headers["content-length"] = String(Buffer.byteLength(init.body));
 
   const req = Readable.from(init.body ? [Buffer.from(init.body)] : []) as IncomingMessage;
   req.method = init.method ?? "GET";
@@ -284,6 +285,23 @@ describe("public execution route", () => {
     expect(body.result).toEqual({ doubled: 42 });
     expect(body.error).toBeNull();
     expect(typeof body.durationMs).toBe("number");
+  });
+
+  test("oversized body → 413 before execution, even for authMode 'none'", async () => {
+    const script = insertDoubler();
+    const endpoint = createScriptApi({
+      scriptId: script.id,
+      agentId: workerId,
+      authMode: "none",
+    });
+
+    const oversized = JSON.stringify({ value: "x".repeat(2 * 1024 * 1024) });
+    const res = await dispatch(`/api/x/script/${endpoint.id}`, {
+      method: "POST",
+      body: oversized,
+      auth: null,
+    });
+    expect(res.status).toBe(413);
   });
 
   test("bearer mode: missing/invalid token → 401, valid → 200", async () => {
