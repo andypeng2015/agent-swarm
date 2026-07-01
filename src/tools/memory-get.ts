@@ -1,5 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import * as z from "zod";
+import { getAgentById } from "@/be/db";
 import { getMemoryStore } from "@/be/memory";
 import { recordRetrievals } from "@/be/memory/raters/retrieval";
 import { createToolRegistrar } from "@/tools/utils";
@@ -46,6 +47,20 @@ export const registerMemoryGetTool = (server: McpServer) => {
             message: `Memory "${memoryId}" not found.`,
           },
         };
+      }
+
+      if (memory.scope === "agent" && memory.agentId !== requestInfo.agentId) {
+        const requestingAgent = requestInfo.agentId ? getAgentById(requestInfo.agentId) : null;
+        if (!requestingAgent?.isLead) {
+          return {
+            content: [{ type: "text", text: `Not authorized to read memory "${memoryId}".` }],
+            structuredContent: {
+              yourAgentId: requestInfo.agentId,
+              success: false,
+              message: "Not authorized to read this memory.",
+            },
+          };
+        }
       }
 
       if (requestInfo.sourceTaskId && requestInfo.agentId) {
