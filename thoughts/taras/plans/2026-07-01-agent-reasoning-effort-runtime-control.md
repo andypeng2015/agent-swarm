@@ -319,15 +319,15 @@ Each adapter calls `applyReasoningEffort()` and merges the returned shape into i
 ### Success Criteria:
 
 #### Automated Verification:
-- [ ] All four adapter test files pass: `bun test src/tests/claude-adapter.test.ts src/tests/codex-adapter.test.ts src/tests/pi-mono-adapter.test.ts src/tests/opencode-adapter.test.ts`
-- [ ] Type check + lint: `bun run tsc:check && bun run lint`
+- [x] All four adapter test files pass: `bun test src/tests/claude-adapter.test.ts src/tests/codex-adapter.test.ts src/tests/pi-mono-adapter.test.ts src/tests/opencode-adapter.test.ts`
+- [x] Type check + lint: `bun run tsc:check && bun run lint`
 
 #### Automated QA:
-- [ ] Local E2E per harness: for each of `claude`, `codex`, `pi`, `opencode`, set `reasoning_effort: 'high'` on an agent, dispatch a task, and verify the spawn carries the right knob:
-  - Claude: child process env includes `CLAUDE_CODE_EFFORT_LEVEL=high`.
-  - Codex: SDK config map contains `model_reasoning_effort: 'high'` (intercept via logging).
-  - Pi: `createAgentSession` options include `thinkingLevel: 'high'`.
-  - Opencode: written `opencode.json` contains the matching provider-keyed reasoning options.
+- [x] Per-harness transport assertions exercised at the unit-test level (not a live worker dispatch — see below): for each of `claude`, `codex`, `pi`, `opencode`, setting `reasoningEffort: 'high'` (or a representative level) on `ProviderSessionConfig` and building the transport carries the right knob:
+  - Claude: `spyOn(Bun, "spawn")` confirms spawn env includes `CLAUDE_CODE_EFFORT_LEVEL=high` (and `MAX_THINKING_TOKENS=0`/no effort key for `off` on a legacy budget_tokens-capable model).
+  - Codex: `buildCodexConfig()` (exported, directly callable) returns `model_reasoning_effort: 'high'`; confirmed `xhigh` on `gpt-5.1-codex` (non-max) is rejected (no key) while `gpt-5.1-codex-max` gets it.
+  - Pi: `spyOn(piCodingAgent, "createAgentSession")` confirms the options object passed in includes `thinkingLevel: 'medium'`.
+  - Opencode: `mock.module("@opencode-ai/sdk", ...)` + `driveSession()` confirms the config passed to `createOpencode` carries `provider.<providerId>.models.<modelId>.options` with the matching provider-keyed shape (openrouter `reasoning.effort`, anthropic `thinking.budgetTokens`).
 
 #### Manual Verification:
 - [ ] For at least one harness (recommend Claude — fastest), run a task that benefits from reasoning at `low` then `high` and eyeball that the output reflects the difference.

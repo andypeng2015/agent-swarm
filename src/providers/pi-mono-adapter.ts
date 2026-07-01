@@ -33,6 +33,7 @@ import { scrubSecrets } from "../utils/secret-scrubber";
 import { readPkgVersion } from "./harness-version";
 import { createSwarmHooksExtension } from "./pi-mono-extension";
 import { McpHttpClient } from "./pi-mono-mcp-client";
+import { applyReasoningEffort, type ReasoningEffort } from "./reasoning-effort";
 import type {
   CostData,
   CredCheckOptions,
@@ -516,11 +517,19 @@ export class PiMonoSession implements ProviderSession {
    * false failure. Evaluated once at session end in `runSession()`.
    */
   private terminalError: string | null = null;
+  /** Reasoning/effort level actually applied (Phase 4) — null when `applyReasoningEffort()` returned noop. */
+  private appliedReasoningEffort: ReasoningEffort | null;
 
-  constructor(agentSession: AgentSession, config: ProviderSessionConfig, createdSymlink: boolean) {
+  constructor(
+    agentSession: AgentSession,
+    config: ProviderSessionConfig,
+    createdSymlink: boolean,
+    appliedReasoningEffort: ReasoningEffort | null = null,
+  ) {
     this.agentSession = agentSession;
     this.config = config;
     this.createdSymlink = createdSymlink;
+    this.appliedReasoningEffort = appliedReasoningEffort;
     this.logFileHandle = Bun.file(config.logFile).writer();
     this._sessionId = agentSession.sessionId;
     this.sessionStartedAt = Date.now();
@@ -738,6 +747,7 @@ export class PiMonoSession implements ProviderSession {
           isError: true,
           errorCategory: category,
           failureReason: message,
+          appliedReasoningEffort: this.appliedReasoningEffort,
         };
       }
 
@@ -753,6 +763,7 @@ export class PiMonoSession implements ProviderSession {
         cost,
         output: this.lastAssistantText || undefined,
         isError: false,
+        appliedReasoningEffort: this.appliedReasoningEffort,
       };
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
@@ -776,6 +787,7 @@ export class PiMonoSession implements ProviderSession {
         isError: true,
         errorCategory: awsCatchError?.category,
         failureReason: awsCatchError?.message ?? errorMessage,
+        appliedReasoningEffort: this.appliedReasoningEffort,
       };
     } finally {
       await this.logFileHandle.end();
@@ -974,6 +986,11 @@ export class PiMonoAdapter implements ProviderAdapter {
     });
 
     // 6. Build session options
+    const reasoningApplication = applyReasoningEffort("pi", config.model, config.reasoningEffort);
+    const reasoningSessionOptions =
+      reasoningApplication.kind === "pi-session" ? reasoningApplication.sessionOptions : {};
+    const appliedReasoningEffort =
+      reasoningApplication.kind === "pi-session" ? (config.reasoningEffort ?? null) : null;
     const sessionOptions: CreateAgentSessionOptions = {
       cwd: config.cwd,
       model,
@@ -981,12 +998,13 @@ export class PiMonoAdapter implements ProviderAdapter {
       resourceLoader,
       authStorage,
       modelRegistry,
+      ...reasoningSessionOptions,
     };
 
     // 7. Create the session
     const { session } = await createAgentSession(sessionOptions);
 
-    return new PiMonoSession(session, config, createdSymlink);
+    return new PiMonoSession(session, config, createdSymlink, appliedReasoningEffort);
   }
 
   async canResume(sessionId: string): Promise<boolean> {

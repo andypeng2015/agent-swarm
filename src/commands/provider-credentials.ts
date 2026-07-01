@@ -508,10 +508,11 @@ export function buildLatestModelReport(opts: {
   taskId?: string;
   harnessProvider: ProviderName;
   /**
-   * Resolved reasoning/effort level for this session. Until Phase 4 lands
-   * (`ProviderResult.appliedReasoningEffort`), both the initial and
-   * post-result reports pass the same runner-resolved value — see call
-   * sites in `src/commands/runner.ts`.
+   * Resolved (or adapter-confirmed, post-completion) reasoning/effort level
+   * for this session — see the three call sites in `src/commands/runner.ts`:
+   * the initial report and the mid-session "result" event report both pass
+   * the runner-resolved value; the final report (after `waitForCompletion()`
+   * resolves) passes `ProviderResult.appliedReasoningEffort`.
    */
   reasoningEffort?: ReasoningEffort;
 }): AgentLatestModel | null {

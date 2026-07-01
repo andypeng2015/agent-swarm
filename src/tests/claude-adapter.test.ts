@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -61,6 +61,70 @@ describe("ClaudeSession CLI argument construction", () => {
       additionalArgs: ["--max-turns", "10"],
     });
     expect(config.additionalArgs).toEqual(["--max-turns", "10"]);
+  });
+});
+
+// ─── Phase 4 (reasoning-effort plan): spawn env wiring ────────────────────────
+
+/** Fake Bun.Subprocess — exits cleanly with no output. */
+function makeFakeProc(): ReturnType<typeof Bun.spawn> {
+  return {
+    stdout: null,
+    stderr: null,
+    stdin: null,
+    exited: Promise.resolve(0),
+    exitCode: 0,
+    kill: () => {},
+    pid: 0,
+    killed: false,
+    ref: () => {},
+    unref: () => {},
+  } as unknown as ReturnType<typeof Bun.spawn>;
+}
+
+describe("ClaudeSession spawn env — reasoning_effort", () => {
+  let spawnSpy: ReturnType<typeof spyOn>;
+  let spawnedEnvs: Array<Record<string, string> | undefined>;
+
+  beforeEach(() => {
+    spawnedEnvs = [];
+    spawnSpy = spyOn(Bun, "spawn").mockImplementation(((
+      _cmd: readonly string[],
+      opts?: { env?: Record<string, string> },
+    ) => {
+      spawnedEnvs.push(opts?.env);
+      return makeFakeProc();
+    }) as typeof Bun.spawn);
+  });
+
+  afterEach(() => {
+    spawnSpy.mockRestore();
+  });
+
+  test("reasoningEffort: 'high' on claude-opus-4-8 sets CLAUDE_CODE_EFFORT_LEVEL", async () => {
+    const adapter = new ClaudeAdapter();
+    await adapter.createSession(makeConfig({ model: "claude-opus-4-8", reasoningEffort: "high" }));
+
+    expect(spawnedEnvs).toHaveLength(1);
+    expect(spawnedEnvs[0]?.CLAUDE_CODE_EFFORT_LEVEL).toBe("high");
+  });
+
+  test("reasoningEffort: 'off' on a legacy budget_tokens-capable model sets MAX_THINKING_TOKENS=0, no effort env", async () => {
+    const adapter = new ClaudeAdapter();
+    await adapter.createSession(makeConfig({ model: "claude-opus-4-0", reasoningEffort: "off" }));
+
+    expect(spawnedEnvs).toHaveLength(1);
+    expect(spawnedEnvs[0]?.MAX_THINKING_TOKENS).toBe("0");
+    expect(spawnedEnvs[0]?.CLAUDE_CODE_EFFORT_LEVEL).toBeUndefined();
+  });
+
+  test("undefined reasoningEffort leaves spawn env unchanged (no effort/budget keys)", async () => {
+    const adapter = new ClaudeAdapter();
+    await adapter.createSession(makeConfig({ model: "claude-opus-4-8" }));
+
+    expect(spawnedEnvs).toHaveLength(1);
+    expect(spawnedEnvs[0]?.CLAUDE_CODE_EFFORT_LEVEL).toBeUndefined();
+    expect(spawnedEnvs[0]?.MAX_THINKING_TOKENS).toBeUndefined();
   });
 });
 

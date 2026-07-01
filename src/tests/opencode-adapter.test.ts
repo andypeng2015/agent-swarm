@@ -743,6 +743,61 @@ describe("OpencodeAdapter — per-task isolation (DES-300)", () => {
   });
 });
 
+// ── Phase 4 (reasoning-effort plan): provider-keyed reasoning options ──────────
+
+describe("OpencodeAdapter — reasoning_effort wiring", () => {
+  beforeEach(() => {
+    lastCreateOpencodeConfig = undefined;
+    mock.restore();
+  });
+
+  test("reasoningEffort: 'low' on an openrouter model sets provider.openrouter.models[id].options.reasoning.effort", async () => {
+    const events: OpencodeEvent[] = [
+      { type: "session.idle", properties: { sessionID: "sess-abc-123" } },
+    ];
+    const cfg = testConfig({
+      model: "openrouter/google/gemini-3-flash-preview",
+      reasoningEffort: "low",
+    });
+    await driveSession(events, cfg);
+
+    const opts = lastCreateOpencodeConfig as {
+      config?: { provider?: Record<string, { models?: Record<string, { options?: unknown }> }> };
+    };
+    const options =
+      opts.config?.provider?.openrouter?.models?.["google/gemini-3-flash-preview"]?.options;
+    expect(options).toEqual({ reasoning: { effort: "low" } });
+  });
+
+  test("reasoningEffort: 'high' on an anthropic model sets provider.anthropic.models[id].options.thinking.budgetTokens", async () => {
+    const events: OpencodeEvent[] = [
+      { type: "session.idle", properties: { sessionID: "sess-abc-123" } },
+    ];
+    const cfg = testConfig({
+      model: "anthropic/claude-opus-4-8",
+      reasoningEffort: "high",
+    });
+    await driveSession(events, cfg);
+
+    const opts = lastCreateOpencodeConfig as {
+      config?: { provider?: Record<string, { models?: Record<string, { options?: unknown }> }> };
+    };
+    const options = opts.config?.provider?.anthropic?.models?.["claude-opus-4-8"]?.options;
+    expect(options).toEqual({ thinking: { type: "enabled", budgetTokens: 32768 } });
+  });
+
+  test("undefined reasoningEffort leaves config.provider unset", async () => {
+    const events: OpencodeEvent[] = [
+      { type: "session.idle", properties: { sessionID: "sess-abc-123" } },
+    ];
+    const cfg = testConfig({ model: "openrouter/google/gemini-3-flash-preview" });
+    await driveSession(events, cfg);
+
+    const opts = lastCreateOpencodeConfig as { config?: { provider?: unknown } };
+    expect(opts.config?.provider).toBeUndefined();
+  });
+});
+
 // ── Phase 4: context-mode in-process plugin ────────────────────────────────────
 
 describe("OpencodeAdapter — context-mode plugin wiring (phase 4)", () => {

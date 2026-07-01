@@ -18,6 +18,7 @@ import { fetchInstalledMcpServers } from "../utils/mcp-server-fetcher";
 import { scrubSecrets } from "../utils/secret-scrubber";
 import { CTX_MODE_NUDGE_EVERY } from "./ctx-mode-env";
 import { buildOtelTraceparentEnv, isHarnessOtelEnabled } from "./otel-env";
+import { applyReasoningEffort, type ReasoningEffort } from "./reasoning-effort";
 import type {
   CostData,
   CredStatus,
@@ -502,6 +503,8 @@ class ClaudeSession implements ProviderSession {
   private contextWindowSize: number;
   /** Path to the system-prompt temp file when one was staged for this session. */
   private systemPromptFile: string | null;
+  /** Reasoning/effort level actually applied (Phase 4) — null when `applyReasoningEffort()` returned noop. */
+  private appliedReasoningEffort: ReasoningEffort | null;
 
   constructor(
     private config: ProviderSessionConfig,
@@ -532,6 +535,14 @@ class ClaudeSession implements ProviderSession {
     // container env might carry.
     const otelEnv = buildClaudeCodeOtelEnv(sourceEnv);
     const runtimeEnv = buildClaudeCodeRuntimeEnv(sourceEnv);
+    // Phase 4 (reasoning-effort plan): env-only path — no CLI flag (`--effort`
+    // is buggy in `-p` mode, see research doc). `additionalArgs` (pushed after
+    // `buildCommand()`'s base argv) naturally wins over this env var per the
+    // Claude CLI's own precedence if an operator puts `--effort` there.
+    const reasoningApplication = applyReasoningEffort("claude", model, config.reasoningEffort);
+    const reasoningEnv = reasoningApplication.kind === "claude-env" ? reasoningApplication.env : {};
+    this.appliedReasoningEffort =
+      reasoningApplication.kind === "claude-env" ? (config.reasoningEffort ?? null) : null;
     this.proc = Bun.spawn(cmd, {
       cwd: this.config.cwd,
       env: {
@@ -539,6 +550,7 @@ class ClaudeSession implements ProviderSession {
         ...sourceEnv,
         ...runtimeEnv,
         ...otelEnv,
+        ...reasoningEnv,
         TASK_FILE: taskFilePath,
         // Belt-and-braces: TASK_FILE on disk can disappear mid-session (race
         // with task lifecycle), which silently drops the Stop-hook memory
@@ -716,6 +728,7 @@ class ClaudeSession implements ProviderSession {
       failureReason,
       rateLimitResetAt: this.errorTracker.getRateLimitResetAt(),
       rateLimitWindows: this.errorTracker.getRateLimitWindows(),
+      appliedReasoningEffort: this.appliedReasoningEffort,
     };
   }
 

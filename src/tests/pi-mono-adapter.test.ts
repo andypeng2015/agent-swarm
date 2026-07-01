@@ -1,17 +1,83 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, describe, expect, spyOn, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import * as piCodingAgent from "@earendil-works/pi-coding-agent";
 import {
   createPiRuntimeAuth,
   extractPiAssistantText,
   PiMonoAdapter,
   resolveModel,
 } from "../providers/pi-mono-adapter";
+import type { ProviderSessionConfig } from "../providers/types";
 
 describe("PiMonoAdapter", () => {
   test("name is 'pi'", () => {
     const adapter = new PiMonoAdapter();
     expect(adapter.name).toBe("pi");
+  });
+});
+
+// ─── Phase 4 (reasoning-effort plan): createSession sessionOptions wiring ────
+
+describe("PiMonoAdapter.createSession — reasoning_effort", () => {
+  function makeReasoningConfig(
+    overrides: Partial<ProviderSessionConfig> = {},
+  ): ProviderSessionConfig {
+    return {
+      prompt: "hello",
+      systemPrompt: "",
+      model: "openrouter/google/gemini-3-flash-preview",
+      role: "worker",
+      agentId: "test-agent",
+      taskId: "test-task",
+      apiUrl: "",
+      apiKey: "",
+      cwd: "/tmp",
+      logFile: `/tmp/pi-reasoning-test-${Date.now()}-${Math.random().toString(36).slice(2)}.log`,
+      ...overrides,
+    };
+  }
+
+  /** Minimal fake `AgentSession` — mirrors `makeMockAgentSession` below. */
+  function makeFakeSession() {
+    return {
+      sessionId: "fake-session",
+      isStreaming: false,
+      model: undefined,
+      subscribe: () => () => {},
+      dispose: () => {},
+    };
+  }
+
+  let createAgentSessionSpy: ReturnType<typeof spyOn>;
+  let capturedOptions: Record<string, unknown> | undefined;
+
+  afterEach(() => {
+    createAgentSessionSpy?.mockRestore();
+    capturedOptions = undefined;
+  });
+
+  function spyOnCreateAgentSession() {
+    createAgentSessionSpy = spyOn(piCodingAgent, "createAgentSession").mockImplementation((async (
+      opts: Record<string, unknown>,
+    ) => {
+      capturedOptions = opts;
+      return { session: makeFakeSession() };
+    }) as typeof piCodingAgent.createAgentSession);
+  }
+
+  test("reasoningEffort: 'medium' on an openrouter model sets thinkingLevel", async () => {
+    spyOnCreateAgentSession();
+    const adapter = new PiMonoAdapter();
+    await adapter.createSession(makeReasoningConfig({ reasoningEffort: "medium" }));
+    expect(capturedOptions?.thinkingLevel).toBe("medium");
+  });
+
+  test("undefined reasoningEffort leaves sessionOptions unchanged (no thinkingLevel key)", async () => {
+    spyOnCreateAgentSession();
+    const adapter = new PiMonoAdapter();
+    await adapter.createSession(makeReasoningConfig());
+    expect(capturedOptions).not.toHaveProperty("thinkingLevel");
   });
 });
 
@@ -367,7 +433,7 @@ describe("Cost aggregation from SessionStats", () => {
 
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import { PiMonoSession } from "../providers/pi-mono-adapter";
-import type { ProviderEvent, ProviderResult, ProviderSessionConfig } from "../providers/types";
+import type { ProviderEvent, ProviderResult } from "../providers/types";
 import { classifyAwsSdkError } from "../utils/aws-error-classifier";
 
 function makeSessionConfig(logFile: string): ProviderSessionConfig {

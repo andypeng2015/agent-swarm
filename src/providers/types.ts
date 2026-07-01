@@ -156,6 +156,13 @@ export interface ProviderResult {
    * Best-effort and informational; consumers must tolerate it being absent.
    */
   rateLimitWindows?: RateLimitWindowTelemetry;
+  /**
+   * Reasoning/effort level the adapter actually applied (Phase 4). `null`
+   * means `applyReasoningEffort()` returned `noop` (capability rejected the
+   * requested level, or no level was requested but a noop was still
+   * evaluated); `undefined` means the adapter doesn't report this at all.
+   */
+  appliedReasoningEffort?: ReasoningEffort | null;
 }
 
 /** Behavioral traits that govern prompt assembly and feature gating. */

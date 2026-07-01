@@ -23,6 +23,7 @@ import { scrubSecrets } from "../utils/secret-scrubber";
 import { resolveSlashSkillPrompt } from "./codex-skill-resolver";
 import { CTX_MODE_NUDGE_EVERY } from "./ctx-mode-env";
 import { readPkgVersion } from "./harness-version";
+import { applyReasoningEffort, type ReasoningEffort } from "./reasoning-effort";
 import type {
   CostData,
   CredCheckOptions,
@@ -253,6 +254,8 @@ export class OpencodeSession implements ProviderSession {
   private dataHomePath: string;
   private retryAfterModelRefresh?: () => Promise<boolean>;
   private modelRefreshRecoveryInFlight = false;
+  /** Reasoning/effort level actually applied (Phase 4) — null when `applyReasoningEffort()` returned noop. */
+  private appliedReasoningEffort: ReasoningEffort | null;
 
   // Track which tool callIDs have already emitted tool_start, so transitions
   // through pending → running → completed don't fire duplicate events.
@@ -268,6 +271,7 @@ export class OpencodeSession implements ProviderSession {
     configFilePath: string,
     dataHomePath: string,
     retryAfterModelRefresh?: () => Promise<boolean>,
+    appliedReasoningEffort: ReasoningEffort | null = null,
   ) {
     this._sessionId = sessionId;
     this.server = server;
@@ -278,6 +282,7 @@ export class OpencodeSession implements ProviderSession {
     this.configFilePath = configFilePath;
     this.dataHomePath = dataHomePath;
     this.retryAfterModelRefresh = retryAfterModelRefresh;
+    this.appliedReasoningEffort = appliedReasoningEffort;
     this.completionPromise = new Promise<ProviderResult>((resolve, reject) => {
       this.completionResolve = resolve;
       this.completionReject = reject;
@@ -584,7 +589,7 @@ export class OpencodeSession implements ProviderSession {
       // best-effort
     }
     await this.cleanupFiles();
-    this.completionResolve(result);
+    this.completionResolve({ ...result, appliedReasoningEffort: this.appliedReasoningEffort });
   }
 
   async abort(): Promise<void> {
@@ -690,6 +695,37 @@ export class OpencodeAdapter implements ProviderAdapter {
       plugin: plugins,
     };
 
+    // Phase 4 (reasoning-effort plan): splice the provider-keyed reasoning
+    // options into `provider[providerId].models[modelId].options`. `off`
+    // (and any capability-rejected level) resolves to `noop` — no keys added,
+    // provider's own default applies.
+    const reasoningApplication = applyReasoningEffort(
+      "opencode",
+      config.model,
+      config.reasoningEffort,
+    );
+    const appliedReasoningEffort =
+      reasoningApplication.kind === "opencode-options" ? (config.reasoningEffort ?? null) : null;
+    if (reasoningApplication.kind === "opencode-options") {
+      const { providerId, modelId, options } = reasoningApplication;
+      opencodeConfig.provider = {
+        ...opencodeConfig.provider,
+        [providerId]: {
+          ...opencodeConfig.provider?.[providerId],
+          models: {
+            ...opencodeConfig.provider?.[providerId]?.models,
+            [modelId]: {
+              ...opencodeConfig.provider?.[providerId]?.models?.[modelId],
+              options: {
+                ...opencodeConfig.provider?.[providerId]?.models?.[modelId]?.options,
+                ...options,
+              },
+            },
+          },
+        },
+      };
+    }
+
     // Write per-task config file
     try {
       await Bun.write(configFilePath, JSON.stringify(opencodeConfig, null, 2));
@@ -794,6 +830,7 @@ export class OpencodeAdapter implements ProviderAdapter {
       configFilePath,
       dataHomePath,
       isOpenRouterModel(config.model) ? refreshOpenRouterAndRetryPrompt : undefined,
+      appliedReasoningEffort,
     );
 
     // Emit session_init synchronously; the session buffers events until the

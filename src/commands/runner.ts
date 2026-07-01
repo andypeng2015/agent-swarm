@@ -3098,16 +3098,17 @@ async function spawnProviderProcess(
         }
         case "result":
           {
+            // Mid-session snapshot — fires on each streamed "result" event,
+            // necessarily before `ProviderResult.appliedReasoningEffort` exists
+            // (that's only available once `waitForCompletion()` resolves).
+            // Uses the pre-adapter runner-resolved value; corrected by the
+            // final adapter-confirmed report below once the session completes.
             const latestModel = buildLatestModelReport({
               model: event.cost.model,
               taskModel: opts.model,
               configModel,
               taskId: realTaskId,
               harnessProvider: opts.harnessProvider,
-              // TODO(Phase 4): once adapters implement `applyReasoningEffort()`
-              // and `ProviderResult.appliedReasoningEffort` exists, switch this
-              // post-result report to the adapter-confirmed value instead of
-              // the runner-resolved one.
               reasoningEffort: reasoningEffortOverride,
             });
             if (latestModel) {
@@ -3349,6 +3350,28 @@ async function spawnProviderProcess(
               contextTotalTokens: getContextWindowSize(result.cost.model || "default"),
             }),
           }).catch(() => {});
+        }
+
+        // Final latest-model report using the adapter-confirmed
+        // `appliedReasoningEffort` (Phase 4) — corrects the mid-session
+        // `case "result":` event report above, which necessarily used the
+        // pre-adapter runner-resolved value. Differs only in the
+        // harness/model-switch edge case where a stale REASONING_EFFORT_OVERRIDE
+        // no longer applies (see Phase 3's `applyReasoningEffort()` noop note).
+        if (result.cost?.model) {
+          const finalModelReport = buildLatestModelReport({
+            model: result.cost.model,
+            taskModel: opts.model,
+            configModel,
+            taskId: realTaskId,
+            harnessProvider: opts.harnessProvider,
+            reasoningEffort: result.appliedReasoningEffort ?? undefined,
+          });
+          if (finalModelReport) {
+            reportLatestModel(opts.apiUrl, opts.apiKey, opts.agentId, finalModelReport).catch(
+              (err) => console.warn(`[runner] Failed to report final latest model: ${err}`),
+            );
+          }
         }
 
         sessionSpan.setAttributes({
