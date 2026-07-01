@@ -140,6 +140,9 @@ jobs:
       - name: Check API_KEY env-access boundary
         run: bash scripts/check-api-key-boundary.sh
 
+      - name: Check dependency graph (worker/API boundary)
+        run: bun run check:dep-graph
+
       - name: Check DB audit columns
         run: bash scripts/check-audit-columns.sh
 
