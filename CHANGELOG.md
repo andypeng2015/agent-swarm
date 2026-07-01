@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.106.0] - 2026-07-01
+
+### Added
+- **Saved scripts can now be exposed as external HTTP APIs** (#862) — swarm scripts can be published at `POST /api/x/script/<id>` with optional bearer auth, request-shape validation, usage tracking, and MCP management via `script-apis`.
+- **Evals now cover orchestration substrate scenarios plus a gated UI flow** (#863, #853) — the eval harness gained broader orchestration coverage while the evals UI added a login gate for controlled access.
+
+### Changed
+- **Claude Managed Agents now default to `claude-sonnet-5`** (#861) — managed-agent setup, model registries, pricing metadata, and runtime selectors were updated for the new default.
+- **The evals stack is easier to ship as a standalone service with refreshed June model configs** (#852, #860) — deployment and scenario config updates keep the eval environment aligned with the current model set.
+
+### Fixed
+- **Codex loop detection now handles nested MCP args and low-cardinality ping-pong patterns correctly** (#856) — legitimate edit/test and `script-upsert`/`script-run` cycles no longer trip false-positive loop kills as early.
+- **Evals infra reliability issues were tightened up across TLS, health checks, and registry cache refreshes** (#854, #855, #864) — Turso TLS bootstrap, Docker healthcheck quoting, and registry cache revalidation all fail less often.
+
 ## [1.105.0] - 2026-06-30
 
 ### Added
