@@ -6179,6 +6179,37 @@ export function deleteSwarmConfig(id: string): boolean {
 }
 
 /**
+ * Delete a config entry looked up by (scope, scopeId, key) rather than row
+ * id. Callers like the runtime PATCH route (`PATCH /api/agents/{id}/runtime`)
+ * know the logical key (e.g. `MODEL_OVERRIDE`, `REASONING_EFFORT_OVERRIDE`)
+ * but not the row id — `deleteSwarmConfig(id)` alone can't serve them. No-ops
+ * (returns `false`) when no matching row exists, mirroring `upsertSwarmConfig`'s
+ * NULL-safe existing-row lookup (SQLite's UNIQUE constraint treats NULL !=
+ * NULL, so a plain `scopeId = ?` comparison never matches global scope).
+ */
+export function deleteSwarmConfigByKey(
+  scope: "global" | "agent" | "repo",
+  scopeId: string | null,
+  key: string,
+): boolean {
+  const resolvedScopeId = scope === "global" ? null : scopeId;
+  const existing =
+    resolvedScopeId === null
+      ? getDb()
+          .prepare<{ id: string }, [string, string]>(
+            "SELECT id FROM swarm_config WHERE scope = ? AND scopeId IS NULL AND key = ?",
+          )
+          .get(scope, key)
+      : getDb()
+          .prepare<{ id: string }, [string, string, string]>(
+            "SELECT id FROM swarm_config WHERE scope = ? AND scopeId = ? AND key = ?",
+          )
+          .get(scope, resolvedScopeId, key);
+  if (!existing) return false;
+  return deleteSwarmConfig(existing.id);
+}
+
+/**
  * Get resolved (merged) config for a given agent and/or repo.
  * Scope resolution: repo > agent > global (most-specific wins).
  * Returns one entry per unique key with the most-specific scope winning.

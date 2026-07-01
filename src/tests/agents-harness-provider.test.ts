@@ -18,12 +18,14 @@ import { createServer as createHttpServer, type Server } from "node:http";
 import {
   closeDb,
   createAgent,
+  deleteSwarmConfigByKey,
   getAgentById,
   getAgentHarnessProviders,
   getDb,
   getSwarmConfigs,
   initDb,
   setAgentHarnessProvider,
+  upsertSwarmConfig,
 } from "../be/db";
 import { handleAgentRegister, handleAgentsRest } from "../http/agents";
 
@@ -370,5 +372,297 @@ describe("PATCH /api/agents/:id/runtime", () => {
       body: JSON.stringify({ harness_provider: "devin", model: "devin" }),
     });
     expect(res.status).toBe(400);
+  });
+});
+
+// ─── PATCH /api/agents/:id/runtime — reasoning_effort (Phase 2) ─────────────
+
+describe("PATCH /api/agents/:id/runtime — reasoning_effort", () => {
+  test("happy path: sets REASONING_EFFORT_OVERRIDE for a supported harness/model", async () => {
+    const a = createAgent({
+      name: "reasoning-target-1",
+      isLead: false,
+      status: "idle",
+      capabilities: [],
+    });
+
+    const res = await fetch(`${baseUrl}/api/agents/${a.id}/runtime`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        harness_provider: "claude",
+        model: "claude-opus-4-8",
+        reasoning_effort: "high",
+      }),
+    });
+    expect(res.status).toBe(200);
+
+    const rows = getSwarmConfigs({ scope: "agent", scopeId: a.id });
+    const effortRow = rows.find((r) => r.key === "REASONING_EFFORT_OVERRIDE");
+    expect(effortRow?.value).toBe("high");
+  });
+
+  test("validation failure: rejects xhigh on a non-max Codex model with 400 + allowed array", async () => {
+    const a = createAgent({
+      name: "reasoning-target-2",
+      isLead: false,
+      status: "idle",
+      capabilities: [],
+    });
+
+    const res = await fetch(`${baseUrl}/api/agents/${a.id}/runtime`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        harness_provider: "codex",
+        model: "gpt-5.1-codex",
+        reasoning_effort: "xhigh",
+      }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as {
+      error: string;
+      harness: string;
+      model: string;
+      level: string;
+      allowed: string[];
+    };
+    expect(body.harness).toBe("codex");
+    expect(body.model).toBe("gpt-5.1-codex");
+    expect(body.level).toBe("xhigh");
+    expect(body.allowed).not.toContain("xhigh");
+
+    // No row was written for the rejected value.
+    const rows = getSwarmConfigs({ scope: "agent", scopeId: a.id });
+    expect(rows.find((r) => r.key === "REASONING_EFFORT_OVERRIDE")).toBeUndefined();
+  });
+
+  test("clearing: reasoning_effort: null removes the REASONING_EFFORT_OVERRIDE row", async () => {
+    const a = createAgent({
+      name: "reasoning-target-3",
+      isLead: false,
+      status: "idle",
+      capabilities: [],
+    });
+
+    // First set it.
+    const setRes = await fetch(`${baseUrl}/api/agents/${a.id}/runtime`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        harness_provider: "claude",
+        model: "claude-opus-4-8",
+        reasoning_effort: "medium",
+      }),
+    });
+    expect(setRes.status).toBe(200);
+    expect(
+      getSwarmConfigs({ scope: "agent", scopeId: a.id }).find(
+        (r) => r.key === "REASONING_EFFORT_OVERRIDE",
+      )?.value,
+    ).toBe("medium");
+
+    // Then clear it.
+    const clearRes = await fetch(`${baseUrl}/api/agents/${a.id}/runtime`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        harness_provider: "claude",
+        model: "claude-opus-4-8",
+        reasoning_effort: null,
+      }),
+    });
+    expect(clearRes.status).toBe(200);
+
+    const rows = getSwarmConfigs({ scope: "agent", scopeId: a.id });
+    expect(rows.find((r) => r.key === "REASONING_EFFORT_OVERRIDE")).toBeUndefined();
+  });
+
+  test("symmetric fix: model: null removes the MODEL_OVERRIDE row (regression coverage)", async () => {
+    const a = createAgent({
+      name: "reasoning-target-4",
+      isLead: false,
+      status: "idle",
+      capabilities: [],
+    });
+
+    // First set MODEL_OVERRIDE.
+    const setRes = await fetch(`${baseUrl}/api/agents/${a.id}/runtime`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ harness_provider: "codex", model: "gpt-5.4" }),
+    });
+    expect(setRes.status).toBe(200);
+    expect(
+      getSwarmConfigs({ scope: "agent", scopeId: a.id }).find((r) => r.key === "MODEL_OVERRIDE")
+        ?.value,
+    ).toBe("gpt-5.4");
+
+    // Prior to this phase, there was no way to clear MODEL_OVERRIDE via the
+    // API — `model` was required and non-empty. Confirm `model: null` now
+    // clears it.
+    const clearRes = await fetch(`${baseUrl}/api/agents/${a.id}/runtime`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ harness_provider: "codex", model: null }),
+    });
+    expect(clearRes.status).toBe(200);
+
+    const rows = getSwarmConfigs({ scope: "agent", scopeId: a.id });
+    expect(rows.find((r) => r.key === "MODEL_OVERRIDE")).toBeUndefined();
+    // HARNESS_PROVIDER is untouched by the model clear.
+    expect(rows.find((r) => r.key === "HARNESS_PROVIDER")?.value).toBe("codex");
+  });
+
+  test("omitted reasoning_effort leaves an existing override untouched", async () => {
+    const a = createAgent({
+      name: "reasoning-target-5",
+      isLead: false,
+      status: "idle",
+      capabilities: [],
+    });
+
+    await fetch(`${baseUrl}/api/agents/${a.id}/runtime`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        harness_provider: "claude",
+        model: "claude-opus-4-8",
+        reasoning_effort: "low",
+      }),
+    });
+
+    // Re-PATCH without reasoning_effort at all (e.g. only changing the model).
+    const res = await fetch(`${baseUrl}/api/agents/${a.id}/runtime`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ harness_provider: "claude", model: "claude-opus-4-8" }),
+    });
+    expect(res.status).toBe(200);
+
+    const rows = getSwarmConfigs({ scope: "agent", scopeId: a.id });
+    expect(rows.find((r) => r.key === "REASONING_EFFORT_OVERRIDE")?.value).toBe("low");
+  });
+
+  test("reasoning_effort-only PATCH (model omitted) validates against the persisted MODEL_OVERRIDE, not an empty string", async () => {
+    const a = createAgent({
+      name: "reasoning-target-6",
+      isLead: false,
+      status: "idle",
+      capabilities: [],
+    });
+
+    // Establish a model that supports "xhigh" first.
+    const setModelRes = await fetch(`${baseUrl}/api/agents/${a.id}/runtime`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ harness_provider: "codex", model: "gpt-5.1-codex-max" }),
+    });
+    expect(setModelRes.status).toBe(200);
+
+    // A reasoning_effort-only PATCH (model omitted) should validate against
+    // the already-persisted MODEL_OVERRIDE (gpt-5.1-codex-max, which supports
+    // xhigh) rather than falling back to "" and always rejecting.
+    const effortOnlyRes = await fetch(`${baseUrl}/api/agents/${a.id}/runtime`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ harness_provider: "codex", reasoning_effort: "xhigh" }),
+    });
+    expect(effortOnlyRes.status).toBe(200);
+
+    const rows = getSwarmConfigs({ scope: "agent", scopeId: a.id });
+    expect(rows.find((r) => r.key === "REASONING_EFFORT_OVERRIDE")?.value).toBe("xhigh");
+    // Model is unaffected since it was omitted.
+    expect(rows.find((r) => r.key === "MODEL_OVERRIDE")?.value).toBe("gpt-5.1-codex-max");
+  });
+});
+
+// ─── credential-status echo of reasoningEffort (Phase 2) ────────────────────
+
+describe("PUT /api/agents/:id/credential-status — reasoningEffort echo", () => {
+  test("latest_model.reasoningEffort merges into cred_status", async () => {
+    const a = createAgent({
+      name: "cred-status-reasoning-1",
+      isLead: false,
+      status: "idle",
+      capabilities: [],
+    });
+
+    const put = await fetch(`${baseUrl}/api/agents/${a.id}/credential-status`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ready: true,
+        missing: [],
+        latest_model: {
+          model: "claude-opus-4-8",
+          source: "agent_config",
+          taskId: null,
+          harnessProvider: "claude",
+          reportedAt: Date.now(),
+          reasoningEffort: "high",
+        },
+      }),
+    });
+    expect(put.status).toBe(200);
+
+    const get = await fetch(`${baseUrl}/api/agents/${a.id}/credential-status`);
+    const body = (await get.json()) as {
+      credStatus: { latestModel?: { reasoningEffort?: string } } | null;
+    };
+    expect(body.credStatus?.latestModel?.reasoningEffort).toBe("high");
+  });
+});
+
+// ─── deleteSwarmConfigByKey helper (Phase 2) ────────────────────────────────
+
+describe("deleteSwarmConfigByKey", () => {
+  test("no-ops (returns false) when no matching row exists", () => {
+    const result = deleteSwarmConfigByKey("agent", "no-such-agent", "REASONING_EFFORT_OVERRIDE");
+    expect(result).toBe(false);
+  });
+
+  test("removes an existing row and returns true", () => {
+    const a = createAgent({
+      name: "delete-by-key-target",
+      isLead: false,
+      status: "idle",
+      capabilities: [],
+    });
+    upsertSwarmConfig({
+      scope: "agent",
+      scopeId: a.id,
+      key: "REASONING_EFFORT_OVERRIDE",
+      value: "medium",
+      description: "test setup",
+    });
+    expect(
+      getSwarmConfigs({ scope: "agent", scopeId: a.id }).find(
+        (r) => r.key === "REASONING_EFFORT_OVERRIDE",
+      ),
+    ).toBeDefined();
+
+    const result = deleteSwarmConfigByKey("agent", a.id, "REASONING_EFFORT_OVERRIDE");
+    expect(result).toBe(true);
+
+    expect(
+      getSwarmConfigs({ scope: "agent", scopeId: a.id }).find(
+        (r) => r.key === "REASONING_EFFORT_OVERRIDE",
+      ),
+    ).toBeUndefined();
+  });
+
+  test("global scope: removes a row looked up with scopeId ignored (NULL-safe)", () => {
+    upsertSwarmConfig({
+      scope: "global",
+      key: "GLOBAL_TEST_DELETE_BY_KEY",
+      value: "x",
+      description: "test setup",
+    });
+    const result = deleteSwarmConfigByKey("global", "irrelevant", "GLOBAL_TEST_DELETE_BY_KEY");
+    expect(result).toBe(true);
+    expect(
+      getSwarmConfigs({ scope: "global" }).find((r) => r.key === "GLOBAL_TEST_DELETE_BY_KEY"),
+    ).toBeUndefined();
   });
 });

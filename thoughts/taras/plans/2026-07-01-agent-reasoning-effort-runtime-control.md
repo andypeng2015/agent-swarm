@@ -12,7 +12,7 @@ commit_per_phase: true
 ref_baseline_commit: 0a5384918c152c626e4f957964671a38c69ee455
 supersedes: thoughts/taras/plans/2026-05-27-agent-reasoning-effort-runtime-control.md
 last_updated: 2026-07-01
-last_updated_by: Claude (Phase 1 execution)
+last_updated_by: Claude (Phase 2 execution)
 ---
 
 # Agent Reasoning/Effort Runtime Control Implementation Plan (Refresh)
@@ -194,12 +194,12 @@ Extend `PATCH /api/agents/{id}/runtime` to accept `reasoning_effort`, validate a
 ### Success Criteria:
 
 #### Automated Verification:
-- [ ] Route tests pass: `bun test src/tests/agents-harness-provider.test.ts src/tests/credential-status-api.test.ts`
-- [ ] Type check + lint: `bun run tsc:check && bun run lint`
-- [ ] OpenAPI is up to date (no diff after regen): `bun run docs:openapi && git diff --exit-code openapi.json docs-site/content/docs/api-reference/`
+- [x] Route tests pass: `bun test src/tests/agents-harness-provider.test.ts src/tests/credential-status-api.test.ts`
+- [x] Type check + lint: `bun run tsc:check && bun run lint`
+- [x] OpenAPI is up to date (no diff after regen): `bun run docs:openapi && git diff --exit-code openapi.json docs-site/content/docs/api-reference/`
 
 #### Automated QA:
-- [ ] Curl walkthrough script: `PATCH /api/agents/{id}/runtime` with each level (off/low/medium/high/xhigh) against a Claude agent → assert 200 and `GET /api/config/resolved?agentId=...` includes `REASONING_EFFORT_OVERRIDE` row with expected value. Repeat one negative case (`xhigh` on non-`max` Codex) → expect 400.
+- [x] Curl walkthrough script: `PATCH /api/agents/{id}/runtime` with each level (off/low/medium/high/xhigh) against a Claude agent → assert 200 and `GET /api/config/resolved?agentId=...` includes `REASONING_EFFORT_OVERRIDE` row with expected value. Repeat one negative case (`xhigh` on non-`max` Codex) → expect 400.
 
 #### Manual Verification:
 - [ ] Review the validation 400 error shape (field names, error message) — confirm the UI can render it cleanly.

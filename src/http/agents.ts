@@ -3,6 +3,7 @@ import { ensure } from "@desplega.ai/business-use";
 import { z } from "zod";
 import {
   createAgent,
+  deleteSwarmConfigByKey,
   getAgentById,
   getAgentWithTasks,
   getAllAgents,
@@ -21,12 +22,14 @@ import {
   updateAgentStatus,
   upsertSwarmConfig,
 } from "../be/db";
+import { reasoningCapability } from "../providers/reasoning-effort";
 import { telemetry } from "../telemetry";
 import {
   AgentCredStatusSchema,
   AgentLatestModelSchema,
   type ProviderName,
   ProviderNameSchema,
+  ReasoningEffortSchema,
 } from "../types";
 import { route } from "./route-def";
 import { agentWithCapacity, json, jsonError } from "./utils";
@@ -88,13 +91,14 @@ const updateAgentRuntimeRoute = route({
   pattern: ["api", "agents", null, "runtime"],
   summary: "Update an agent's runtime harness and default model",
   description:
-    "Updates `agents.harness_provider` and upserts agent-scoped `swarm_config` rows for HARNESS_PROVIDER and MODEL_OVERRIDE. The settings apply to future provider sessions.",
+    "Updates `agents.harness_provider` and upserts agent-scoped `swarm_config` rows for HARNESS_PROVIDER, MODEL_OVERRIDE, and REASONING_EFFORT_OVERRIDE. The settings apply to future provider sessions. For `model` and `reasoning_effort`: omit the field to leave it unchanged, send `null` to clear the corresponding override, or send a value to set it.",
   tags: ["Agents"],
   params: z.object({ id: z.string() }),
   body: z.object({
     harness_provider: LocalHarnessProviderSchema,
-    model: z.string().trim().min(1),
+    model: z.string().trim().min(1).nullable().optional(),
     allow_custom_model: z.boolean().optional().default(false),
+    reasoning_effort: ReasoningEffortSchema.nullable().optional(),
   }),
   responses: {
     200: { description: "Updated agent row" },
@@ -517,28 +521,84 @@ export async function handleAgentsRest(
   if (updateAgentRuntimeRoute.match(req.method, pathSegments)) {
     const parsed = await updateAgentRuntimeRoute.parse(req, res, pathSegments, queryParams);
     if (!parsed) return true;
+    const { harness_provider, model, allow_custom_model, reasoning_effort } = parsed.body;
+
+    // Validate the requested level against the hybrid capability lookup
+    // before touching the DB. `model` may be omitted (leave MODEL_OVERRIDE
+    // unchanged) — in that case validate against the currently persisted
+    // MODEL_OVERRIDE for this agent, not an empty string, so a
+    // reasoning_effort-only PATCH doesn't spuriously 400 against a model the
+    // agent is already running.
+    if (reasoning_effort) {
+      const modelForValidation =
+        model !== undefined
+          ? model
+          : (getSwarmConfigs({
+              scope: "agent",
+              scopeId: parsed.params.id,
+              key: "MODEL_OVERRIDE",
+            })[0]?.value ?? "");
+      const capability = reasoningCapability(harness_provider, modelForValidation ?? "");
+      if (!capability.levels.includes(reasoning_effort)) {
+        json(
+          res,
+          {
+            error: "Unsupported reasoning_effort for this harness/model",
+            harness: harness_provider,
+            model: modelForValidation || null,
+            level: reasoning_effort,
+            allowed: capability.levels,
+          },
+          400,
+        );
+        return true;
+      }
+    }
+
     const agent = getDb().transaction(() => {
-      const updated = setAgentHarnessProvider(
-        parsed.params.id,
-        parsed.body.harness_provider as ProviderName,
-      );
+      const updated = setAgentHarnessProvider(parsed.params.id, harness_provider as ProviderName);
       if (!updated) return null;
       upsertSwarmConfig({
         scope: "agent",
         scopeId: parsed.params.id,
         key: "HARNESS_PROVIDER",
-        value: parsed.body.harness_provider,
+        value: harness_provider,
         description: "Set via PATCH /api/agents/{id}/runtime",
       });
-      upsertSwarmConfig({
-        scope: "agent",
-        scopeId: parsed.params.id,
-        key: "MODEL_OVERRIDE",
-        value: parsed.body.model,
-        description: parsed.body.allow_custom_model
-          ? "Custom model set via PATCH /api/agents/{id}/runtime"
-          : "Set via PATCH /api/agents/{id}/runtime",
-      });
+
+      // `model === null` clears MODEL_OVERRIDE; `undefined` leaves it
+      // untouched; a string sets/updates it. Symmetric with reasoning_effort
+      // below — this closes a pre-existing gap (there was previously no way
+      // to clear MODEL_OVERRIDE via the API).
+      if (model === null) {
+        deleteSwarmConfigByKey("agent", parsed.params.id, "MODEL_OVERRIDE");
+      } else if (model !== undefined) {
+        upsertSwarmConfig({
+          scope: "agent",
+          scopeId: parsed.params.id,
+          key: "MODEL_OVERRIDE",
+          value: model,
+          description: allow_custom_model
+            ? "Custom model set via PATCH /api/agents/{id}/runtime"
+            : "Set via PATCH /api/agents/{id}/runtime",
+        });
+      }
+
+      // Same tri-state contract for REASONING_EFFORT_OVERRIDE. Note: until
+      // the runner reads this key (Phase 3), setting it is a no-op on the
+      // worker side — this phase only wires storage + validation.
+      if (reasoning_effort === null) {
+        deleteSwarmConfigByKey("agent", parsed.params.id, "REASONING_EFFORT_OVERRIDE");
+      } else if (reasoning_effort !== undefined) {
+        upsertSwarmConfig({
+          scope: "agent",
+          scopeId: parsed.params.id,
+          key: "REASONING_EFFORT_OVERRIDE",
+          value: reasoning_effort,
+          description: "Set via PATCH /api/agents/{id}/runtime",
+        });
+      }
+
       return updated;
     })();
     if (!agent) {

@@ -691,12 +691,25 @@ export const AgentCredStatusLiveTestSchema = z.object({
 });
 export type AgentCredStatusLiveTest = z.infer<typeof AgentCredStatusLiveTestSchema>;
 
+/**
+ * Normalized reasoning/effort levels. Mirrors `REASONING_EFFORT_LEVELS` in
+ * `src/providers/reasoning-effort.ts` (the source of truth for capability
+ * resolution + per-harness translation) as a literal enum so this
+ * foundational, dependency-free module doesn't need a cross-directory import.
+ * Keep the two lists in sync — see
+ * `thoughts/taras/plans/2026-07-01-agent-reasoning-effort-runtime-control.md`.
+ */
+export const ReasoningEffortSchema = z.enum(["off", "low", "medium", "high", "xhigh"]);
+export type ReasoningEffort = z.infer<typeof ReasoningEffortSchema>;
+
 export const AgentLatestModelSchema = z.object({
   model: z.string().min(1),
   source: z.enum(["task", "agent_config", "adapter_default", "custom"]),
   taskId: z.string().nullable().default(null),
   harnessProvider: ProviderNameSchema.nullable().default(null),
   reportedAt: z.number(), // unix ms
+  /** Worker-applied reasoning/effort level for this session, when the adapter honored one. */
+  reasoningEffort: ReasoningEffortSchema.optional(),
 });
 export type AgentLatestModel = z.infer<typeof AgentLatestModelSchema>;
 
