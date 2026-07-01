@@ -1108,6 +1108,46 @@ describe("buildCodexConfig", () => {
     const merged = await buildCodexConfig(cfg(), "gpt-5.3-codex", () => {});
     expect(merged.model).toBe("gpt-5.3-codex");
   });
+
+  // ─── Phase 4 (reasoning-effort plan): model_reasoning_effort wiring ─────────
+
+  test("reasoningEffort: 'high' sets model_reasoning_effort", async () => {
+    globalThis.fetch = stubFetch({ servers: [] });
+    const merged = await buildCodexConfig(
+      cfg({ reasoningEffort: "high" }),
+      "gpt-5.1-codex",
+      () => {},
+    );
+    expect(merged.model_reasoning_effort).toBe("high");
+    // show_raw_agent_reasoning stays pinned false regardless — separate knob.
+    expect(merged.show_raw_agent_reasoning).toBe(false);
+  });
+
+  test("reasoningEffort: 'xhigh' on gpt-5.1-codex-max (max variant) is applied", async () => {
+    globalThis.fetch = stubFetch({ servers: [] });
+    const merged = await buildCodexConfig(
+      cfg({ reasoningEffort: "xhigh" }),
+      "gpt-5.1-codex-max",
+      () => {},
+    );
+    expect(merged.model_reasoning_effort).toBe("xhigh");
+  });
+
+  test("reasoningEffort: 'xhigh' on gpt-5.1-codex (non-max) is rejected — noop, no model_reasoning_effort key", async () => {
+    globalThis.fetch = stubFetch({ servers: [] });
+    const merged = await buildCodexConfig(
+      cfg({ reasoningEffort: "xhigh" }),
+      "gpt-5.1-codex",
+      () => {},
+    );
+    expect(merged.model_reasoning_effort).toBeUndefined();
+  });
+
+  test("undefined reasoningEffort leaves config unchanged (no model_reasoning_effort key)", async () => {
+    globalThis.fetch = stubFetch({ servers: [] });
+    const merged = await buildCodexConfig(cfg(), "gpt-5.1-codex", () => {});
+    expect(merged.model_reasoning_effort).toBeUndefined();
+  });
 });
 
 // ─── Phase 3: buildCodexConfig — context-mode MCP + hook feature flags ───────

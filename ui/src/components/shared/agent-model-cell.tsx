@@ -1,3 +1,4 @@
+import { ReasoningEffortIcon } from "@/components/shared/reasoning-effort-icon";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { type AgentModelDisplay, getAgentModelPresentation } from "@/lib/agents-list-model-display";
 import { ProviderIcon } from "./provider-icon";
@@ -15,6 +16,9 @@ export function AgentModelCell({ display }: AgentModelCellProps) {
 
   const configured = getAgentModelPresentation(display.configured);
   const lastUsed = getAgentModelPresentation(display.lastUsed);
+  // "off" is a real, explicit setting but not visually distinct enough to
+  // warrant a badge next to the model name — only show one for low/medium/high/xhigh.
+  const showBadge = display.reasoningEffort && display.reasoningEffort !== "off";
 
   return (
     <Tooltip>
@@ -24,6 +28,12 @@ export function AgentModelCell({ display }: AgentModelCellProps) {
           <span className="min-w-0 flex-1 truncate font-medium text-foreground">
             {primary.label}
           </span>
+          {showBadge ? (
+            <ReasoningEffortIcon
+              level={display.reasoningEffort}
+              className="h-3 w-3 shrink-0 text-muted-foreground"
+            />
+          ) : null}
           {display.diverged ? (
             <span className="shrink-0 text-[11px] font-medium text-status-warning-strong">
               next task
@@ -44,6 +54,16 @@ export function AgentModelCell({ display }: AgentModelCellProps) {
           <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1">
             <dt className="opacity-60">Model ID</dt>
             <dd className="break-all font-mono">{primary.raw}</dd>
+
+            {display.reasoningEffort ? (
+              <>
+                <dt className="opacity-60">Reasoning effort</dt>
+                <dd className="flex items-center gap-1.5 font-mono">
+                  <ReasoningEffortIcon level={display.reasoningEffort} />
+                  {display.reasoningEffort}
+                </dd>
+              </>
+            ) : null}
 
             {display.diverged ? (
               <>

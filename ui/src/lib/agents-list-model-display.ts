@@ -1,3 +1,4 @@
+import type { ReasoningEffortLevel } from "@/api/types";
 import { findKnownModel, type ProviderIconKey } from "./agent-runtime-models";
 
 export interface AgentModelDisplay {
@@ -5,6 +6,8 @@ export interface AgentModelDisplay {
   lastUsed: string | null;
   primary: string | null;
   diverged: boolean;
+  /** Last-reported reasoning/effort level (`cred_status.latestModel.reasoningEffort`). Absent when unset (harness-native default). */
+  reasoningEffort?: ReasoningEffortLevel;
 }
 
 export interface AgentModelPresentation {
@@ -37,6 +40,7 @@ export function getAgentModelPresentation(
 export function getAgentModelDisplay(
   configuredModel: string | null | undefined,
   lastUsedModel: string | null | undefined,
+  reasoningEffort?: ReasoningEffortLevel,
 ): AgentModelDisplay {
   const configured = cleanModel(configuredModel);
   const lastUsed = cleanModel(lastUsedModel);
@@ -47,6 +51,7 @@ export function getAgentModelDisplay(
       lastUsed,
       primary: lastUsed,
       diverged: false,
+      reasoningEffort,
     };
   }
 
@@ -56,6 +61,7 @@ export function getAgentModelDisplay(
       lastUsed,
       primary: configured,
       diverged: false,
+      reasoningEffort,
     };
   }
 
@@ -63,6 +69,7 @@ export function getAgentModelDisplay(
     configured,
     lastUsed,
     primary: configured,
+    reasoningEffort,
     diverged: true,
   };
 }

@@ -27,6 +27,9 @@ export type AgentTaskSource =
   | "jira";
 export type ChannelType = "public" | "dm";
 export type ModelTier = "smol" | "regular" | "smart" | "ultra";
+/** Mirrors `REASONING_EFFORT_LEVELS` in `src/providers/reasoning-effort.ts` (backend). */
+export const REASONING_EFFORT_LEVELS = ["off", "low", "medium", "high", "xhigh"] as const;
+export type ReasoningEffortLevel = (typeof REASONING_EFFORT_LEVELS)[number];
 
 export interface Agent {
   id: string;
@@ -104,6 +107,8 @@ export interface AgentLatestModel {
   taskId?: string | null;
   harnessProvider?: ProviderName | null;
   reportedAt: number;
+  /** Level the adapter actually applied (or resolved pre-adapter for the initial report). Absent when unset (harness-native default). */
+  reasoningEffort?: ReasoningEffortLevel;
 }
 
 export interface AgentTask {
@@ -732,13 +737,15 @@ export interface AgentUsageSummary {
   sessionCount: number;
 }
 
+export type ScheduledTaskTargetType = "agent-task" | "workflow" | "script";
+
 export interface ScheduledTask {
   id: string;
   name: string;
   description?: string;
   cronExpression?: string;
   intervalMs?: number;
-  taskTemplate: string;
+  taskTemplate?: string;
   taskType?: string;
   tags: string[];
   priority: number;
@@ -751,6 +758,10 @@ export interface ScheduledTask {
   model?: string;
   modelTier?: ModelTier;
   scheduleType?: "recurring" | "one_time";
+  targetType?: ScheduledTaskTargetType;
+  workflowId?: string;
+  scriptName?: string;
+  scriptArgs?: Record<string, unknown>;
   createdAt: string;
   lastUpdatedAt: string;
 }

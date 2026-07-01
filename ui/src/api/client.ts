@@ -49,6 +49,7 @@ import type {
   PricingTokenClass,
   PromptTemplate,
   PromptTemplateHistory,
+  ReasoningEffortLevel,
   ResolveUnmappedInput,
   ScheduledTask,
   ScheduledTasksResponse,
@@ -233,6 +234,8 @@ class ApiClient {
     harnessProvider: "claude" | "codex" | "pi" | "opencode";
     model: string;
     allowCustomModel?: boolean;
+    /** `null` clears `REASONING_EFFORT_OVERRIDE`; omitted leaves it unchanged; a level sets it. */
+    reasoningEffort?: ReasoningEffortLevel | null;
   }): Promise<AgentWithTasks> {
     const url = `${this.getBaseUrl()}/api/agents/${data.id}/runtime`;
     const res = await fetch(url, {
@@ -242,6 +245,7 @@ class ApiClient {
         harness_provider: data.harnessProvider,
         model: data.model,
         allow_custom_model: data.allowCustomModel ?? false,
+        ...(data.reasoningEffort !== undefined ? { reasoning_effort: data.reasoningEffort } : {}),
       }),
     });
     if (!res.ok) {
@@ -580,10 +584,16 @@ class ApiClient {
   async fetchScheduledTasks(filters?: {
     enabled?: boolean;
     name?: string;
+    targetType?: ScheduledTask["targetType"];
+    workflowId?: string;
+    scriptName?: string;
   }): Promise<ScheduledTasksResponse> {
     const params = new URLSearchParams();
     if (filters?.enabled !== undefined) params.set("enabled", String(filters.enabled));
     if (filters?.name) params.set("name", filters.name);
+    if (filters?.targetType) params.set("targetType", filters.targetType);
+    if (filters?.workflowId) params.set("workflowId", filters.workflowId);
+    if (filters?.scriptName) params.set("scriptName", filters.scriptName);
     const queryString = params.toString();
     const url = `${this.getBaseUrl()}/api/scheduled-tasks${queryString ? `?${queryString}` : ""}`;
     const res = await fetch(url, { headers: this.getHeaders() });
@@ -600,7 +610,11 @@ class ApiClient {
 
   async createSchedule(data: {
     name: string;
-    taskTemplate: string;
+    taskTemplate?: string;
+    targetType?: ScheduledTask["targetType"];
+    workflowId?: string;
+    scriptName?: string;
+    scriptArgs?: Record<string, unknown>;
     cronExpression?: string;
     intervalMs?: number;
     description?: string;

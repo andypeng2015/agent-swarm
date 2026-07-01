@@ -85,6 +85,7 @@ import { createCodexSwarmEventHandler } from "./codex-swarm-events";
 import { CTX_MODE_NUDGE_EVERY } from "./ctx-mode-env";
 import { readPkgVersion } from "./harness-version";
 import { buildOtelTraceparentEnv } from "./otel-env";
+import { applyReasoningEffort, type ReasoningEffort } from "./reasoning-effort";
 import type {
   CostData,
   CredCheckOptions,
@@ -408,6 +409,13 @@ export async function buildCodexConfig(
     };
   }
 
+  // Phase 4 (reasoning-effort plan): translate the normalized level into
+  // `model_reasoning_effort`. `show_raw_agent_reasoning` stays pinned false
+  // regardless — separate, deliberately-pinned knob, not in scope here.
+  const reasoningApplication = applyReasoningEffort("codex", model, config.reasoningEffort);
+  const reasoningConfig =
+    reasoningApplication.kind === "codex-config" ? reasoningApplication.config : {};
+
   // (1) Baseline overrides. Keep these aligned with the Dockerfile baseline
   // at `~/.codex/config.toml` (Phase 6). Repeating them here makes local dev
   // (no baseline file) behave identically to the Docker worker.
@@ -424,6 +432,7 @@ export async function buildCodexConfig(
     show_raw_agent_reasoning: false,
     features: { hooks: true, plugin_hooks: true },
     mcp_servers: mcpServers as CodexConfig,
+    ...reasoningConfig,
   };
 }
 
@@ -480,6 +489,8 @@ export class CodexSession implements ProviderSession {
   private aborted = false;
   private settled = false;
   private readonly errorTracker = new SessionErrorTracker();
+  /** Reasoning/effort level actually applied (Phase 4) — null when `applyReasoningEffort()` returned noop. */
+  private readonly appliedReasoningEffort: ReasoningEffort | null;
   /**
    * Result captured by `settle` but held back from `resolveCompletion` until
    * `runSession`'s `finally` block has fully cleaned up (log writer flush,
@@ -510,6 +521,17 @@ export class CodexSession implements ProviderSession {
       skillsDir ?? process.env.CODEX_SKILLS_DIR ?? join(os.homedir(), ".codex", "skills");
     this.summarizeDeps = summarizeDeps;
     this.logFileHandle = Bun.file(config.logFile).writer();
+    // Mirrors the resolution `buildCodexConfig` already applied when
+    // constructing `mergedConfig` — cheap, pure, and keeps the applied-level
+    // feedback co-located with `settle()` rather than threading an extra
+    // constructor param through `createInProcessCodexSession`.
+    const reasoningApplication = applyReasoningEffort(
+      "codex",
+      resolvedModel,
+      config.reasoningEffort,
+    );
+    this.appliedReasoningEffort =
+      reasoningApplication.kind === "codex-config" ? (config.reasoningEffort ?? null) : null;
 
     this.completionPromise = new Promise<ProviderResult>((resolve) => {
       this.resolveCompletion = resolve;
@@ -601,7 +623,7 @@ export class CodexSession implements ProviderSession {
     // Resolution deferred until `runSession`'s finally-block fully cleans up
     // (see `pendingResult` rationale on the field above). Caller-visible
     // ordering: cleanup → resolve waitForCompletion.
-    this.pendingResult = result;
+    this.pendingResult = { ...result, appliedReasoningEffort: this.appliedReasoningEffort };
   }
 
   /** Build CostData from the most recent turn usage. */

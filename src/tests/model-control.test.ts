@@ -349,6 +349,102 @@ describe("Model Control - Config MODEL_OVERRIDE Resolution", () => {
   });
 });
 
+/**
+ * The runner resolves `reasoningEffort` on `ProviderSessionConfig` via a
+ * one-line sibling of `configModel` in `spawnProviderProcess()`
+ * (`src/commands/runner.ts`, near the `RELOADABLE_ENV_KEYS`-reconciled
+ * `freshEnv` blob):
+ *
+ *   const reasoningEffortOverride =
+ *     (freshEnv.REASONING_EFFORT_OVERRIDE as ReasoningEffort | undefined) || undefined;
+ *
+ * `spawnProviderProcess` is private and not practical to invoke directly in a
+ * unit test (it spawns real adapters, tracing spans, and outbound HTTP
+ * calls) — mirroring the existing `fetch-resolved-env.test.ts` convention,
+ * we replicate that single-line resolution here and drive it from the same
+ * `getResolvedConfig()` config layer `freshEnv` is built from, so the test
+ * still exercises real swarm_config precedence (agent-scoped row visible via
+ * `getResolvedConfig(agentId)`), not just a hand-built object.
+ */
+function resolveReasoningEffortOverride(
+  configs: Array<{ key: string; value: string }>,
+): string | undefined {
+  const freshEnv: Record<string, string | undefined> = {};
+  for (const c of configs) freshEnv[c.key] = c.value;
+  return (freshEnv.REASONING_EFFORT_OVERRIDE as string | undefined) || undefined;
+}
+
+describe("Model Control - Config REASONING_EFFORT_OVERRIDE Resolution", () => {
+  test("agent REASONING_EFFORT_OVERRIDE resolves into ProviderSessionConfig.reasoningEffort", () => {
+    const agent = createAgent({ name: "reasoning-effort-agent", isLead: false, status: "idle" });
+
+    upsertSwarmConfig({
+      scope: "agent",
+      scopeId: agent.id,
+      key: "REASONING_EFFORT_OVERRIDE",
+      value: "high",
+    });
+
+    const configs = getResolvedConfig(agent.id);
+    const reasoningOverride = configs.find((c) => c.key === "REASONING_EFFORT_OVERRIDE");
+    expect(reasoningOverride?.value).toBe("high");
+    expect(reasoningOverride?.scope).toBe("agent");
+
+    // Same resolution the runner applies to build ProviderSessionConfig.reasoningEffort.
+    expect(resolveReasoningEffortOverride(configs)).toBe("high");
+  });
+
+  test("modelTier and REASONING_EFFORT_OVERRIDE resolve independently on the same agent", () => {
+    const agent = createAgent({ name: "reasoning-tier-agent", isLead: false, status: "idle" });
+
+    // Agent-scoped MODEL_OVERRIDE set explicitly (rather than relying on
+    // whatever global MODEL_OVERRIDE earlier tests left behind) so this test
+    // deterministically exercises both axes on the same agent regardless of
+    // suite execution order.
+    upsertSwarmConfig({
+      scope: "agent",
+      scopeId: agent.id,
+      key: "MODEL_OVERRIDE",
+      value: "haiku",
+    });
+    upsertSwarmConfig({
+      scope: "agent",
+      scopeId: agent.id,
+      key: "REASONING_EFFORT_OVERRIDE",
+      value: "xhigh",
+    });
+
+    // The modelTier axis resolves through resolveTaskModelSelection()/resolveModelTier()
+    // and never sees REASONING_EFFORT_OVERRIDE.
+    const taskModelSelection = resolveTaskModelSelection({
+      model: "",
+      modelTier: "smart",
+      harnessProvider: "claude",
+    });
+    expect(taskModelSelection.model).toBe(
+      resolveModelTier({ tier: "smart", harnessProvider: "claude" }),
+    );
+    expect(taskModelSelection).not.toHaveProperty("reasoningEffort");
+
+    // The reasoningEffort axis resolves through swarm_config independently:
+    // both keys resolve to their own agent-scoped values, and neither leaks
+    // into the other's resolution.
+    const configs = getResolvedConfig(agent.id);
+    const modelOverride = configs.find((c) => c.key === "MODEL_OVERRIDE");
+    expect(resolveReasoningEffortOverride(configs)).toBe("xhigh");
+    expect(modelOverride?.value).toBe("haiku");
+    expect(modelOverride?.scope).toBe("agent");
+  });
+
+  test("no REASONING_EFFORT_OVERRIDE anywhere resolves to undefined", () => {
+    const agent = createAgent({ name: "reasoning-unset-agent", isLead: false, status: "idle" });
+
+    const configs = getResolvedConfig(agent.id);
+    expect(configs.find((c) => c.key === "REASONING_EFFORT_OVERRIDE")).toBeUndefined();
+    expect(resolveReasoningEffortOverride(configs)).toBeUndefined();
+  });
+});
+
 describe("Model Control - Priority Resolution Logic", () => {
   test("task.model takes highest priority", () => {
     expect(

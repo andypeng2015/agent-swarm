@@ -35,6 +35,7 @@ export interface CostData {
 
 import type { ProviderName } from "../types";
 import type { RateLimitWindowTelemetry } from "../utils/error-tracker";
+import type { ReasoningEffort } from "./reasoning-effort";
 
 /** Normalized event emitted by any provider adapter. */
 export type ProviderEvent =
@@ -111,6 +112,16 @@ export interface ProviderSessionConfig {
    * uses this slot for token refresh write-back instead of defaulting to slot 0.
    */
   codexSlot?: number;
+  /**
+   * Resolved reasoning/effort level for this session (task field, when one
+   * exists, → agent-scoped `REASONING_EFFORT_OVERRIDE` → undefined). Resolved
+   * independently of `model`/`modelTier` in the runner — see
+   * `src/providers/reasoning-effort.ts` and
+   * `thoughts/taras/plans/2026-07-01-agent-reasoning-effort-runtime-control.md`
+   * (Phase 3). Adapters may ignore this until they integrate `applyReasoningEffort()`
+   * (Phase 4).
+   */
+  reasoningEffort?: ReasoningEffort;
 }
 
 /** A running provider session. */
@@ -145,6 +156,13 @@ export interface ProviderResult {
    * Best-effort and informational; consumers must tolerate it being absent.
    */
   rateLimitWindows?: RateLimitWindowTelemetry;
+  /**
+   * Reasoning/effort level the adapter actually applied (Phase 4). `null`
+   * means `applyReasoningEffort()` returned `noop` (capability rejected the
+   * requested level, or no level was requested but a noop was still
+   * evaluated); `undefined` means the adapter doesn't report this at all.
+   */
+  appliedReasoningEffort?: ReasoningEffort | null;
 }
 
 /** Behavioral traits that govern prompt assembly and feature gating. */

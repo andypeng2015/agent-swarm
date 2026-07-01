@@ -691,12 +691,25 @@ export const AgentCredStatusLiveTestSchema = z.object({
 });
 export type AgentCredStatusLiveTest = z.infer<typeof AgentCredStatusLiveTestSchema>;
 
+/**
+ * Normalized reasoning/effort levels. Mirrors `REASONING_EFFORT_LEVELS` in
+ * `src/providers/reasoning-effort.ts` (the source of truth for capability
+ * resolution + per-harness translation) as a literal enum so this
+ * foundational, dependency-free module doesn't need a cross-directory import.
+ * Keep the two lists in sync — see
+ * `thoughts/taras/plans/2026-07-01-agent-reasoning-effort-runtime-control.md`.
+ */
+export const ReasoningEffortSchema = z.enum(["off", "low", "medium", "high", "xhigh"]);
+export type ReasoningEffort = z.infer<typeof ReasoningEffortSchema>;
+
 export const AgentLatestModelSchema = z.object({
   model: z.string().min(1),
   source: z.enum(["task", "agent_config", "adapter_default", "custom"]),
   taskId: z.string().nullable().default(null),
   harnessProvider: ProviderNameSchema.nullable().default(null),
   reportedAt: z.number(), // unix ms
+  /** Worker-applied reasoning/effort level for this session, when the adapter honored one. */
+  reasoningEffort: ReasoningEffortSchema.optional(),
 });
 export type AgentLatestModel = z.infer<typeof AgentLatestModelSchema>;
 
@@ -1031,6 +1044,9 @@ export type SwarmEvent = z.infer<typeof SwarmEventSchema>;
 // Scheduled Task Types
 // ============================================================================
 
+export const ScheduledTaskTargetTypeSchema = z.enum(["agent-task", "workflow", "script"]);
+export type ScheduledTaskTargetType = z.infer<typeof ScheduledTaskTargetTypeSchema>;
+
 export const ScheduledTaskSchema = z
   .object({
     id: z.uuid(),
@@ -1038,7 +1054,7 @@ export const ScheduledTaskSchema = z
     description: z.string().optional(),
     cronExpression: z.string().optional(),
     intervalMs: z.number().int().positive().optional(),
-    taskTemplate: z.string().min(1),
+    taskTemplate: z.string().optional(),
     taskType: z.string().max(50).optional(),
     tags: z.array(z.string()).default([]),
     priority: z.number().int().min(0).max(100).default(50),
@@ -1054,6 +1070,10 @@ export const ScheduledTaskSchema = z
     model: z.string().optional(),
     modelTier: ModelTierSchema.optional(),
     scheduleType: z.enum(["recurring", "one_time"]).default("recurring"),
+    targetType: ScheduledTaskTargetTypeSchema.default("agent-task"),
+    workflowId: z.uuid().optional(),
+    scriptName: z.string().optional(),
+    scriptArgs: z.record(z.string(), z.unknown()).optional(),
     createdAt: z.iso.datetime(),
     lastUpdatedAt: z.iso.datetime(),
     createdBy: z.string().optional(),
@@ -1066,6 +1086,23 @@ export const ScheduledTaskSchema = z
     },
     {
       message: "Either cronExpression or intervalMs must be provided for recurring schedules",
+    },
+  )
+  .refine(
+    (data) => {
+      switch (data.targetType) {
+        case "agent-task":
+          return !!data.taskTemplate;
+        case "workflow":
+          return !!data.workflowId;
+        case "script":
+          return !!data.scriptName;
+        default:
+          return true;
+      }
+    },
+    {
+      message: "Target-type specific field is required (taskTemplate, workflowId, or scriptName)",
     },
   );
 

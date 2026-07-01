@@ -60,4 +60,11 @@ describe("agents list model display", () => {
       providerId: "anthropic",
     });
   });
+
+  // ── Phase 6 (reasoning-effort plan) ─────────────────────────────────────────
+
+  test("getAgentModelDisplay threads reasoningEffort through unchanged", () => {
+    const display = getAgentModelDisplay("claude-opus-4-8", "claude-opus-4-8", "high");
+    expect(display.reasoningEffort).toBe("high");
+  });
 });
