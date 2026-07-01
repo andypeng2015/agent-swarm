@@ -12,7 +12,7 @@ commit_per_phase: true
 ref_baseline_commit: 0a5384918c152c626e4f957964671a38c69ee455
 supersedes: thoughts/taras/plans/2026-05-27-agent-reasoning-effort-runtime-control.md
 last_updated: 2026-07-01
-last_updated_by: Claude (Phase 2 execution)
+last_updated_by: Claude (Phase 3 execution)
 ---
 
 # Agent Reasoning/Effort Runtime Control Implementation Plan (Refresh)
@@ -250,12 +250,12 @@ Plumb `reasoningEffort` through `ProviderSessionConfig`, the runner's config res
 ### Success Criteria:
 
 #### Automated Verification:
-- [ ] Resolution tests pass: `bun test src/tests/model-control.test.ts`
-- [ ] Type check + lint: `bun run tsc:check && bun run lint`
-- [ ] Worker code does not import DB modules: `bash scripts/check-db-boundary.sh`
+- [x] Resolution tests pass: `bun test src/tests/model-control.test.ts`
+- [x] Type check + lint: `bun run tsc:check && bun run lint`
+- [x] Worker code does not import DB modules: `bash scripts/check-db-boundary.sh`
 
 #### Automated QA:
-- [ ] Local E2E (per swarm-local-e2e skill): start API + lead + worker, PATCH an agent with `reasoning_effort: 'high'`, dispatch a no-op task, grep worker logs for `reasoningEffort` in the initial latest-model report payload → expect `"reasoningEffort":"high"`.
+- [ ] Local E2E (per swarm-local-e2e skill): start API + lead + worker, PATCH an agent with `reasoning_effort: 'high'`, dispatch a no-op task, grep worker logs for `reasoningEffort` in the initial latest-model report payload → expect `"reasoningEffort":"high"`. **Not run this phase** — a full Docker lead+worker dispatch wasn't attempted (background phase-agent, out of scope for spinning up containers). Substituted a scoped live check instead: started the real API server against a throwaway scratch DB, `POST /api/agents`, `PATCH /api/agents/{id}/runtime` with `{harness_provider:"claude", model:"claude-opus-4-8", reasoning_effort:"high"}`, then `GET /api/config/resolved?agentId=...` — confirmed a `REASONING_EFFORT_OVERRIDE` row with `value:"high"` at agent scope, which is the exact endpoint+shape `fetchResolvedEnv()` in `runner.ts` consumes into `freshEnv`. This exercises the real Phase 2 route handler and the Phase 3 consumption boundary end-to-end, but does not exercise a live worker process or confirm the `reportLatestModel()` HTTP call actually lands `reasoningEffort` in `cred_status` from a running worker. Left for human/orchestrator: full swarm-local-e2e dispatch + worker log grep.
 
 #### Manual Verification:
 - [ ] Confirm `ProviderSessionConfig.reasoningEffort` is set in worker logs even though no adapter consumes it yet (sanity check the wire).

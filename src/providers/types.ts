@@ -35,6 +35,7 @@ export interface CostData {
 
 import type { ProviderName } from "../types";
 import type { RateLimitWindowTelemetry } from "../utils/error-tracker";
+import type { ReasoningEffort } from "./reasoning-effort";
 
 /** Normalized event emitted by any provider adapter. */
 export type ProviderEvent =
@@ -111,6 +112,16 @@ export interface ProviderSessionConfig {
    * uses this slot for token refresh write-back instead of defaulting to slot 0.
    */
   codexSlot?: number;
+  /**
+   * Resolved reasoning/effort level for this session (task field, when one
+   * exists, → agent-scoped `REASONING_EFFORT_OVERRIDE` → undefined). Resolved
+   * independently of `model`/`modelTier` in the runner — see
+   * `src/providers/reasoning-effort.ts` and
+   * `thoughts/taras/plans/2026-07-01-agent-reasoning-effort-runtime-control.md`
+   * (Phase 3). Adapters may ignore this until they integrate `applyReasoningEffort()`
+   * (Phase 4).
+   */
+  reasoningEffort?: ReasoningEffort;
 }
 
 /** A running provider session. */

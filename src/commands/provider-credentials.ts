@@ -24,7 +24,7 @@ import { checkCodexCredentials } from "../providers/codex-adapter";
 import { checkDevinCredentials } from "../providers/devin-adapter";
 import { checkOpencodeCredentials } from "../providers/opencode-adapter";
 import type { CredCheckOptions, CredStatus } from "../providers/types";
-import type { AgentCredStatus, AgentLatestModel, ProviderName } from "../types";
+import type { AgentCredStatus, AgentLatestModel, ProviderName, ReasoningEffort } from "../types";
 import { scrubSecrets } from "../utils/secret-scrubber";
 
 export type SupportedProvider = "claude" | "claude-managed" | "codex" | "devin" | "opencode" | "pi";
@@ -507,6 +507,13 @@ export function buildLatestModelReport(opts: {
   configModel?: string;
   taskId?: string;
   harnessProvider: ProviderName;
+  /**
+   * Resolved reasoning/effort level for this session. Until Phase 4 lands
+   * (`ProviderResult.appliedReasoningEffort`), both the initial and
+   * post-result reports pass the same runner-resolved value — see call
+   * sites in `src/commands/runner.ts`.
+   */
+  reasoningEffort?: ReasoningEffort;
 }): AgentLatestModel | null {
   const model = opts.model.trim();
   if (!model) return null;
@@ -525,5 +532,6 @@ export function buildLatestModelReport(opts: {
     taskId: opts.taskId ?? null,
     harnessProvider: opts.harnessProvider,
     reportedAt: Date.now(),
+    reasoningEffort: opts.reasoningEffort,
   };
 }

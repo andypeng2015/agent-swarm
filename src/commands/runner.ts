@@ -33,7 +33,12 @@ import {
   type ProviderSessionConfig,
 } from "../providers/index.ts";
 import { initTelemetry, telemetry } from "../telemetry.ts";
-import { type ProviderName, type RepoGuidelines, resolveTaskModelSelection } from "../types.ts";
+import {
+  type ProviderName,
+  type ReasoningEffort,
+  type RepoGuidelines,
+  resolveTaskModelSelection,
+} from "../types.ts";
 import { getApiKey } from "../utils/api-key.ts";
 import { computeBudgetBackoffMs } from "../utils/budget-backoff.ts";
 import { getMcpBaseUrl } from "../utils/constants.ts";
@@ -474,6 +479,7 @@ async function fetchResolvedEnv(
  */
 const RELOADABLE_ENV_KEYS: ReadonlySet<string> = new Set([
   "MODEL_OVERRIDE",
+  "REASONING_EFFORT_OVERRIDE",
   "AGENT_FS_SHARED_ORG_ID",
   "SWARM_USE_CLAUDE_BRIDGE",
   "BEDROCK_AUTH_MODE",
@@ -2694,6 +2700,13 @@ async function spawnProviderProcess(
   }
 
   const configModel = (freshEnv.MODEL_OVERRIDE as string | undefined) || "";
+  // Reasoning/effort resolves independently of model/modelTier — no
+  // resolveTaskModelSelection()-equivalent exists or is wanted for this axis
+  // (see Phase 3 of the reasoning-effort plan). Precedence: task field (if
+  // introduced later — currently always undefined) → REASONING_EFFORT_OVERRIDE
+  // → undefined.
+  const reasoningEffortOverride =
+    (freshEnv.REASONING_EFFORT_OVERRIDE as ReasoningEffort | undefined) || undefined;
   const taskModelSelection = resolveTaskModelSelection({
     model: opts.model,
     modelTier: opts.modelTier,
@@ -2749,6 +2762,7 @@ async function spawnProviderProcess(
     // correct pool key. Undefined for non-codex providers and single-cred deploys.
     codexSlot: oauthSelection?.index,
     contextKey: opts.contextKey,
+    reasoningEffort: reasoningEffortOverride,
   };
 
   // Create the long-lived `worker.session` span up front so the provider
@@ -2797,6 +2811,11 @@ async function spawnProviderProcess(
     configModel,
     taskId: realTaskId,
     harnessProvider: opts.harnessProvider,
+    // Resolved (pre-adapter) level. Phase 4 will introduce
+    // `ProviderResult.appliedReasoningEffort`, confirmed by the adapter; until
+    // then both the initial and post-result reports use this same
+    // runner-resolved value.
+    reasoningEffort: reasoningEffortOverride,
   });
   if (initialModelReport) {
     reportLatestModel(opts.apiUrl, opts.apiKey, opts.agentId, initialModelReport).catch((err) =>
@@ -3085,6 +3104,11 @@ async function spawnProviderProcess(
               configModel,
               taskId: realTaskId,
               harnessProvider: opts.harnessProvider,
+              // TODO(Phase 4): once adapters implement `applyReasoningEffort()`
+              // and `ProviderResult.appliedReasoningEffort` exists, switch this
+              // post-result report to the adapter-confirmed value instead of
+              // the runner-resolved one.
+              reasoningEffort: reasoningEffortOverride,
             });
             if (latestModel) {
               reportLatestModel(opts.apiUrl, opts.apiKey, opts.agentId, latestModel).catch((err) =>
