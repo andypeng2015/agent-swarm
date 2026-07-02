@@ -12,6 +12,7 @@ import {
   listWorkflowRuns,
   listWorkflows,
   updateWorkflow,
+  withFavoriteFlags,
 } from "../be/db";
 import {
   CooldownConfigSchema,
@@ -401,10 +402,19 @@ export async function handleWorkflows(
   if (listWorkflowsRoute.match(req.method, pathSegments)) {
     const parsed = await listWorkflowsRoute.parse(req, res, pathSegments, queryParams);
     if (!parsed) return true;
+    const userId = resolveHttpAuditUserId(req, myAgentId);
     // List responses default to slim (no `definition`); `?fields=full` restores it.
-    const workflows =
-      parsed.query.fields === "full" ? listWorkflows() : listWorkflows(undefined, { slim: true });
-    json(res, workflows);
+    if (parsed.query.fields === "full") {
+      json(res, withFavoriteFlags(listWorkflows(), { userId, itemType: "workflow" }));
+    } else {
+      json(
+        res,
+        withFavoriteFlags(listWorkflows(undefined, { slim: true }), {
+          userId,
+          itemType: "workflow",
+        }),
+      );
+    }
     return true;
   }
 
@@ -447,7 +457,9 @@ export async function handleWorkflows(
     }
     // Include auto-generated edges for UI rendering
     const edges = generateEdges(workflow.definition);
-    json(res, { ...workflow, edges });
+    const userId = resolveHttpAuditUserId(req, myAgentId);
+    const [decorated] = withFavoriteFlags([workflow], { userId, itemType: "workflow" });
+    json(res, { ...(decorated ?? workflow), edges });
     return true;
   }
 

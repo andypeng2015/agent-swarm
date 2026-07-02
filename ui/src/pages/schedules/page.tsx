@@ -3,6 +3,7 @@ import { Clock, Plus, Search } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAgents } from "@/api/hooks/use-agents";
+import { useFavoriteToggle } from "@/api/hooks/use-favorites";
 import { useCreateSchedule, useScheduledTasks, useUpdateSchedule } from "@/api/hooks/use-schedules";
 import type { ScheduledTask, ScheduledTaskTargetType } from "@/api/types";
 import {
@@ -12,6 +13,7 @@ import {
   type ScheduleTargetFormValue,
 } from "@/components/schedules/schedule-target-fields";
 import { DataGrid } from "@/components/shared/data-grid";
+import { FavoriteButton } from "@/components/shared/favorite-button";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -295,8 +297,18 @@ export default function SchedulesPage() {
   const { data: agents } = useAgents();
   const createSchedule = useCreateSchedule();
   const updateSchedule = useUpdateSchedule();
+  const favoriteToggle = useFavoriteToggle("schedule");
   const [dialogOpen, setDialogOpen] = useState(false);
   const search = readStringParam(searchParams, "search");
+  const scheduleRows = useMemo(() => {
+    return [...(schedules ?? [])].sort((a, b) => {
+      if (a.favorite !== b.favorite) return a.favorite ? -1 : 1;
+      const aLastRun = a.lastRunAt ? new Date(a.lastRunAt).getTime() : 0;
+      const bLastRun = b.lastRunAt ? new Date(b.lastRunAt).getTime() : 0;
+      if (aLastRun !== bLastRun) return bLastRun - aLastRun;
+      return new Date(b.lastUpdatedAt).getTime() - new Date(a.lastUpdatedAt).getTime();
+    });
+  }, [schedules]);
 
   function handleCreateSubmit(data: ScheduleFormData) {
     const tags = data.tags
@@ -344,6 +356,25 @@ export default function SchedulesPage() {
 
   const columnDefs = useMemo<ColDef<ScheduledTask>[]>(
     () => [
+      {
+        headerName: "",
+        width: 52,
+        sortable: false,
+        filter: false,
+        cellRenderer: (params: ICellRendererParams<ScheduledTask>) => {
+          const schedule = params.data;
+          if (!schedule) return null;
+          return (
+            <FavoriteButton
+              favorite={schedule.favorite}
+              disabled={favoriteToggle.isPending}
+              onToggle={() =>
+                favoriteToggle.mutate({ itemId: schedule.id, favorite: !schedule.favorite })
+              }
+            />
+          );
+        },
+      },
       {
         field: "name",
         headerName: "Name",
@@ -486,6 +517,12 @@ export default function SchedulesPage() {
         },
       },
       {
+        field: "lastUpdatedAt",
+        headerName: "Updated",
+        width: 150,
+        valueFormatter: (params) => (params.value ? formatSmartTime(params.value) : ""),
+      },
+      {
         field: "enabled",
         headerName: "Enabled",
         width: 100,
@@ -504,7 +541,7 @@ export default function SchedulesPage() {
         },
       },
     ],
-    [agentMap, handleToggleEnabled],
+    [agentMap, favoriteToggle, handleToggleEnabled],
   );
 
   const onRowClicked = useCallback(
@@ -527,7 +564,7 @@ export default function SchedulesPage() {
     </Button>
   );
 
-  if (!isLoading && (!schedules || schedules.length === 0)) {
+  if (!isLoading && scheduleRows.length === 0) {
     return (
       <div className="flex flex-col flex-1 min-h-0 gap-4">
         <PageHeader title="Schedules" action={createButton} />
@@ -561,7 +598,7 @@ export default function SchedulesPage() {
       </div>
 
       <DataGrid
-        rowData={schedules ?? []}
+        rowData={scheduleRows}
         columnDefs={columnDefs}
         quickFilterText={search}
         onRowClicked={onRowClicked}

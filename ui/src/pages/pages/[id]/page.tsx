@@ -37,10 +37,12 @@ import {
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { api } from "@/api/client";
+import { useFavoriteToggle } from "@/api/hooks/use-favorites";
 import { useFeatureGate } from "@/api/hooks/use-feature-gate";
 import { usePage } from "@/api/hooks/use-pages";
 import type { PageMetadata } from "@/api/types";
 import { UpgradeRequired } from "@/components/feature-gate/upgrade-required";
+import { FavoriteButton } from "@/components/shared/favorite-button";
 import { AlertCallout } from "@/components/ui/alert-callout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -65,6 +67,7 @@ function getAbsoluteApiUrl(): string {
 
 const MISSING_PAGE_SESSION_ERROR =
   "authed mode requires page-session cookie; POST /api/pages/:id/launch first";
+const PAGE_ID_RE = /^[a-f0-9]{32}$/i;
 
 function getPageHtmlUrl(id: string): string {
   return `${getAbsoluteApiUrl()}/p/${encodeURIComponent(id)}`;
@@ -319,11 +322,25 @@ export default function ArtifactPage() {
   const fullMode = searchParams.get("mode") === "full";
   const gate = useFeatureGate("1.79.0");
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
+  const needsSlugResolve = !!id && !PAGE_ID_RE.test(id);
+  const {
+    data: resolvedPage,
+    error: resolveError,
+    isLoading: isResolving,
+  } = useQuery({
+    queryKey: ["page-resolve", id],
+    queryFn: () => api.resolvePage(id ?? ""),
+    enabled: needsSlugResolve,
+    retry: false,
+  });
+  const pageId = needsSlugResolve ? resolvedPage?.id : id;
+  const { data: pageRow } = usePage(pageId);
+  const favoriteToggle = useFavoriteToggle("page");
 
   const { data, error, isLoading } = useQuery({
-    queryKey: ["page-metadata", id],
-    queryFn: () => fetchPageMetadataWithLaunchRetry(id ?? ""),
-    enabled: !!id,
+    queryKey: ["page-metadata", pageId],
+    queryFn: () => fetchPageMetadataWithLaunchRetry(pageId ?? ""),
+    enabled: !!pageId,
     // The metadata is the page's current head; we DON'T want to silently
     // refetch + re-render the iframe while the user is interacting with it
     // (and for password mode this would re-trigger the unlock flow).
@@ -341,10 +358,10 @@ export default function ArtifactPage() {
   // top-level navigation so authed/password pages still resolve. Triggered
   // synchronously from the click so the pop-up isn't blocked.
   const handleExportPdf = useCallback(() => {
-    if (!id) return;
-    const url = `${getAbsoluteApiUrl()}/p/${encodeURIComponent(id)}?print=1`;
+    if (!pageId) return;
+    const url = `${getAbsoluteApiUrl()}/p/${encodeURIComponent(pageId)}?print=1`;
     window.open(url, "_blank", "noopener,noreferrer");
-  }, [id]);
+  }, [pageId]);
 
   if (!gate.supported) {
     return (
@@ -357,6 +374,11 @@ export default function ArtifactPage() {
   }
   if (!id) {
     return <ArtifactPageError message="Missing artifact id in URL." />;
+  }
+  if (isResolving) return <ArtifactPageSkeleton />;
+  if (resolveError || (needsSlugResolve && !pageId)) {
+    const msg = resolveError instanceof Error ? resolveError.message : "Page slug not found";
+    return <ArtifactPageError message={msg} />;
   }
   if (isLoading) return <ArtifactPageSkeleton />;
   if (error || !data) {
@@ -378,13 +400,13 @@ export default function ArtifactPage() {
   } else {
     switch (data.authMode) {
       case "public":
-        body = <PublicHtmlFrame id={id} title={data.title} iframeRef={iframeRef} />;
+        body = <PublicHtmlFrame id={pageId!} title={data.title} iframeRef={iframeRef} />;
         break;
       case "authed":
-        body = <AuthedHtmlFrame id={id} title={data.title} iframeRef={iframeRef} />;
+        body = <AuthedHtmlFrame id={pageId!} title={data.title} iframeRef={iframeRef} />;
         break;
       case "password":
-        body = <PasswordHtmlFrame id={id} title={data.title} iframeRef={iframeRef} />;
+        body = <PasswordHtmlFrame id={pageId!} title={data.title} iframeRef={iframeRef} />;
         break;
     }
   }
@@ -402,7 +424,7 @@ export default function ArtifactPage() {
             <span className="font-mono text-[10px] text-muted-foreground">{data.authMode}</span>
           </div>
           <Button asChild variant="outline" size="sm">
-            <Link to={`/pages/${id}`}>
+            <Link to={`/pages/${pageId}`}>
               <Minimize2 className="size-3.5" />
               Exit full
             </Link>
@@ -419,10 +441,19 @@ export default function ArtifactPage() {
         title={data.title}
         description={data.description ?? undefined}
         action={
-          <PageHeaderActions id={id} authMode={data.authMode} onExportPdf={handleExportPdf} />
+          <PageHeaderActions
+            id={pageId!}
+            authMode={data.authMode}
+            favorite={pageRow?.favorite}
+            favoriteDisabled={favoriteToggle.isPending}
+            onToggleFavorite={() =>
+              favoriteToggle.mutate({ itemId: pageId!, favorite: !pageRow?.favorite })
+            }
+            onExportPdf={handleExportPdf}
+          />
         }
       />
-      <PageSlugLine id={id} />
+      <PageSlugLine id={pageId!} />
       {body}
     </div>
   );
@@ -456,10 +487,16 @@ function PageSlugLine({ id }: { id: string }) {
 function PageHeaderActions({
   id,
   authMode,
+  favorite,
+  favoriteDisabled,
+  onToggleFavorite,
   onExportPdf,
 }: {
   id: string;
   authMode: PageMetadata["authMode"];
+  favorite?: boolean;
+  favoriteDisabled?: boolean;
+  onToggleFavorite: () => void;
   onExportPdf: () => void;
 }) {
   const config = getConfig();
@@ -467,6 +504,7 @@ function PageHeaderActions({
   const href = `${apiUrl}/p/${encodeURIComponent(id)}`;
   return (
     <div className="flex items-center gap-2">
+      <FavoriteButton favorite={favorite} disabled={favoriteDisabled} onToggle={onToggleFavorite} />
       <Button asChild variant="outline" size="sm" title="Open the API-served URL in a new tab">
         <a href={href} target="_blank" rel="noreferrer">
           <ExternalLink className="size-3.5" />

@@ -1,5 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { z } from "zod";
+import { resolveHttpAuditUserId } from "../be/audit-user";
 import {
   getAllAgents,
   getAllLogs,
@@ -9,6 +10,7 @@ import {
   getScheduledTasks,
   getSwarmMetrics,
   getTaskStats,
+  withFavoriteFlags,
 } from "../be/db";
 import type { AgentLog } from "../types";
 import { route } from "./route-def";
@@ -109,6 +111,7 @@ export async function handleStats(
   res: ServerResponse,
   pathSegments: string[],
   queryParams: URLSearchParams,
+  myAgentId?: string,
 ): Promise<boolean> {
   if (listLogs.match(req.method, pathSegments)) {
     const parsed = await listLogs.parse(req, res, pathSegments, queryParams);
@@ -185,7 +188,10 @@ export async function handleStats(
       workflowId: parsed.query.workflowId,
       scriptName: parsed.query.scriptName,
     });
-    json(res, { scheduledTasks });
+    const userId = resolveHttpAuditUserId(req, myAgentId);
+    json(res, {
+      scheduledTasks: withFavoriteFlags(scheduledTasks, { userId, itemType: "schedule" }),
+    });
     return true;
   }
 

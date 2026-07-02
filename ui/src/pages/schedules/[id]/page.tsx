@@ -2,6 +2,7 @@ import { ArrowLeft, Clock, ListTodo, Pencil, Play, Timer, Trash2 } from "lucide-
 import { useMemo, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useAgents } from "@/api/hooks/use-agents";
+import { useFavoriteToggle } from "@/api/hooks/use-favorites";
 import {
   useDeleteSchedule,
   useRunScheduleNow,
@@ -18,6 +19,7 @@ import {
   ScheduleTargetFields,
   type ScheduleTargetFormValue,
 } from "@/components/schedules/schedule-target-fields";
+import { FavoriteButton } from "@/components/shared/favorite-button";
 import {
   ignoreRowClickFromInteractives,
   TasksColumnsMenu,
@@ -126,6 +128,7 @@ export default function ScheduleDetailPage() {
   const updateSchedule = useUpdateSchedule();
   const deleteSchedule = useDeleteSchedule();
   const runNow = useRunScheduleNow();
+  const favoriteToggle = useFavoriteToggle("schedule");
 
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -210,6 +213,13 @@ export default function ScheduleDetailPage() {
           </Badge>
         )}
         <div className="ml-auto flex items-center gap-1.5 shrink-0">
+          <FavoriteButton
+            favorite={schedule.favorite}
+            disabled={favoriteToggle.isPending}
+            onToggle={() =>
+              favoriteToggle.mutate({ itemId: schedule.id, favorite: !schedule.favorite })
+            }
+          />
           <Button
             variant="outline"
             size="sm"

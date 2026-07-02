@@ -1,16 +1,20 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { z } from "zod";
+import { resolveHttpAuditUserId } from "../be/audit-user";
 import {
   countAllPages,
   countPagesByAgent,
   createPage,
   deletePage,
+  getLatestPageBySlug,
   getPage,
+  getPageBySlug,
   getPageVersion,
   getPageVersions,
   listAllPages,
   listPagesByAgent,
   updatePage,
+  withFavoriteFlags,
 } from "../be/db";
 import { snapshotPage } from "../pages/version";
 import { type Page, PageAuthModeSchema, PageContentTypeSchema, type PageSummary } from "../types";
@@ -79,6 +83,22 @@ const getPageRoute = route({
   params: z.object({ id: z.string() }),
   responses: {
     200: { description: "Page row" },
+    404: { description: "Page not found" },
+  },
+});
+
+const resolvePageRoute = route({
+  method: "get",
+  path: "/api/pages/resolve",
+  pattern: ["api", "pages", "resolve"],
+  summary: "Resolve a page by slug",
+  tags: ["Pages"],
+  query: z.object({
+    slug: z.string().min(1),
+    agentId: z.string().min(1).optional(),
+  }),
+  responses: {
+    200: { description: "Resolved page row" },
     404: { description: "Page not found" },
   },
 });
@@ -298,13 +318,13 @@ function getAppBaseUrl(): string {
 }
 
 /** Decorate a page row with share-URL pointers. */
-function withShareUrls<T extends { id: string }>(
+function withShareUrls<T extends { id: string; slug: string }>(
   page: T,
 ): T & { app_url: string; api_url: string } {
   return {
     ...page,
     api_url: `${getApiBaseUrl()}/p/${page.id}`,
-    app_url: `${getAppBaseUrl()}/pages/${page.id}`,
+    app_url: `${getAppBaseUrl()}/pages/${page.slug}`,
   };
 }
 
@@ -382,7 +402,7 @@ export async function handlePages(
           id: page.id,
           version: 1,
           api_url: `${getApiBaseUrl()}/p/${page.id}`,
-          app_url: `${getAppBaseUrl()}/pages/${page.id}`,
+          app_url: `${getAppBaseUrl()}/pages/${page.slug}`,
         },
         201,
       );
@@ -421,6 +441,26 @@ export async function handlePages(
     return true;
   }
 
+  // GET /api/pages/resolve?slug=... — used by the SPA `/pages/:idOrSlug`
+  // route. Slugs are unique per agent, not globally, so the no-agent form
+  // intentionally resolves the newest-updated matching page.
+  if (resolvePageRoute.match(req.method, pathSegments)) {
+    const parsed = await resolvePageRoute.parse(req, res, pathSegments, queryParams);
+    if (!parsed) return true;
+    const page = parsed.query.agentId
+      ? getPageBySlug(parsed.query.agentId, parsed.query.slug)
+      : getLatestPageBySlug(parsed.query.slug);
+    if (!page) {
+      res.writeHead(404);
+      res.end();
+      return true;
+    }
+    const userId = resolveHttpAuditUserId(req, myAgentId);
+    const [decorated] = withFavoriteFlags([page], { userId, itemType: "page" });
+    json(res, withShareUrls(decorated ?? page));
+    return true;
+  }
+
   // GET /api/pages — listing. MUST come BEFORE getPageRoute because both
   // patterns start with `["api", "pages"]` and the list pattern is shorter.
   // Optional `agentId` query filter narrows to a single owner — used by the
@@ -444,8 +484,10 @@ export async function handlePages(
       pages = full ? listAllPages(limit, offset) : listAllPages(limit, offset, { slim: true });
       total = countAllPages();
     }
+    const userId = resolveHttpAuditUserId(req, myAgentId);
+    const decoratedPages = withFavoriteFlags(pages, { userId, itemType: "page" });
     json(res, {
-      pages: pages.map(withShareUrls),
+      pages: decoratedPages.map(withShareUrls),
       // Filter-aware total (real row count, not the current page's length) so
       // the UI pager reflects all pages, not just what this request returned.
       total,
@@ -500,7 +542,9 @@ export async function handlePages(
       res.end();
       return true;
     }
-    json(res, withShareUrls(page));
+    const userId = resolveHttpAuditUserId(req, myAgentId);
+    const [decorated] = withFavoriteFlags([page], { userId, itemType: "page" });
+    json(res, withShareUrls(decorated ?? page));
     return true;
   }
 

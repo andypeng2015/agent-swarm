@@ -11,6 +11,7 @@ import {
   getScheduledTasks,
   getWorkflow,
   updateScheduledTask,
+  withFavoriteFlags,
 } from "../be/db";
 import { mergeScheduleTiming, validateRecurringTiming } from "../be/schedules/validate";
 import { getScript } from "../be/scripts/db";
@@ -187,7 +188,9 @@ export async function handleSchedules(
       parsed.query.fields === "full"
         ? getScheduledTasks(filters)
         : getScheduledTasks(filters, { slim: true });
-    json(res, { schedules, count: schedules.length });
+    const userId = resolveHttpAuditUserId(req, myAgentId);
+    const decoratedSchedules = withFavoriteFlags(schedules, { userId, itemType: "schedule" });
+    json(res, { schedules: decoratedSchedules, count: decoratedSchedules.length });
     return true;
   }
 
@@ -378,7 +381,9 @@ export async function handleSchedules(
       return true;
     }
 
-    json(res, schedule);
+    const userId = resolveHttpAuditUserId(req, myAgentId);
+    const [decorated] = withFavoriteFlags([schedule], { userId, itemType: "schedule" });
+    json(res, decorated ?? schedule);
     return true;
   }
 

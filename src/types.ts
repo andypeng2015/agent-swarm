@@ -594,6 +594,25 @@ export const InboxItemStateSchema = z.object({
 export type InboxItemState = z.infer<typeof InboxItemStateSchema>;
 
 // ============================================================================
+// User Favorites (per-user stars for app navigation)
+// ============================================================================
+
+export const FavoriteItemTypeSchema = z.enum(["page", "workflow", "schedule"]);
+export type FavoriteItemType = z.infer<typeof FavoriteItemTypeSchema>;
+
+export const UserFavoriteSchema = z.object({
+  id: z.string(),
+  userId: z.string(),
+  itemType: FavoriteItemTypeSchema,
+  itemId: z.string(),
+  createdAt: z.string(),
+  lastUpdatedAt: z.string(),
+  createdBy: z.string().optional(),
+  updatedBy: z.string().optional(),
+});
+export type UserFavorite = z.infer<typeof UserFavoriteSchema>;
+
+// ============================================================================
 // Task Templates ("To start" bucket — polymorphic starters registry)
 // ============================================================================
 //
@@ -1079,6 +1098,7 @@ export const ScheduledTaskSchema = z
     lastUpdatedAt: z.iso.datetime(),
     createdBy: z.string().optional(),
     updatedBy: z.string().optional(),
+    favorite: z.boolean().optional(),
   })
   .refine(
     (data) => {
@@ -1496,6 +1516,7 @@ export const WorkflowSchema = z.object({
   lastUpdatedAt: z.string(),
   createdBy: z.string().optional(),
   updatedBy: z.string().optional(),
+  favorite: z.boolean().optional(),
 });
 export type Workflow = z.infer<typeof WorkflowSchema>;
 
@@ -1553,6 +1574,7 @@ export const PageSchema = z.object({
   viewCount: z.number().int().min(0).default(0),
   createdAt: z.string(),
   updatedAt: z.string(),
+  favorite: z.boolean().optional(),
 });
 export type Page = z.infer<typeof PageSchema>;
 

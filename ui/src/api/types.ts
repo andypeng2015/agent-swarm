@@ -409,6 +409,31 @@ export interface InboxStateUpsertResponse {
   item: InboxItemState;
 }
 
+export type FavoriteItemType = "page" | "workflow" | "schedule";
+
+export interface UserFavorite {
+  id: string;
+  userId: string;
+  itemType: FavoriteItemType;
+  itemId: string;
+  createdAt: string;
+  lastUpdatedAt: string;
+  createdBy?: string;
+  updatedBy?: string;
+}
+
+export interface FavoritesResponse {
+  favorites: UserFavorite[];
+  favoriteIds: string[];
+}
+
+export interface FavoriteSetResponse {
+  favorite: boolean;
+  itemType: FavoriteItemType;
+  itemId: string;
+  row?: UserFavorite | null;
+}
+
 /**
  * Task templates (Phase 6 ≥1.76.0). Mirrors `TaskTemplateSchema` in
  * `src/types.ts:289-300`. Powers the "To start" inbox bucket.
@@ -765,6 +790,7 @@ export interface ScheduledTask {
   scriptArgs?: Record<string, unknown>;
   createdAt: string;
   lastUpdatedAt: string;
+  favorite?: boolean;
 }
 
 export interface ScheduledTasksResponse {
@@ -896,6 +922,7 @@ export interface Workflow {
   createdByAgentId?: string;
   createdAt: string;
   lastUpdatedAt: string;
+  favorite?: boolean;
 }
 
 export type WorkflowRunStatus = "running" | "waiting" | "completed" | "failed" | "skipped";
@@ -1684,6 +1711,7 @@ export interface PageListItem {
   updatedAt: string;
   app_url: string;
   api_url: string;
+  favorite?: boolean;
 }
 
 export interface PagesListResponse {

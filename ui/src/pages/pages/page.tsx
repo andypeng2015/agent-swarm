@@ -2,6 +2,7 @@ import type { ColDef, RowClickedEvent } from "ag-grid-community";
 import { Eye, Globe, KeyRound, Lock, type LucideIcon } from "lucide-react";
 import { useCallback, useMemo } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { useFavoriteToggle } from "@/api/hooks/use-favorites";
 import { useFeatureGate } from "@/api/hooks/use-feature-gate";
 import { usePages } from "@/api/hooks/use-pages";
 import type { PageAuthMode, PageListItem } from "@/api/types";
@@ -9,6 +10,7 @@ import { UpgradeRequired } from "@/components/feature-gate/upgrade-required";
 import { AgentLink } from "@/components/shared/agent-link";
 import { DataGrid } from "@/components/shared/data-grid";
 import { EmptyState } from "@/components/shared/empty-state";
+import { FavoriteButton } from "@/components/shared/favorite-button";
 import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/ui/page-header";
 import { cn, formatSmartTime } from "@/lib/utils";
@@ -39,10 +41,33 @@ export default function PagesListingPage() {
   // EARLY-RETURN below; the data hook runs harmlessly on older servers (it
   // will 404, react-query swallows). Cheap, keeps hook order stable.
   const { data, isLoading } = usePages();
-  const rows = useMemo<PageListItem[]>(() => data?.pages ?? [], [data]);
+  const favoriteToggle = useFavoriteToggle("page");
+  const rows = useMemo<PageListItem[]>(() => {
+    return [...(data?.pages ?? [])].sort((a, b) => {
+      if (a.favorite !== b.favorite) return a.favorite ? -1 : 1;
+      return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+    });
+  }, [data]);
 
   const columnDefs = useMemo<ColDef<PageListItem>[]>(
     () => [
+      {
+        headerName: "",
+        width: 52,
+        sortable: false,
+        filter: false,
+        cellRenderer: (params: { data: PageListItem | undefined }) => {
+          const page = params.data;
+          if (!page) return null;
+          return (
+            <FavoriteButton
+              favorite={page.favorite}
+              disabled={favoriteToggle.isPending}
+              onToggle={() => favoriteToggle.mutate({ itemId: page.id, favorite: !page.favorite })}
+            />
+          );
+        },
+      },
       {
         field: "title",
         headerName: "Title",
@@ -132,7 +157,7 @@ export default function PagesListingPage() {
         valueFormatter: (params) => (params.value ? formatSmartTime(params.value) : ""),
       },
     ],
-    [],
+    [favoriteToggle],
   );
 
   const onRowClicked = useCallback(
