@@ -1,8 +1,30 @@
-import { Check, Copy, ExternalLink, Paperclip, Star } from "lucide-react";
-import { useState } from "react";
+import {
+  Check,
+  Copy,
+  Download,
+  ExternalLink,
+  Eye,
+  FileText,
+  Image as ImageIcon,
+  Loader2,
+  Paperclip,
+  Star,
+  Trash2,
+  Upload,
+  X,
+} from "lucide-react";
+import { type ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
+import {
+  fetchTaskAttachmentBlob,
+  useDeleteAttachment,
+  useFsCapabilities,
+  useTaskAttachments,
+  useUploadAttachment,
+} from "@/api/fs";
 import type { TaskAttachment, TaskAttachmentKind } from "@/api/types";
 import { CollapsibleSection } from "@/components/shared/collapsible-section";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 /**
@@ -91,6 +113,15 @@ function KindBadge({ kind }: { kind: TaskAttachmentKind }) {
   );
 }
 
+function ProviderBadge({ providerId }: { providerId?: string }) {
+  if (!providerId) return null;
+  return (
+    <Badge variant="secondary" size="tag" className="text-muted-foreground">
+      {providerId}
+    </Badge>
+  );
+}
+
 function CopyPathButton({ value }: { value: string }) {
   const [copied, setCopied] = useState(false);
   return (
@@ -116,7 +147,54 @@ function CopyPathButton({ value }: { value: string }) {
   );
 }
 
-function AttachmentRow({ attachment }: { attachment: TaskAttachment }) {
+type PreviewState =
+  | { kind: "idle" }
+  | { kind: "loading"; attachmentId: string }
+  | { kind: "text"; attachmentId: string; name: string; text: string }
+  | { kind: "image"; attachmentId: string; name: string; url: string }
+  | { kind: "unsupported"; attachmentId: string; name: string; message: string };
+
+function looksTextual(attachment: TaskAttachment): boolean {
+  const mime = attachment.mimeType?.toLowerCase() ?? "";
+  const name = attachment.name.toLowerCase();
+  return (
+    mime.startsWith("text/") ||
+    mime.includes("json") ||
+    mime.includes("xml") ||
+    mime.includes("yaml") ||
+    mime.includes("javascript") ||
+    [".md", ".txt", ".json", ".csv", ".ts", ".tsx", ".js", ".jsx", ".css", ".html", ".yml"].some(
+      (suffix) => name.endsWith(suffix),
+    )
+  );
+}
+
+function looksImage(attachment: TaskAttachment): boolean {
+  return attachment.mimeType?.toLowerCase().startsWith("image/") ?? false;
+}
+
+function scrubPreviewText(text: string): string {
+  return text
+    .replace(/\b(Bearer\s+)[A-Za-z0-9._~+/=-]{16,}/g, "$1[REDACTED]")
+    .replace(/\b([A-Z0-9_]*(?:API|TOKEN|SECRET|KEY)[A-Z0-9_]*\s*=\s*)[^\s"'`]+/gi, "$1[REDACTED]")
+    .replace(/\b(aswt_|sk-|af_)[A-Za-z0-9._-]{12,}/g, "$1[REDACTED]");
+}
+
+function AttachmentRow({
+  attachment,
+  onPreview,
+  onDownload,
+  onDelete,
+  previewing,
+  deleting,
+}: {
+  attachment: TaskAttachment;
+  onPreview: (attachment: TaskAttachment) => void;
+  onDownload: (attachment: TaskAttachment) => void;
+  onDelete: (attachment: TaskAttachment) => void;
+  previewing: boolean;
+  deleting: boolean;
+}) {
   const href = resolveHref(attachment);
   const descriptor = attachment.intent || attachment.description;
   // For agent-fs / shared-fs we show the raw path so users can at least copy
@@ -153,6 +231,7 @@ function AttachmentRow({ attachment }: { attachment: TaskAttachment }) {
             <span className="text-sm font-medium text-foreground truncate">{attachment.name}</span>
           )}
           <KindBadge kind={attachment.kind} />
+          <ProviderBadge providerId={attachment.providerId} />
         </div>
         {descriptor && (
           <p className="text-xs italic text-muted-foreground line-clamp-2">{descriptor}</p>
@@ -176,35 +255,250 @@ function AttachmentRow({ attachment }: { attachment: TaskAttachment }) {
           </p>
         )}
       </div>
+      <div className="flex items-center gap-1 shrink-0">
+        <Button
+          type="button"
+          size="icon"
+          variant="ghost"
+          className="h-7 w-7"
+          onClick={() => onPreview(attachment)}
+          disabled={previewing}
+          aria-label={`Preview ${attachment.name}`}
+          title="Preview"
+        >
+          {previewing ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <Eye className="h-3.5 w-3.5" />
+          )}
+        </Button>
+        <Button
+          type="button"
+          size="icon"
+          variant="ghost"
+          className="h-7 w-7"
+          onClick={() => onDownload(attachment)}
+          aria-label={`Download ${attachment.name}`}
+          title="Download"
+        >
+          <Download className="h-3.5 w-3.5" />
+        </Button>
+        <Button
+          type="button"
+          size="icon"
+          variant="ghost"
+          className="h-7 w-7 text-status-error hover:text-status-error"
+          onClick={() => onDelete(attachment)}
+          disabled={deleting}
+          aria-label={`Delete ${attachment.name}`}
+          title="Delete"
+        >
+          {deleting ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <Trash2 className="h-3.5 w-3.5" />
+          )}
+        </Button>
+      </div>
     </div>
   );
 }
 
 /**
- * Renders the `Attachments` card on a task detail page. Returns `null` when
- * the task has no attachments so the surrounding layout collapses cleanly —
- * mirroring how `Failure Reason` / `Output` hide themselves when absent.
+ * Renders the `Attachments` card on a task detail page. The card stays visible
+ * even when empty so humans can attach input files before or during execution.
  */
 export function TaskAttachmentsSection({
+  taskId,
   attachments,
 }: {
+  taskId: string;
   attachments: TaskAttachment[] | undefined;
 }) {
-  if (!attachments || attachments.length === 0) return null;
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const { data: capabilities } = useFsCapabilities();
+  const listQuery = useTaskAttachments(taskId, attachments);
+  const upload = useUploadAttachment(taskId);
+  const remove = useDeleteAttachment(taskId);
+  const [preview, setPreview] = useState<PreviewState>({ kind: "idle" });
+
+  const rows = useMemo(
+    () => listQuery.data?.attachments ?? attachments ?? [],
+    [attachments, listQuery.data?.attachments],
+  );
+  const uploadSupported = capabilities?.providerId !== "unavailable";
+
+  useEffect(() => {
+    return () => {
+      if (preview.kind === "image") URL.revokeObjectURL(preview.url);
+    };
+  }, [preview]);
+
+  const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    upload.mutate({ file, intent: "input" });
+  };
+
+  const handlePreview = async (attachment: TaskAttachment) => {
+    if (preview.kind === "image") URL.revokeObjectURL(preview.url);
+    setPreview({ kind: "loading", attachmentId: attachment.id });
+    try {
+      const blob = await fetchTaskAttachmentBlob(taskId, attachment.id);
+      if (looksImage(attachment)) {
+        setPreview({
+          kind: "image",
+          attachmentId: attachment.id,
+          name: attachment.name,
+          url: URL.createObjectURL(blob),
+        });
+        return;
+      }
+      if (looksTextual(attachment) && blob.size <= 512 * 1024) {
+        setPreview({
+          kind: "text",
+          attachmentId: attachment.id,
+          name: attachment.name,
+          text: scrubPreviewText(await blob.text()).slice(0, 20_000),
+        });
+        return;
+      }
+      setPreview({
+        kind: "unsupported",
+        attachmentId: attachment.id,
+        name: attachment.name,
+        message: "Preview is available for text files up to 512 KB and images.",
+      });
+    } catch (error) {
+      setPreview({
+        kind: "unsupported",
+        attachmentId: attachment.id,
+        name: attachment.name,
+        message: error instanceof Error ? error.message : "Preview failed.",
+      });
+    }
+  };
+
+  const handleDownload = async (attachment: TaskAttachment) => {
+    const blob = await fetchTaskAttachmentBlob(taskId, attachment.id);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = attachment.name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleDelete = (attachment: TaskAttachment) => {
+    if (preview.kind !== "idle" && preview.attachmentId === attachment.id) {
+      if (preview.kind === "image") URL.revokeObjectURL(preview.url);
+      setPreview({ kind: "idle" });
+    }
+    remove.mutate(attachment.id);
+  };
+
   return (
     <CollapsibleSection
       variant="card"
-      title={`Attachments (${attachments.length})`}
+      title={`Attachments (${rows.length})`}
       icon={Paperclip}
       iconColor="text-muted-foreground"
       borderColor="border-border"
       bgColor="bg-muted/20"
       defaultOpen
     >
-      <div className="max-h-72 overflow-auto">
-        {attachments.map((a) => (
-          <AttachmentRow key={a.id} attachment={a} />
-        ))}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0 text-xs text-muted-foreground">
+            <span className="font-mono">{capabilities?.providerId ?? "file provider"}</span>
+            {capabilities?.capabilities.search ? " · search enabled" : " · core files"}
+          </div>
+          <input
+            ref={fileInputRef}
+            type="file"
+            aria-label="Upload attachment file"
+            className="sr-only"
+            onChange={handleFileChange}
+          />
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={!uploadSupported || upload.isPending}
+          >
+            {upload.isPending ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Upload className="h-3.5 w-3.5" />
+            )}
+            Upload
+          </Button>
+        </div>
+
+        {rows.length === 0 ? (
+          <div className="rounded-md border border-dashed border-border py-6 text-center text-xs text-muted-foreground">
+            No attachments
+          </div>
+        ) : (
+          <div className="max-h-72 overflow-auto">
+            {rows.map((a) => (
+              <AttachmentRow
+                key={a.id}
+                attachment={a}
+                onPreview={handlePreview}
+                onDownload={handleDownload}
+                onDelete={handleDelete}
+                previewing={preview.kind === "loading" && preview.attachmentId === a.id}
+                deleting={remove.isPending && remove.variables === a.id}
+              />
+            ))}
+          </div>
+        )}
+
+        {preview.kind !== "idle" && preview.kind !== "loading" && (
+          <div className="rounded-md border border-border bg-background">
+            <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
+              <div className="flex min-w-0 items-center gap-2 text-xs font-medium">
+                {preview.kind === "image" ? (
+                  <ImageIcon className="h-3.5 w-3.5 text-muted-foreground" />
+                ) : (
+                  <FileText className="h-3.5 w-3.5 text-muted-foreground" />
+                )}
+                <span className="truncate">{preview.name}</span>
+              </div>
+              <Button
+                type="button"
+                size="icon"
+                variant="ghost"
+                className="h-6 w-6"
+                onClick={() => {
+                  if (preview.kind === "image") URL.revokeObjectURL(preview.url);
+                  setPreview({ kind: "idle" });
+                }}
+                aria-label="Close preview"
+              >
+                <X className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+            {preview.kind === "text" && (
+              <pre className="max-h-80 overflow-auto whitespace-pre-wrap p-3 text-xs leading-relaxed">
+                {preview.text}
+              </pre>
+            )}
+            {preview.kind === "image" && (
+              <div className="max-h-96 overflow-auto p-3">
+                <img src={preview.url} alt={preview.name} className="max-h-80 max-w-full rounded" />
+              </div>
+            )}
+            {preview.kind === "unsupported" && (
+              <p className="p-3 text-xs text-muted-foreground">{preview.message}</p>
+            )}
+          </div>
+        )}
       </div>
     </CollapsibleSection>
   );
