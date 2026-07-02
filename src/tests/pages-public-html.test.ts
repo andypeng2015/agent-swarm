@@ -99,6 +99,12 @@ describe("GET /p/:id — HTML public path", () => {
     const styleSrc = csp?.split(";").find((d) => d.trim().startsWith("style-src ")) ?? "";
     expect(styleSrc).toContain("https://cdn.jsdelivr.net");
     expect(styleSrc).toContain("https://unpkg.com");
+    const mediaSrc =
+      csp
+        ?.split(";")
+        .find((d) => d.trim().startsWith("media-src "))
+        ?.trim() ?? "";
+    expect(mediaSrc).toBe("media-src 'self' data: https: blob:");
     const text = await res.text();
     expect(text).toContain("<h1>Hello</h1>");
     expect(text).toContain("class SwarmSDK"); // BROWSER_SDK_JS sentinel
