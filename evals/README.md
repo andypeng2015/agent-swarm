@@ -196,7 +196,7 @@ The old `evals/evals.db` (+ `-wal`/`-shm`) is a **frozen backup** of the pre-Tur
 
 ## Notes
 
-- Deploying the dashboard+runner somewhere persistent is deliberately deferred — it is local-first; data already lives in Turso, so a small custom Docker image (bun + this dir + the `EVALS_DB_*` env) is the likely shape.
+- The dashboard+runner deploys via `evals/Dockerfile` (see "Deploying the eval service" above). Since the monorepo migration, evals is a Bun workspace member: the image installs at the **workspace root** (root `package.json` + `bun.lock` + `bunfig.toml` + all member manifests) — there is no evals-local lockfile anymore.
 - Stray sandboxes carry `metadata.launcher=agent-swarm-e2b`; sweep everything with `bun run src/cli.tsx e2b kill --all` from the repo root (per-run sweeps happen automatically on resume).
 - Worker parked in `waiting_for_credentials` fails the attempt fast with the credential detail — usually a missing provider key for that config.
 - The API sandbox runs with `NODE_ENV=production` and gets `EMBEDDING_API_KEY` (+ `EMBEDDING_MODEL` / `EMBEDDING_API_BASE_URL` when set in the evals env) so server-side memory embeddings work; workers still only receive the credentials their harness needs. Attempts recorded before version capture render the version fields as not captured.
