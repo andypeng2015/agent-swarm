@@ -17,7 +17,7 @@
  *
  * Idempotent. Re-run after editing packages.map.json:  bun scripts/generate-barrels.ts
  */
-import { Project, SyntaxKind } from "ts-morph";
+import { Project } from "ts-morph";
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 

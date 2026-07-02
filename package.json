@@ -42,7 +42,7 @@
     "name": "agent-swarm"
   },
   "packageManager": "bun@1.3.11",
-  "workspaces": ["ui", "templates-ui", "evals"],
+  "workspaces": ["ui", "templates-ui", "evals", "packages/*"],
   "overrides": {
     "react": "19.2.3",
     "react-dom": "19.2.3"

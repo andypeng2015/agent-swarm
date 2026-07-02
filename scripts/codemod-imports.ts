@@ -12,8 +12,13 @@
  *   - `import type` / inline `type {}` qualifiers are preserved (only the specifier string
  *     changes), so verbatimModuleSyntax stays satisfied.
  *   - Dynamic `import()` expressions are NEVER touched (the provider factory in
- *     src/providers/index.ts relies on them — PR#452). We only visit ImportDeclaration /
- *     ExportDeclaration nodes; call-expression `import(...)` is structurally excluded.
+ *     src/providers/index.ts relies on them — PR#452; a lazy import pointed at a barrel
+ *     would also eagerly load the whole package). `require()` and `mock.module()`
+ *     specifier strings ARE rewritten (node shape kept).
+ *   - Default imports crossing a package boundary are SKIPPED and reported (barrels
+ *     re-export defaults as named aliases only) — repoint those manually.
+ *   - Only `.ts`/`.tsx` targets are rewritten; asset imports (json/md, `with {type}`)
+ *     are never repointed at a barrel.
  *   - Idempotent: specifiers already of the form `@swarm/*` (or external) are skipped.
  *
  * USAGE
@@ -32,13 +37,13 @@ const ROOT = process.cwd();
 // ---- args --------------------------------------------------------------------
 const argv = process.argv.slice(2);
 let apply = false;
-let dryRun = false;
+let dryRunFlag = false;
 let pkgFilter: string | null = null;
 const fileArgs: string[] = [];
 for (let i = 0; i < argv.length; i++) {
   const a = argv[i];
   if (a === "--apply") apply = true;
-  else if (a === "--dry-run") dryRun = true;
+  else if (a === "--dry-run") dryRunFlag = true;
   else if (a === "--package") pkgFilter = argv[++i] ?? null;
   else if (a.startsWith("--package=")) pkgFilter = a.slice("--package=".length);
   else if (a.startsWith("--")) {
@@ -46,9 +51,9 @@ for (let i = 0; i < argv.length; i++) {
     process.exit(2);
   } else fileArgs.push(a);
 }
-// Safe default: dry-run unless --apply is explicitly passed.
-if (!apply) dryRun = true;
-if (apply && argv.includes("--dry-run")) {
+// Safe default: dry-run unless --apply is explicitly passed — everything below keys
+// off `apply`; --dry-run exists only for explicitness and incompatibility checking.
+if (apply && dryRunFlag) {
   console.error("Pass either --apply or --dry-run, not both.");
   process.exit(2);
 }
@@ -97,7 +102,10 @@ function resolveModuleFile(fromAbs: string, spec: string): string | null {
   const cands = jsExt
     ? [`${target.slice(0, -jsExt[0].length)}.ts`, `${target.slice(0, -jsExt[0].length)}.tsx`, target]
     : [target, `${target}.ts`, `${target}.tsx`, join(target, "index.ts"), join(target, "index.tsx")];
-  for (const c of cands) if (existsSync(c) && statSync(c).isFile()) return c;
+  // Only TS/TSX targets are rewritable: asset imports (templates/*.json, *.md text
+  // imports with attributes) may resolve into a package's owned globs, but barrels
+  // only re-export TS — rewriting them would silently drop the asset content.
+  for (const c of cands) if (/\.tsx?$/.test(c) && existsSync(c) && statSync(c).isFile()) return c;
   return null;
 }
 
@@ -121,6 +129,7 @@ if (fileArgs.length > 0) {
 
 type Change = { file: string; line: number; from: string; to: string; kind: "import" | "export" | "importtype" | "dynamic" };
 const changes: Change[] = [];
+const skippedDefaults: string[] = [];
 
 for (const sf of project.getSourceFiles()) {
   const abs = sf.getFilePath();
@@ -129,13 +138,16 @@ for (const sf of project.getSourceFiles()) {
   const importerPkg = resolveOwner(rel);
 
   type Kind = "import" | "export" | "importtype" | "dynamic";
-  const decls: { spec: string; set: (s: string) => void; line: number; kind: Kind }[] = [];
+  const decls: { spec: string; set: (s: string) => void; line: number; kind: Kind; hasDefault?: boolean }[] = [];
   for (const d of sf.getImportDeclarations()) {
     decls.push({
       spec: d.getModuleSpecifierValue(),
       set: (s) => d.setModuleSpecifier(s),
       line: d.getStartLineNumber(),
       kind: "import",
+      // Barrels re-export defaults only as NAMED aliases, so a default binding that
+      // crosses a package boundary cannot be pointed at the barrel — skip + report.
+      hasDefault: d.getDefaultImport() != null,
     });
   }
   for (const d of sf.getExportDeclarations()) {
@@ -151,13 +163,15 @@ for (const sf of project.getSourceFiles()) {
     decls.push({ spec: lit.getLiteralValue(), set: (s) => lit.setLiteralValue(s), line: it.getStartLineNumber(), kind: "importtype" });
   }
   // Module-specifier CALL expressions — rewrite the specifier STRING only, node shape kept:
-  //   - dynamic `import("X")` (stays dynamic — provider factory PR#452)
   //   - `require("X")` (CJS holdouts in a couple of db-queries)
   //   - `mock.module("X", …)` (bun:test module mocks)
+  // Dynamic `import()` is deliberately EXCLUDED (header guarantee): repointing a lazy
+  // import at a package barrel would eagerly load the whole package and change
+  // side-effect/load boundaries (e.g. cli.tsx lazily importing ./http.ts). tsc flags
+  // the dangling specifier at extraction time, forcing a deliberate manual repoint.
   for (const call of sf.getDescendantsOfKind(SyntaxKind.CallExpression)) {
-    const expr = call.getExpression();
-    const exprText = expr.getText();
-    const isCall = expr.getKind() === SyntaxKind.ImportKeyword || exprText === "require" || exprText === "mock.module";
+    const exprText = call.getExpression().getText();
+    const isCall = exprText === "require" || exprText === "mock.module";
     if (!isCall) continue;
     const lit = call.getArguments()[0]?.asKind(SyntaxKind.StringLiteral);
     if (!lit) continue;
@@ -176,6 +190,10 @@ for (const sf of project.getSourceFiles()) {
     if (!targetPkg) continue; // target not owned by any package (e.g. app-only file)
     if (targetPkg === importerPkg) continue; // same package — keep relative
     if (pkgFilter && targetPkg !== pkgFilter) continue;
+    if (d.hasDefault) {
+      skippedDefaults.push(`${rel}:${d.line}  "${spec}"  ->  ${targetPkg}`);
+      continue;
+    }
     changes.push({ file: rel, line: d.line, from: spec, to: targetPkg, kind: d.kind });
     if (apply) d.set(targetPkg);
   }
@@ -195,6 +213,12 @@ for (const c of changes) {
 if (byTarget.size > 0) {
   console.log("\nby target package:");
   for (const [pkg, n] of [...byTarget.entries()].sort((a, b) => b[1] - a[1])) console.log(`  ${pkg}: ${n}`);
+}
+if (skippedDefaults.length > 0) {
+  console.log(
+    `\nSKIPPED ${skippedDefaults.length} default import(s) crossing a package boundary — barrels re-export defaults as NAMED aliases; repoint these manually (named alias or subpath import):`,
+  );
+  for (const s of skippedDefaults) console.log(`  ${s}`);
 }
 
 if (apply) {
