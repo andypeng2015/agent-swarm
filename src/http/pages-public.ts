@@ -311,6 +311,7 @@ function buildCsp(): string {
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.tailwindcss.com https://cdn.jsdelivr.net https://unpkg.com",
     "font-src 'self' https://fonts.gstatic.com data:",
     "img-src 'self' data: https:",
+    "media-src 'self' data: https: blob:",
     "connect-src 'self'",
     `frame-ancestors 'self' ${ancestors.join(" ")}`.trim(),
   ].join("; ");
