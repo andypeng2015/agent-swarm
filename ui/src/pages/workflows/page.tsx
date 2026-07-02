@@ -2,9 +2,11 @@ import type { ColDef, ICellRendererParams, RowClickedEvent } from "ag-grid-commu
 import { Search, Workflow as WorkflowIcon } from "lucide-react";
 import { useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
+import { useFavoriteToggle } from "@/api/hooks/use-favorites";
 import { useAllWorkflowRuns, useUpdateWorkflow, useWorkflows } from "@/api/hooks/use-workflows";
 import type { WorkflowRun, WorkflowRunStatus, WorkflowSummary } from "@/api/types";
 import { DataGrid } from "@/components/shared/data-grid";
+import { FavoriteButton } from "@/components/shared/favorite-button";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -38,6 +40,13 @@ export default function WorkflowsPage() {
   const { data: workflows, isLoading: wfLoading } = useWorkflows();
   const { data: allRuns, isLoading: runsLoading } = useAllWorkflowRuns();
   const updateWorkflow = useUpdateWorkflow();
+  const favoriteToggle = useFavoriteToggle("workflow");
+  const workflowRows = useMemo(() => {
+    return [...(workflows ?? [])].sort((a, b) => {
+      if (a.favorite !== b.favorite) return a.favorite ? -1 : 1;
+      return new Date(b.lastUpdatedAt).getTime() - new Date(a.lastUpdatedAt).getTime();
+    });
+  }, [workflows]);
 
   const workflowMap = useMemo(() => {
     const m = new Map<string, string>();
@@ -55,6 +64,25 @@ export default function WorkflowsPage() {
   // Workflows tab columns
   const workflowColumns = useMemo<ColDef<WorkflowSummary>[]>(
     () => [
+      {
+        headerName: "",
+        width: 52,
+        sortable: false,
+        filter: false,
+        cellRenderer: (params: ICellRendererParams<WorkflowSummary>) => {
+          const workflow = params.data;
+          if (!workflow) return null;
+          return (
+            <FavoriteButton
+              favorite={workflow.favorite}
+              disabled={favoriteToggle.isPending}
+              onToggle={() =>
+                favoriteToggle.mutate({ itemId: workflow.id, favorite: !workflow.favorite })
+              }
+            />
+          );
+        },
+      },
       {
         field: "name",
         headerName: "Name",
@@ -103,7 +131,7 @@ export default function WorkflowsPage() {
         valueFormatter: (params) => (params.value ? formatSmartTime(params.value) : ""),
       },
     ],
-    [handleToggleEnabled],
+    [favoriteToggle, handleToggleEnabled],
   );
 
   const onWorkflowRowClicked = useCallback(
@@ -176,7 +204,7 @@ export default function WorkflowsPage() {
     [navigate],
   );
 
-  const isEmpty = !wfLoading && (!workflows || workflows.length === 0);
+  const isEmpty = !wfLoading && workflowRows.length === 0;
 
   if (isEmpty) {
     return (
@@ -219,7 +247,7 @@ export default function WorkflowsPage() {
             </div>
           </div>
           <DataGrid
-            rowData={workflows ?? []}
+            rowData={workflowRows}
             columnDefs={workflowColumns}
             quickFilterText={search}
             onRowClicked={onWorkflowRowClicked}

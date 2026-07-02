@@ -21,6 +21,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { api, TriggerSchemaApiError } from "@/api/client";
+import { useFavoriteToggle } from "@/api/hooks/use-favorites";
 import { useScheduledTasks } from "@/api/hooks/use-schedules";
 import {
   useDeleteWorkflow,
@@ -43,6 +44,7 @@ import { AgentLink } from "@/components/shared/agent-link";
 import { CollapsibleDescription } from "@/components/shared/collapsible-description";
 import { CopyableField, CopyIconButton, SecretField } from "@/components/shared/copyable-fields";
 import { DataGrid } from "@/components/shared/data-grid";
+import { FavoriteButton } from "@/components/shared/favorite-button";
 import { StatusBadge } from "@/components/shared/status-badge";
 import {
   AlertDialog,
@@ -79,6 +81,7 @@ export default function WorkflowDetailPage() {
   const updateWorkflow = useUpdateWorkflow();
   const deleteWorkflow = useDeleteWorkflow();
   const triggerWorkflow = useTriggerWorkflow();
+  const favoriteToggle = useFavoriteToggle("workflow");
   const { searchParams, setParam } = useUrlSearchState();
   const activeTab = readStringParam(searchParams, "tab", "definition");
   const selectedNodeId = readStringParam(searchParams, "node") || null;
@@ -208,6 +211,13 @@ export default function WorkflowDetailPage() {
             {workflow.definition.edges?.length ?? 0} edges
           </Badge>
           <div className="ml-auto flex items-center gap-1.5 shrink-0">
+            <FavoriteButton
+              favorite={workflow.favorite}
+              disabled={favoriteToggle.isPending}
+              onToggle={() =>
+                favoriteToggle.mutate({ itemId: workflow.id, favorite: !workflow.favorite })
+              }
+            />
             <TopBarTriggerButton
               workflowId={workflow.id}
               enabled={workflow.enabled}

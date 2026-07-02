@@ -40,6 +40,7 @@ import { handleCore, loadGlobalConfigsIntoEnv } from "./core";
 import { handleDbQuery } from "./db-query";
 import { handleEcosystem } from "./ecosystem";
 import { handleEvents } from "./events";
+import { handleFavorites } from "./favorites";
 import { handleHeartbeat } from "./heartbeat";
 import { handleInboxState } from "./inbox-state";
 import { handleIntegrations } from "./integrations";
@@ -294,7 +295,7 @@ const httpServer = createHttpServer(async (req, res) => {
         () => handleBudgets(req, res, pathSegments, queryParams, myAgentId),
         () => handleContext(req, res, pathSegments, queryParams, myAgentId),
         () => handleTasks(req, res, pathSegments, queryParams, myAgentId),
-        () => handleStats(req, res, pathSegments, queryParams),
+        () => handleStats(req, res, pathSegments, queryParams, myAgentId),
         () => handleStatus(req, res, pathSegments, queryParams),
         () => handleActiveSessions(req, res, pathSegments, queryParams, myAgentId),
         () => handlePricing(req, res, pathSegments, queryParams, myAgentId),
@@ -324,6 +325,7 @@ const httpServer = createHttpServer(async (req, res) => {
         () => handleApiKeys(req, res, pathSegments, queryParams),
         () => handleHeartbeat(req, res, pathSegments),
         () => handleEvents(req, res, pathSegments, queryParams, myAgentId),
+        () => handleFavorites(req, res, pathSegments, queryParams, myAgentId),
         () => handleUsers(req, res, pathSegments, queryParams),
         () => handleSessions(req, res, pathSegments, queryParams),
         () => handleInboxState(req, res, pathSegments, queryParams),

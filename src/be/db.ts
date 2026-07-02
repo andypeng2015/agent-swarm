@@ -29,6 +29,7 @@ import type {
   ContextSnapshotEventType,
   ContextVersion,
   CooldownConfig,
+  FavoriteItemType,
   FollowUpConfig,
   InboxItemState,
   InboxItemStatus,
@@ -85,6 +86,7 @@ import type {
   TaskTemplateKind,
   TriggerConfig,
   User,
+  UserFavorite,
   VersionableField,
   VersionMeta,
   WaitMode,
@@ -5659,7 +5661,7 @@ export function getScheduledTasks(
     query += " AND NOT (scheduleType = 'one_time' AND enabled = 0)";
   }
 
-  query += " ORDER BY name ASC";
+  query += " ORDER BY lastRunAt IS NULL ASC, lastRunAt DESC, lastUpdatedAt DESC";
 
   const rows = getDb()
     .prepare<ScheduledTaskRow, (string | number)[]>(query)
@@ -7084,7 +7086,7 @@ export function listWorkflows(
     query += " AND enabled = ?";
     params.push(filters.enabled ? 1 : 0);
   }
-  query += " ORDER BY name ASC";
+  query += " ORDER BY lastUpdatedAt DESC";
   const rows = getDb()
     .prepare<WorkflowRow, (string | number)[]>(query)
     .all(...params);
@@ -7739,6 +7741,15 @@ export function getPageBySlug(agentId: string, slug: string): Page | null {
   const row = getDb()
     .prepare<PageRow, [string, string]>("SELECT * FROM pages WHERE agentId = ? AND slug = ?")
     .get(agentId, slug);
+  return row ? rowToPage(row) : null;
+}
+
+export function getLatestPageBySlug(slug: string): Page | null {
+  const row = getDb()
+    .prepare<PageRow, [string]>(
+      "SELECT * FROM pages WHERE slug = ? ORDER BY updatedAt DESC LIMIT 1",
+    )
+    .get(slug);
   return row ? rowToPage(row) : null;
 }
 
@@ -11005,6 +11016,115 @@ export function upsertInboxState(opts: {
     );
   if (!row) throw new Error("Failed to upsert inbox state");
   return rowToInboxItemState(row);
+}
+
+// ============================================================================
+// User Favorites (per-user stars for pages, workflows, and schedules)
+// ============================================================================
+
+interface UserFavoriteRow {
+  id: string;
+  userId: string;
+  itemType: string;
+  itemId: string;
+  createdAt: string;
+  lastUpdatedAt: string;
+  created_by: string | null;
+  updated_by: string | null;
+}
+
+function rowToUserFavorite(row: UserFavoriteRow): UserFavorite {
+  return {
+    id: row.id,
+    userId: row.userId,
+    itemType: row.itemType as FavoriteItemType,
+    itemId: row.itemId,
+    createdAt: row.createdAt,
+    lastUpdatedAt: row.lastUpdatedAt,
+    createdBy: row.created_by ?? undefined,
+    updatedBy: row.updated_by ?? undefined,
+  };
+}
+
+export function listUserFavorites(opts: {
+  userId: string;
+  itemType?: FavoriteItemType;
+  itemIds?: string[];
+}): UserFavorite[] {
+  const conditions = ["userId = ?"];
+  const params: string[] = [opts.userId];
+
+  if (opts.itemType) {
+    conditions.push("itemType = ?");
+    params.push(opts.itemType);
+  }
+
+  if (opts.itemIds && opts.itemIds.length > 0) {
+    conditions.push(`itemId IN (${opts.itemIds.map(() => "?").join(",")})`);
+    params.push(...opts.itemIds);
+  }
+
+  const rows = getDb()
+    .prepare<UserFavoriteRow, string[]>(
+      `SELECT * FROM user_favorites WHERE ${conditions.join(" AND ")} ORDER BY lastUpdatedAt DESC`,
+    )
+    .all(...params);
+  return rows.map(rowToUserFavorite);
+}
+
+export function getFavoriteItemIdSet(opts: {
+  userId: string;
+  itemType: FavoriteItemType;
+  itemIds?: string[];
+}): Set<string> {
+  return new Set(listUserFavorites(opts).map((favorite) => favorite.itemId));
+}
+
+export function setUserFavorite(opts: {
+  userId: string;
+  itemType: FavoriteItemType;
+  itemId: string;
+  favorite: boolean;
+  actorUserId?: string | null;
+}): UserFavorite | null {
+  if (!opts.favorite) {
+    getDb()
+      .prepare("DELETE FROM user_favorites WHERE userId = ? AND itemType = ? AND itemId = ?")
+      .run(opts.userId, opts.itemType, opts.itemId);
+    return null;
+  }
+
+  const now = new Date().toISOString();
+  const actor = opts.actorUserId ?? opts.userId;
+  const row = getDb()
+    .prepare<UserFavoriteRow, string[]>(
+      `INSERT INTO user_favorites (
+         userId, itemType, itemId, createdAt, lastUpdatedAt, created_by, updated_by
+       )
+       VALUES (?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(userId, itemType, itemId) DO UPDATE SET
+         lastUpdatedAt = excluded.lastUpdatedAt,
+         updated_by = excluded.updated_by
+       RETURNING *`,
+    )
+    .get(opts.userId, opts.itemType, opts.itemId, now, now, actor, actor);
+  if (!row) throw new Error("Failed to set favorite");
+  return rowToUserFavorite(row);
+}
+
+export function withFavoriteFlags<T extends { id: string }>(
+  rows: T[],
+  opts: { userId?: string | null; itemType: FavoriteItemType },
+): Array<T & { favorite: boolean }> {
+  if (!opts.userId || rows.length === 0) {
+    return rows.map((row) => ({ ...row, favorite: false }));
+  }
+  const favoriteIds = getFavoriteItemIdSet({
+    userId: opts.userId,
+    itemType: opts.itemType,
+    itemIds: rows.map((row) => row.id),
+  });
+  return rows.map((row) => ({ ...row, favorite: favoriteIds.has(row.id) }));
 }
 
 // ============================================================================

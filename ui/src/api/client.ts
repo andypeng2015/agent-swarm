@@ -18,6 +18,9 @@ import type {
   CredentialMissingAgentsResponse,
   DashboardCostResponse,
   EventDefinition,
+  FavoriteItemType,
+  FavoriteSetResponse,
+  FavoritesResponse,
   IdentitiesResponse,
   IdentityEvent,
   IdentityEventsResponse,
@@ -2146,6 +2149,14 @@ class ApiClient {
     return res.json();
   }
 
+  async resolvePage(slug: string): Promise<PageListItem & { body: string }> {
+    const params = new URLSearchParams({ slug });
+    const url = `${this.getBaseUrl()}/api/pages/resolve?${params.toString()}`;
+    const res = await fetch(url, { headers: this.getHeaders() });
+    if (!res.ok) throw new Error(`resolvePage ${slug}: ${res.status}`);
+    return res.json();
+  }
+
   async listPages(opts?: {
     agentId?: string;
     limit?: number;
@@ -2159,6 +2170,35 @@ class ApiClient {
     const url = `${this.getBaseUrl()}/api/pages${qs ? `?${qs}` : ""}`;
     const res = await fetch(url, { headers: this.getHeaders() });
     if (!res.ok) throw new Error(`listPages: ${res.status}`);
+    return res.json();
+  }
+
+  async listFavorites(opts?: {
+    itemType?: FavoriteItemType;
+    itemIds?: string[];
+  }): Promise<FavoritesResponse> {
+    const params = new URLSearchParams();
+    if (opts?.itemType) params.set("itemType", opts.itemType);
+    if (opts?.itemIds && opts.itemIds.length > 0) params.set("itemIds", opts.itemIds.join(","));
+    const qs = params.toString();
+    const url = `${this.getBaseUrl()}/api/favorites${qs ? `?${qs}` : ""}`;
+    const res = await fetch(url, { headers: this.getHeaders() });
+    if (!res.ok) throw new Error(`listFavorites: ${res.status}`);
+    return res.json();
+  }
+
+  async setFavorite(body: {
+    itemType: FavoriteItemType;
+    itemId: string;
+    favorite: boolean;
+  }): Promise<FavoriteSetResponse> {
+    const url = `${this.getBaseUrl()}/api/favorites`;
+    const res = await fetch(url, {
+      method: "PUT",
+      headers: this.getHeaders(),
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error(`setFavorite: ${res.status}`);
     return res.json();
   }
 
