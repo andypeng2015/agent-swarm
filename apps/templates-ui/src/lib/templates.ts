@@ -6,8 +6,8 @@ import type {
   AgentAssetCategory,
   TemplateConfig,
   TemplateResponse,
-} from "../../../templates/schema";
-import { ASSET_CATEGORIES } from "../../../templates/schema";
+} from "../../../../templates/schema";
+import { ASSET_CATEGORIES } from "../../../../templates/schema";
 
 /** Rejects path components that aren't strictly alphanumeric/hyphen/underscore. */
 function sanitizePathComponent(component: string): string {
@@ -17,15 +17,19 @@ function sanitizePathComponent(component: string): string {
   return component;
 }
 
-// Check both paths: local dev (../templates) and Vercel build (src/data/templates)
+// Check all paths: monorepo checkout (../../templates from apps/templates-ui),
+// prebuild copy (src/data/templates), and the pre-monorepo location (../templates)
+// kept for Vercel setups whose root directory still points at the old layout.
 function getTemplatesDir(): string {
+  const monorepoPath = path.join(process.cwd(), "..", "..", "templates");
   const localPath = path.join(process.cwd(), "..", "templates");
   const buildPath = path.join(process.cwd(), "src", "data", "templates");
 
   if (fs.existsSync(buildPath)) return buildPath;
+  if (fs.existsSync(monorepoPath)) return monorepoPath;
   if (fs.existsSync(localPath)) return localPath;
 
-  throw new Error("Templates directory not found. Expected at ../templates or src/data/templates");
+  throw new Error("Templates directory not found. Expected at ../../templates, ../templates, or src/data/templates");
 }
 
 export function isAssetCategory(category: string): category is AgentAssetCategory {

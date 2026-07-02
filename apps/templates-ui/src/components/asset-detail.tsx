@@ -15,7 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { Markdown } from "@/components/markdown";
 import { WorkflowGraph, type WorkflowDefinitionLike } from "@/components/workflow-graph";
 import { cn } from "@/lib/utils";
-import type { AgentAssetKind, AgentAssetResponse } from "../../../templates/schema";
+import type { AgentAssetKind, AgentAssetResponse } from "../../../../templates/schema";
 
 const kindIcons = {
   skill: Wrench,

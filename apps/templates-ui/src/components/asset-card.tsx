@@ -4,7 +4,7 @@ import Link from "next/link";
 import { Calendar, GitBranch, Star, Wrench, type LucideIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import type { AgentAssetConfig, AgentAssetKind } from "../../../templates/schema";
+import type { AgentAssetConfig, AgentAssetKind } from "../../../../templates/schema";
 
 const kindIcons: Record<AgentAssetKind, LucideIcon> = {
   skill: Wrench,

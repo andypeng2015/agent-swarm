@@ -4,7 +4,7 @@ import Link from "next/link";
 import { Crown, Code, Search, Eye, TestTube, type LucideIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import type { TemplateConfig } from "../../../templates/schema";
+import type { TemplateConfig } from "../../../../templates/schema";
 
 const iconMap: Record<string, LucideIcon> = {
   crown: Crown,

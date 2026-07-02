@@ -34,9 +34,7 @@
     "noPropertyAccessFromIndexSignature": false
   },
   "exclude": [
-    "evals",
-    "ui",
-    "templates-ui",
+    "apps",
     "node_modules",
     "dist",
     "scripts",

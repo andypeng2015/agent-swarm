@@ -4,7 +4,7 @@ import {
   parseSessionLogs,
   type SessionLogRecord,
   unwrapResult,
-} from "../../ui/src/logs-parser";
+} from "../../apps/ui/src/logs-parser";
 
 function log(
   id: string,

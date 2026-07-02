@@ -7,13 +7,13 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import type { StatusResponse } from "../../ui/src/api/types.ts";
+import type { StatusResponse } from "../../apps/ui/src/api/types.ts";
 import {
   type DetectedIntegration,
   detectedFromStatus,
   recommendTemplates,
   topRecommendation,
-} from "../../ui/src/lib/template-recommendations.ts";
+} from "../../apps/ui/src/lib/template-recommendations.ts";
 
 function makeStatus(overrides: {
   slack?: "unverified" | "configured" | "verified";

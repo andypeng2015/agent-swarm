@@ -8,7 +8,7 @@ ENV EVALS_PORT=4801 \
     BUN_INSTALL_CACHE_DIR=/tmp/bun-cache
 
 # Build with the repo root as context:
-#   docker build -f evals/Dockerfile .
+#   docker build -f apps/evals/Dockerfile .
 #
 # The eval runner imports root src/e2b helpers and the models.dev pricing
 # snapshot, so the image needs those repo-root files in addition to evals/.
@@ -19,17 +19,17 @@ ENV EVALS_PORT=4801 \
 # the hoisted linker (bunfig.toml) puts node_modules at /app, where /app/evals
 # resolves it up the tree — no symlink shim needed.
 COPY package.json bun.lock bunfig.toml ./
-COPY ui/package.json ./ui/
-COPY templates-ui/package.json ./templates-ui/
-COPY evals/package.json ./evals/
+COPY apps/ui/package.json ./apps/ui/
+COPY apps/templates-ui/package.json ./apps/templates-ui/
+COPY apps/evals/package.json ./apps/evals/
 RUN bun install --frozen-lockfile
 
-COPY evals ./evals
+COPY apps/evals ./apps/evals
 COPY src/e2b ./src/e2b
 COPY src/utils ./src/utils
 COPY src/be/modelsdev-cache.json ./src/be/modelsdev-cache.json
 
-WORKDIR /app/evals
+WORKDIR /app/apps/evals
 RUN bun run ui:build
 
 ENV NODE_ENV=production

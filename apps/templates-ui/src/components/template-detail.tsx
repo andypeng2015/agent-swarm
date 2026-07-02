@@ -5,7 +5,7 @@ import Link from "next/link";
 import { Check, Copy } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { FilePreview } from "./file-preview";
-import type { TemplateResponse } from "../../../templates/schema";
+import type { TemplateResponse } from "../../../../templates/schema";
 
 interface TemplateDetailProps {
   template: TemplateResponse;

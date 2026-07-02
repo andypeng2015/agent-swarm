@@ -6,7 +6,7 @@ import { Bot, Calendar, GitBranch, Search, Star, Wrench, type LucideIcon } from 
 import { Badge } from "@/components/ui/badge";
 import { TemplateCard } from "./template-card";
 import { AssetCard } from "./asset-card";
-import type { AgentAssetConfig, TemplateConfig } from "../../../templates/schema";
+import type { AgentAssetConfig, TemplateConfig } from "../../../../templates/schema";
 
 type TemplateWithCategory = TemplateConfig & { category: string };
 

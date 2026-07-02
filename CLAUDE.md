@@ -20,12 +20,13 @@ src/
     migrations/        # Forward-only SQL migrations
   prompts/             # System-prompt composition
   github/, slack/      # Integration handlers
-ui/                    # Dashboard (Next.js, port 5274)
-templates-ui/          # Templates registry (Next.js)
+apps/
+  ui/                  # Dashboard (Vite SPA, port 5274)
+  templates-ui/        # Templates registry (Next.js)
+  evals/               # Eval harness: scenario x harness-config matrix on E2B (own package; see apps/evals/README.md)
 templates/             # Official + community template data
 docs-site/             # Fumadocs site (MDX)
 runbooks/              # Operational runbooks (local dev, etc.)
-evals/                 # Eval harness: scenario x harness-config matrix on E2B (own package; see evals/README.md)
 ```
 
 ## Architecture invariants
@@ -220,18 +221,18 @@ Full setup — env files, env vars, OAuth flows (Linear/Jira/Codex), portless de
 Quick reference:
 - Auth: `Authorization: Bearer ${AGENT_SWARM_API_KEY}` (preferred — falls back to legacy `API_KEY`; default `123123`). Read it in code via `getApiKey()` from `src/utils/api-key.ts` — direct `process.env.API_KEY` access is rejected by `scripts/check-api-key-boundary.sh`.
 - Server URL: `MCP_BASE_URL` (default `http://localhost:3013`).
-- Provider: `HARNESS_PROVIDER=claude|pi|codex|devin|claude-managed`. `claude-managed` runs in Anthropic's cloud sandbox — requires `ANTHROPIC_API_KEY`, `MANAGED_AGENT_ID`, `MANAGED_ENVIRONMENT_ID`, an HTTPS-public `MCP_BASE_URL`, and the one-time `bun run src/cli.tsx claude-managed-setup` step. The `ui/` integrations dashboard surfaces the same config (Phase 7). See [runbooks/local-development.md § Claude Managed Agents](./runbooks/local-development.md#claude-managed-agents).
+- Provider: `HARNESS_PROVIDER=claude|pi|codex|devin|claude-managed`. `claude-managed` runs in Anthropic's cloud sandbox — requires `ANTHROPIC_API_KEY`, `MANAGED_AGENT_ID`, `MANAGED_ENVIRONMENT_ID`, an HTTPS-public `MCP_BASE_URL`, and the one-time `bun run src/cli.tsx claude-managed-setup` step. The `apps/ui/` integrations dashboard surfaces the same config (Phase 7). See [runbooks/local-development.md § Claude Managed Agents](./runbooks/local-development.md#claude-managed-agents).
 - Disable integrations: `SLACK_DISABLE` / `GITHUB_DISABLE` / `JIRA_DISABLE` / `LINEAR_DISABLE=true`.
 
 </important>
 
-<important if="you are writing or running tests, drafting a plan with verification / E2E / QA steps, or preparing a frontend PR (ui/, templates-ui/)">
+<important if="you are writing or running tests, drafting a plan with verification / E2E / QA steps, or preparing a frontend PR (apps/ui/, apps/templates-ui/)">
 
 Hub: [runbooks/testing.md](./runbooks/testing.md) — routes to LOCAL_TESTING.md, qa-use, swarm-local-e2e skill, memory tests, Slack E2E.
 
 Hard rules:
 - Plan-mode verification steps MUST copy real commands from LOCAL_TESTING.md; don't paraphrase.
-- Frontend PRs (`ui/`, `templates-ui/`) MUST include a `qa-use` session with screenshots — enforced by merge gate.
+- Frontend PRs (`apps/ui/`, `apps/templates-ui/`) MUST include a `qa-use` session with screenshots — enforced by merge gate.
 
 </important>
 
@@ -263,10 +264,10 @@ Drift checks — run only if you touched the trigger files, MUST commit any rege
 
 - Edited `plugin/commands/*.md`? → `bun run build:pi-skills`
 - Edited an HTTP route OR bumped `package.json` `version`? → `bun run docs:openapi` (regenerates `openapi.json` AND `docs-site/content/docs/api-reference/**`)
-- Touched `ui/` — or root `bun.lock`/`package.json`/`bunfig.toml` (ui deps resolve from the root lock)? → `cd ui && bun install --frozen-lockfile && bun run lint && bunx tsc -b` (CI uses `tsc -b`, not `--noEmit`)
-- Touched `Dockerfile` / `Dockerfile.worker` / `evals/Dockerfile` / files they COPY (incl. `bunfig.toml`, member `package.json`s, `.dockerignore`)? → `docker build -f <Dockerfile> .` — CI builds all three images
+- Touched `apps/ui/` — or root `bun.lock`/`package.json`/`bunfig.toml` (ui deps resolve from the root lock)? → `cd apps/ui && bun install --frozen-lockfile && bun run lint && bunx tsc -b` (CI uses `tsc -b`, not `--noEmit`)
+- Touched `Dockerfile` / `Dockerfile.worker` / `apps/evals/Dockerfile` / files they COPY (incl. `bunfig.toml`, member `package.json`s, `.dockerignore`)? → `docker build -f <Dockerfile> .` — CI builds all three images
 
-Frontend (`ui/`, `templates-ui/`) PRs additionally require a `qa-use` session with screenshots.
+Frontend (`apps/ui/`, `apps/templates-ui/`) PRs additionally require a `qa-use` session with screenshots.
 
 </important>
 
@@ -290,9 +291,9 @@ Same-PR doc-update rule: update [docs-site/.../guides/cost-and-context-computati
 
 </important>
 
-<important if="you are creating or modifying eval scenarios, rubrics, or fixtures (evals/scenarios/*, evals/scenarios/fixtures/*)">
+<important if="you are creating or modifying eval scenarios, rubrics, or fixtures (apps/evals/scenarios/*, apps/evals/scenarios/fixtures/*)">
 
-Full rulebook: [evals/SCENARIO-AUTHORING.md](./evals/SCENARIO-AUTHORING.md). Non-negotiables: **deterministic-first** (a judge is the last resort and never the tier discriminator); **never penalize MANDATORY behavior** (audit every negative check — can a correct run trip it?); **grade artifacts the MODEL controls** (child tasks, merged report — NOT config/timing-dependent system emissions); **de-risk pilot before building an axis** (prove discrimination on ONE dimension × TWO tiers, ~$4, read the dimension gap + whether its CI excludes 0). Validate with `cd evals && bun src/cli.ts registry` + a rubric unit test against a synthetic JudgeContext; the deployed swarm proposes (never runs E2B itself — it costs money).
+Full rulebook: [apps/evals/SCENARIO-AUTHORING.md](./apps/evals/SCENARIO-AUTHORING.md). Non-negotiables: **deterministic-first** (a judge is the last resort and never the tier discriminator); **never penalize MANDATORY behavior** (audit every negative check — can a correct run trip it?); **grade artifacts the MODEL controls** (child tasks, merged report — NOT config/timing-dependent system emissions); **de-risk pilot before building an axis** (prove discrimination on ONE dimension × TWO tiers, ~$4, read the dimension gap + whether its CI excludes 0). Validate with `cd apps/evals && bun src/cli.ts registry` + a rubric unit test against a synthetic JudgeContext; the deployed swarm proposes (never runs E2B itself — it costs money).
 
 </important>
 

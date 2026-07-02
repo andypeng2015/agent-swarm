@@ -47,7 +47,7 @@ Recommended slim commit shape:
       "author": "Name",
       "date": "2026-06-08",
       "message": "feat: add workflow run waterfall",
-      "files": ["src/workflows/engine.ts", "ui/src/pages/workflow-runs/[id]/page.tsx"]
+      "files": ["src/workflows/engine.ts", "apps/ui/src/pages/workflow-runs/[id]/page.tsx"]
     }
   ],
   "commitCountTotal": 70,

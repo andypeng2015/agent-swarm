@@ -6,7 +6,7 @@ A React-based monitoring dashboard for Agent Swarm.
 
 ```bash
 bun install   # at the repo root — ui is a workspace member, deps hoist to the root node_modules
-cd ui
+cd apps/ui
 bun run dev
 ```
 

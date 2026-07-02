@@ -123,7 +123,7 @@ if (fileArgs.length > 0) {
   }
 } else {
   // Scope: src/ (incl tests) + root tooling that imports src/ (scripts/, deploy/). NOT
-  // evals/ (separate package, repointed explicitly) or packages/ (barrels — skipped below).
+  // apps/ (separate packages, repointed explicitly) or packages/ (barrels — skipped below).
   project.addSourceFilesAtPaths(["src/**/*.ts", "src/**/*.tsx", "scripts/**/*.ts", "deploy/**/*.ts"]);
 }
 

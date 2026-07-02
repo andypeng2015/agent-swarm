@@ -61,19 +61,18 @@ docker-compose.yml
 docker-compose.*.yml
 !docker-compose.worker.yml
 
-# Eval harness sub-project (included for evals/Dockerfile only; the root
-# Dockerfiles do not COPY it, so this does not change their images).
-# Its package.json must stay in the build context: the root package.json declares
-# `evals` as a Bun workspace member, so `bun install --frozen-lockfile` in the
-# builder needs the manifest to resolve the workspace graph.
-evals/
-!evals/
-!evals/**
-evals/**/*.test.ts
-evals/**/*.spec.ts
-evals/**/node_modules/
-evals/ui/dist/
-evals/evals.db
-evals/evals.db-shm
-evals/evals.db-wal
-evals/evals-replica.db*
+# Eval harness sub-project (included for apps/evals/Dockerfile only; the root
+# Dockerfiles COPY only its package.json). The member manifests must stay in the
+# build context: the root package.json declares the apps/* Bun workspace members,
+# so `bun install --frozen-lockfile` in the builders needs them to resolve the graph.
+apps/evals/
+!apps/evals/
+!apps/evals/**
+apps/evals/**/*.test.ts
+apps/evals/**/*.spec.ts
+apps/evals/**/node_modules/
+apps/evals/ui/dist/
+apps/evals/evals.db
+apps/evals/evals.db-shm
+apps/evals/evals.db-wal
+apps/evals/evals-replica.db*

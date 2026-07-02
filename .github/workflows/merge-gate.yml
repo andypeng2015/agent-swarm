@@ -69,11 +69,11 @@ jobs:
           # bunfig.toml (linker/test config), turbo.json, member manifests (root frozen
           # install), and the dep-graph inputs (.dependency-cruiser.cjs, plugin/) are all
           # load-bearing for this job since the workspace migration.
-          LINT=$(match '^(src/|evals/|package\.json$|bun\.lock|bunfig\.toml$|turbo\.json$|konsistent\.json$|tsconfig\.json$|biome\.json$|\.dependency-cruiser\.cjs$|plugin/opencode-plugins/|(ui|templates-ui)/package\.json$)')
+          LINT=$(match '^(src/|apps/evals/|package\.json$|bun\.lock|bunfig\.toml$|turbo\.json$|konsistent\.json$|tsconfig\.json$|biome\.json$|\.dependency-cruiser\.cjs$|plugin/opencode-plugins/|apps/(ui|templates-ui)/package\.json$)')
 
           # tests: src/ + scripts that tests import + lockfile/tsconfig + bunfig ([test]
           # preload + pathIgnorePatterns) + member manifests (root frozen install).
-          TEST=$(match '^(src/|scripts/|package\.json$|bun\.lock|bunfig\.toml$|tsconfig\.json$|(ui|templates-ui|evals)/package\.json$)')
+          TEST=$(match '^(src/|scripts/|package\.json$|bun\.lock|bunfig\.toml$|tsconfig\.json$|apps/(ui|templates-ui|evals)/package\.json$)')
 
           # pi-skills freshness: generator inputs + outputs.
           PI_SKILLS=$(match '^(plugin/commands/|plugin/pi-skills/|plugin/build-pi-skills\.ts$)')
@@ -83,12 +83,12 @@ jobs:
 
           # docker build test: mirrors docker-and-deploy.yml paths. All Dockerfiles now
           # COPY bunfig.toml + the member manifests, .dockerignore shapes the context,
-          # and evals/ feeds the evals-service image.
-          DOCKER=$(match '^(src/|Dockerfile$|Dockerfile\.worker$|evals/|\.dockerignore$|docker-entrypoint\.sh$|api-entrypoint\.sh$|package\.json$|bun\.lock|bunfig\.toml$|tsconfig\.json$|scripts/|templates/|plugin/|deploy/|(ui|templates-ui)/package\.json$)')
+          # and apps/evals/ feeds the evals-service image.
+          DOCKER=$(match '^(src/|Dockerfile$|Dockerfile\.worker$|apps/evals/|\.dockerignore$|docker-entrypoint\.sh$|api-entrypoint\.sh$|package\.json$|bun\.lock|bunfig\.toml$|tsconfig\.json$|scripts/|templates/|plugin/|deploy/|apps/(ui|templates-ui)/package\.json$)')
 
           # ui app lint + typecheck. ui's dependency tree is resolved by the ROOT
           # bun.lock + root overrides since the workspace migration.
-          UI=$(match '^(ui/|bun\.lock|package\.json$|bunfig\.toml$)')
+          UI=$(match '^(apps/ui/|bun\.lock|package\.json$|bunfig\.toml$)')
 
           # workflow template validation: content.md changes in templates/workflows/.
           TEMPLATES_WORKFLOWS=$(match '^(templates/workflows/|scripts/validate-template-workflows\.ts$|src/workflows/definition\.ts$|src/types\.ts$)')
@@ -132,20 +132,20 @@ jobs:
 
       # evals is now a Bun workspace member, so the root `bun install --frozen-lockfile`
       # above already installs its deps into the shared hoisted node_modules. No separate
-      # `cd evals && bun install` is needed.
+      # `cd apps/evals && bun install` is needed.
       - name: Type check evals
         run: bun run tsc:check
-        working-directory: evals
+        working-directory: apps/evals
 
       - name: Test evals
         # evals is its own bun package; these are pure unit tests (scoring,
         # registry, normalize, scenario structure) — no E2B/network, ~0.5s.
         run: bun test
-        working-directory: evals
+        working-directory: apps/evals
 
       - name: Build evals UI
         run: bun run ui:build
-        working-directory: evals
+        working-directory: apps/evals
 
       - name: Check worker/API DB boundary
         run: bash scripts/check-db-boundary.sh
@@ -181,7 +181,7 @@ jobs:
         run: bun install --frozen-lockfile
 
       - name: Run tests
-        # evals/ is excluded from the root run via bunfig.toml pathIgnorePatterns
+        # apps/evals/ is excluded from the root run via bunfig.toml pathIgnorePatterns
         # (it's a separate bun package with its own deps + its own CI test step in
         # the lint-and-typecheck job).
         run: bun test
@@ -263,10 +263,10 @@ jobs:
 
     strategy:
       matrix:
-        # evals/Dockerfile is the standalone evals-service image (Dokploy); it installs
+        # apps/evals/Dockerfile is the standalone evals-service image (Dokploy); it installs
         # from the ROOT workspace lockfile, so workspace changes can break it silently
         # unless it is built here too.
-        dockerfile: [Dockerfile, Dockerfile.worker, evals/Dockerfile]
+        dockerfile: [Dockerfile, Dockerfile.worker, apps/evals/Dockerfile]
 
     steps:
       - name: Checkout repository
@@ -299,21 +299,21 @@ jobs:
           bun-version: latest
 
       # ui is now a Bun workspace member; the root install hoists its deps. Run the
-      # ui-scoped scripts from the ui/ directory against that shared node_modules.
+      # ui-scoped scripts from the apps/ui/ directory against that shared node_modules.
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
       - name: Check design tokens (no raw color literals)
         run: bun run check:tokens
-        working-directory: ui
+        working-directory: apps/ui
 
       - name: Run Biome linter
         run: bun run lint
-        working-directory: ui
+        working-directory: apps/ui
 
       - name: Run TypeScript type check
         run: bunx tsc -b
-        working-directory: ui
+        working-directory: apps/ui
 
   template-workflow-validation:
     name: Validate Workflow Templates

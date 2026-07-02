@@ -27,13 +27,13 @@ CI detects what changed and runs the matching jobs:
 | **Pi-Skills Freshness** | `bun run build:pi-skills` (must produce zero diff in `plugin/pi-skills/`) | Edited `plugin/commands/*.md` without rebuilding |
 | **OpenAPI Spec Freshness** | `bun run docs:openapi` (must produce zero diff in `openapi.json` AND `docs-site/content/docs/api-reference/`) | Edited an HTTP route or bumped `package.json` `version` without regenerating |
 | **Raw matchRoute check** | `! grep -rn 'matchRoute(' src/http/ --include='*.ts' \| grep -v 'route-def.ts' \| grep -v 'utils.ts'` | Used `matchRoute` directly instead of the `route()` factory |
-| **Docker Build (Dockerfile + Dockerfile.worker + evals/Dockerfile)** | `docker build -f Dockerfile . && docker build -f Dockerfile.worker . && docker build -f evals/Dockerfile .` | Broken multi-stage build, missing file in the worker context, evals image drifting from the root workspace lockfile |
+| **Docker Build (Dockerfile + Dockerfile.worker + apps/evals/Dockerfile)** | `docker build -f Dockerfile . && docker build -f Dockerfile.worker . && docker build -f apps/evals/Dockerfile .` | Broken multi-stage build, missing file in the worker context, evals image drifting from the root workspace lockfile |
 
-### When `ui/` changed (or root `bun.lock` / `package.json` / `bunfig.toml`)
+### When `apps/ui/` changed (or root `bun.lock` / `package.json` / `bunfig.toml`)
 
 ui's dependency tree resolves from the **root** lockfile since the workspace migration, so root dep changes also trigger this job.
 
-| Job | Local equivalent (run from `ui/`) |
+| Job | Local equivalent (run from `apps/ui/`) |
 |---|---|
 | **UI Lint and Type Check** | `bun install --frozen-lockfile && bun run lint && bunx tsc -b` |
 
@@ -41,7 +41,7 @@ ui's dependency tree resolves from the **root** lockfile since the workspace mig
 
 ## The full local pre-push command
 
-Run this from the repo root before every push. It mirrors merge-gate exactly for the most common path (root code changes, possibly `ui/`):
+Run this from the repo root before every push. It mirrors merge-gate exactly for the most common path (root code changes, possibly `apps/ui/`):
 
 ```bash
 # Root project
@@ -56,12 +56,12 @@ bun run check:dep-graph
 bun run build:pi-skills && git diff --quiet plugin/pi-skills/ || echo "pi-skills drift — commit the regenerated files"
 bun run docs:openapi    && git diff --quiet openapi.json docs-site/content/docs/api-reference/ || echo "openapi drift — commit the regenerated files"
 
-# Docker (if you touched any Dockerfile, evals/, .dockerignore, bunfig.toml,
+# Docker (if you touched any Dockerfile, apps/evals/, .dockerignore, bunfig.toml,
 # root/member package.json, bun.lock, or anything the Dockerfiles COPY)
-docker build -f Dockerfile . && docker build -f Dockerfile.worker . && docker build -f evals/Dockerfile .
+docker build -f Dockerfile . && docker build -f Dockerfile.worker . && docker build -f apps/evals/Dockerfile .
 
-# ui (if you touched ui/ — or root bun.lock/package.json/bunfig.toml, since ui deps resolve from the root lock)
-( cd ui && bun install --frozen-lockfile && bun run lint && bunx tsc -b )
+# ui (if you touched apps/ui/ — or root bun.lock/package.json/bunfig.toml, since ui deps resolve from the root lock)
+( cd apps/ui && bun install --frozen-lockfile && bun run lint && bunx tsc -b )
 ```
 
 ## Why CI fails (in order of frequency)
@@ -76,7 +76,7 @@ docker build -f Dockerfile . && docker build -f Dockerfile.worker . && docker bu
 
 ## Lockfile discipline
 
-CI uses `bun install --frozen-lockfile`. A single root install now covers `ui/`, `templates-ui/`, and `evals/` as Bun workspace members. This means:
+CI uses `bun install --frozen-lockfile`. A single root install now covers `apps/ui/`, `apps/templates-ui/`, and `apps/evals/` as Bun workspace members. This means:
 
 - **Adding/upgrading a dep:** run `bun install <pkg>` (in the relevant workspace dir), then commit BOTH `package.json` AND the root `bun.lock`.
 - **Cloning fresh / switching branches:** run `bun install --frozen-lockfile` to mirror CI. If it errors, the lockfile is stale — `bun install` (without `--frozen-lockfile`) and commit the result.
@@ -87,6 +87,6 @@ CI uses `bun install --frozen-lockfile`. A single root install now covers `ui/`,
 `docs-site/` is path-ignored by `merge-gate.yml`, so PRs that touch only it won't run the code gate. But:
 
 - **`docs-site/`** deploys via Vercel — `pnpm build` in `docs-site/` must pass. See [docs-site/CLAUDE.md](../docs-site/CLAUDE.md).
-- **`templates-ui/`** — same Vercel pattern.
+- **`apps/templates-ui/`** — same Vercel pattern.
 
 Frontend-touching PRs additionally need a `qa-use` session with screenshots — see [testing.md](./testing.md).

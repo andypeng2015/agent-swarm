@@ -32,7 +32,7 @@ const PINNED_ENTRIES = [
 
 // Providers actually reachable by the four local harnesses' model pickers
 // (mirrors `SNAPSHOT_ORDER` + `BEDROCK_SNAPSHOT_ID` in
-// `ui/src/lib/agent-runtime-models.ts`). The full models.dev payload carries
+// `apps/ui/src/lib/agent-runtime-models.ts`). The full models.dev payload carries
 // 140+ providers and 5000+ models; `src/providers/reasoning-effort.ts` only
 // ever looks up these four, so the reasoning snapshot stays "slim" by scope
 // rather than by field count alone.

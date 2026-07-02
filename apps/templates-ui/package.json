@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "prebuild": "cp -r ../templates ./src/data/templates 2>/dev/null || true",
+    "prebuild": "cp -r ../../templates ./src/data/templates 2>/dev/null || true",
     "build": "next build",
     "start": "next start",
     "lint": "eslint"

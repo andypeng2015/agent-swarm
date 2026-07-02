@@ -30,7 +30,7 @@ import {
   type ServiceEntry,
   type ComposeConfig,
 } from "@/lib/compose-generator";
-import type { TemplateConfig } from "../../../templates/schema";
+import type { TemplateConfig } from "../../../../templates/schema";
 
 type TemplateWithCategory = TemplateConfig & { category: string };
 

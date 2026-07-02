@@ -22,7 +22,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 // Import the pure helper directly — the parent `use-dismissible-card.ts`
 // pulls in React + the `@/lib/config` alias chain via `useConfig`, which
 // the bun-test runner can't resolve outside Vite.
-import { deriveStorageKey } from "../../ui/src/hooks/use-dismissible-card-key.ts";
+import { deriveStorageKey } from "../../apps/ui/src/hooks/use-dismissible-card-key.ts";
 
 // Minimal in-memory localStorage shim for the round-trip / failure tests.
 class MemoryStorage {

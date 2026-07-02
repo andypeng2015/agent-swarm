@@ -18,7 +18,7 @@ module.exports = {
       name: "swarm-ui",
       script: "bun",
       args: ["run", "dev"],
-      cwd: `${__dirname}/ui`,
+      cwd: `${__dirname}/apps/ui`,
     },
     {
       name: "swarm-lead",

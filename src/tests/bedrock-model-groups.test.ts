@@ -15,7 +15,7 @@ import { describe, expect, test } from "bun:test";
 import {
   type LiveBedrockStatus,
   modelGroupsForHarness,
-} from "../../ui/src/lib/agent-runtime-models";
+} from "../../apps/ui/src/lib/agent-runtime-models";
 
 describe("modelGroupsForHarness — Bedrock group for pi harness", () => {
   const configs = undefined;
