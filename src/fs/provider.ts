@@ -28,6 +28,16 @@ export class FilesError extends Error {
 export type FileScope = {
   taskId: string;
   name: string;
+  // Explicit provider storage key. When set, providers resolve THIS key verbatim
+  // instead of deriving `tasks/<taskId>/<name>`. Existing attachments were written
+  // to agent-fs at arbitrary paths (e.g. `misc/…`, `smoke/…`) via the CLI, so
+  // reconstructing from taskId+name mis-resolves them. New uploads leave this
+  // unset and keep the forward-looking `tasks/<taskId>/…` layout.
+  key?: string;
+  // Per-attachment agent-fs org/drive override. Older rows recorded their own
+  // org/drive; fall back to the provider's configured shared org/drive when unset.
+  orgId?: string;
+  driveId?: string;
 };
 
 export type FileBody = NonNullable<RequestInit["body"]>;
@@ -85,8 +95,26 @@ export type FileStorageProvider = {
   Partial<VersionedFileStorageProvider>;
 
 export function providerPath(scope: FileScope): string {
+  if (scope.key !== undefined && scope.key !== null && scope.key !== "") {
+    return normalizeStoredKey(scope.key);
+  }
   const safeName = normalizeName(scope.name);
   return `tasks/${encodeURIComponent(scope.taskId)}/${safeName}`;
+}
+
+// A stored provider key is already in the provider's canonical form (it came back
+// from the provider at write time, or from the agent's own CLI path). Use it as-is
+// except: drop leading slashes so it embeds cleanly in a URL/path, and reject the
+// traversal shapes a path must never contain.
+export function normalizeStoredKey(key: string): string {
+  const trimmed = key.trim().replace(/^\/+/, "");
+  if (!trimmed || trimmed.includes("\0")) {
+    throw new FilesError("Provider", "Stored file key must be a non-empty path");
+  }
+  if (trimmed.split("/").some((part) => part === "..")) {
+    throw new FilesError("Provider", "Stored file key must not contain parent path segments");
+  }
+  return trimmed;
 }
 
 export function normalizeName(name: string): string {

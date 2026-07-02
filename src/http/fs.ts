@@ -9,7 +9,7 @@ import {
   insertTaskAttachment,
 } from "../be/db";
 import { ensureAgentFsCredentialsForAgent } from "../be/seed/agent-fs-provision";
-import { type FileObject, FilesError, normalizeFilesError } from "../fs/provider";
+import { type FileObject, type FileScope, FilesError, normalizeFilesError } from "../fs/provider";
 import { getFileStorageProvider } from "../fs/registry";
 import type { TaskAttachment } from "../types";
 import { getCurrentRequestAuth, getRequestAuth } from "../utils/request-auth-context";
@@ -314,6 +314,10 @@ async function sendUpload(
 
 async function sendDownload(res: ServerResponse, attachment: TaskAttachment): Promise<boolean> {
   const provider = getFileStorageProvider();
+  if (backingProviderId(attachment) !== provider.id) {
+    jsonError(res, "Attachment is not available for download via the active file provider", 404);
+    return true;
+  }
   try {
     const response = await provider.download(scopeFromAttachment(attachment));
     const headers: Record<string, string> = {
@@ -339,6 +343,10 @@ async function sendSignedUrl(
   expiresIn?: number,
 ): Promise<boolean> {
   const provider = getFileStorageProvider();
+  if (backingProviderId(attachment) !== provider.id) {
+    jsonError(res, "Attachment is not available via the active file provider", 404);
+    return true;
+  }
   if (!provider.capabilities.signedUrl.supported) {
     jsonError(res, "Active file provider does not support signed URLs", 501);
     return true;
@@ -354,11 +362,19 @@ async function sendSignedUrl(
 
 async function sendDelete(res: ServerResponse, attachment: TaskAttachment): Promise<boolean> {
   const provider = getFileStorageProvider();
-  try {
-    await provider.delete(scopeFromAttachment(attachment));
-  } catch (error) {
-    const normalized = normalizeFilesError(error);
-    if (normalized.code !== "NotFound") return sendProviderError(res, normalized);
+  // Only touch the provider for rows it actually backs. For pointer-only rows
+  // (shared-fs worker volume, url, page) we just drop the DB pointer — the target
+  // lives outside any provider and isn't ours to delete. This is also what stops
+  // a mis-resolved provider delete from orphaning a real file.
+  if (backingProviderId(attachment) === provider.id) {
+    try {
+      await provider.delete(scopeFromAttachment(attachment));
+    } catch (error) {
+      const normalized = normalizeFilesError(error);
+      // The key is the row's real stored key, so NotFound means the object is
+      // genuinely gone — dropping the DB row is correct cleanup, not an orphan.
+      if (normalized.code !== "NotFound") return sendProviderError(res, normalized);
+    }
   }
   deleteTaskAttachment(attachment.id);
   res.writeHead(204);
@@ -366,20 +382,34 @@ async function sendDelete(res: ServerResponse, attachment: TaskAttachment): Prom
   return true;
 }
 
-function scopeFromAttachment(attachment: TaskAttachment): { taskId: string; name: string } {
-  const prefix = `tasks/${encodeURIComponent(attachment.taskId)}/`;
-  const key = attachment.providerKey ?? attachment.path ?? "";
-  if (key.startsWith(prefix)) {
-    return {
-      taskId: attachment.taskId,
-      name: key
-        .slice(prefix.length)
-        .split("/")
-        .map((part) => decodeURIComponent(part))
-        .join("/"),
-    };
-  }
-  return { taskId: attachment.taskId, name: attachment.name };
+// Resolve against the row's ACTUAL stored key + its own org/drive, rather than
+// reconstructing `tasks/<taskId>/<name>`. Attachments written to agent-fs via the
+// CLI live at arbitrary paths (`misc/…`, `smoke/…`); reconstruction mis-resolves
+// them, which previously caused downloads to 404 and deletes to orphan the real
+// file. New uploads have no stored key yet at scope-build time and keep the
+// forward-looking layout.
+function scopeFromAttachment(attachment: TaskAttachment): FileScope {
+  const storedKey = attachment.providerKey ?? attachment.path ?? "";
+  return {
+    taskId: attachment.taskId,
+    name: attachment.name,
+    key: storedKey.trim() ? storedKey : undefined,
+    orgId: attachment.orgId,
+    driveId: attachment.driveId,
+  };
+}
+
+// Which file-storage provider (if any) actually holds this attachment's bytes.
+// Only agent-fs objects and local-fs uploads are provider-backed; `shared-fs`
+// worker-volume pointers, `url`, and `page` attachments have no provider object,
+// so they must never be fetched or deleted through a provider (doing so would
+// mis-resolve and, on delete, orphan the real target). Note local-fs uploads are
+// recorded with kind "shared-fs" but an explicit local-fs providerId, so key off
+// both signals rather than kind alone.
+function backingProviderId(attachment: TaskAttachment): string | null {
+  if (attachment.kind === "agent-fs") return attachment.providerId ?? "agent-fs";
+  if (attachment.providerId === "local-fs") return "local-fs";
+  return null;
 }
 
 function findAttachment(

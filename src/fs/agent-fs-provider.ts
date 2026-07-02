@@ -112,7 +112,7 @@ export class AgentFsProvider implements FileStorageProvider {
   }
 
   async delete(scope: FileScope): Promise<void> {
-    await this.ops({ op: "rm", path: providerPath(scope) });
+    await this.ops({ op: "rm", path: providerPath(scope) }, scope);
   }
 
   async copy(source: FileScope, destination: FileScope): Promise<FileObject> {
@@ -163,7 +163,10 @@ export class AgentFsProvider implements FileStorageProvider {
 
   async url(scope: FileScope, options: SignedUrlOptions = {}): Promise<string> {
     const expiresIn = Math.min(options.expiresIn ?? 3600, this.capabilities.signedUrl.maxExpiresIn);
-    const result = await this.ops({ op: "signed-url", path: providerPath(scope), expiresIn });
+    const result = await this.ops(
+      { op: "signed-url", path: providerPath(scope), expiresIn },
+      scope,
+    );
     if (typeof result === "string") {
       return result;
     }
@@ -228,16 +231,16 @@ export class AgentFsProvider implements FileStorageProvider {
     return response;
   }
 
-  private async ops(body: Record<string, unknown>): Promise<unknown> {
+  private async ops(body: Record<string, unknown>, scope?: FileScope): Promise<unknown> {
     const response = await this.fetchImpl(
-      `${this.apiUrl}/orgs/${encodeURIComponent(this.orgId)}/ops`,
+      `${this.apiUrl}/orgs/${encodeURIComponent(this.orgFor(scope))}/ops`,
       {
         method: "POST",
         headers: {
           ...this.authHeaders(),
           "content-type": "application/json",
         },
-        body: JSON.stringify({ driveId: this.driveId, ...body }),
+        body: JSON.stringify({ driveId: this.driveFor(scope), ...body }),
       },
     );
     if (!response.ok) {
@@ -247,7 +250,15 @@ export class AgentFsProvider implements FileStorageProvider {
   }
 
   private rawUrl(scope: FileScope): string {
-    return `${this.apiUrl}/orgs/${encodeURIComponent(this.orgId)}/drives/${encodeURIComponent(this.driveId)}/files/${providerPath(scope)}/raw`;
+    return `${this.apiUrl}/orgs/${encodeURIComponent(this.orgFor(scope))}/drives/${encodeURIComponent(this.driveFor(scope))}/files/${providerPath(scope)}/raw`;
+  }
+
+  private orgFor(scope?: FileScope): string {
+    return scope?.orgId?.trim() || this.orgId;
+  }
+
+  private driveFor(scope?: FileScope): string {
+    return scope?.driveId?.trim() || this.driveId;
   }
 
   private authHeaders(): Record<string, string> {

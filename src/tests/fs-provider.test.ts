@@ -62,6 +62,29 @@ describe("LocalFsProvider", () => {
     }
   });
 
+  test("resolves an explicit stored key verbatim and rejects traversal", async () => {
+    const rootDir = await mkdtemp(join(tmpdir(), "agent-swarm-fs-"));
+    try {
+      const provider = new LocalFsProvider({ rootDir });
+      // Write at the forward-looking layout, then read back via an explicit stored key
+      // that does NOT match tasks/<taskId>/<name> reconstruction.
+      await provider.upload({ taskId: "task-9", name: "report.md" }, new Blob(["stored-key body"]));
+      const storedKey = "tasks/task-9/report.md";
+      const viaKey = await provider.download({
+        taskId: "other",
+        name: "unrelated",
+        key: storedKey,
+      });
+      expect(await viaKey.text()).toBe("stored-key body");
+
+      await expect(
+        provider.download({ taskId: "t", name: "n", key: "../../etc/passwd" }),
+      ).rejects.toMatchObject({ code: "Provider" });
+    } finally {
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
   test("signedUploadUrl throws a normalized ReadOnly error", async () => {
     const provider = new LocalFsProvider({
       rootDir: await mkdtemp(join(tmpdir(), "agent-swarm-fs-")),
@@ -151,6 +174,72 @@ describe("AgentFsProvider", () => {
     ]);
     expect(calls.every((call) => (call.body as { driveId: string }).driveId === "drive-1")).toBe(
       true,
+    );
+  });
+
+  test("download/delete/signed-url resolve the row's stored key + org/drive override", async () => {
+    const calls: Array<{ url: string; method: string; body: unknown }> = [];
+    const provider = new AgentFsProvider({
+      apiUrl: "http://agent-fs.test",
+      apiKey: "af_test",
+      orgId: "default-org",
+      driveId: "default-drive",
+      fetchImpl: (async (url, init) => {
+        const body = init?.body ? JSON.parse(String(init.body)) : undefined;
+        calls.push({ url: String(url), method: init?.method ?? "GET", body });
+        return Response.json({ url: "https://signed.example/x" });
+      }) as typeof fetch,
+    });
+
+    // An attachment written via the CLI at an arbitrary path, in the row's own org/drive.
+    const scope = {
+      taskId: "task-1",
+      name: "notes.md",
+      key: "misc/d454d1a5/notes.md",
+      orgId: "row-org",
+      driveId: "row-drive",
+    };
+
+    await provider.download(scope);
+    await provider.delete(scope);
+    await provider.url(scope, { expiresIn: 600 });
+
+    // download hits the raw endpoint at the STORED key under the ROW's org/drive.
+    expect(calls[0]?.url).toBe(
+      "http://agent-fs.test/orgs/row-org/drives/row-drive/files/misc/d454d1a5/notes.md/raw",
+    );
+    // delete + signed-url go through the row's org's ops endpoint with its drive + key.
+    expect(calls[1]?.url).toBe("http://agent-fs.test/orgs/row-org/ops");
+    expect(calls[1]?.body).toMatchObject({
+      driveId: "row-drive",
+      op: "rm",
+      path: "misc/d454d1a5/notes.md",
+    });
+    expect(calls[2]?.body).toMatchObject({
+      driveId: "row-drive",
+      op: "signed-url",
+      path: "misc/d454d1a5/notes.md",
+    });
+  });
+
+  test("stored key strips leading slashes and falls back to the provider's org/drive", async () => {
+    const calls: string[] = [];
+    const provider = new AgentFsProvider({
+      apiUrl: "http://agent-fs.test",
+      apiKey: "af_test",
+      orgId: "default-org",
+      driveId: "default-drive",
+      fetchImpl: (async (url) => {
+        calls.push(String(url));
+        return new Response("bytes", { status: 200 });
+      }) as typeof fetch,
+    });
+
+    // Leading-slash stored key, no per-row org/drive → default org/drive, no double slash.
+    await provider.download({ taskId: "t", name: "A2.md", key: "/smoke/A2-with-ids.md" });
+
+    expect(calls[0]).toBe(
+      "http://agent-fs.test/orgs/default-org/drives/default-drive/files/smoke/A2-with-ids.md/raw",
     );
   });
 

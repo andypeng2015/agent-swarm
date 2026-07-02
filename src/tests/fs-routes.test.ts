@@ -1,11 +1,12 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
-import { rm, unlink } from "node:fs/promises";
+import { mkdir, rm, unlink, writeFile } from "node:fs/promises";
 import {
   createServer as createHttpServer,
   type IncomingMessage,
   type Server,
   type ServerResponse,
 } from "node:http";
+import { dirname, join } from "node:path";
 import {
   closeDb,
   createAgent,
@@ -180,6 +181,101 @@ describe("/api/fs REST", () => {
     const attachment = await upload.json();
 
     const del = await operatorFetch(`/api/fs/tasks/${taskId}/files/${attachment.id}`, {
+      method: "DELETE",
+    });
+    expect(del.status).toBe(204);
+    expect(getTaskAttachments(taskId)).toEqual([]);
+  });
+
+  test("download resolves the row's stored key, not a reconstructed tasks/<id>/<name>", async () => {
+    // Simulate an attachment whose bytes live at an arbitrary provider key that does
+    // NOT match tasks/<taskId>/<name> — the common shape for agent-authored files.
+    const storedKey = "misc/agent-authored/deep/report.md";
+    const onDisk = join(TEST_FS_DIR, storedKey);
+    await mkdir(dirname(onDisk), { recursive: true });
+    await writeFile(onDisk, "resolved via stored key");
+
+    const attachment = insertTaskAttachment({
+      taskId,
+      agentId,
+      name: "report.md",
+      kind: "shared-fs",
+      path: storedKey,
+      providerId: "local-fs",
+      providerKey: storedKey,
+    });
+
+    const download = await authedFetch(`/api/fs/tasks/${taskId}/files/${attachment.id}/raw`);
+    expect(download.status).toBe(200);
+    expect(await download.text()).toBe("resolved via stored key");
+  });
+
+  test("cross-provider rows are not downloadable and delete is pointer-only (no orphaning)", async () => {
+    // An agent-fs row while local-fs is the active provider: the active provider does
+    // not back these bytes, so download must 404 and delete must NOT touch the provider.
+    // Plant a decoy file where a reconstructed tasks/<id>/<name> scope WOULD point,
+    // to prove delete never resolves+removes it.
+    const decoy = join(TEST_FS_DIR, "tasks", taskId, "notes.md");
+    await mkdir(dirname(decoy), { recursive: true });
+    await writeFile(decoy, "unrelated decoy — must survive");
+
+    const attachment = insertTaskAttachment({
+      taskId,
+      agentId,
+      name: "notes.md",
+      kind: "agent-fs",
+      path: "misc/somewhere/notes.md",
+      providerId: "agent-fs",
+      providerKey: "misc/somewhere/notes.md",
+      orgId: "org_1",
+      driveId: "drive_1",
+    });
+
+    const download = await authedFetch(`/api/fs/tasks/${taskId}/files/${attachment.id}/raw`);
+    expect(download.status).toBe(404);
+
+    const del = await authedFetch(`/api/fs/tasks/${taskId}/files/${attachment.id}`, {
+      method: "DELETE",
+    });
+    expect(del.status).toBe(204);
+    expect(getTaskAttachments(taskId)).toEqual([]);
+    // The decoy file was never resolved, so it must still exist.
+    expect(await Bun.file(decoy).text()).toBe("unrelated decoy — must survive");
+  });
+
+  test("deleting a url pointer removes the row without a provider call", async () => {
+    const attachment = insertTaskAttachment({
+      taskId,
+      agentId,
+      name: "PR #42",
+      kind: "url",
+      url: "https://github.com/example/repo/pull/42",
+    });
+
+    const download = await authedFetch(`/api/fs/tasks/${taskId}/files/${attachment.id}/raw`);
+    expect(download.status).toBe(404);
+
+    const del = await authedFetch(`/api/fs/tasks/${taskId}/files/${attachment.id}`, {
+      method: "DELETE",
+    });
+    expect(del.status).toBe(204);
+    expect(getTaskAttachments(taskId)).toEqual([]);
+  });
+
+  test("deleting a provider-backed row whose blob is already gone still clears the pointer", async () => {
+    // stored key points at a local-fs object that does not exist → provider NotFound.
+    // Because the key is the row's real key, NotFound means truly gone → row cleared.
+    const attachment = insertTaskAttachment({
+      taskId,
+      agentId,
+      name: "vanished.txt",
+      kind: "shared-fs",
+      path: "tasks/ghost/vanished.txt",
+      providerId: "local-fs",
+      providerKey: "tasks/ghost/vanished.txt",
+    });
+
+    const del = await authedFetch(`/api/fs/tasks/${taskId}/files/${attachment.id}`, {
       method: "DELETE",
     });
     expect(del.status).toBe(204);
