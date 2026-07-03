@@ -7,7 +7,8 @@ import { canReadMemory } from "../be/memory/access";
 import { CANDIDATE_SET_MULTIPLIER } from "../be/memory/constants";
 import { listEdgesForAgent } from "../be/memory/edges-store";
 import { expandCandidatesWithGraph } from "../be/memory/graph-expansion";
-import { storeLinks } from "../be/memory/link-resolver";
+import { refreshLinks, storeLinks } from "../be/memory/link-resolver";
+import { getLinksForMemory, type MemoryLinksResult } from "../be/memory/links-store";
 import { recordRetrievals } from "../be/memory/raters/retrieval";
 import { applyRating, ExplicitSelfDuplicateError } from "../be/memory/raters/store";
 import {
@@ -230,7 +231,10 @@ const getMemoryById = route({
       ),
   }),
   responses: {
-    200: { description: "Memory details" },
+    200: {
+      description:
+        "Memory details, plus `links` (outgoing memory_link rows; memory-kind targets carry `resolved` + ACL-filtered `target` metadata) and `backlinks` (inbound links from other memories, ACL-filtered)",
+    },
     404: { description: "Memory not found" },
   },
 });
@@ -402,7 +406,8 @@ export async function handleMemory(
         const embedding = await provider.embed(contentChunks[0]!.content);
         if (embedding) store.updateEmbedding(result.memory.id, embedding, provider.name);
         try {
-          storeLinks(result.memory.id, memoryAgentId, result.memory.content);
+          // Re-index of an existing memory: prune stale content-derived links.
+          refreshLinks(result.memory.id, memoryAgentId, result.memory.content);
         } catch (err) {
           console.error(
             `[memory] Link resolution failed for ${result.memory.id}:`,
@@ -703,7 +708,8 @@ export async function handleMemory(
         const embedding = await provider.embed(result.memory.content);
         if (embedding) store.updateEmbedding(result.memory.id, embedding, provider.name);
         try {
-          storeLinks(result.memory.id, myAgentId, result.memory.content);
+          // Edit path: prune links derived from removed content (sequel links survive).
+          refreshLinks(result.memory.id, myAgentId, result.memory.content);
         } catch (err) {
           console.error(
             `[memory-edit] Link resolution failed for ${result.memory.id}:`,
@@ -932,7 +938,17 @@ export async function handleMemory(
       }
     }
 
-    json(res, { memory });
+    // Link traversal (DES-639b) — best-effort: a graph read failure must
+    // never break memory-get. Visibility mirrors the search ACL; the HTTP
+    // surface has no lead special-casing (same as POST /api/memory/search).
+    let linkBlocks: MemoryLinksResult = { links: [], backlinks: [] };
+    try {
+      linkBlocks = getLinksForMemory(memory.id, { viewerAgentId: myAgentId });
+    } catch (err) {
+      console.error("[memory-get] link traversal failed:", (err as Error).message);
+    }
+
+    json(res, { memory, links: linkBlocks.links, backlinks: linkBlocks.backlinks });
     return true;
   }
 

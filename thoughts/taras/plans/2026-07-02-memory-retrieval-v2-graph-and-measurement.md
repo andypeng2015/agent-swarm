@@ -6,7 +6,7 @@ tags: [plan, memory, hybrid-search, graph, measurement, DES-639, DES-637, DES-63
 status: in-progress
 autonomy: autopilot
 last_updated: 2026-07-03
-last_updated_by: Claude (phase-4 agent)
+last_updated_by: Claude (phase-5 agent)
 ---
 
 # Memory Retrieval v2 (Measurement + Graph Read Side) Implementation Plan
@@ -284,13 +284,13 @@ Links become visible (memory-get returns them) and self-maintaining (edits prune
 ### Success Criteria:
 
 #### Automated Verification:
-- [ ] Type check passes: `bun run tsc:check`
-- [ ] Lint passes: `bun run lint`
-- [ ] Suites pass: `bun test src/tests/memory-link-resolver.test.ts src/tests/memory-edit.test.ts src/tests/memory-get-tool.test.ts src/tests/memory.test.ts`
-- [ ] OpenAPI regenerated for the get-response change: `bun run docs:openapi` (commit regenerated files)
+- [x] Type check passes: `bun run tsc:check`
+- [x] Lint passes: `bun run lint`
+- [x] Suites pass: `bun test src/tests/memory-link-resolver.test.ts src/tests/memory-edit.test.ts src/tests/memory-get-tool.test.ts src/tests/memory.test.ts`
+- [x] OpenAPI regenerated for the get-response change: `bun run docs:openapi` (commit regenerated files)
 
 #### Automated QA:
-- [ ] Local walkthrough: store memory A with `[[B]]` + `[[C]]`; `memory_edit` A removing `[[C]]`; `GET /api/memory/{A}` shows links = {B}, not C; B's response shows A in backlinks; sqlite spot-check confirms the C row is deleted while any sequel row survives.
+- [x] Local walkthrough: store memory A with `[[B]]` + `[[C]]`; `memory_edit` A removing `[[C]]`; `GET /api/memory/{A}` shows links = {B}, not C; B's response shows A in backlinks; sqlite spot-check confirms the C row is deleted while any sequel row survives. (2026-07-03: fresh DB, A pre-edit links={B,C} both resolved w/ target metadata; POST /api/memory/edit → v2; post-edit links={B} only, C backlinks empty, B backlinks={A}; `sqlite3` count of the C row = 0, sole surviving row = B wikilink. Sequel survival covered by unit tests — no sequel producer exists yet to exercise over HTTP.)
 
 #### Manual Verification:
 - [ ] None beyond phase review.

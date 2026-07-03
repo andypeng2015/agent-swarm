@@ -5057,7 +5057,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Memory details"
+            "description": "Memory details, plus `links` (outgoing memory_link rows; memory-kind targets carry `resolved` + ACL-filtered `target` metadata) and `backlinks` (inbound links from other memories, ACL-filtered)"
           },
           "404": {
             "description": "Memory not found"
