@@ -6,7 +6,7 @@ tags: [plan, memory, hybrid-search, graph, measurement, DES-639, DES-637, DES-63
 status: in-progress
 autonomy: autopilot
 last_updated: 2026-07-03
-last_updated_by: Claude (phase-1 agent)
+last_updated_by: Claude (phase-2 agent)
 ---
 
 # Memory Retrieval v2 (Measurement + Graph Read Side) Implementation Plan
@@ -176,10 +176,10 @@ A "Usefulness" section on the existing `/memory` UI page rendering the Phase 1 e
 ### Success Criteria:
 
 #### Automated Verification:
-- [ ] UI deps + lint + build: `cd apps/ui && bun install --frozen-lockfile && bun run lint && bunx tsc -b`
+- [x] UI deps + lint + build: `cd apps/ui && bun install --frozen-lockfile && bun run lint && bunx tsc -b`
 
 #### Automated QA:
-- [ ] With the local API (seeded as in Phase 1 QA) + `cd apps/ui && bun run dev`: drive agent-browser (browser-use skill — local URL) to `http://localhost:5274/memory`, screenshot the Usefulness panel showing non-zero tiles and both charts.
+- [x] With the local API (seeded as in Phase 1 QA) + `cd apps/ui && bun run dev`: drive agent-browser (browser-use skill — local URL) to `http://localhost:5274/memory`, screenshot the Usefulness panel showing non-zero tiles and both charts. (Evidence: `thoughts/taras/qa/2026-07-03-memory-usefulness-panel.md` + screenshots.)
 
 #### Manual Verification:
 - [ ] Taras eyeballs the panel layout and visual harmony with the existing page (he manual-QAs the SPA).
