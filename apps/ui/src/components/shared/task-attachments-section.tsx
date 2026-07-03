@@ -14,7 +14,7 @@ import {
   Star,
   Trash2,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { fetchTaskAttachmentBlob, useDeleteAttachment, useTaskAttachments } from "@/api/fs";
 import type { TaskAttachment, TaskAttachmentKind } from "@/api/types";
 import { CollapsibleSection } from "@/components/shared/collapsible-section";
@@ -264,6 +264,9 @@ function AttachmentRow({
   const [expanded, setExpanded] = useState(false);
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [preview, setPreview] = useState<PreviewState>({ kind: "idle" });
+  const previewStateRef = useRef<PreviewState["kind"]>("idle");
+  const sourceKey = `${taskId}:${attachment.id}`;
+  const previousSourceKeyRef = useRef(sourceKey);
   // For agent-fs / shared-fs we show the raw path so users can at least copy
   // it; for `page` and `url` the anchor itself communicates the target.
   const pathDisplay =
@@ -274,12 +277,26 @@ function AttachmentRow({
         : null;
 
   useEffect(() => {
+    if (previousSourceKeyRef.current === sourceKey) return;
+    previousSourceKeyRef.current = sourceKey;
+    previewStateRef.current = "idle";
+    setPreview({ kind: "idle" });
+    setExpanded(false);
+    setLightboxOpen(false);
+  }, [sourceKey]);
+
+  useEffect(() => {
     const shouldLoadPromptThumbnail = variant === "prompt" && previewKind === "image";
-    if (!(expanded || shouldLoadPromptThumbnail) || !previewKind || preview.kind !== "idle") {
+    if (
+      !(expanded || shouldLoadPromptThumbnail) ||
+      !previewKind ||
+      previewStateRef.current !== "idle"
+    ) {
       return;
     }
 
     let cancelled = false;
+    previewStateRef.current = "loading";
     setPreview({ kind: "loading" });
     fetchTaskAttachmentBlob(taskId, attachment.id)
       .then(async (blob) => {
@@ -287,6 +304,7 @@ function AttachmentRow({
         if (previewKind === "text") {
           const maxBytes = 512 * 1024;
           if (blob.size > maxBytes) {
+            previewStateRef.current = "error";
             setPreview({
               kind: "error",
               message:
@@ -295,6 +313,7 @@ function AttachmentRow({
             return;
           }
           const text = scrubPreviewText(await blob.text());
+          previewStateRef.current = "text";
           setPreview({
             kind: "text",
             text: text.slice(0, 20_000),
@@ -302,10 +321,12 @@ function AttachmentRow({
           });
           return;
         }
+        previewStateRef.current = "url";
         setPreview({ kind: "url", url: URL.createObjectURL(blob), contentType: previewKind });
       })
       .catch((error) => {
         if (cancelled) return;
+        previewStateRef.current = "error";
         setPreview({
           kind: "error",
           message: error instanceof Error ? error.message : "Preview failed.",
@@ -314,8 +335,11 @@ function AttachmentRow({
 
     return () => {
       cancelled = true;
+      if (previewStateRef.current === "loading") {
+        previewStateRef.current = "idle";
+      }
     };
-  }, [attachment.id, expanded, preview.kind, previewKind, taskId, variant]);
+  }, [attachment.id, expanded, previewKind, taskId, variant]);
 
   useEffect(() => {
     return () => {
