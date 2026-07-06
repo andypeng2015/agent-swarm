@@ -3,10 +3,10 @@ date: 2026-07-02
 author: Claude (autopilot; commissioned by Taras)
 topic: "Memory retrieval v2 — measurement readout + memory_link read side (DES-639) + ride-alongs"
 tags: [plan, memory, hybrid-search, graph, measurement, DES-639, DES-637, DES-638]
-status: in-progress
+status: completed
 autonomy: autopilot
-last_updated: 2026-07-03
-last_updated_by: Claude (phase-6 agent)
+last_updated: 2026-07-06
+last_updated_by: Claude (orchestrator; Phase 3 baseline captured, all phases complete)
 ---
 
 # Memory Retrieval v2 (Measurement + Graph Read Side) Implementation Plan
@@ -203,13 +203,13 @@ The trend anchor: run the readout against prod and persist it as a QA doc — `t
 ### Success Criteria:
 
 #### Automated Verification:
-- [ ] Snapshot file exists and embeds the raw JSON/rows plus the command used: `test -s thoughts/taras/qa/2026-07-*-memory-usefulness-baseline.md`
+- [x] Snapshot file exists and embeds the raw JSON/rows plus the command used: `test -s thoughts/taras/qa/2026-07-*-memory-usefulness-baseline.md` (2026-07-06 doc)
 
 #### Automated QA:
-- [ ] The captured output parses (JSON valid / row counts non-negative) and `memory_rating` rows with `source='implicit-citation'` are > 0 (raters have been live since ~06-27 — if 0, that's a finding to raise, not to paper over).
+- [x] The captured output parses (JSON valid / row counts non-negative) and `memory_rating` rows with `source='implicit-citation'` are > 0 — 63,369 all-time implicit-citation rows; headline: hybrid arm 65.9% cited vs fts 27.3% / vec 19.8%; task_completion memories are the noise source (16.8% positive over 11.8k ratings).
 
 #### Manual Verification:
-- [ ] Taras authorizes the prod access (SSH/API key) — my earlier read-only SSH attempt was auto-denied, so this phase is gated on him running or approving the command.
+- [x] Taras authorizes the prod access (SSH/API key) — granted 2026-07-06 ("gave you perms now"); read-only `ssh swarm sqlite3 -readonly` capture.
 
 **Implementation Note**: No repo code changes beyond the QA doc. Pause + commit `[phase 3] prod memory usefulness baseline`.
 
