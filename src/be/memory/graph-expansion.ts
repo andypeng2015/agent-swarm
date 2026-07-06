@@ -22,6 +22,7 @@ import { getDb } from "@/be/db";
 import type { AgentMemorySource } from "@/types";
 import { isGraphExpansionEnabled } from "./constants";
 import { type AgentMemoryRow, rowToCandidate } from "./providers/sqlite-store";
+import { computeScore } from "./reranker";
 import type { MemoryCandidate } from "./types";
 
 export interface GraphExpansionOptions {
@@ -138,12 +139,22 @@ export function expandCandidatesWithGraph(
   const result = [...candidates];
   const indexById = new Map(result.map((c, i) => [c.id, i] as const));
   let added = 0;
-  const ranked = [...neighbors.values()].sort((a, b) => b.similarity - a.similarity);
+  // Rank and compare via the reranker's composite score (recency decay,
+  // source quality, access, usefulness), NOT the raw similarity: cap selection
+  // by raw score would let stale low-value links crowd out neighbors the
+  // reranker would place higher, and organic fts/hybrid duplicates carry an
+  // already-decayed similarity that a raw comparison would mis-rank against
+  // the graph entry's deliberately pre-decay score.
+  const now = new Date();
+  const ranked = [...neighbors.values()].sort(
+    (a, b) => computeScore(b, now) - computeScore(a, now),
+  );
   for (const neighbor of ranked) {
     const existingIndex = indexById.get(neighbor.id);
     if (existingIndex !== undefined) {
-      // Dedupe against organic candidates: keep the higher-scored entry.
-      if (neighbor.similarity > result[existingIndex]!.similarity) {
+      // Dedupe against organic candidates: keep whichever entry the reranker
+      // will score higher (same memory, so all non-similarity factors match).
+      if (computeScore(neighbor, now) > computeScore(result[existingIndex]!, now)) {
         result[existingIndex] = neighbor;
       }
       continue;

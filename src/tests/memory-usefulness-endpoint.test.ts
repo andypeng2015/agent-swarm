@@ -264,6 +264,29 @@ describe("GET /api/memory/usefulness", () => {
       });
     });
 
+    test("get events are excluded from per-arm stats (would pollute the NULL arm)", async () => {
+      const getRowId = crypto.randomUUID();
+      getDb()
+        .prepare(
+          `INSERT INTO memory_retrieval
+             (id, taskId, agentId, sessionId, memoryId, similarity, retrievedAt, eventType)
+           VALUES (?, ?, ?, NULL, ?, 1.0, ?, 'get')`,
+        )
+        .run(getRowId, TASK_A, AGENT_ID, m3, new Date().toISOString());
+
+      const captured = await callUsefulness("/api/memory/usefulness?days=7");
+      const body = JSON.parse(captured.body);
+
+      // Counted in volume's eventType split…
+      expect(body.volume.byEventType.get).toBe(1);
+      // …but absent from the per-arm breakdown (no NULL "legacy" arm appears).
+      expect(
+        body.byArm.find((a: { retrievalSource: string | null }) => a.retrievalSource === null),
+      ).toBeUndefined();
+
+      getDb().prepare("DELETE FROM memory_retrieval WHERE id = ?").run(getRowId);
+    });
+
     test("wider window includes the legacy NULL arm", async () => {
       const captured = await callUsefulness("/api/memory/usefulness?days=30");
       const body = JSON.parse(captured.body);

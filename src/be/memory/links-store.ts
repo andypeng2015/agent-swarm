@@ -140,17 +140,18 @@ export function getLinksForMemory(
     const visible =
       live &&
       (isLead || row.targetScope === "swarm" || (row.targetAgentId ?? "") === viewerAgentId);
-    // Redact targetId for live-but-ACL-hidden targets: exposing the resolved
-    // UUID would leak private memory ids AND let a viewer tell a hidden target
-    // apart from an unresolved wikilink. Redact to the wikilink NAME (derived
-    // from sourceText, verbatim content of the from-memory the viewer already
-    // reads) — the exact form an unresolved row stores in targetId. Unresolved
-    // and dangling rows keep their stored value.
+    // Redact targetId for every memory-kind row the viewer can't see: exposing
+    // a stored UUID would leak private memory ids (live-but-hidden AND
+    // expired/deleted targets, which store the once-resolved UUID) and let a
+    // viewer tell those apart from a genuinely unresolved wikilink. Redact to
+    // the wikilink NAME (derived from sourceText, verbatim content of the
+    // from-memory the viewer already reads) — the exact form an unresolved row
+    // stores in targetId, so all non-visible variants look identical.
     const base: MemoryLinkView = {
       id: row.id,
       linkType: row.linkType,
       targetKind: row.targetKind,
-      targetId: visible || !live ? row.targetId : redactedTargetId(row.sourceText),
+      targetId: visible ? row.targetId : redactedTargetId(row.sourceText),
       strength: row.strength,
       resolver: row.resolver,
       sourceText: row.sourceText,

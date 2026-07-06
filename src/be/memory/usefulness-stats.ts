@@ -127,7 +127,9 @@ export function getUsefulnessStats(options: UsefulnessStatsOptions = {}): Useful
 
   // Per-arm breakdown — retrieval provenance plus "did this surfaced memory
   // get cited in the same task". EXISTS keeps multi-rating (task, memory)
-  // pairs from inflating the count.
+  // pairs from inflating the count. Restricted to search events: memory-get
+  // rows carry no retrievalSource and would otherwise pollute the NULL
+  // ("legacy") arm. NULL eventType = pre-096 rows, kept (they were searches).
   const armRows = db
     .prepare<
       {
@@ -151,6 +153,7 @@ export function getUsefulnessStats(options: UsefulnessStatsOptions = {}): Useful
                   ) THEN 1 ELSE 0 END)      AS citedRetrievals
          FROM memory_retrieval mr
         WHERE mr.retrievedAt > ?
+          AND (mr.eventType IS NULL OR mr.eventType = 'search')
         GROUP BY mr.retrievalSource
         ORDER BY retrievals DESC`,
     )

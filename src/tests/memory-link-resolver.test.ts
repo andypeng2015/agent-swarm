@@ -309,6 +309,10 @@ describe("memory_link DB surface", () => {
     expect(links).toHaveLength(1);
     expect(links[0]?.resolved).toBe(false);
     expect(links[0]?.target).toBeUndefined();
+    // The once-resolved UUID of the deleted target must be redacted to the
+    // wikilink-name form — same as hidden and unresolved rows.
+    expect(links[0]?.targetId).toBe("b-target");
+    expect(links[0]?.targetId).not.toBe(b.id);
     expect(backlinks).toHaveLength(0);
   });
 });

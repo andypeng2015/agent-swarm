@@ -62,7 +62,10 @@ SQL
   or no FTS hit), so this is selection-biased, but the gap is large and the
   direction unambiguous. Keeps `MEMORY_HYBRID_SEARCH=1` firmly justified.
 - **NULL arm is 66% of window rows** — provenance (migration 100) only started
-  ~06-27; the NULL share will decay to zero in future snapshots.
+  ~06-27; the NULL share will decay to zero in future snapshots. Note: this
+  capture's per-arm query also folded the 1,010 `get` events into the NULL arm;
+  the shipped endpoint excludes get events from `byArm` (post-review fix), so
+  future snapshots will read slightly lower there.
 - **Memory-source quality is starkly tiered**: session_summary 95.9% positive and
   manual 81.7% (small n: 97/142 ratings) vs file_index 67.8% vs
   **task_completion 16.8% positive, avgSignal −0.66** — task_completion
