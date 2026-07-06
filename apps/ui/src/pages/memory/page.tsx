@@ -35,6 +35,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { InfoTip } from "@/components/ui/info-tip";
 import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/ui/page-header";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -680,12 +681,12 @@ function UsefulnessSection() {
   const citationRate = totalRetrievals > 0 ? citedRetrievals / totalRetrievals : 0;
 
   const armRows = stats.byArm.map((arm) => ({
-    arm: arm.retrievalSource ?? "legacy",
+    arm: prettyLabel(arm.retrievalSource ?? "legacy"),
     retrievals: arm.retrievals,
     cited: arm.citedRetrievals,
   }));
   const sourceRows = stats.citationBySource.map((row) => ({
-    source: row.source,
+    source: prettyLabel(row.source),
     "citation rate": row.citationRate,
   }));
 
@@ -707,51 +708,67 @@ function UsefulnessSection() {
           <StatPanel
             icon={Activity}
             label={`Retrievals (${stats.volume.distinctMemories} memories, ${stats.volume.retrievalGroups} searches)`}
+            info="How many times memories were surfaced to tasks via memory search/get in the window, with distinct memories and search-call counts."
             value={stats.volume.retrievals}
             tone="info"
           />
           <StatPanel
             icon={Quote}
             label="Citation rate"
+            info="Share of surfaced memories that the task then actually cited in its evidence (implicit-citation rater)."
             value={`${Math.round(citationRate * 100)}%`}
             tone="success"
           />
           <StatPanel
             icon={TrendingUp}
             label="Posteriors moved"
+            info="Memories whose usefulness estimate has moved off the neutral starting prior (i.e. we have at least one real signal for them), out of all memories."
             value={`${stats.posterior.movedFromPrior} / ${stats.posterior.totalMemories}`}
             tone="active"
           />
           <StatPanel
             icon={Target}
             label={`Above ${stats.threshold} posterior mean`}
+            info={`Memories whose estimated usefulness is above the ${stats.threshold} threshold — the ones the system currently considers useful.`}
             value={stats.posterior.aboveThreshold}
           />
         </div>
 
         <div className="grid gap-3 lg:grid-cols-2">
-          <ChartCard title="Citation rate by memory source">
+          <ChartCard
+            title="Citation rate by memory source"
+            info="Of the memories surfaced in the window, the share that tasks went on to cite — grouped by how the memory was created (manual, file index, session summary, task completion)."
+          >
             {sourceRows.length > 0 ? (
               <SharedBarChart
                 data={sourceRows}
                 indexBy="source"
                 keys={["citation rate"]}
                 height={190}
-                valueFormatter={(value) =>
-                  typeof value === "number" ? value.toFixed(2) : String(value)
-                }
+                maxValue={1}
+                yTickCount={5}
+                padding={0.45}
+                valueFormatter={formatRateAsPercent}
               />
             ) : (
               <ChartEmpty>No implicit-citation ratings in window</ChartEmpty>
             )}
           </ChartCard>
-          <ChartCard title="Retrievals by arm">
+          <ChartCard
+            title="Retrievals by arm"
+            info="Search retrievals grouped by which retrieval strategy surfaced them (hybrid, fts, vec, graph; legacy = older rows without provenance) — total vs how many were then cited."
+          >
             {armRows.length > 0 ? (
               <SharedBarChart
                 data={armRows}
                 indexBy="arm"
                 keys={["retrievals", "cited"]}
                 height={190}
+                yTickCount={5}
+                padding={0.35}
+                showLegend
+                valueFormatter={formatCount}
+                axisFormatter={formatCompactCount}
               />
             ) : (
               <ChartEmpty>No retrievals in window</ChartEmpty>
@@ -763,11 +780,46 @@ function UsefulnessSection() {
   );
 }
 
-function ChartCard({ title, children }: { title: string; children: ReactNode }) {
+/** "task_completion" → "task completion" — human-readable chart labels. */
+function prettyLabel(value: string): string {
+  return value.replaceAll("_", " ");
+}
+
+/** 0.42 → "42%" — for rate charts on a fixed 0–1 scale. */
+function formatRateAsPercent(value: unknown): string {
+  const n = Number(value);
+  return Number.isFinite(n) ? `${Math.round(n * 100)}%` : String(value);
+}
+
+/** 24012 → "24,012" — full count for tooltips. */
+function formatCount(value: unknown): string {
+  const n = Number(value);
+  return Number.isFinite(n) ? n.toLocaleString("en-US") : String(value);
+}
+
+/** 24000 → "24k" for axis ticks; hides fractional ticks on small ranges. */
+function formatCompactCount(value: unknown): string {
+  const n = Number(value);
+  if (!Number.isFinite(n) || !Number.isInteger(n)) return "";
+  return new Intl.NumberFormat("en-US", { notation: "compact" }).format(n);
+}
+
+function ChartCard({
+  title,
+  info,
+  children,
+}: {
+  title: string;
+  info?: string;
+  children: ReactNode;
+}) {
   return (
     <Card className="min-w-0 gap-2 rounded-md py-4">
       <CardHeader className="px-4">
-        <CardTitle className="text-sm">{title}</CardTitle>
+        <CardTitle className="flex items-center gap-1.5 text-sm">
+          {title}
+          {info ? <InfoTip content={info} /> : null}
+        </CardTitle>
       </CardHeader>
       <CardContent className="px-2">{children}</CardContent>
     </Card>
