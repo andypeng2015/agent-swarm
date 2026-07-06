@@ -1,6 +1,7 @@
 import type { LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { Card, CardContent } from "@/components/ui/card";
+import { InfoTip } from "@/components/ui/info-tip";
 import { cn } from "@/lib/utils";
 
 // StatPanel — a Card-sized stat tile with an icon-bg, label, and value. The
@@ -81,6 +82,9 @@ export interface StatPanelProps {
   icon: LucideIcon;
   label: ReactNode;
   value: ReactNode;
+  // One-sentence plain-language explanation, shown in a hoverable InfoTip
+  // next to the label.
+  info?: ReactNode;
   tone?: StatPanelTone;
   // When true, the numeric value is tinted with the tone color (matches the
   // api-keys "Available" / "Rate Limited" cards). When false (default), only
@@ -93,6 +97,7 @@ export function StatPanel({
   icon: Icon,
   label,
   value,
+  info,
   tone = "neutral",
   colorValue = false,
   className,
@@ -105,7 +110,10 @@ export function StatPanel({
           <Icon className={cn("h-4 w-4", t.iconText)} />
         </div>
         <div className="min-w-0">
-          <p className="text-xs text-muted-foreground truncate">{label}</p>
+          <p className="flex items-center gap-1 text-xs text-muted-foreground">
+            <span className="truncate">{label}</span>
+            {info ? <InfoTip content={info} /> : null}
+          </p>
           <p
             className={cn("text-lg font-semibold", colorValue && t.valueText ? t.valueText : null)}
           >

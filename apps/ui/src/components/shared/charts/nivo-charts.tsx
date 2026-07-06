@@ -20,6 +20,16 @@ export interface CategoricalChartProps {
   keys: string[];
   height?: number;
   valueFormatter?: (value: unknown, key?: string) => string;
+  /** Y-axis tick formatter; falls back to `valueFormatter` when omitted. */
+  axisFormatter?: (value: unknown) => string;
+  /** Fixed y-axis max (e.g. 1 for rate charts); defaults to nivo's auto. */
+  maxValue?: number;
+  /** Approximate y-axis tick count (d3 snaps to round values). */
+  yTickCount?: number;
+  /** Render a legend row above the plot — use whenever `keys.length >= 2`. */
+  showLegend?: boolean;
+  /** Bar padding override in [0, 1] (nivo default here is 0.24). */
+  padding?: number;
 }
 
 export function SharedBarChart({
@@ -28,6 +38,11 @@ export function SharedBarChart({
   keys,
   height = 280,
   valueFormatter,
+  axisFormatter,
+  maxValue,
+  yTickCount,
+  showLegend = false,
+  padding = 0.24,
 }: CategoricalChartProps) {
   const chartData = useMemo(
     () =>
@@ -50,10 +65,12 @@ export function SharedBarChart({
         data={chartData}
         keys={keys}
         indexBy={indexBy}
-        margin={{ top: 12, right: 20, bottom: 52, left: 56 }}
-        padding={0.24}
+        margin={{ top: showLegend ? 30 : 12, right: 20, bottom: 52, left: 56 }}
+        padding={padding}
+        innerPadding={keys.length > 1 ? 2 : 0}
         groupMode={keys.length > 1 ? "grouped" : "stacked"}
         colors={CHART_COLORS}
+        valueScale={{ type: "linear", min: 0, max: maxValue ?? "auto" }}
         borderRadius={3}
         enableLabel={false}
         axisTop={null}
@@ -66,10 +83,29 @@ export function SharedBarChart({
         axisLeft={{
           tickSize: 0,
           tickPadding: 8,
-          format: (value) => valueFormatter?.(value) ?? String(value),
+          tickValues: yTickCount,
+          format: (value) => (axisFormatter ?? valueFormatter)?.(value) ?? String(value),
         }}
+        gridYValues={yTickCount}
         labelSkipWidth={12}
         labelSkipHeight={12}
+        legends={
+          showLegend
+            ? [
+                {
+                  dataFrom: "keys",
+                  anchor: "top-right",
+                  direction: "row",
+                  translateY: -26,
+                  itemsSpacing: 12,
+                  itemWidth: 84,
+                  itemHeight: 14,
+                  symbolSize: 8,
+                  symbolShape: "circle",
+                },
+              ]
+            : undefined
+        }
         tooltip={({ id, value, indexValue }) => (
           <div className="rounded-md border bg-popover px-3 py-2 text-xs shadow-md">
             <div className="font-medium text-popover-foreground">{String(indexValue)}</div>
@@ -186,6 +222,12 @@ const nivoTheme = {
     line: {
       stroke: "var(--color-border)",
       strokeDasharray: "3 3",
+    },
+  },
+  legends: {
+    text: {
+      fill: "var(--color-muted-foreground)",
+      fontSize: 11,
     },
   },
 };
