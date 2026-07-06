@@ -18,12 +18,12 @@ DB because the endpoint ships with PR #894 (not yet deployed at capture time).
 
 ```bash
 CUTOFF=2026-06-06T11:17:36.000Z   # date -u -v-30d
-ssh swarm "sqlite3 -readonly -json /var/lib/docker/volumes/swarm-new-22yjmi_swarm_db/_data/agent-swarm-db.sqlite" <<SQL
+sqlite3 -readonly -json <prod DB file> <<SQL
 <the five queries from src/be/memory/usefulness-stats.ts, 30d window, threshold 0.6>
 SQL
 ```
 
-(Host `swarm` = 116.202.39.248, the Dokploy `swarm-new-22yjmi` deployment.)
+(Executed read-only on the prod host; host/DB-path details are kept out of the repo.)
 
 ## Raw output
 

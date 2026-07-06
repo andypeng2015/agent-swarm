@@ -198,7 +198,7 @@ The trend anchor: run the readout against prod and persist it as a QA doc — `t
 
 #### 1. Snapshot doc
 **File**: `thoughts/taras/qa/2026-07-XX-memory-usefulness-baseline.md` (new; date of execution)
-**Changes**: capture (a) the deployed endpoint output — `curl -H "Authorization: Bearer $PROD_KEY" "https://<prod-api>/api/memory/usefulness?days=30"` — or, if the release hasn't deployed yet, the equivalent read-only SQL via `ssh swarm-new "sqlite3 -readonly /var/lib/docker/volumes/swarm-new-22yjmi_swarm_db/_data/agent-swarm-db.sqlite '<phase-1 SQL>'"`; (b) the interpretation: which sources are cited, whether hybrid/fts arms appear, posterior movement since raters went live.
+**Changes**: capture (a) the deployed endpoint output — `curl -H "Authorization: Bearer $PROD_KEY" "https://<prod-api>/api/memory/usefulness?days=30"` — or, if the release hasn't deployed yet, the equivalent read-only SQL run directly against the prod DB (host/path details kept out of the repo); (b) the interpretation: which sources are cited, whether hybrid/fts arms appear, posterior movement since raters went live.
 
 ### Success Criteria:
 
@@ -209,7 +209,7 @@ The trend anchor: run the readout against prod and persist it as a QA doc — `t
 - [x] The captured output parses (JSON valid / row counts non-negative) and `memory_rating` rows with `source='implicit-citation'` are > 0 — 63,369 all-time implicit-citation rows; headline: hybrid arm 65.9% cited vs fts 27.3% / vec 19.8%; task_completion memories are the noise source (16.8% positive over 11.8k ratings).
 
 #### Manual Verification:
-- [x] Taras authorizes the prod access (SSH/API key) — granted 2026-07-06 ("gave you perms now"); read-only `ssh swarm sqlite3 -readonly` capture.
+- [x] Taras authorizes the prod access — granted 2026-07-06 ("gave you perms now"); captured via read-only sqlite3 on the prod host (details kept out of the repo).
 
 **Implementation Note**: No repo code changes beyond the QA doc. Pause + commit `[phase 3] prod memory usefulness baseline`.
 
@@ -347,7 +347,7 @@ Against a local clean-DB server (`rm -f agent-swarm-db.sqlite* && MEMORY_HYBRID_
 4. **Pruning**: `POST /api/memory/edit` `{memoryId: A, mode: "replace", content: "<no wikilinks>", intent: "e2e prune"}` → re-`GET` A shows empty links; `sqlite3 agent-swarm-db.sqlite "SELECT COUNT(*) FROM memory_link WHERE from_memory_id='<A>'"` → 0.
 5. **Readout**: `curl "http://localhost:3013/api/memory/usefulness?days=1" -H "Authorization: Bearer 123123"` → volume from step 2, per-arm breakdown includes `graph`.
 6. **UI**: open `http://localhost:5274/memory` → Usefulness panel renders tiles + charts; memory detail sheet shows the `best-practice` tag badge after an `inject-learning` call.
-7. **Prod (Phase 3, Taras-gated)**: deployed-endpoint curl or read-only `ssh swarm-new "sqlite3 -readonly /var/lib/docker/volumes/swarm-new-22yjmi_swarm_db/_data/agent-swarm-db.sqlite '<sanity SQL>'"` — captured into the baseline QA doc.
+7. **Prod (Phase 3, Taras-gated)**: deployed-endpoint curl or read-only sqlite3 against the prod DB (host/path details kept out of the repo) — captured into the baseline QA doc.
 
 ## Open Questions (autopilot — flagged, not blocking)
 
