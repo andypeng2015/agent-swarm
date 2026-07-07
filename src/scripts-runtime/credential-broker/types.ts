@@ -5,6 +5,7 @@ export const CREDENTIAL_BINDINGS_CONFIG_KEY = "SCRIPT_CREDENTIAL_BINDINGS";
 export const REDACTED_PLACEHOLDER_PREFIX = "[REDACTED:";
 
 export const CredentialBindingScopeSchema = z.enum(["global", "agent", "repo"]);
+export const CredentialBindingAuthKindSchema = z.enum(["config", "oauth"]);
 
 export const CredentialBindingSchema = z
   .object({
@@ -15,9 +16,15 @@ export const CredentialBindingSchema = z
     scope: CredentialBindingScopeSchema.default("global"),
     scopeId: z.string().nullable().optional(),
     active: z.boolean().default(true),
+    authKind: CredentialBindingAuthKindSchema.default("config"),
+    oauthProvider: z.string().min(1).max(255).optional(),
   })
   .refine((binding) => binding.headerTemplate || binding.queryTemplate, {
     message: "At least one of headerTemplate or queryTemplate is required.",
+  })
+  .refine((binding) => binding.authKind !== "oauth" || !!binding.oauthProvider, {
+    message: "oauthProvider is required when authKind is oauth.",
+    path: ["oauthProvider"],
   });
 
 export const CredentialBindingsDocumentSchema = z.union([
@@ -26,6 +33,7 @@ export const CredentialBindingsDocumentSchema = z.union([
 ]);
 
 export type CredentialBindingScope = z.infer<typeof CredentialBindingScopeSchema>;
+export type CredentialBindingAuthKind = z.infer<typeof CredentialBindingAuthKindSchema>;
 export type CredentialBinding = z.infer<typeof CredentialBindingSchema>;
 
 export type ResolvedCredentialBinding = CredentialBinding & {

@@ -85,6 +85,7 @@ describe("credential broker", () => {
         scope: "global",
         active: true,
         scopeId: null,
+        authKind: "config",
       },
       {
         configKey: "QUERY_KEY",
@@ -93,6 +94,7 @@ describe("credential broker", () => {
         scope: "global",
         active: true,
         scopeId: null,
+        authKind: "config",
       },
     ]);
   });
@@ -133,13 +135,14 @@ describe("credential broker", () => {
         scope: "global",
         scopeId: null,
         active: true,
+        authKind: "config",
         placeholder: "[REDACTED:GITHUB_TOKEN]",
         value: "ghp_test",
       },
     ]);
   });
 
-  test("registers resolved broker config values with the scrubber", () => {
+  test("registers resolved broker config values with the scrubber", async () => {
     const bindingsConfig = upsertSwarmConfig({
       scope: "global",
       key: CREDENTIAL_BINDINGS_CONFIG_KEY,
@@ -161,7 +164,7 @@ describe("credential broker", () => {
     });
 
     try {
-      const bindings = buildScriptCredentialBindings({});
+      const bindings = await buildScriptCredentialBindings({});
 
       expect(bindings.some((binding) => binding.configKey === "VENDOR_SPECIAL_API_KEY")).toBe(true);
       expect(scrubSecrets("echo not_a_standard_token_shape_12345")).toBe(

@@ -15,5 +15,6 @@ export const DEFAULT_CREDENTIAL_BINDINGS: CredentialBinding[] = [
     scope: "global",
     scopeId: null,
     active: true,
+    authKind: "config",
   },
 ];

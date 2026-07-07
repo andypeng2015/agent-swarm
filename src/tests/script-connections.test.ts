@@ -205,7 +205,7 @@ afterEach(() => {
 });
 
 describe("script connections", () => {
-  test("relational credential bindings are resolved before legacy JSON config", () => {
+  test("relational credential bindings are resolved before legacy JSON config", async () => {
     const binding = upsertCredentialBinding({
       configKey: "REL_VENDOR_KEY",
       allowedHosts: ["api.vendor.test"],
@@ -220,7 +220,7 @@ describe("script connections", () => {
     });
     createdConfigIds.push(secretConfig.id);
 
-    const egressSecrets = buildScriptCredentialBindings({});
+    const egressSecrets = await buildScriptCredentialBindings({});
 
     expect(egressSecrets).toContainEqual(
       expect.objectContaining({

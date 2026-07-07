@@ -81,7 +81,7 @@ async function executeScheduleScript(schedule: ScheduledTask): Promise<void> {
     args: schedule.scriptArgs ?? {},
     fsMode: "none",
     agentId,
-    egressSecrets: buildScriptCredentialBindings({ agentId }),
+    egressSecrets: await buildScriptCredentialBindings({ agentId }),
     timeoutMs: 60_000,
   });
 

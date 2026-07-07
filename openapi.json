@@ -6378,6 +6378,77 @@
         }
       }
     },
+    "/api/oauth/{provider}/callback": {
+      "get": {
+        "operationId": "oauth_generic_callback",
+        "summary": "Generic OAuth redirect target for script credential bindings",
+        "tags": [
+          "OAuth"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            "required": true,
+            "name": "provider",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "code",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "state",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "error",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "error_description",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OAuth authorization completed"
+          },
+          "400": {
+            "description": "Missing or invalid OAuth callback parameters"
+          },
+          "404": {
+            "description": "OAuth app not configured"
+          },
+          "409": {
+            "description": "Provider has a dedicated OAuth callback"
+          },
+          "502": {
+            "description": "Token exchange failed"
+          }
+        }
+      }
+    },
     "/@swarm/api/{path}": {
       "get": {
         "summary": "Cookie-gated proxy to the swarm API (used by db-backed page iframes)",

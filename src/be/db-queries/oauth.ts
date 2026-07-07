@@ -113,6 +113,7 @@ export function storeOAuthTokens(
     scope?: string | null;
   },
 ): void {
+  // TODO(secrets-cipher): encrypt OAuth tokens at rest with src/be/crypto/secrets-cipher.ts.
   getDb()
     .query(
       `INSERT INTO oauth_tokens (provider, accessToken, refreshToken, expiresAt, scope)

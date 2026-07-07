@@ -511,7 +511,7 @@ export async function handleScripts(
       args: parsed.body.args,
       fsMode,
       agentId: agent.id,
-      egressSecrets: buildScriptCredentialBindings({ agentId: agent.id }),
+      egressSecrets: await buildScriptCredentialBindings({ agentId: agent.id }),
       apiConnections: getScriptApiConnectionDescriptors({ agentId: agent.id }),
     });
 

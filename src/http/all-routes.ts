@@ -29,6 +29,7 @@ import "./kv";
 import "./memory";
 import "./metrics";
 import "./oauth-locks";
+import "./oauth-generic";
 import "./page-proxy";
 import "./pages";
 import "./pages-public";

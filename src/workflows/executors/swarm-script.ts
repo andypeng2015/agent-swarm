@@ -73,7 +73,7 @@ export class SwarmScriptExecutor extends BaseExecutor<
       args: config.args,
       fsMode: "none",
       agentId: agentId ?? "workflow",
-      egressSecrets: buildScriptCredentialBindings({ agentId: agentId ?? undefined }),
+      egressSecrets: await buildScriptCredentialBindings({ agentId: agentId ?? undefined }),
       timeoutMs: config.timeoutMs,
     });
 

@@ -61,6 +61,8 @@ type BindingRow = {
   scope: string;
   scope_id: string | null;
   active: number;
+  auth_kind: string;
+  oauth_provider: string | null;
   source: string;
   created_at: string;
   updated_at: string;
@@ -115,6 +117,8 @@ function bindingFromRow(row: BindingRow): ScriptCredentialBindingRecord {
     scope: row.scope as ScriptConnectionScope,
     scopeId: row.scope_id,
     active: row.active === 1,
+    authKind: row.auth_kind === "oauth" ? "oauth" : "config",
+    oauthProvider: row.oauth_provider ?? undefined,
     source: row.source as ScriptCredentialBindingRecord["source"],
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -235,6 +239,8 @@ export function upsertCredentialBinding(data: {
   scope?: ScriptConnectionScope;
   scopeId?: string | null;
   active?: boolean;
+  authKind?: CredentialBinding["authKind"];
+  oauthProvider?: string | null;
   source?: "default" | "user" | "migration";
   userId?: string | null;
 }): ScriptCredentialBindingRecord {
@@ -243,6 +249,11 @@ export function upsertCredentialBinding(data: {
   const scope = data.scope ?? "global";
   const scopeId = scope === "global" ? null : (data.scopeId ?? null);
   const active = data.active === false ? 0 : 1;
+  const authKind = data.authKind ?? "config";
+  if (authKind === "oauth" && !data.oauthProvider) {
+    throw new Error("oauthProvider is required for oauth credential bindings");
+  }
+  const oauthProvider = data.oauthProvider ?? null;
   const source = data.source ?? "user";
   const existing =
     (data.id ? getCredentialBindingById(data.id) : null) ??
@@ -270,12 +281,15 @@ export function upsertCredentialBinding(data: {
           string,
           string | null,
           string,
+          string | null,
+          string,
           string,
         ]
       >(
         `UPDATE script_credential_bindings
          SET config_key = ?, allowed_hosts_json = ?, header_template = ?, query_template = ?,
-             scope = ?, scope_id = ?, active = ?, source = ?, updated_by = ?, updated_at = ?
+             scope = ?, scope_id = ?, active = ?, auth_kind = ?, oauth_provider = ?,
+             source = ?, updated_by = ?, updated_at = ?
          WHERE id = ? RETURNING *`,
       )
       .get(
@@ -286,6 +300,8 @@ export function upsertCredentialBinding(data: {
         scope,
         scopeId,
         active,
+        authKind,
+        oauthProvider,
         source,
         data.userId ?? null,
         now,
@@ -308,6 +324,8 @@ export function upsertCredentialBinding(data: {
         string | null,
         number,
         string,
+        string | null,
+        string,
         string,
         string,
         string | null,
@@ -316,8 +334,8 @@ export function upsertCredentialBinding(data: {
     >(
       `INSERT INTO script_credential_bindings
        (id, config_key, allowed_hosts_json, header_template, query_template, scope, scope_id,
-        active, source, created_at, updated_at, created_by, updated_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`,
+        active, auth_kind, oauth_provider, source, created_at, updated_at, created_by, updated_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`,
     )
     .get(
       id,
@@ -328,6 +346,8 @@ export function upsertCredentialBinding(data: {
       scope,
       scopeId,
       active,
+      authKind,
+      oauthProvider,
       source,
       now,
       now,
