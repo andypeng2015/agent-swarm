@@ -165,6 +165,9 @@ jobs:
       - name: Check SDK tool registration
         run: bun scripts/check-sdk-tool-registration.ts
 
+      - name: Check RBAC coverage (tools, verbs, routes)
+        run: bun scripts/check-rbac-coverage.ts
+
   test:
     name: Run Tests
     needs: detect-changes

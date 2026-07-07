@@ -68,6 +68,7 @@
     "check:db-boundary": "bash scripts/check-db-boundary.sh",
     "check:dep-graph": "depcruise src plugin/opencode-plugins --config .dependency-cruiser.cjs",
     "check:api-key-boundary": "bash scripts/check-api-key-boundary.sh",
+    "check:rbac-coverage": "bun scripts/check-rbac-coverage.ts",
     "check:audit-columns": "bash scripts/check-audit-columns.sh",
     "lint:structure": "konsistent check",
     "prepare-release": "bun scripts/prepare-release.ts",

@@ -97,6 +97,7 @@ const upsertRoute = route({
     400: { description: "Validation or typecheck failure" },
     403: { description: "Global write requires lead agent" },
   },
+  rbac: { permission: "script.global.write" },
 });
 
 const runRoute = route({
@@ -146,6 +147,7 @@ const deleteRoute = route({
     400: { description: "Validation error" },
     403: { description: "Global delete requires lead agent" },
   },
+  rbac: { permission: "script.global.delete" },
 });
 
 const typesRoute = route({

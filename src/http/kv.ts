@@ -108,6 +108,7 @@ const putKvHeader = route({
   params: z.object({ key: KvKeySchema }),
   body: kvSetBodySchema,
   responses: RESPONSES_PUT,
+  rbac: { permission: "kv.write.any" },
 });
 
 const deleteKvHeader = route({
@@ -123,6 +124,7 @@ const deleteKvHeader = route({
     403: { description: "Caller may not write this namespace" },
     400: { description: "Validation error or unresolvable namespace" },
   },
+  rbac: { permission: "kv.write.any" },
 });
 
 const incrKvHeader = route({
@@ -134,6 +136,7 @@ const incrKvHeader = route({
   params: z.object({ key: KvKeySchema }),
   body: kvIncrBodySchema,
   responses: RESPONSES_PUT,
+  rbac: { permission: "kv.write.any" },
 });
 
 const listKvHeader = route({
@@ -166,6 +169,7 @@ const putKvExplicit = route({
   params: z.object({ namespace: KvNamespaceSchema, key: KvKeySchema }),
   body: kvSetBodySchema,
   responses: RESPONSES_PUT,
+  rbac: { permission: "kv.write.any" },
 });
 
 const deleteKvExplicit = route({
@@ -180,6 +184,7 @@ const deleteKvExplicit = route({
     404: { description: "KV entry not found" },
     403: { description: "Caller may not write this namespace" },
   },
+  rbac: { permission: "kv.write.any" },
 });
 
 const incrKvExplicit = route({
@@ -191,6 +196,7 @@ const incrKvExplicit = route({
   params: z.object({ namespace: KvNamespaceSchema, key: KvKeySchema }),
   body: kvIncrBodySchema,
   responses: RESPONSES_PUT,
+  rbac: { permission: "kv.write.any" },
 });
 
 const listKvExplicit = route({

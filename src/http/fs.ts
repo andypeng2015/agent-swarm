@@ -94,6 +94,7 @@ const uploadTaskFileRoute = route({
     413: { description: "Upload exceeds 50 MiB" },
   },
   auth: { apiKey: true, agentId: true },
+  rbac: { permission: "task.fs.mutate" },
 });
 
 const getTaskFileRoute = route({
@@ -151,6 +152,7 @@ const deleteTaskFileRoute = route({
     404: { description: "Task or attachment not found" },
   },
   auth: { apiKey: true, agentId: true },
+  rbac: { permission: "task.fs.mutate" },
 });
 
 export async function handleFs(
