@@ -12,6 +12,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Migration notes
 - **v1.106.0 setupScript privilege boundary:** per-agent `setupScript` and `/workspace/start-up.*` hooks now run as the unprivileged `worker` user after the container drops privileges, and the worker image no longer includes blanket passwordless sudo (#865, #866). Move root-requiring steps such as system package installs, `/usr/lib` global npm writes, service ownership changes, or local database bootstrap into the admin-controlled global `SETUP_SCRIPT` config, into the worker image, or into the built-in optional service toggles. Keep per-agent setup user-level, for example `bun i -g` or `npm config set prefix "$HOME/.npm-global"`.
 
+## [1.112.0] - 2026-07-07
+
+### Added
+- **Lead-gated Slack message management is now available through MCP** (#918) — registered workers can request Slack message deletion and updates through audited tools while Slack-side mutation authority remains lead-controlled.
+- **First-task kickoff now resets task branches to the repository default branch** (#919) — fresh worker sessions start from the latest default branch instead of inheriting stale local branch state.
+
+### Changed
+- **Worker images now include PostgreSQL 16 pgvector support** (#920) — worker containers ship `postgresql-16-pgvector` for local and task-scoped database workflows that need vector search.
+
+### Fixed
+- **GitHub review submission no longer silently drops inline comments** (#917) — invalid or unplaceable inline PR review comments are surfaced instead of disappearing during review creation.
+
 ## [1.111.0] - 2026-07-07
 
 ### Added
