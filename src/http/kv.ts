@@ -11,6 +11,7 @@ import {
   listKv,
   upsertKv,
 } from "../be/db";
+import { can } from "../rbac";
 import { agentContextKey, pageContextKey } from "../tasks/context-key";
 import { KvKeySchema, KvNamespaceSchema, KvValueTypeSchema } from "../types";
 import { route } from "./route-def";
@@ -324,10 +325,20 @@ function authorizeWrite(
     return null;
   }
   if (namespace.startsWith("task:agent:")) {
-    const target = namespace.slice("task:agent:".length);
-    if (ctx.callerAgentId && target === ctx.callerAgentId) return null;
-    if (ctx.isLead) return null;
-    return { status: 403, message: "writes to another agent's namespace require lead" };
+    // A missing caller identity can never own a namespace nor be lead — same
+    // denial as before (no separate "agent not found" branch).
+    const allowed =
+      ctx.callerAgentId != null &&
+      can({
+        principal: { kind: "agent", agentId: ctx.callerAgentId, isLead: ctx.isLead },
+        verb: "kv.write.any",
+        resource: { kind: "kv-namespace", namespace },
+        source: "http",
+      }).allow;
+    if (!allowed) {
+      return { status: 403, message: "writes to another agent's namespace require lead" };
+    }
+    return null;
   }
   return null;
 }

@@ -27,6 +27,7 @@ import {
   scriptSdkTypesWithGeneratedApis,
   typecheckScript,
 } from "../be/scripts/typecheck";
+import { can } from "../rbac";
 import { extractScriptSignature } from "../scripts-runtime/extract-signature";
 import { runScript } from "../scripts-runtime/loader";
 import {
@@ -410,6 +411,21 @@ export async function handleScripts(
     const agent = requireAgent(res, agentId);
     if (!agent) return true;
 
+    // Global-scope writes require lead — the 403 this route has always
+    // documented, enforced since DES-445 slice 1. Agent-scope ops unchanged.
+    if (parsed.body.scope === "global") {
+      const decision = can({
+        principal: { kind: "agent", agentId: agent.id, isLead: agent.isLead },
+        verb: "script.global.write",
+        resource: { kind: "owned", scope: "global" },
+        source: "http",
+      });
+      if (!decision.allow) {
+        jsonError(res, "Global write requires lead agent", 403);
+        return true;
+      }
+    }
+
     const typecheck = typecheckScript(parsed.body.source, { agentId: agent.id });
     if (!typecheck.ok) {
       json(
@@ -711,6 +727,21 @@ export async function handleScripts(
     if (!parsed) return true;
     const agent = requireAgent(res, agentId);
     if (!agent) return true;
+
+    // Global-scope deletes require lead — the 403 this route has always
+    // documented, enforced since DES-445 slice 1. Agent-scope ops unchanged.
+    if (parsed.query.scope === "global") {
+      const decision = can({
+        principal: { kind: "agent", agentId: agent.id, isLead: agent.isLead },
+        verb: "script.global.delete",
+        resource: { kind: "owned", scope: "global" },
+        source: "http",
+      });
+      if (!decision.allow) {
+        jsonError(res, "Global delete requires lead agent", 403);
+        return true;
+      }
+    }
 
     const deleted = deleteScript({
       name: parsed.params.name,

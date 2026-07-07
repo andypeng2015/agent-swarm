@@ -11,6 +11,7 @@ import {
 import { ensureAgentFsCredentialsForAgent } from "../be/seed/agent-fs-provision";
 import { type FileObject, type FileScope, FilesError, normalizeFilesError } from "../fs/provider";
 import { getFileStorageProvider } from "../fs/registry";
+import { can, type RbacPrincipal, type RbacResource } from "../rbac";
 import type { TaskAttachment } from "../types";
 import { getCurrentRequestAuth, getRequestAuth } from "../utils/request-auth-context";
 import { scrubSecrets } from "../utils/secret-scrubber";
@@ -430,17 +431,34 @@ function findAttachment(
 }
 
 function canMutateTask(
-  task: { agentId: string | null; creatorAgentId?: string },
+  task: { id: string; agentId: string | null; creatorAgentId?: string },
   myAgentId: string | undefined,
   req: IncomingMessage,
 ): boolean {
+  const resource: RbacResource = {
+    kind: "task",
+    taskId: task.id,
+    agentId: task.agentId,
+    creatorAgentId: task.creatorAgentId,
+  };
+  // Decision order preserved (plan Appendix A row 36): operator/user request
+  // auth short-circuits BEFORE agent identity — an operator bearer with a
+  // non-owner X-Agent-ID is still allowed. The agent branches only bind when
+  // the request-auth context is unset.
   const auth = getRequestAuth(req);
-  if (auth?.kind === "operator") return true;
-  if (auth?.kind === "user") return true;
-  if (!myAgentId) return false;
-  const agent = getAgentById(myAgentId);
-  if (agent?.isLead) return true;
-  return task.agentId === myAgentId || task.creatorAgentId === myAgentId;
+  let principal: RbacPrincipal;
+  if (auth?.kind === "operator") {
+    principal = { kind: "operator" };
+  } else if (auth?.kind === "user") {
+    principal = { kind: "user", userId: auth.userId };
+  } else {
+    // A missing caller identity cannot be lead/assignee/creator — same denial
+    // as before (no separate "agent not found" branch).
+    if (!myAgentId) return false;
+    const agent = getAgentById(myAgentId);
+    principal = { kind: "agent", agentId: myAgentId, isLead: agent?.isLead ?? false };
+  }
+  return can({ principal, verb: "task.fs.mutate", resource, source: "http" }).allow;
 }
 
 async function readRawBody(

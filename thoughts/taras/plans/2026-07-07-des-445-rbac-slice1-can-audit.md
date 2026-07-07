@@ -6,7 +6,7 @@ topic: "DES-445 RBAC — Slice 1: central can() + audit log (increments 1+2)"
 tags: [plan, rbac, auth, security, des-445]
 status: in-progress
 last_updated: 2026-07-07
-last_updated_by: Claude (phase-4 agent)
+last_updated_by: Claude (phase-5 agent)
 related_brainstorm: thoughts/taras/brainstorms/2026-05-15-rbac-for-swarm.md
 related_research: thoughts/taras/research/2026-07-06-rbac-enforcement-surfaces.md
 ---
@@ -283,15 +283,15 @@ Deliverable: `src/http/kv.ts`, `src/http/fs.ts` (+ any Phase-1 HTTP additions) d
 ### Success Criteria:
 
 #### Automated Verification:
-- [ ] HTTP characterization passes unchanged (kv/fs): `bun test src/tests/kv-http.test.ts src/tests/fs-routes.test.ts src/tests/rbac-charact-http.test.ts`
-- [ ] Flipped scripts tests pass: `bun test src/tests/scripts-http.test.ts`
-- [ ] New boundary check passes at HEAD: `bash scripts/check-rbac-boundary.sh`
-- [ ] Boundary check actually fails on violation: temporarily add `if (!agent?.isLead) return;` to a migrated tool → `bash scripts/check-rbac-boundary.sh` exits non-zero → revert
-- [ ] Full suite: `bun test`
-- [ ] Types + lint + boundary: `bun run tsc:check && bun run lint && bash scripts/check-db-boundary.sh && bun run check:dep-graph`
+- [x] HTTP characterization passes unchanged (kv/fs): `bun test src/tests/kv-http.test.ts src/tests/fs-routes.test.ts src/tests/rbac-charact-http.test.ts`
+- [x] Flipped scripts tests pass: `bun test src/tests/scripts-http.test.ts`
+- [x] New boundary check passes at HEAD: `bash scripts/check-rbac-boundary.sh`
+- [x] Boundary check actually fails on violation: temporarily add `if (!agent?.isLead) return;` to a migrated tool → `bash scripts/check-rbac-boundary.sh` exits non-zero → revert
+- [x] Full suite: `bun test`
+- [x] Types + lint + boundary: `bun run tsc:check && bun run lint && bash scripts/check-db-boundary.sh && bun run check:dep-graph`
 
 #### Automated QA:
-- [ ] Live check against a fresh server (`rm -f agent-swarm-db.sqlite agent-swarm-db.sqlite-wal agent-swarm-db.sqlite-shm && bun run start:http`): `curl -s -X POST http://localhost:3013/api/scripts -H "Authorization: Bearer 123123" -H "X-Agent-ID: <worker-uuid>" -H "Content-Type: application/json" -d '{"name":"t","code":"export {}","scope":"global"}'` → `403`; same call with `<lead-uuid>` → success (exact path/body per the route def; agents seeded via `createAgent` or registration curl from LOCAL_TESTING.md smoke test)
+- [x] Live check against a fresh server (`rm -f agent-swarm-db.sqlite agent-swarm-db.sqlite-wal agent-swarm-db.sqlite-shm && bun run start:http`): `curl -s -X POST http://localhost:3013/api/scripts -H "Authorization: Bearer 123123" -H "X-Agent-ID: <worker-uuid>" -H "Content-Type: application/json" -d '{"name":"t","code":"export {}","scope":"global"}'` → `403`; same call with `<lead-uuid>` → success (exact path/body per the route def; agents seeded via `createAgent` or registration curl from LOCAL_TESTING.md smoke test)
 
 #### Manual Verification:
 - [ ] Taras signs off on the scripts.ts behavior change (any known callers relying on ungated global script writes?)
@@ -440,10 +440,12 @@ Rules verified against HEAD source. "Test" = characterization coverage (new = ad
 | 32 | `src/tools/kv/kv-set.ts:22` | own `task:agent:` namespace OR lead (page branch stays inline) | `kv.write.any` | P4 ✓ | `kv-tool.test.ts:178,188` (pre-existing) |
 | 33 | `src/tools/kv/kv-delete.ts:17` | own `task:agent:` namespace OR lead | `kv.write.any` | P4 ✓ | `rbac-charact-misc-tools.test.ts` (new) |
 | 34 | `src/tools/kv/kv-incr.ts:17` | own `task:agent:` namespace OR lead | `kv.write.any` | P4 ✓ | `rbac-charact-misc-tools.test.ts` (new) |
-| 35 | `src/http/kv.ts:329` (`authorizeWrite`; plumbing hits `:288,294,297,299`) | own `task:agent:` namespace OR lead → 403; `task:page:*` branch (`:318-327`) is a request-shape guard, stays inline | `kv.write.any` | P5 | `kv-http.test.ts:269-311` (pre-existing) |
-| 36 | `src/http/fs.ts:442` (`canMutateTask`) | operator OR user OR lead OR assignee OR creator → 403; **ordered**: operator/user short-circuit BEFORE agent identity (operator bearer + non-owner `X-Agent-ID` is allowed), and the lead/assignee/creator/deny branches only bind when the request-auth context is unset — unreachable via `handleCore` today (Phase-2 finding) | `task.fs.mutate` | P5 | `rbac-charact-http.test.ts` (new — full decision table: pipeline operator/user cases + auth-context-unset agent branches) |
+| 35 | `src/http/kv.ts:329` (`authorizeWrite`; plumbing hits `:288,294,297,299`) | own `task:agent:` namespace OR lead → 403; `task:page:*` branch (`:318-327`) is a request-shape guard, stays inline | `kv.write.any` | P5 ✓ | `kv-http.test.ts:269-311` (pre-existing) |
+| 36 | `src/http/fs.ts:442` (`canMutateTask`) | operator OR user OR lead OR assignee OR creator → 403; **ordered**: operator/user short-circuit BEFORE agent identity (operator bearer + non-owner `X-Agent-ID` is allowed), and the lead/assignee/creator/deny branches only bind when the request-auth context is unset — unreachable via `handleCore` today (Phase-2 finding) | `task.fs.mutate` | P5 ✓ | `rbac-charact-http.test.ts` (new — full decision table: pipeline operator/user cases + auth-context-unset agent branches) |
 
-Plus the **documented-but-unenforced** `src/http/scripts.ts` global write/delete gap (no `isLead` hit — that's the bug): verbs `script.global.write` / `script.global.delete`, closed in P5, tests flipped in `scripts-http.test.ts:319-345`.
+Plus the **documented-but-unenforced** `src/http/scripts.ts` global write/delete gap (no `isLead` hit — that's the bug): verbs `script.global.write` / `script.global.delete`, **closed in P5 ✓** (2026-07-07), tests flipped in `scripts-http.test.ts` (403 deny + lead-allow + agent-scope-unchanged cases).
+
+**Post-P5 CI enforcement:** `scripts/check-rbac-boundary.sh` (wired into merge-gate next to the DB/api-key boundary checks) flags any `isLead` in `src/tools/` + `src/http/` that is neither a property-key/shorthand-property usage (principal construction, zod schema, memory pins) nor in the file allowlist: `memory-search.ts` (SOFT), `slack-reply.ts` / `join-swarm.ts` / `send-task.ts` / `poll.ts` (NON-AUTHZ), `kv.ts` (buildAuthCtx plumbing feeding `can()`).
 
 #### SOFT scoping (excluded — memory RBAC parallel track)
 
