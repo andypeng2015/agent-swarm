@@ -3,10 +3,11 @@ date: 2026-05-15T00:00:00Z
 author: Taras
 topic: "RBAC in the swarm — for agents and for users"
 tags: [brainstorm, rbac, auth, security, multi-tenant, users, agents]
-status: parked
+status: research-complete
 exploration_type: idea
-last_updated: 2026-05-16
+last_updated: 2026-07-06
 last_updated_by: Claude
+related_research: thoughts/taras/research/2026-07-06-rbac-enforcement-surfaces.md
 ---
 
 # RBAC in the swarm — for agents and for users — Brainstorm
@@ -228,7 +229,7 @@ A mix of **(2) shared key + signed agent identity** and **(4) trust agents, scop
 
 ### Key Decisions
 
-1. **RBAC is opt-in.** Disabled by default; behavior identical to today until a single flag (`RBAC_ENABLED` env or `swarm_config.rbac_mode`) is flipped. All `can()` checks short-circuit to `allow: true` in the disabled mode. Audit writes are skipped.
+1. **RBAC is opt-in — but "disabled" means built-in legacy policy, not allow-all.** *(Refined 2026-07-06.)* The **configurable role engine** is opt-in behind a single flag (`RBAC_ENABLED` env or `swarm_config.rbac_mode`). But `can()` disabled-mode does **not** short-circuit to `allow: true` — it applies a **hardcoded default policy that reproduces today's exact rules** (the 34 `isLead` gates + `assertOwnsTask` ownership + kv/fs namespace guards). This is required so that migrating the always-on `isLead` gates through `can()` is a behavior-preserving refactor and does not regress lead protection for non-RBAC deploys. Only when the flag is ON does `can()` consult the role tables (whose seeded defaults reproduce the built-in policy, so enabling is itself a no-op until an admin customizes). Audit writes: still skipped in disabled mode (see incremental strategy — audit can be added independently).
 2. **Permission model = role → permissions table.** Roles are first-class DB objects with editable permission lists. Users / agents / trigger sources are assigned one or more roles. Permission strings are verb-namespaced (`task.create`, `config.write`, `integration.slack.post`) and live in a typed registry in code.
 3. **All actors are principals.** Users, agents, and trigger sources (webhooks, schedules, integrations) all collapse to the same `principals` abstraction with assignable roles. No special-case hierarchies for "lead vs worker" or "human vs bot" in the permission engine.
 4. **Effective permissions = intersection of the principal stack.** For any action: `effective = agent.perms ∩ originator.perms (∩ trigger_source.perms if present)`. Missing layers contribute "no constraint" (full set). Delegation is OAuth-style: an agent acts on behalf of its originator and can never exceed them.
@@ -258,11 +259,79 @@ The first batch was resolved in a follow-up chat after the initial synthesis. Th
 - **Audit-log reads for non-admins** → **Yes — `audit.read.own` granted by default.** Surfaced as a "My activity" tab. Admins get `audit.read.any` for cross-user views. Doubles as a debugging tool and a trust surface.
 - **Backfill semantics on first enable** → **Enabler gets `owner` on every channel/repo/agent; all other active users get `member`.** Every backfill grant is audit-logged. Admin tightens explicitly afterward by removing rows. "Open by default, lock down deliberately" — matches the opt-in spirit.
 
-**Still open (need codebase research or are deferred):**
+**Resolved by codebase research (2026-07-06 — see `thoughts/taras/research/2026-07-06-rbac-enforcement-surfaces.md`):**
 
-- **Are there tools today that bypass `route()` / the MCP tool factory?** Codebase audit during `/desplega:research` — if any handler exists outside the factories, enforcement-by-construction fails for that path.
-- **v2 sandbox controls (network / FS / env from worker runtime)** — separate surface, deferred. Worth its own brainstorm later.
-- **Performance budget for `can()` and row-level filters** — set a concrete target during planning (e.g. "p99 < 1ms for cached principal-perm lookup") and verify in implementation.
+- **Are there tools today that bypass `route()` / the MCP tool factory?** → **CLOSED. No.**
+  - HTTP: exactly one production listener (`src/http/index.ts:192`); `handleCore` (`src/http/core.ts:197`) runs first on every request and nothing bypasses the auth gate. ~288 `route()` defs across ~48 files; the 20 `apiKey:false` public routes (webhooks / OAuth callbacks / public pages / page-proxy) still pass through `handleCore` and self-verify downstream. A `permissions:[]` field on `route()` covers the whole HTTP surface.
+  - MCP: 114/114 tools go through one factory (`createToolRegistrar`, `src/tools/utils.ts:139`). No ad-hoc registration. Enforcement-by-construction is viable on both surfaces.
+  - **Caveat (latent gap):** `src/http/scripts.ts:97,146` *document* a `403 "requires lead agent"` in OpenAPI but **do not enforce it** — global script write/delete is currently ungated. The RBAC work closes this.
+
+**Still open / deferred:**
+
+- **v2 sandbox controls (network / FS / env from worker runtime)** — separate surface, deferred. Its own brainstorm later; **tracked as [DES-676](https://linear.app/desplega-labs/issue/DES-676) in Taras Brain** (2026-07-06).
+- **Correctness over performance for `can()` and row-level filters.** *(Taras, 2026-07-06.)* Priority is a correct, easy-to-reason-about policy engine — no clever caching or perf shortcuts that risk a wrong allow/deny. Performance is a non-gating concern: measure it, but do not trade correctness for it. Optimize only if a real hotspot shows up (SQLite at swarm scale is expected to be fine).
+
+## 2026-07-06 Refresh — codebase research folded in
+
+Full map: `thoughts/taras/research/2026-07-06-rbac-enforcement-surfaces.md` (git `9015e5be`). The 12 settled decisions above hold. Deltas that change the *plan*, not the design:
+
+### Corrections to the 2026-05-15 recon
+
+1. **`requestedByUserId` is ALREADY load-bearing for authz** — not attribution-only as the original doc assumed. It drives three live gates today:
+   - `assertOwnsTask` (`src/tools/task-tool-ctx.ts:28`) — comment literally reads "RBAC chokepoint"; denies `get-task-details` / `cancel-task` / `task-action` when `task.requestedByUserId !== ctx.userId`.
+   - User-scoped task listing (`src/tools/get-tasks.ts:105`, DB filter `src/be/db.ts:1724`; HTTP `sessions.ts:29,77`).
+   - Per-user budget admission (`src/be/budget-admission.ts:74`).
+   → **A user-RBAC v0 (task ownership + visibility) effectively already ships.** Decision #5 ("originator propagates from root") is partly implemented: `send-task` propagates the root originator through `ctx.sourceTaskId` and a second `parentTaskId` inheritance at `src/be/db.ts:3406`. Gap: a chain that starts NULL stays NULL (nothing back-fills).
+
+2. **Entry-point list correction (Decision #5 / Core Req #5):** **Jira and CLI create NO inbound `agent_task` rows** (Jira is outbound/OAuth only; `src/cli.tsx` creates none). **Cron/scheduler intentionally carries NULL** originator (`src/scheduler/scheduler.ts:49`) — this is exactly the "no clear originator" case Decision #6 designed the `default_unattributed_role` for. Real inbound sources with originator resolution: Slack, GitHub, GitLab, Linear, AgentMail, dashboard/HTTP, workflows. All resolve via `findUserByExternalId` → email cascade → NULL+unmapped-kv fallback.
+
+3. **The MCP-side chokepoint already exists** — `assertOwnsTask` / `ToolCtx` (`ownerCtx`/`userCtx`) in `src/tools/task-tool-ctx.ts` is the natural place to generalize into `can()`, cleaner than anticipated. The per-tool `permissions` field (Core Req #3) is still net-new (the `ToolConfig` shape at `src/tools/utils.ts:110` has no auth field).
+
+### `isLead` migration target is concrete: 34 sites, no helper (Decision #2, Core Req #3)
+
+There is **no** central `requireLead`/`assertLead`/`requireRole`/`can()` anywhere — 34 enforced authz sites are all inline `if (!agent?.isLead)`. Full enumerated table in the research doc §3. This is the exact replace-list for the central `can()`. MCP denials are soft (`{success:false}`); HTTP denials are real `403`. Note the memory read-visibility `isLead` checks (memory-search / graph-expansion) are *soft scoping*, a distinct surface from the 34 hard gates — they belong to Decision #7(c) row-level, not the tool-gate.
+
+### Identity substrate (Decision #9, #10)
+
+`HttpRequestAuth` (`src/utils/request-auth-context.ts`) already carries the `operator` (shared key) vs `user` (`aswt_` token) distinction, dual-stored in a WeakMap + AsyncLocalStorage, populated once in `handleCore`. **But there are NO per-user API keys yet** — only the shared operator key + `aswt_` MCP token; the `user_api_keys` table (Core Req #4) is net-new. `X-Agent-ID` is confirmed self-asserted / unauthenticated (`src/http/core.ts:200`) — Decision #9's signed agent-context token is what closes this. Today identity drives exactly one gate (`canMutateTask`), and only on "authenticated-or-not," never on *which* user — so the operator/user discriminant is plumbed but not yet an authz input.
+
+### Memory slice (Decision #7c) — settled design, not yet built
+
+The RBAC × Memory v2 design (agent-fs `research/2026-06-01-rbac-memory-options.md`: Option B, 3-column role-snapshot ownership `ownerUserId`+`ownerPrincipalId`+`ownerPrincipalType`, swarm/team/org scope) is the **reference impl for the row-level-reads surface** — but **none of it is merged**. `agent_memory` today is the pre-existing agent/swarm two-tier model with an **`isLead` bypass** (`src/be/memory/graph-expansion.ts:53`) that **contradicts** the memory design's "leads get requester perms, no bypass" decision. So the memory slice is: (a) designed + review-closed, (b) unbuilt, (c) requires removing the current lead bypass. Its named deps (Picateclas `7dd1c73d` attribution substrate, `workflow_runs.requestedByUserId`) remain prerequisites.
+
+### Prompt-time tool filter (Decision #7b)
+
+Single insertion point confirmed: `buildBasePrompt` (`src/prompts/base-prompt.ts`) already filters exposed tools/skills/MCP-servers by `hasMcp` / `role` (lead vs worker) / `capabilities` — an RBAC filter slots in alongside those checks (`:98-112`, `:165`, `:171`, `:262-281`).
+
+### Net planning posture
+
+The design is viable as-specified and the substrate is *more* built than assumed: enforcement-by-construction confirmed on both HTTP and MCP; a user-RBAC v0 (task ownership/visibility via `requestedByUserId`) is already live; the `isLead`→`can()` migration is a bounded 34-site list. Net-new build: the `roles`/`permissions`/`principal_roles` tables + `can()` engine + `permissions` fields on both factories + `user_api_keys` + audit log + memory-slice tables + dashboard. Ready for `/desplega:create-plan`.
+
+## Incremental Delivery Strategy (2026-07-06)
+
+The key enabler for incrementality: **separate enforcement plumbing (behavior-preserving, always-on) from the configurable role engine (opt-in).** Ship the plumbing first with zero behavior change, then layer the opt-in engine on top. Each increment is independently mergeable and independently valuable.
+
+| # | Increment | New tables? | Behavior change? | Value shipped |
+|---|---|---|---|---|
+| **1** | **`can()` as a pure refactor** — one function encoding *today's exact rules* (34 lead gates + `assertOwnsTask` + kv/fs guards). Migrate all sites to call it. Characterization tests prove parity. **Includes closing the `scripts.ts:97,146` ungated-gap** (add the `isLead` check the OpenAPI already promises) as part of this migration. | No | **None** (parity) | Single chokepoint; audit-ready; live gap closed |
+| **2** | **Audit log** — async/batched writer hung off `can()`. | audit only | None | Full observability, still no policy |
+| **3** | **Role engine (opt-in)** — `roles`/`permissions`/`principal_roles` + `RBAC_ENABLED`. Seeded defaults *reproduce* increment-1 policy → enabling is a no-op until an admin customizes. | Yes (dormant) | Only when flag ON | Configurable roles + first-enable wizard |
+| **4** | **Identity hardening** — `user_api_keys` + signed agent-context token replacing self-asserted `X-Agent-ID`. **MUST land before any role-based *agent* scoping is trusted** (else X-Agent-ID spoofing escalates). | Yes | Additive | Closes the spoofing vector; unblocks trusted agent RBAC |
+| **5** | **Broader enforcement surfaces** — `permissions:[]` field on `route()` (covers whole HTTP surface) + prompt-time tool filter at `buildBasePrompt`. | No | Only when flag ON | Defense-in-depth + clean UX (agent never sees forbidden tools) |
+| **6** | **Resource ACLs** — `channel_members`/`repo_access`/`agent_access`. Trusted agent-scoping depends on #4 having shipped. | Yes | Only when flag ON | Fine-grained per-resource scoping |
+
+**Side-tracks:**
+- **Memory slice** — the settled RBAC×Memory design (agent-fs `research/2026-06-01-rbac-memory-options.md`) runs as a **separate parallel workstream**, gated on its own deps (Picateclas `7dd1c73d`, `workflow_runs.requestedByUserId`) and requiring removal of the current `isLead` memory-bypass. Does NOT block the general increments.
+- **Dashboard UX** (roles-first, Decision #12) — follows increment 3 once the tables exist.
+
+### Resolved sequencing decisions (2026-07-06)
+
+- **Disabled-mode `can()` = built-in legacy policy**, not allow-all (see refined Decision #1). This is what makes increment 1 a true no-op refactor.
+- **`scripts.ts` gap folded into increment 1** (the `can()` migration), not shipped as a standalone bugfix.
+- **Memory slice = parallel track**, gated on its external deps; general RBAC does not wait on it.
+- **Identity hardening (increment 4) sequenced before trusted agent-scoping** (increments 5–6 for agents). User-RBAC (task/dashboard visibility) can progress on increments 1–3 without it, since user identity (`aswt_` token) is already authenticated; only *agent* self-assertion is the weak link.
+
+Suggested first shippable slice = **increments 1 + 2** (central `can()` + audit, both behavior-preserving, no flag, no opt-in) — pure risk-reduction that makes everything after it additive.
 
 ### Constraints Identified
 
@@ -321,5 +390,6 @@ The first batch was resolved in a follow-up chat after the initial synthesis. Th
 
 ## Next Steps
 
-- Recommend handoff to `/desplega:research` to map the codebase's *current* surfaces in detail: every `route()` definition, every MCP tool, every prompt-assembly site, every entry point that creates an `agent_task`, every place `X-Agent-ID` is consumed. That research feeds into a `/desplega:create-plan` for phased delivery (v1 = enforce + audit on opt-in; v2 = sandbox controls + advanced UX).
+- ✅ **DONE (2026-07-06):** codebase surfaces mapped in `thoughts/taras/research/2026-07-06-rbac-enforcement-surfaces.md` — every `route()` definition, MCP tool factory, prompt-assembly site, `agent_task` entry point, and `X-Agent-ID` consumer. Findings folded into the "2026-07-06 Refresh" + "Incremental Delivery Strategy" sections above.
+- **Next:** `/desplega:create-plan` for phased delivery, using the 6-increment strategy (first shippable slice = increments 1+2: central `can()` + audit, behavior-preserving). Memory slice runs as a parallel track.
 
