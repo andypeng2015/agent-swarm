@@ -1,5 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { z } from "zod";
+import type { PermissionVerb } from "../rbac";
 import { jsonError, matchRoute, parseBody } from "./utils";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -32,6 +33,14 @@ export interface RouteDef<
     apiKey?: boolean; // default true
     agentId?: boolean; // requires X-Agent-ID
   };
+  /**
+   * RBAC posture (DES-445). Required on every non-GET route — enforced by
+   * `bun run check:rbac-coverage` (CI). Either name the `PermissionVerb` the
+   * handler gates via `can()`, or document why no principal gate applies.
+   * Declarative in slice 1: the handler still calls `can()` itself; the role
+   * engine (increment 3) may enforce the declared verb centrally.
+   */
+  rbac?: { permission: PermissionVerb } | { ungated: string };
 }
 
 interface ParsedRequest<TParams, TQuery, TBody> {

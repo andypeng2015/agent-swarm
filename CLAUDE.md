@@ -158,7 +158,9 @@ CLI help lives in `src/cli.tsx` — plain `console.log`, not Ink. To add/modify:
 
 Always use the `route()` factory from `src/http/route-def.ts` — auto-registers in OpenAPI. Do **not** use raw `matchRoute`.
 
-After adding a handler: also add the import to `scripts/generate-openapi.ts`, then run `bun run docs:openapi` and commit `openapi.json`.
+Every **non-GET** route must declare its RBAC posture on the def: `rbac: { permission: "<verb>" }` (handler gates via `can()`) or `rbac: { ungated: "<reason>" }`. Enforced by `bun run check:rbac-coverage` (CI); new verbs register in `src/rbac/permissions.ts` + `src/rbac/legacy-policy.ts`.
+
+After adding a handler FILE: also add the import to `src/http/all-routes.ts`, then run `bun run docs:openapi` and commit `openapi.json`.
 
 </important>
 

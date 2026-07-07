@@ -1,0 +1,30 @@
+Database initialized at /private/tmp/claude-501/-Users-taras-worktrees-agent-swarm-2026-07-07-feat-rbac-1/6ec9ae0e-a4bc-4b92-ab28-c56888ee8a31/scratchpad/qa/qa.sqlite
+[db] sqlite-vec not available, falling back to in-memory cosine: This build of sqlite3 does not support dynamic extension loading
+[pricing] seed: 0 new row(s); 2426 candidate(s); modelsdev=loaded
+[seed:agent-fs-provision] created=0 updated=0 unchanged=0 preserved=0 failed=0
+[seed:script] created=0 updated=0 unchanged=18 preserved=0 failed=0
+[seed:skill] created=0 updated=0 unchanged=9 preserved=0 failed=0
+[rbac-audit] Initial retention purge removed 1 audit row(s)
+[business-use] [2026-07-07T16:58:51.461Z] [ERROR] API key not provided. Set apiKey parameter or BUSINESS_USE_API_KEY environment variable
+MCP HTTP server running on http://localhost:3113/mcp
+Injected 1 swarm_config value(s) into process.env
+telemetry: cloud=false e2b=false
+[Slack] Disabled via SLACK_DISABLE
+[GitHub] Disabled via GITHUB_DISABLE
+[GitLab] Integration disabled (GITLAB_WEBHOOK_SECRET not set)
+[AgentMail] Missing AGENTMAIL_WEBHOOK_SECRET, AgentMail integration disabled
+[Linear] Integration disabled or LINEAR_CLIENT_ID not set
+[Jira] Integration disabled or JIRA_CLIENT_ID not set
+[Scheduler] Starting with 10000ms polling interval
+[Heartbeat] Starting with 90000ms interval
+[Heartbeat] Checklist starting with 1800000ms interval
+[memory-vec] sqlite-vec extension_loaded=false; retrieval_mode=fallback
+[memory-fts] populate inserted=0
+[HTTP] ⚠️ PUT /api/kv/_/task:agent:33333333-3333-4333-8333-333333333333/bootrace → 403 (13.7ms)
+[pricing-refresh] refreshed 2358 candidate row(s); inserted=0; unchanged=2358; pruned=0
+[Heartbeat] Reboot sweep: no in-progress tasks found
+Shutting down HTTP server...
+[Scheduler] Stopped
+[Heartbeat] Stopped
+[Heartbeat] Checklist stopped
+MCP HTTP server closed, and database connection closed

@@ -1,0 +1,18 @@
+ts|principalId|verb|resourceType|decision|reason|source
+2026-07-07 16:49:51|22222222-2222-4222-8222-222222222222|skill.create.swarm|none|deny|requires lead agent|mcp
+2026-07-07 16:49:51|11111111-1111-4111-8111-111111111111|skill.create.swarm|none|allow||mcp
+2026-07-07 16:50:05|22222222-2222-4222-8222-222222222222|skill.update.any|owned|allow||mcp
+2026-07-07 16:50:05|33333333-3333-4333-8333-333333333333|skill.update.any|owned|deny|requires lead agent or resource owner|mcp
+2026-07-07 16:50:05|11111111-1111-4111-8111-111111111111|skill.update.any|owned|allow||mcp
+2026-07-07 16:50:39|33333333-3333-4333-8333-333333333333|memory.delete.any|owned|deny|requires memory owner, or lead agent for swarm-scoped memories|mcp
+2026-07-07 16:50:39|22222222-2222-4222-8222-222222222222|memory.delete.any|owned|allow||mcp
+2026-07-07 16:50:39|11111111-1111-4111-8111-111111111111|memory.delete.any|owned|deny|requires memory owner, or lead agent for swarm-scoped memories|mcp
+2026-07-07 16:50:39|11111111-1111-4111-8111-111111111111|memory.delete.any|owned|allow||mcp
+2026-07-07 16:51:01|22222222-2222-4222-8222-222222222222|kv.write.any|kv-namespace|allow||mcp
+2026-07-07 16:51:01|22222222-2222-4222-8222-222222222222|kv.write.any|kv-namespace|deny|requires lead agent or your own task:agent: namespace|mcp
+2026-07-07 16:51:01|11111111-1111-4111-8111-111111111111|kv.write.any|kv-namespace|allow||mcp
+2026-07-07 16:51:29|22222222-2222-4222-8222-222222222222|kv.write.any|kv-namespace|allow||http
+2026-07-07 16:51:29|22222222-2222-4222-8222-222222222222|kv.write.any|kv-namespace|deny|requires lead agent or your own task:agent: namespace|http
+2026-07-07 16:51:47|33333333-3333-4333-8333-333333333333|task.cancel.any|task|deny|requires lead agent or task creator|mcp
+2026-07-07 16:51:47|22222222-2222-4222-8222-222222222222|task.cancel.any|task|allow||mcp
+2026-07-07 16:51:47|11111111-1111-4111-8111-111111111111|task.cancel.any|task|allow||mcp

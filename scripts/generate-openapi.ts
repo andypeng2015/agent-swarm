@@ -1,52 +1,7 @@
 import { generateOpenApiSpec } from "../src/http/openapi";
-// Import all handler files to trigger route() registrations
-import "../src/http/active-sessions";
-import "../src/http/agents";
-import "../src/http/approval-requests";
-import "../src/http/budgets";
-import "../src/http/codex-oauth-keep-warm";
-import "../src/http/config";
-import "../src/http/context";
-import "../src/http/db-query";
-import "../src/http/ecosystem";
-
-import "../src/http/api-keys";
-import "../src/http/events";
-import "../src/http/fs";
-import "../src/http/heartbeat";
-import "../src/http/inbox-state";
-import "../src/http/integrations";
-import "../src/http/kv";
-import "../src/http/memory";
-import "../src/http/metrics";
-import "../src/http/oauth-locks";
-import "../src/http/page-proxy";
-import "../src/http/pages";
-import "../src/http/pages-public";
-import "../src/http/prompt-templates";
-import "../src/http/poll";
-import "../src/http/pricing";
-import "../src/http/repos";
-import "../src/http/schedules";
-import "../src/http/script-runs";
-import "../src/http/session-data";
-import "../src/http/sessions";
-import "../src/http/skills";
-import "../src/http/scripts";
-import "../src/http/mcp-bridge";
-import "../src/http/mcp-oauth";
-import "../src/http/mcp-servers";
-import "../src/http/stats";
-import "../src/http/status";
-import "../src/http/tasks";
-import "../src/http/task-templates";
-import "../src/http/trackers/jira";
-import "../src/http/trackers/linear";
-import "../src/http/users";
-import "../src/http/webhooks";
-import "../src/http/workflow-events";
-import "../src/http/workflows";
-import "../src/http/x";
+// Import all handler files to trigger route() registrations — the list lives
+// in src/http/all-routes.ts (shared with scripts/check-rbac-coverage.ts).
+import "../src/http/all-routes";
 
 const version = (await Bun.file("package.json").json()).version;
 const spec = generateOpenApiSpec({ version, serverUrl: "http://localhost:3013" });

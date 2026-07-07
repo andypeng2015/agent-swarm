@@ -11,6 +11,7 @@ import {
   listKv,
   upsertKv,
 } from "../be/db";
+import { can } from "../rbac";
 import { agentContextKey, pageContextKey } from "../tasks/context-key";
 import { KvKeySchema, KvNamespaceSchema, KvValueTypeSchema } from "../types";
 import { route } from "./route-def";
@@ -107,6 +108,7 @@ const putKvHeader = route({
   params: z.object({ key: KvKeySchema }),
   body: kvSetBodySchema,
   responses: RESPONSES_PUT,
+  rbac: { permission: "kv.write.any" },
 });
 
 const deleteKvHeader = route({
@@ -122,6 +124,7 @@ const deleteKvHeader = route({
     403: { description: "Caller may not write this namespace" },
     400: { description: "Validation error or unresolvable namespace" },
   },
+  rbac: { permission: "kv.write.any" },
 });
 
 const incrKvHeader = route({
@@ -133,6 +136,7 @@ const incrKvHeader = route({
   params: z.object({ key: KvKeySchema }),
   body: kvIncrBodySchema,
   responses: RESPONSES_PUT,
+  rbac: { permission: "kv.write.any" },
 });
 
 const listKvHeader = route({
@@ -165,6 +169,7 @@ const putKvExplicit = route({
   params: z.object({ namespace: KvNamespaceSchema, key: KvKeySchema }),
   body: kvSetBodySchema,
   responses: RESPONSES_PUT,
+  rbac: { permission: "kv.write.any" },
 });
 
 const deleteKvExplicit = route({
@@ -179,6 +184,7 @@ const deleteKvExplicit = route({
     404: { description: "KV entry not found" },
     403: { description: "Caller may not write this namespace" },
   },
+  rbac: { permission: "kv.write.any" },
 });
 
 const incrKvExplicit = route({
@@ -190,6 +196,7 @@ const incrKvExplicit = route({
   params: z.object({ namespace: KvNamespaceSchema, key: KvKeySchema }),
   body: kvIncrBodySchema,
   responses: RESPONSES_PUT,
+  rbac: { permission: "kv.write.any" },
 });
 
 const listKvExplicit = route({
@@ -324,10 +331,20 @@ function authorizeWrite(
     return null;
   }
   if (namespace.startsWith("task:agent:")) {
-    const target = namespace.slice("task:agent:".length);
-    if (ctx.callerAgentId && target === ctx.callerAgentId) return null;
-    if (ctx.isLead) return null;
-    return { status: 403, message: "writes to another agent's namespace require lead" };
+    // A missing caller identity can never own a namespace nor be lead — same
+    // denial as before (no separate "agent not found" branch).
+    const allowed =
+      ctx.callerAgentId != null &&
+      can({
+        principal: { kind: "agent", agentId: ctx.callerAgentId, isLead: ctx.isLead },
+        verb: "kv.write.any",
+        resource: { kind: "kv-namespace", namespace },
+        source: "http",
+      }).allow;
+    if (!allowed) {
+      return { status: 403, message: "writes to another agent's namespace require lead" };
+    }
+    return null;
   }
   return null;
 }

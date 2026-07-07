@@ -153,6 +153,9 @@ jobs:
       - name: Check API_KEY env-access boundary
         run: bash scripts/check-api-key-boundary.sh
 
+      - name: Check RBAC authorization boundary
+        run: bash scripts/check-rbac-boundary.sh
+
       - name: Check dependency graph (worker/API boundary)
         run: bun run check:dep-graph
 
@@ -161,6 +164,9 @@ jobs:
 
       - name: Check SDK tool registration
         run: bun scripts/check-sdk-tool-registration.ts
+
+      - name: Check RBAC coverage (tools, verbs, routes)
+        run: bun scripts/check-rbac-coverage.ts
 
   test:
     name: Run Tests

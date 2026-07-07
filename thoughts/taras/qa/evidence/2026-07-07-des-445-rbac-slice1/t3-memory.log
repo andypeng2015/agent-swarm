@@ -1,0 +1,15 @@
+=== seed memories (owner=WORKER-A) ===
+{"queued":true,"memoryIds":["bd720625-92e8-463b-aba5-df71e2b4d165"]}
+HTTP 202
+{"queued":true,"memoryIds":["3e86c663-4224-4be0-ae09-e16ec84008c5"]}
+HTTP 202
+{"queued":true,"memoryIds":["6086414a-728e-4749-a8e2-8ebbac9643b5"]}
+HTTP 202
+=== 1d. memory-delete m1 (WA-owned, agent scope) as WORKER-B (expect DENY) ===
+{"yourAgentId":"33333333-3333-4333-8333-333333333333","success":false,"message":"Permission denied. You can only delete your own memories, or swarm memories if you are the lead."}
+=== 1d. memory-delete m1 as WORKER-A owner (expect ALLOW) ===
+{"yourAgentId":"22222222-2222-4222-8222-222222222222","success":true,"message":"Memory \"bd720625-92e8-463b-aba5-df71e2b4d165\" deleted."}
+=== 1d. memory-delete m3 (WA-owned, AGENT scope) as LEAD (expect DENY - lead only for swarm scope) ===
+{"yourAgentId":"11111111-1111-4111-8111-111111111111","success":false,"message":"Permission denied. You can only delete your own memories, or swarm memories if you are the lead."}
+=== 1d. memory-delete m2 (WA-owned, SWARM scope) as LEAD (expect ALLOW) ===
+{"yourAgentId":"11111111-1111-4111-8111-111111111111","success":true,"message":"Memory \"3e86c663-4224-4be0-ae09-e16ec84008c5\" deleted."}

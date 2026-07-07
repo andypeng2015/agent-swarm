@@ -1,0 +1,9 @@
+--- boot log: purge line + listen line (with any timestamps/order):
+7:[rbac-audit] Initial retention purge removed 1 audit row(s)
+9:MCP HTTP server running on http://localhost:3113/mcp
+--- backdated row after boot (expect 0):
+0
+--- latest audit rows (expect bootrace kv deny at top):
+ts|principalId|verb|resourceId|decision|source
+2026-07-07 16:58:53|22222222-2222-4222-8222-222222222222|kv.write.any|task:agent:33333333-3333-4333-8333-333333333333|deny|http
+2026-07-07 16:55:03|22222222-2222-4222-8222-222222222222|kv.write.any|task:agent:33333333-3333-4333-8333-333333333333|deny|http

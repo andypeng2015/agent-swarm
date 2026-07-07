@@ -1,0 +1,9 @@
+=== 3f. stdio: exit code after SIGTERM = 143 (expect 143) ===
+--- stdio responses (protocol stdout):
+"result":{"protocolVersion":"2024-11-05","capabilities":{"logging":{},"tools":{"listChanged":true}},"serverInfo":{"name":"@desplega.ai/agent-swarm","version":"1.111.0","description":"Multi-agent orchestration for Claude Code, Codex, Gemini CLI, and other AI coding assistants"}},"jsonrpc":"2.0","id":1}
+"result":{"content":[{"type":"text","text":"Agent ID not found. Set the \"X-Agent-ID\" header."}],"structuredContent":{"success":false,"message":"Agent ID not found. Set the \"X-Agent-ID\" header."}},"jsonrpc":"2.0","id":2}
+--- backdated stdio row after stdio boot purge (expect 0):
+0
+--- stdio stderr:
+[db] sqlite-vec not available, falling back to in-memory cosine: This build of sqlite3 does not support dynamic extension loading
+[db] sqlite-vec not available, falling back to in-memory cosine: This build of sqlite3 does not support dynamic extension loading

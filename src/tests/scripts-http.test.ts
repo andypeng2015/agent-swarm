@@ -316,13 +316,49 @@ describe("/api/scripts HTTP", () => {
     expect((await res.json()).error).toBe("typecheck_failed");
   });
 
-  test("non-lead agents can upsert and delete global scripts", async () => {
-    const allowed = await upsert(
-      { name: "global-worker-ok", scope: "global", source: validSource(2) },
+  // Intentional characterization change (DES-445 slice 1, plan Phase 5): the
+  // routes' OpenAPI has always documented a 403 for non-lead global
+  // write/delete; the gate is now actually enforced via can().
+  test("non-lead agents cannot upsert global scripts (403)", async () => {
+    const denied = await upsert(
+      { name: "global-worker-denied", scope: "global", source: validSource(2) },
       workerId,
     );
+    expect(denied.status).toBe(403);
+    expect(await denied.json()).toEqual({ error: "Global write requires lead agent" });
+    expect(getScript({ name: "global-worker-denied", scope: "global", scopeId: null })).toBeNull();
+
+    const event = getDb()
+      .prepare<{ data: string }, []>(
+        "SELECT data FROM events WHERE event = 'script.global_upsert' LIMIT 1",
+      )
+      .get();
+    expect(event).toBeFalsy();
+  });
+
+  test("non-lead agents cannot delete global scripts (403)", async () => {
+    const created = await upsert(
+      { name: "global-lead-owned", scope: "global", source: validSource(2) },
+      leadId,
+    );
+    expect(created.status).toBe(200);
+
+    const del = await dispatch("/api/scripts/global-lead-owned?scope=global", {
+      method: "DELETE",
+      agentId: workerId,
+    });
+    expect(del.status).toBe(403);
+    expect(await del.json()).toEqual({ error: "Global delete requires lead agent" });
+    expect(getScript({ name: "global-lead-owned", scope: "global", scopeId: null })).toBeTruthy();
+  });
+
+  test("lead agents can upsert and delete global scripts", async () => {
+    const allowed = await upsert(
+      { name: "global-lead-ok", scope: "global", source: validSource(2) },
+      leadId,
+    );
     expect(allowed.status).toBe(200);
-    expect(getScript({ name: "global-worker-ok", scope: "global", scopeId: null })).toBeTruthy();
+    expect(getScript({ name: "global-lead-ok", scope: "global", scopeId: null })).toBeTruthy();
 
     const event = getDb()
       .prepare<{ data: string }, []>(
@@ -332,16 +368,29 @@ describe("/api/scripts HTTP", () => {
     expect(event).toBeTruthy();
     expect(JSON.parse(event!.data)).toMatchObject({
       isNew: true,
-      changedByAgentId: workerId,
+      changedByAgentId: leadId,
     });
 
-    const del = await dispatch("/api/scripts/global-worker-ok?scope=global", {
+    const del = await dispatch("/api/scripts/global-lead-ok?scope=global", {
+      method: "DELETE",
+      agentId: leadId,
+    });
+    expect(del.status).toBe(200);
+    expect(await del.json()).toEqual({ deleted: true });
+    expect(getScript({ name: "global-lead-ok", scope: "global", scopeId: null })).toBeNull();
+  });
+
+  test("non-lead agents can still upsert and delete agent-scoped scripts", async () => {
+    const allowed = await upsert({ name: "agent-worker-ok", source: validSource(2) }, workerId);
+    expect(allowed.status).toBe(200);
+    expect(getScript({ name: "agent-worker-ok", scope: "agent", scopeId: workerId })).toBeTruthy();
+
+    const del = await dispatch("/api/scripts/agent-worker-ok?scope=agent", {
       method: "DELETE",
       agentId: workerId,
     });
     expect(del.status).toBe(200);
     expect(await del.json()).toEqual({ deleted: true });
-    expect(getScript({ name: "global-worker-ok", scope: "global", scopeId: null })).toBeNull();
   });
 
   test("global upsert promotion marks isPromotion when caller has agent script with same name", async () => {

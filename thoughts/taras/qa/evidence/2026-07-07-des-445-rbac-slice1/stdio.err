@@ -1,0 +1,2 @@
+[db] sqlite-vec not available, falling back to in-memory cosine: This build of sqlite3 does not support dynamic extension loading
+[db] sqlite-vec not available, falling back to in-memory cosine: This build of sqlite3 does not support dynamic extension loading

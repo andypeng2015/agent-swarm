@@ -1,0 +1,8 @@
+Database initialized at /private/tmp/claude-501/-Users-taras-worktrees-agent-swarm-2026-07-07-feat-rbac-1/6ec9ae0e-a4bc-4b92-ab28-c56888ee8a31/scratchpad/qa/qa.sqlite
+[pricing] seed: 0 new row(s); 2426 candidate(s); modelsdev=loaded
+[rbac-audit] Initial retention purge removed 1 audit row(s)
+{"method":"notifications/message","params":{"level":"info","data":"MCP server connected via stdio"},"jsonrpc":"2.0"}
+{"result":{"protocolVersion":"2024-11-05","capabilities":{"logging":{},"tools":{"listChanged":true}},"serverInfo":{"name":"@desplega.ai/agent-swarm","version":"1.111.0","description":"Multi-agent orchestration for Claude Code, Codex, Gemini CLI, and other AI coding assistants"}},"jsonrpc":"2.0","id":1}
+Database initialized at /private/tmp/claude-501/-Users-taras-worktrees-agent-swarm-2026-07-07-feat-rbac-1/6ec9ae0e-a4bc-4b92-ab28-c56888ee8a31/scratchpad/qa/qa.sqlite
+[pricing-refresh] refreshed 2358 candidate row(s); inserted=0; unchanged=2358; pruned=0
+{"result":{"content":[{"type":"text","text":"Agent ID not found. Set the \"X-Agent-ID\" header."}],"structuredContent":{"success":false,"message":"Agent ID not found. Set the \"X-Agent-ID\" header."}},"jsonrpc":"2.0","id":2}
