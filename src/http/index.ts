@@ -9,6 +9,14 @@ import type { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/se
 import { getEnabledCapabilities, hasCapability } from "@/server";
 import { initAgentMail } from "../agentmail";
 import { closeDb, getSwarmConfigs, upsertSwarmConfig } from "../be/db";
+import {
+  enqueueAuditRow,
+  flushAuditBuffer,
+  startAuditGc,
+  startAuditWriter,
+  stopAuditGc,
+  stopAuditWriter,
+} from "../be/rbac-audit";
 import { initGitHub } from "../github";
 import { initGitLab } from "../gitlab";
 import { stopHeartbeat } from "../heartbeat";
@@ -21,6 +29,7 @@ import {
   withRemoteContext,
   withSpanContext,
 } from "../otel";
+import { clearAuditSink, setAuditSink } from "../rbac";
 import { startScriptRunSupervisor, stopScriptRunSupervisor } from "../script-workflows/supervisor";
 import { getServerSessionsProcessed } from "../server-runtime-counters";
 import { startSlackApp, stopSlackApp } from "../slack";
@@ -416,6 +425,12 @@ async function shutdown() {
   // Stop memory expired-row garbage collector
   stopMemoryGc();
 
+  // Stop RBAC audit: retention GC, flush interval, final drain, detach sink
+  stopAuditGc();
+  stopAuditWriter();
+  flushAuditBuffer();
+  clearAuditSink();
+
   if (globalState.__apiGcInterval) {
     clearInterval(globalState.__apiGcInterval);
     delete globalState.__apiGcInterval;
@@ -592,6 +607,13 @@ httpServer
 
     // Start expired-memory garbage collector (1-hour tick, immediate first run)
     startMemoryGc();
+
+    // Wire the RBAC permission-audit sink into can() and start the batched
+    // writer (2s flush) + retention GC (daily tick). RBAC_AUDIT_DISABLED=true
+    // makes the sink a no-op inside enqueueAuditRow.
+    setAuditSink(enqueueAuditRow);
+    startAuditWriter();
+    startAuditGc();
 
     // Background backfill: re-embed any agent_memory rows with wrong-dimension
     // embeddings (e.g. 1536d instead of 512d). Non-blocking, idempotent, no-op
