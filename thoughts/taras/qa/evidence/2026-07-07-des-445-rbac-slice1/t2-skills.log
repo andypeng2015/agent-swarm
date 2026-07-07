@@ -1,0 +1,17 @@
+sessions: L=ea5f98a0-68c6-45eb-b65b-9bec11888dc7 A=cf77eb84-8322-44db-a3de-d668c74a4c1e B=104ed665-fbc8-4a58-8962-4cf55f04e43e
+=== 1a. skill-create scope=swarm as WORKER-A (expect DENY) ===
+{"yourAgentId":"22222222-2222-4222-8222-222222222222","success":false,"message":"Only lead agents can create swarm-scope skills directly."}
+=== 1a. skill-create scope=swarm as LEAD (expect ALLOW) ===
+{"yourAgentId":"11111111-1111-4111-8111-111111111111","success":true,"message":"Created and installed skill \"qa-skill\".","skill":{"id":"fb01d08c-5ddc-47b4-be07-5a217013de73","name":"qa-skill","description":"qa test skill","content":"---\nname: qa-skill\ndescription: qa test skill\n---\n# QA skill\nbody","type":"personal","scope":"swarm","ownerAgentId":"11111111-1111-4111-8111-111111111111","sourceUrl":null,"sourceRepo":null,"sourcePath":null,"sourceBranch":"main","sourceHash":null,"isComplex":false,"allowedTools":null,"model":null,"effort":null,"context":null,"agent":null,"disableModelInvocation":false,"userInvocable":true,"version":1,"isEnabled":true,"systemDefault":false,"createdAt":"2026-07-07T16:49:50.306Z","lastUpdatedAt":"2026-07-07T16:49:50.306Z","lastFetchedAt":null}}
+=== 1b. skill-create scope=agent as WORKER-A (expect ALLOW, owner=WA) ===
+{"yourAgentId":"22222222-2222-4222-8222-222222222222","success":true,"message":"Created and installed skill \"qa-skill-wa\".","skill":{"id":"4c98bff2-a0ec-4308-aabe-462d51724338","name":"qa-skill-wa","description":"worker A own skill","content":"---\nname: qa-skill-wa\ndescription: worker A own skill\n---\n# WA skill\nbody","type":"personal","scope":"agent","ownerAgentId":"22222222-2222-4222-8222-222222222222","sourceUrl":null,"sourceRepo":null,"sourcePath":null,"sourceBranch":"main","sourceHash":null,"isComplex":false,"allowedTools":null,"model":null,"effort":null,"context":null,"agent":null,"disableModelInvocation":false,"userInvocable":true,"version":1,"isEnabled":true,"systemDefault":false,"createdAt":"2026-07-07T16:49:50.326Z","lastUpdatedAt":"2026-07-07T16:49:50.326Z","lastFetchedAt":null}}
+=== 1c. skill-update WA's own skill as WORKER-A (expect ALLOW) ===
+true
+"Updated skill \"qa-skill-wa\" to version 2."
+=== 1c. skill-update WA's skill as WORKER-B (expect DENY) ===
+false
+"Permission denied."
+"Only the owning agent or lead can update this skill."
+=== 1c. skill-update WA's skill as LEAD (expect ALLOW) ===
+true
+"Updated skill \"qa-skill-wa\" to version 3."

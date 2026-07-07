@@ -1,0 +1,4 @@
+=== 3c. kill-switch: RBAC_AUDIT_DISABLED=true; fire 5 gated calls (mix allow+deny) ===
+403 403 403 HTTP 403
+HTTP 200
+audit rows before=277 after=277 (expect equal — gates still enforced, nothing audited)

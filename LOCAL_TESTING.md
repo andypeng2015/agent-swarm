@@ -30,6 +30,11 @@ Conventions:
 
 Memory-system tests have their own required suite (see `src/be/memory/` changes in the root `CLAUDE.md`).
 
+Two RBAC suites spawn the **real** server as a subprocess (exception to the minimal-handler convention — the wire path IS what's under test):
+
+- `bun test src/tests/rbac-wire-e2e.test.ts` — gate matrix over a real MCP handshake + HTTP, plus audit-trail fidelity. Runs in the default `bun test` (CI).
+- `RBAC_LIFECYCLE_E2E=1 bun test src/tests/rbac-lifecycle-e2e.test.ts` — audit lifecycle (burst flush, SIGTERM drain, kill-switch, retention purge, boot-race, stdio). Env-gated, ~20s, multiple server boots; run on demand / pre-release. Skipped without the flag.
+
 ## E2E with Docker
 
 Use the **`swarm-local-e2e` skill** — it owns the full flow (start API, build image, start lead + worker, create tasks, verify registration, check session logs, cleanup). Invoke it when:

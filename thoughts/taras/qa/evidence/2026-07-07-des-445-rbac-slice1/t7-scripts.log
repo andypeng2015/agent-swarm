@@ -1,0 +1,18 @@
+=== 2a. scripts upsert scope=global as WORKER-A (expect 403) ===
+{"error":"Global write requires lead agent"}
+HTTP 403
+=== 2a. scripts upsert scope=global as LEAD (expect 200) ===
+{"name":"qa-script","version":1,"contentDeduped":false}
+HTTP 200
+=== 2a. scripts upsert scope=agent as WORKER-A (expect 200, no gate) ===
+{"name":"qa-script-agent","version":1,"contentDeduped":false}
+HTTP 200
+=== 2a. scripts DELETE scope=global as WORKER-A (expect 403) ===
+{"error":"Global delete requires lead agent"}
+HTTP 403
+=== 2a. scripts DELETE scope=global as LEAD (expect 200) ===
+{"deleted":true}
+HTTP 200
+=== 2a. scripts DELETE scope=agent as WORKER-A own (expect 200) ===
+{"deleted":true}
+HTTP 200

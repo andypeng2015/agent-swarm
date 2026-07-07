@@ -151,8 +151,18 @@ export function flushAuditBuffer(): void {
   }
 }
 
+/**
+ * Test hook, not a production knob: rbac-lifecycle-e2e.test.ts sets a huge
+ * interval so the SIGTERM-drain assertion can prove rows were persisted by
+ * the shutdown drain rather than a racing timer tick.
+ */
+function flushIntervalMs(): number {
+  const v = Number(process.env.RBAC_AUDIT_FLUSH_MS);
+  return Number.isFinite(v) && v > 0 ? v : FLUSH_INTERVAL_MS;
+}
+
 /** Start the periodic flush (2s tick). Idempotent. */
-export function startAuditWriter(intervalMs = FLUSH_INTERVAL_MS): void {
+export function startAuditWriter(intervalMs = flushIntervalMs()): void {
   if (flushTimer) return;
   flushTimer = setInterval(() => flushAuditBuffer(), intervalMs);
   if (typeof flushTimer?.unref === "function") flushTimer.unref();

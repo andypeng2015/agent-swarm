@@ -1,0 +1,24 @@
+=== 1e. kv-set ns=task:agent:WA as WORKER-A (own ns, expect ALLOW) ===
+{"yourAgentId":"22222222-2222-4222-8222-222222222222","success":true,"message":"ok","namespace":"task:agent:22222222-2222-4222-8222-222222222222","entry":{"namespace":"task:agent:22222222-2222-4222-8222-222222222222","key":"qa1","value":"v","valueType":"json","expiresAt":null,"createdAt":1783443059700,"updatedAt":1783443059700}}
+=== 1e. kv-set ns=task:agent:WB as WORKER-A (foreign ns, expect DENY) ===
+{"yourAgentId":"22222222-2222-4222-8222-222222222222","success":false,"message":"writes to another agent's namespace require lead","namespace":"task:agent:33333333-3333-4333-8333-333333333333"}
+=== 1e. kv-set ns=task:agent:WA as LEAD (expect ALLOW) ===
+{"yourAgentId":"11111111-1111-4111-8111-111111111111","success":true,"message":"ok","namespace":"task:agent:22222222-2222-4222-8222-222222222222","entry":{"namespace":"task:agent:22222222-2222-4222-8222-222222222222","key":"qa3","value":"v","valueType":"json","expiresAt":null,"createdAt":1783443059724,"updatedAt":1783443059724}}
+=== 1e-regression. HTTP kv write, NO X-Agent-ID, literal namespace 'task:agent:' (expect 403) ===
+Not Found
+HTTP 404
+=== 1e-regression. same but X-Agent-ID: '' (empty header) ===
+Not Found
+HTTP 404
+=== 1e-regression (PUT). NO X-Agent-ID, literal namespace 'task:agent:' (expect 403) ===
+{"error":"writes to another agent's namespace require lead"}
+HTTP 403
+=== 1e-regression (PUT). X-Agent-ID: '' empty value, namespace 'task:agent:' (expect 403) ===
+{"error":"writes to another agent's namespace require lead"}
+HTTP 403
+=== control: WORKER-A PUT to own explicit namespace (expect 200) ===
+{"namespace":"task:agent:22222222-2222-4222-8222-222222222222","key":"qa5","value":"ok","valueType":"json","expiresAt":null,"createdAt":1783443087671,"updatedAt":1783443087671}
+HTTP 200
+=== control: WORKER-A PUT to WB explicit namespace (expect 403) ===
+{"error":"writes to another agent's namespace require lead"}
+HTTP 403

@@ -1,0 +1,9 @@
+=== 3e. SIGTERM drain (http server, pid 84701): fire 3 deny calls then SIGTERM within ~100ms ===
+403 403 403 
+count before calls=273, right after calls (pre-flush)=273
+server exited
+count after SIGTERM exit=276 (expect 273+3; drain proved if pre-flush count was 273)
+[HTTP] Closing transport ea5f98a0-68c6-45eb-b65b-9bec11888dc7
+[HTTP] Closing transport cf77eb84-8322-44db-a3de-d668c74a4c1e
+[HTTP] Closing transport 104ed665-fbc8-4a58-8962-4cf55f04e43e
+MCP HTTP server closed, and database connection closed

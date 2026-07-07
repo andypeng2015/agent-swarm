@@ -1,0 +1,4 @@
+=== 3b. burst: 250 gated kv deny calls (WA -> task:agent:WB) ===
+burst wall time: .594430000s; status codes:  250 403 
+control request after burst: HTTP 200 in 0.001700s
+audit rows before=23 after=273 (delta=250, expect +250)

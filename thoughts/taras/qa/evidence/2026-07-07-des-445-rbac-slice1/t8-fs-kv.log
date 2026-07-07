@@ -1,0 +1,14 @@
+=== 2b. fs upload as OPERATOR bearer, non-owner X-Agent-ID (expect 201 - operator short-circuits) ===
+{"id":"e2985405-17fc-4bc1-a766-ec0dddb23e78","taskId":"470994e3-14d5-49f4-a63f-678162dd4ecf","agentId":"11111111-1111-4111-8111-111111111111","name":"qa-op.txt","kind":"shared-fs","path":"tasks/470994e3-14d5-49f4-a63f-678162dd4ecf/qa-op.txt","providerId":"local-fs","providerKey":"tasks/470994e3-14d5-49f4-a63f-678162dd4ecf/qa-op.txt","capabilities":{"signedUrl":{"supported":false}},"mimeType":"application/octet-stream","sizeBytes":15,"sha256":"412a72248862c4257b17e740872857065049db347e4f204fcdd647c83bc3c1e1","isPrimary":false,"createdAt":"2026-07-07T16:52:49.245Z"}
+HTTP 201
+=== 2b. fs upload as USER token (expect 201 - user allowed) ===
+{"id":"610fce69-404d-43be-9661-30a535676acb","taskId":"470994e3-14d5-49f4-a63f-678162dd4ecf","agentId":null,"name":"qa-user.txt","kind":"shared-fs","path":"tasks/470994e3-14d5-49f4-a63f-678162dd4ecf/qa-user.txt","providerId":"local-fs","providerKey":"tasks/470994e3-14d5-49f4-a63f-678162dd4ecf/qa-user.txt","capabilities":{"signedUrl":{"supported":false}},"mimeType":"application/octet-stream","sizeBytes":11,"sha256":"e29d097382993c9fd972074e1205d6238cb65c72801a09a8a518c3753ee2bd6f","isPrimary":false,"createdAt":"2026-07-07T16:52:49.259Z","createdBy":"64851222df164f2da05b0319541aeff6","updatedBy":"64851222df164f2da05b0319541aeff6"}
+HTTP 201
+=== 2b. fs upload with INVALID bearer (expect 401 - auth layer, agent branch unreachable with wrong key) ===
+{"error":"Unauthorized"}
+HTTP 401
+=== 2c. kv PUT to task:page:qa-page ns WITHOUT X-Page-Id (expect 403 page-proxy guard) ===
+{"error":"task:page:* writes require a page-proxy request"}
+HTTP 403
+=== 2c. same as MCP-side structural guard: kv-set ns=task:page:qa-page as LEAD (expect deny message) ===
+{"yourAgentId":"11111111-1111-4111-8111-111111111111","success":false,"message":"task:page:* writes require a page-proxy request, not an MCP call","namespace":"task:page:qa-page"}
