@@ -14,7 +14,7 @@ import { openSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 export const REPO_ROOT = join(import.meta.dir, "../..");
 export const E2E_API_KEY = "rbac-e2e-key";
@@ -79,6 +79,9 @@ export async function spawnSwarmServer(opts: {
     env: {
       ...process.env,
       DATABASE_PATH: opts.dbPath,
+      // Keep the local-fs provider (task attachments) inside the scratch dir
+      // instead of the repo-root ./data/fs default.
+      AGENT_FS_LOCAL_DIR: join(dirname(opts.dbPath), "fs"),
       API_KEY: E2E_API_KEY,
       AGENT_SWARM_API_KEY: E2E_API_KEY,
       PORT: String(port),
