@@ -4,9 +4,9 @@ author: Claude
 planner: Claude
 topic: "DES-445 RBAC — Slice 1: central can() + audit log (increments 1+2)"
 tags: [plan, rbac, auth, security, des-445]
-status: in-progress
+status: completed
 last_updated: 2026-07-07
-last_updated_by: Claude (phase-6 agent)
+last_updated_by: Claude (orchestrator — whole-slice E2E passed)
 related_brainstorm: thoughts/taras/brainstorms/2026-05-15-rbac-for-swarm.md
 related_research: thoughts/taras/research/2026-07-06-rbac-enforcement-surfaces.md
 ---
