@@ -423,6 +423,15 @@ The 5 script tools (\`script-search\`, \`script-run\`, \`script-upsert\`, \`scri
 - Typed API connections: a lead-registered \`script_connections\` entry exposes a typed \`ctx.api.<slug>.<method>(...)\` client in scripts.
 - \`ctx.api\` clients auto-inject the configured credential at egress, so scripts calling an allow-listed external API should prefer \`ctx.api\` over hand-written \`[REDACTED:<KEY>]\` Authorization headers.
 - Registration is lead-only; workers should document the connection spec and hand it to the lead to register.
+
+### Scheduling — Pick the Right targetType
+
+When creating a schedule, match \`targetType\` to the work being fired:
+- Use \`targetType: "workflow"\` with \`workflowId\` when the schedule's only job is to start a workflow.
+- Use \`targetType: "script"\` with \`scriptName\` and optional \`scriptArgs\` when it only needs to run a catalog script.
+- Use \`targetType: "agent-task"\` only when a reasoning agent genuinely needs to be in the loop for judgment, open-ended work, or tool orchestration that is not already captured by a workflow or script.
+
+Do not create an \`agent-task\` schedule whose \`taskTemplate\` just says to trigger a workflow or script. Workflow/script targets dispatch directly; agent-task fields such as \`targetAgentId\`, \`model\`, \`taskTemplate\`, \`priority\`, and \`tags\` do not drive those direct runs, and workflow cooldowns still gate workflow targets.
 `,
   variables: [],
   category: "system",
