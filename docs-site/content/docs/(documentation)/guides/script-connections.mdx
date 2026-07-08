@@ -1,0 +1,248 @@
+---
+title: Script connections
+description: Register OpenAPI, GraphQL, and MCP APIs once — with optional OAuth or config-backed credentials — and call them from any swarm script via typed ctx.api / ctx.mcp clients.
+---
+
+Script connections turn external APIs into first-class, typed clients inside
+the [scripts runtime](./scripts-runtime). A lead registers a connection once —
+an OpenAPI spec URL, a GraphQL endpoint, or an installed MCP server — and every
+script gets a generated client for it:
+
+```ts
+export default async function (args, ctx) {
+  const pets = await ctx.api.petstore.findPetsByStatus({ query: { status: "available" } });
+  const country = await ctx.api.countries.graphql(
+    "query($code: ID!) { country(code: $code) { name capital } }",
+    { code: "ES" },
+  );
+  const metrics = await ctx.mcp.swarmmcp.getMetrics({});
+  return { pets: pets.length, country, metrics: metrics.structuredContent };
+}
+```
+
+Credentials attach to connections as **bindings** and are injected at network
+egress — script code never holds a raw secret (see
+[Security model](#security-model)).
+
+| Kind      | Script surface                        | Registered from                          |
+| --------- | ------------------------------------- | ---------------------------------------- |
+| `openapi` | `ctx.api.<slug>.<operationId>(args)`  | a spec URL or inline JSON spec           |
+| `graphql` | `ctx.api.<slug>.graphql(query, vars)` | an endpoint URL                          |
+| `mcp`     | `ctx.mcp.<slug>.<toolName>(args)`     | an installed MCP server (tool discovery) |
+
+## Registering connections
+
+Management is **lead-only** (RBAC verb `script-connection.manage`) through the
+`script-connections` MCP tool: `list`, `upsert-openapi`, `upsert-mcp`,
+`upsert-graphql`, `refresh`, `disable`. Connections are scoped `global`
+(default), `agent`, or `repo`.
+
+### OpenAPI, by spec URL
+
+```jsonc
+// script-connections
+{
+  "action": "upsert-openapi",
+  "slug": "notion",
+  "displayName": "Notion API",
+  "baseUrl": "https://api.notion.com",
+  "openapiSpecUrl": "https://api.apis.guru/v2/specs/notion.com/1.0.0/openapi.json",
+  "allowedHosts": ["api.notion.com"],
+  // optional: create a credential binding in the same call
+  "configKey": "NOTION_TOKEN",
+  "headerTemplate": "Authorization: Bearer [REDACTED:NOTION_TOKEN]"
+}
+```
+
+The spec is fetched, parsed (JSON specs only in v1), and each operation becomes
+a method — `operationId` when present, otherwise derived from the method+path.
+The stored spec's ETag is remembered; `{"action": "refresh", "id": "..."}`
+re-fetches and regenerates only when the spec actually changed. Inline specs go
+in `openapiSpecJson` instead of `openapiSpecUrl` (mutually exclusive).
+
+Call shape — arguments are grouped by parameter location:
+
+```ts
+await ctx.api.notion.retrieveAPage({
+  path: { page_id: "..." },                    // path params
+  query: { filter_properties: "..." },         // query params
+  header: { "Notion-Version": "2022-06-28" },  // header params declared in the spec
+  body: { ... },                               // request body (JSON)
+});
+```
+
+Base paths in `baseUrl` (e.g. `https://host/api/v3`) are preserved when spec
+paths are resolved against it.
+
+### GraphQL
+
+```jsonc
+{
+  "action": "upsert-graphql",
+  "slug": "gh",
+  "displayName": "GitHub GraphQL",
+  "baseUrl": "https://api.github.com/graphql",
+  "allowedHosts": ["api.github.com"],
+  "configKey": "GH_GRAPHQL_TOKEN",
+  "headerTemplate": "Authorization: Bearer [REDACTED:GH_GRAPHQL_TOKEN]"
+}
+```
+
+Scripts call it with a positional signature — `graphql(query, variables)`, not
+an options object:
+
+```ts
+const data = await ctx.api.gh.graphql(
+  "query($owner: String!, $name: String!) { repository(owner: $owner, name: $name) { stargazerCount } }",
+  { owner: "desplega-ai", name: "agent-swarm" },
+);
+```
+
+GraphQL errors (an `errors` array with no `data`) are thrown with the joined
+error messages. `allowedHosts` is required even for credential-less endpoints.
+
+### MCP
+
+MCP connections reference an installed MCP server (managed with the
+`mcp-server-*` [MCP tools](../reference/mcp-tools)) and discover its tools at
+upsert time:
+
+```jsonc
+// 1. register the server (any transport the swarm supports)
+// mcp-server-create
+{ "name": "context7", "transport": "http", "url": "https://mcp.context7.com/mcp", "scope": "swarm" }
+
+// 2. connect it for scripts — tools are discovered and camelCased into methods
+// script-connections
+{ "action": "upsert-mcp", "slug": "ctx7", "mcpServerId": "<id from step 1>" }
+```
+
+```ts
+const res = await ctx.mcp.ctx7.resolveLibraryId({ libraryName: "bun", query: "sqlite" });
+const text = res.content?.[0]?.text; // raw MCP envelope — unwrap structuredContent/content yourself
+```
+
+Tool calls are **proxied server-side** through
+`POST /api/script-connections/{id}/mcp-call` (RBAC verb
+`script-connection.invoke`) — the MCP server's auth headers and secrets stay in
+the API server and never enter the script subprocess. Discovery honors the
+connection's scope, so an agent-scoped server's secrets resolve as that agent.
+
+Re-run discovery after a server adds tools with `{"action": "refresh"}`.
+
+## Credentials
+
+Bindings are managed with the `credential-bindings` MCP tool (`list`, `upsert`,
+`oauth-app-upsert`, `oauth-authorize-url`, `import-legacy`, `disable`) and are
+stored relationally (`script_credential_bindings`). A binding is:
+
+- `configKey` — the placeholder identity, e.g. `NOTION_TOKEN`
+- `authKind` — `config` (resolve from swarm config / env) or `oauth` (resolve
+  from stored OAuth tokens)
+- `allowedHosts` — exact hostnames where substitution may happen
+- `headerTemplate` / `queryTemplate` — where the credential goes
+
+The template must contain the **exact placeholder** `[REDACTED:<configKey>]`:
+
+```
+Authorization: Bearer [REDACTED:NOTION_TOKEN]
+```
+
+A template without that placeholder is silently ignored (the request goes out
+unauthenticated) — this is the most common misconfiguration; `{{KEY}}`-style
+templates do not work.
+
+For `authKind: "config"`, store the secret first:
+
+```jsonc
+// set-config
+{ "key": "NOTION_TOKEN", "value": "ntn_...", "isSecret": true, "scope": "global" }
+```
+
+Secrets are AES-256-GCM encrypted at rest when `SECRETS_ENCRYPTION_KEY` is set
+— see [Secrets encryption](./secrets-encryption).
+
+### OAuth flow
+
+For APIs where a user authorizes an OAuth app (GitHub, Google, Slack, ...):
+
+```jsonc
+// 1. register the OAuth app (client id/secret from the provider's dev console)
+// credential-bindings
+{
+  "action": "oauth-app-upsert",
+  "provider": "github",
+  "clientId": "...",
+  "clientSecret": "...",
+  "authorizeUrl": "https://github.com/login/oauth/authorize",
+  "tokenUrl": "https://github.com/login/oauth/access_token",
+  "scopes": ["repo", "read:org"]
+}
+
+// 2. get the authorization URL — the swarm generates state + PKCE (S256)
+{ "action": "oauth-authorize-url", "provider": "github" }
+```
+
+The user opens the returned URL, authorizes, and the provider redirects to
+`GET /api/oauth/{provider}/callback`, where the swarm exchanges the code
+(client secret + PKCE verifier), stores access + refresh tokens, and shows a
+"you can close this tab" page. Then bind the token:
+
+```jsonc
+// 3. bind — the token resolves from oauth_tokens at run time
+{
+  "action": "upsert",
+  "configKey": "GITHUB_OAUTH",
+  "authKind": "oauth",
+  "oauthProvider": "github",
+  "allowedHosts": ["api.github.com"],
+  "headerTemplate": "Authorization: Bearer [REDACTED:GITHUB_OAUTH]"
+}
+```
+
+Tokens expiring within 5 minutes are refreshed automatically (refresh is
+serialized per provider via a lock). A provider whose refresh fails is skipped
+for that run — the placeholder stays unsubstituted and other bindings are
+unaffected. Scopes are space-separated in the authorize URL per the OAuth spec.
+
+## Security model
+
+- **Placeholder-only in scripts.** Script code, args, and `ctx` only ever see
+  `[REDACTED:KEY]`. The real value is substituted inside the runtime's fetch
+  layer at egress, and **only** when the destination hostname is in the
+  binding's `allowedHosts`. A request carrying the placeholder to any other
+  host goes out with the literal placeholder string.
+- **MCP credentials never leave the server.** `ctx.mcp` calls are proxied;
+  the script subprocess sends tool name + arguments, the API server holds the
+  MCP session and its auth.
+- **Scrubbed logs.** Resolved values are registered as volatile secrets, so
+  stdout/stderr and session logs render them as `[REDACTED:KEY]`.
+- **Encrypted at rest.** Config-backed secrets use the swarm secrets cipher.
+  OAuth tokens are stored in `oauth_tokens` (plaintext in v1 —
+  `TODO(secrets-cipher)`).
+
+## Where connections resolve
+
+`ctx.api` / `ctx.mcp` are populated everywhere scripts run: `script-run` (MCP
+tool and `POST /api/scripts/run`), scheduled script runs,
+[workflow `swarm-script` nodes](../concepts/workflows), and
+[external script endpoints](./scripts-external-apis) (which resolve under the
+endpoint's run-as agent).
+
+## Current limitations (v1)
+
+- JSON OpenAPI specs only (no YAML).
+- `ctx.mcp` returns the raw MCP result envelope (`content` +
+  `structuredContent`); unwrap it in the script.
+- GraphQL results are untyped (`any`); OpenAPI response types are generated
+  from the spec on a best-effort basis.
+- OAuth tokens are not yet encrypted at rest.
+
+## Trying it out
+
+A self-contained HTML playground lives at
+[`examples/script-connections-playground.html`](https://github.com/desplega-ai/agent-swarm/blob/main/examples/script-connections-playground.html)
+in the repo — open it in a browser against a local server to run scripts
+against your registered connections interactively, with presets for each
+connection kind and a live leak-probe demonstrating the egress substitution
+rules.
