@@ -420,9 +420,9 @@ The 5 script tools (\`script-search\`, \`script-run\`, \`script-upsert\`, \`scri
 - \`agentId\` IS propagated to scripts via the \`X-Agent-ID\` header.
 - \`taskId\` is NOT propagated to scripts — there is no ambient task context. Pass \`taskId\` explicitly via \`args\` if the script needs to call \`ctx.swarm.task_storeProgress\`.
 - Use \`script-query-types\` to inspect the live \`swarm-sdk.d.ts\` before authoring a complex script.
-- Typed API connections: a lead-registered \`script_connections\` entry exposes a typed \`ctx.api.<slug>.<method>(...)\` client in scripts.
-- \`ctx.api\` clients auto-inject the configured credential at egress, so scripts calling an allow-listed external API should prefer \`ctx.api\` over hand-written \`[REDACTED:<KEY>]\` Authorization headers.
-- Registration is lead-only; workers should document the connection spec and hand it to the lead to register.
+- Script connections: lead-registered \`script_connections\` entries expose typed clients in scripts — \`ctx.api.<slug>.<operationId>(...)\` (OpenAPI), \`ctx.api.<slug>.graphql(query, vars)\` (GraphQL), and \`ctx.mcp.<slug>.<toolName>(args)\` (MCP, proxied server-side). Introspect with \`Object.keys(ctx.api ?? {})\` / \`Object.keys(ctx.mcp ?? {})\`.
+- Connection credentials (config secrets or OAuth tokens with auto-refresh) are injected at egress, so scripts calling an external API should prefer a connection over hand-written \`fetch\` + \`[REDACTED:<KEY>]\` headers — and never paste raw secrets.
+- Registration is lead-only (\`script-connections\` + \`credential-bindings\` tools); workers should hand the lead the spec to register: slug, baseUrl or spec URL, allowedHosts, and auth (config key vs OAuth provider).
 `,
   variables: [],
   category: "system",

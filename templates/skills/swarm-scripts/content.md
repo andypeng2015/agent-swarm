@@ -57,21 +57,46 @@ Good named scripts:
 - Fan out over many swarm tasks, memories, repos, or schedules.
 - Convert noisy JSON or HTML into a compact summary.
 
-## Typed API Connections (`ctx.api`)
+## Connected APIs and MCPs (`ctx.api` / `ctx.mcp`)
 
-When a script calls an allow-listed external API, prefer a typed `ctx.api.<slug>` client over hand-writing `[REDACTED:<KEY>]` Authorization headers. `ctx.api` auto-injects the configured credential at egress, so the script source only describes the API call.
-
-Connections are registered by Lead via the `script-connections` tool. Workers should document the connection spec for handoff: `slug`, `baseUrl`, `allowedHosts`, `configKey`, and `headerTemplate`.
-
-Minimal zero-auth usage after Lead registration:
+Registered script connections give every script typed clients for external
+services — check what exists before hand-rolling `fetch` calls:
 
 ```typescript
 export default async function main(args: any, ctx: any) {
-  return await ctx.api.publicExample.getStatus({});
+  return { api: Object.keys(ctx.api ?? {}), mcp: Object.keys(ctx.mcp ?? {}) };
 }
 ```
 
-For the full credential-broker and `script-connections` flow, see `docs-site/content/docs/(documentation)/guides/scripts-credential-broker.mdx`.
+Three kinds, all credential-injected at egress (script code never sees the
+secret, only `[REDACTED:<KEY>]` placeholders):
+
+- **OpenAPI** — `ctx.api.<slug>.<operationId>({ path, query, header, body })`.
+  Registered from a spec URL; every operation becomes a typed method.
+- **GraphQL** — `ctx.api.<slug>.graphql(query, variables)` (positional args).
+- **MCP** — `ctx.mcp.<slug>.<toolName>(args)`. Proxied server-side; returns the
+  raw MCP envelope, so unwrap `res.structuredContent ?? res.content?.[0]?.text`.
+
+When to reach for a connection instead of raw `fetch`:
+
+- The task talks to a third-party API (GitHub, Notion, an internal service) —
+  a connection means typed methods, managed auth, and no secret handling.
+- The credential is OAuth-based — bindings resolve tokens from the swarm's
+  OAuth store and auto-refresh them; a script cannot do that itself.
+- Multiple scripts or agents will hit the same API — register once, reuse.
+
+Registration is **lead-only** (`script-connections` + `credential-bindings`
+tools). Workers who need a connection that does not exist yet should not
+work around it with raw fetch + pasted secrets — ask the lead (or suggest in
+the task result) to register one, handing over: `slug`, `baseUrl` or spec URL,
+`allowedHosts`, and how it authenticates (config key vs OAuth provider). Leads:
+prefer `upsert-openapi` with a spec URL so operations stay refreshable, and use
+`credential-bindings` `oauth-app-upsert` → `oauth-authorize-url` for OAuth
+providers (Notion-style Basic/JSON token endpoints are supported via
+`tokenAuthStyle` / `tokenBodyFormat`).
+
+Full reference: the "Script connections" guide on the docs site
+(`docs-site/content/docs/(documentation)/guides/script-connections.mdx`).
 
 ## Using `db_query` For Aggregation
 

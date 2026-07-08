@@ -215,6 +215,48 @@ serialized per provider via a lock). A provider whose refresh fails is skipped
 for that run — the placeholder stays unsubstituted and other bindings are
 unaffected. Scopes are space-separated in the authorize URL per the OAuth spec.
 
+Three identifiers are involved, deliberately independent:
+
+```
+script_connection   slug: "notion"        → what scripts call: ctx.api.notion
+  └ credential_binding  configKey: NOTION_TOKEN, oauthProvider: "notion"  → the link
+      └ oauth_app       provider: "notion"    → the callback URL segment
+```
+
+The callback path segment is the **OAuth app's provider slug**, not the
+connection slug. One authorization can back many connections — e.g. a single
+`google` OAuth app + token bound into separate `gcal`, `gmail`, and `gdrive`
+connections. The redirect URI you register in the provider's dev console stays
+stable per app regardless of how many connections reference it.
+
+### Worked example: Notion (public integration)
+
+Verified end-to-end against a real Notion workspace:
+
+```jsonc
+// credential-bindings — note owner=user (Notion-required authorize param)
+// and the Basic+JSON token-endpoint style
+{
+  "action": "oauth-app-upsert",
+  "provider": "notion",
+  "clientId": "<integration client id>",
+  "clientSecret": "<integration secret>",
+  "authorizeUrl": "https://api.notion.com/v1/oauth/authorize",
+  "tokenUrl": "https://api.notion.com/v1/oauth/token",
+  "scopes": [],
+  "extraParams": { "owner": "user" },
+  "tokenAuthStyle": "basic",
+  "tokenBodyFormat": "json"
+}
+```
+
+Register `http://<your-host>/api/oauth/notion/callback` as the redirect URI in
+Notion's integration settings, open the `oauth-authorize-url` result in a
+browser, authorize — then bind with `authKind: "oauth"`, `oauthProvider:
+"notion"` and attach to a connection. Google works the same way with
+`extraParams: { "access_type": "offline", "prompt": "consent" }` (required to
+receive a refresh token) and the default body/form token style.
+
 ## Security model
 
 - **Placeholder-only in scripts.** Script code, args, and `ctx` only ever see
