@@ -26,7 +26,7 @@ egress — script code never holds a raw secret (see
 
 | Kind      | Script surface                        | Registered from                          |
 | --------- | ------------------------------------- | ---------------------------------------- |
-| `openapi` | `ctx.api.<slug>.<operationId>(args)`  | a spec URL or inline JSON spec           |
+| `openapi` | `ctx.api.<slug>.<operationId>(args)`  | a spec URL or inline spec (JSON or YAML) |
 | `graphql` | `ctx.api.<slug>.graphql(query, vars)` | an endpoint URL                          |
 | `mcp`     | `ctx.mcp.<slug>.<toolName>(args)`     | an installed MCP server (tool discovery) |
 
@@ -54,7 +54,8 @@ Management is **lead-only** (RBAC verb `script-connection.manage`) through the
 }
 ```
 
-The spec is fetched, parsed (JSON specs only in v1), and each operation becomes
+The spec is fetched, parsed (JSON or YAML — YAML is canonicalized to JSON at
+ingest), and each operation becomes
 a method — `operationId` when present, otherwise derived from the method+path.
 The stored spec's ETag is remembered; `{"action": "refresh", "id": "..."}`
 re-fetches and regenerates only when the spec actually changed. Inline specs go
@@ -283,7 +284,8 @@ endpoint's run-as agent).
 
 ## Current limitations (v1)
 
-- JSON OpenAPI specs only (no YAML).
+- OpenAPI specs may be JSON or YAML (YAML is converted to JSON at ingest and
+  stored canonically).
 - `ctx.mcp` returns the raw MCP result envelope (`content` +
   `structuredContent`); unwrap it in the script.
 - GraphQL results are untyped (`any`); OpenAPI response types are generated

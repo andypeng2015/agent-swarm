@@ -1341,9 +1341,8 @@ export function AddConnectionDialog({
                           placeholder="https://example.com/openapi.json"
                         />
                         {specUrlIsYaml ? (
-                          <p className="text-xs text-status-active">
-                            YAML specs are not supported yet — find a JSON variant or paste the spec
-                            as JSON.
+                          <p className="text-xs text-muted-foreground">
+                            YAML spec detected — it will be converted to JSON automatically.
                           </p>
                         ) : null}
                       </div>

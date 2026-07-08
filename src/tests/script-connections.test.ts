@@ -622,11 +622,86 @@ describe("script connections", () => {
       expect(connection.openapiSpecJson).toBe(JSON.stringify(JSON.parse(openapiSpec)));
       expect(connection.openapiSpecEtag).toBe('"v1"');
       expect(connection.openapiSpecFetchedAt).toBeString();
-      expect(server.requests).toEqual([{ accept: "application/json", ifNoneMatch: null }]);
+      expect(server.requests).toEqual([
+        {
+          accept: "application/json, application/yaml;q=0.9, text/yaml;q=0.8, */*;q=0.5",
+          ifNoneMatch: null,
+        },
+      ]);
       expect(connection.generatedTypes).toContain("getRepo");
     } finally {
       server.stop();
     }
+  });
+
+  test("YAML specs are accepted from a URL and canonicalized to JSON", async () => {
+    const yamlSpec = [
+      "openapi: 3.0.0",
+      "info:",
+      "  title: YamlVendor",
+      "  version: 1.0.0",
+      "paths:",
+      "  /things/{id}:",
+      "    get:",
+      "      operationId: getThing",
+      "      parameters:",
+      "        - name: id",
+      "          in: path",
+      "          required: true",
+      "          schema:",
+      "            type: string",
+      "      responses:",
+      '        "200":',
+      "          description: ok",
+      "",
+    ].join("\n");
+    const server = serveOpenapiSpec(yamlSpec);
+    try {
+      const suffix = crypto.randomUUID().replace(/-/g, "");
+      const connection = await upsertScriptConnection({
+        slug: `yamlVendor${suffix}`,
+        kind: "openapi",
+        baseUrl: server.baseUrl,
+        openapiSpecUrl: server.url,
+      });
+      createdConnectionIds.push(connection.id);
+
+      expect(connection.generationError).toBeNull();
+      // stored canonically as JSON regardless of the fetched format
+      expect(JSON.parse(connection.openapiSpecJson ?? "{}")).toMatchObject({
+        openapi: "3.0.0",
+        info: { title: "YamlVendor" },
+      });
+      expect(connection.generatedTypes).toContain("getThing");
+    } finally {
+      server.stop();
+    }
+  });
+
+  test("inline YAML specs are accepted and canonicalized to JSON", async () => {
+    const suffix = crypto.randomUUID().replace(/-/g, "");
+    const connection = await upsertScriptConnection({
+      slug: `yamlInline${suffix}`,
+      kind: "openapi",
+      baseUrl: "https://api.yaml-inline.test",
+      openapiSpecJson: [
+        "openapi: 3.0.0",
+        "info: { title: InlineYaml, version: 1.0.0 }",
+        "paths:",
+        "  /ping:",
+        "    get:",
+        "      operationId: ping",
+        "      responses:",
+        '        "200": { description: ok }',
+      ].join("\n"),
+    });
+    createdConnectionIds.push(connection.id);
+
+    expect(connection.generationError).toBeNull();
+    expect(JSON.parse(connection.openapiSpecJson ?? "{}")).toMatchObject({
+      info: { title: "InlineYaml" },
+    });
+    expect(connection.generatedTypes).toContain("ping");
   });
 
   test("refresh sends If-None-Match and only bumps fetched_at on 304", async () => {
@@ -649,9 +724,10 @@ describe("script connections", () => {
       expect(refreshed?.openapiSpecEtag).toBe('"v1"');
       expect(refreshed?.generatedRuntimeJson).toBe(connection.generatedRuntimeJson);
       expect(refreshed?.openapiSpecFetchedAt).not.toBe(connection.openapiSpecFetchedAt);
+      const specAccept = "application/json, application/yaml;q=0.9, text/yaml;q=0.8, */*;q=0.5";
       expect(server.requests).toEqual([
-        { accept: "application/json", ifNoneMatch: null },
-        { accept: "application/json", ifNoneMatch: '"v1"' },
+        { accept: specAccept, ifNoneMatch: null },
+        { accept: specAccept, ifNoneMatch: '"v1"' },
       ]);
     } finally {
       server.stop();

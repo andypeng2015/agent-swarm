@@ -748,7 +748,9 @@ export async function fetchOpenapiSpec(
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 15_000);
   try {
-    const headers = new Headers({ Accept: "application/json" });
+    const headers = new Headers({
+      Accept: "application/json, application/yaml;q=0.9, text/yaml;q=0.8, */*;q=0.5",
+    });
     if (opts.etag) headers.set("If-None-Match", opts.etag);
     const fetchImpl = openapiSpecFetchForTesting ?? Bun.fetch;
     const response = await fetchImpl(parsed, { headers, signal: controller.signal });
@@ -844,7 +846,13 @@ export async function upsertScriptConnection(data: {
       openapiSpecFetchedAt = fetched.fetchedAt;
     }
     try {
-      const spec = openapiSpec ?? JSON.parse(openapiSpecJson ?? "{}");
+      // Inline specs may be pasted as YAML too — parse with the same
+      // JSON-then-YAML fallback as fetched specs and store canonical JSON.
+      let spec = openapiSpec;
+      if (!spec) {
+        spec = parseOpenapiSpecBody(openapiSpecJson ?? "{}");
+        openapiSpecJson = JSON.stringify(spec);
+      }
       const binding = data.credentialBindingId
         ? getCredentialBindingById(data.credentialBindingId)
         : null;
