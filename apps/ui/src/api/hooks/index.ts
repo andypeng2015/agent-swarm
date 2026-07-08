@@ -128,6 +128,19 @@ export {
   useScheduledTasks,
   useUpdateSchedule,
 } from "./use-schedules";
+export type { ScriptConnectionFilters } from "./use-script-connections";
+export {
+  useCredentialBindings,
+  useOAuthApps,
+  useOAuthAuthorizeUrl,
+  useRefreshScriptConnection,
+  useRunInlineScript,
+  useScriptConnections,
+  useSetScriptConnectionEnabled,
+  useUpsertCredentialBinding,
+  useUpsertOAuthApp,
+  useUpsertScriptConnection,
+} from "./use-script-connections";
 export type { ServiceFilters } from "./use-services";
 export { useServices } from "./use-services";
 export type { UseSessionsOptions } from "./use-sessions";

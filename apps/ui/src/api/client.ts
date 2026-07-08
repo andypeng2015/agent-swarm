@@ -59,7 +59,11 @@ import type {
   ScriptApiAuthMode,
   ScriptApiRecord,
   ScriptApiWithSecret,
+  ScriptConnectionKind,
+  ScriptConnectionScope,
+  ScriptConnectionsResponse,
   ScriptDetail,
+  ScriptRunInlineResult,
   ScriptRunStatus,
   ScriptRunsResponse,
   ScriptRunWithJournal,
@@ -90,7 +94,10 @@ import type {
   UnmappedIdentity,
   UnmappedResponse,
   UpdateUserInput,
+  UpsertCredentialBindingInput,
+  UpsertOAuthAppInput,
   UpsertPromptTemplateInput,
+  UpsertScriptConnectionInput,
   UsageSummaryResponse,
   User,
   UserIdentity,
@@ -1006,6 +1013,134 @@ class ApiClient {
     const url = `${this.getBaseUrl()}/api/scripts/type-defs`;
     const res = await fetch(url, { headers: this.getHeaders() });
     if (!res.ok) throw new Error(`Failed to fetch script type defs: ${res.status}`);
+    return res.json();
+  }
+
+  async runInlineScript(data: {
+    source: string;
+    intent: string;
+    agentId: string;
+  }): Promise<ScriptRunInlineResult> {
+    const url = `${this.getBaseUrl()}/api/scripts/run`;
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { ...this.getHeaders(), "X-Agent-ID": data.agentId },
+      body: JSON.stringify({ source: data.source, intent: data.intent }),
+    });
+    if (!res.ok) {
+      const error = await res.json().catch(() => ({ error: "Failed to run script" }));
+      throw new Error(error.error || `Failed to run script: ${res.status}`);
+    }
+    return res.json();
+  }
+
+  // ── Script connections ──
+
+  async fetchScriptConnections(filters?: {
+    kind?: ScriptConnectionKind | "all";
+    scope?: ScriptConnectionScope | "all";
+    scopeId?: string;
+  }): Promise<ScriptConnectionsResponse> {
+    const params = new URLSearchParams();
+    if (filters?.kind && filters.kind !== "all") params.set("kind", filters.kind);
+    if (filters?.scope && filters.scope !== "all") params.set("scope", filters.scope);
+    if (filters?.scopeId) params.set("scopeId", filters.scopeId);
+    const suffix = params.toString() ? `?${params.toString()}` : "";
+    const url = `${this.getBaseUrl()}/api/script-connections${suffix}`;
+    const res = await fetch(url, { headers: this.getHeaders() });
+    if (!res.ok) throw new Error(`Failed to fetch script connections: ${res.status}`);
+    return res.json();
+  }
+
+  async upsertScriptConnection(data: UpsertScriptConnectionInput) {
+    const url = `${this.getBaseUrl()}/api/script-connections`;
+    const res = await fetch(url, {
+      method: "POST",
+      headers: this.getHeaders(),
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) {
+      const error = await res.json().catch(() => ({ error: "Failed to save connection" }));
+      throw new Error(error.error || `Failed to save connection: ${res.status}`);
+    }
+    return res.json();
+  }
+
+  async refreshScriptConnection(id: string) {
+    const url = `${this.getBaseUrl()}/api/script-connections/${id}/refresh`;
+    const res = await fetch(url, { method: "POST", headers: this.getHeaders() });
+    if (!res.ok) {
+      const error = await res.json().catch(() => ({ error: "Failed to refresh connection" }));
+      throw new Error(error.error || `Failed to refresh connection: ${res.status}`);
+    }
+    return res.json();
+  }
+
+  async setScriptConnectionEnabled(id: string, enabled: boolean) {
+    const url = `${this.getBaseUrl()}/api/script-connections/${id}/disable`;
+    const res = await fetch(url, {
+      method: "POST",
+      headers: this.getHeaders(),
+      body: JSON.stringify({ enabled }),
+    });
+    if (!res.ok) {
+      const error = await res.json().catch(() => ({ error: "Failed to update connection" }));
+      throw new Error(error.error || `Failed to update connection: ${res.status}`);
+    }
+    return res.json();
+  }
+
+  async fetchCredentialBindings() {
+    const url = `${this.getBaseUrl()}/api/credential-bindings`;
+    const res = await fetch(url, { headers: this.getHeaders() });
+    if (!res.ok) throw new Error(`Failed to fetch credential bindings: ${res.status}`);
+    return res.json();
+  }
+
+  async upsertCredentialBinding(data: UpsertCredentialBindingInput) {
+    const url = `${this.getBaseUrl()}/api/credential-bindings`;
+    const res = await fetch(url, {
+      method: "POST",
+      headers: this.getHeaders(),
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) {
+      const error = await res.json().catch(() => ({ error: "Failed to save credential binding" }));
+      throw new Error(error.error || `Failed to save credential binding: ${res.status}`);
+    }
+    return res.json();
+  }
+
+  async fetchOAuthApps() {
+    const url = `${this.getBaseUrl()}/api/oauth-apps`;
+    const res = await fetch(url, { headers: this.getHeaders() });
+    if (!res.ok) throw new Error(`Failed to fetch OAuth apps: ${res.status}`);
+    return res.json();
+  }
+
+  async upsertOAuthApp(data: UpsertOAuthAppInput) {
+    const url = `${this.getBaseUrl()}/api/oauth-apps`;
+    const res = await fetch(url, {
+      method: "POST",
+      headers: this.getHeaders(),
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) {
+      const error = await res.json().catch(() => ({ error: "Failed to save OAuth app" }));
+      throw new Error(error.error || `Failed to save OAuth app: ${res.status}`);
+    }
+    return res.json();
+  }
+
+  async fetchOAuthAuthorizeUrl(
+    provider: string,
+  ): Promise<{ authorizeUrl: string; redirectUri: string }> {
+    const url = `${this.getBaseUrl()}/api/oauth-apps/${encodeURIComponent(provider)}/authorize-url`;
+    const res = await fetch(url, { method: "POST", headers: this.getHeaders() });
+    if (!res.ok) {
+      const error = await res.json().catch(() => ({ error: "Failed to build authorize URL" }));
+      throw new Error(error.error || `Failed to build authorize URL: ${res.status}`);
+    }
     return res.json();
   }
 

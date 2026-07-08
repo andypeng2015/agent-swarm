@@ -9477,6 +9477,741 @@
         }
       }
     },
+    "/api/script-connections": {
+      "get": {
+        "operationId": "script_connections_list",
+        "summary": "List script connections",
+        "description": "Dashboard read of OpenAPI, GraphQL, and MCP script connections with credential summaries.",
+        "tags": [
+          "Script Connections"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "openapi",
+                "graphql",
+                "mcp"
+              ]
+            },
+            "required": false,
+            "name": "kind",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "global",
+                "agent",
+                "repo"
+              ]
+            },
+            "required": false,
+            "name": "scope",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "scopeId",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Script connections"
+          },
+          "400": {
+            "description": "Validation error"
+          }
+        }
+      },
+      "post": {
+        "operationId": "script_connections_upsert",
+        "summary": "Create or update a script connection",
+        "tags": [
+          "Script Connections"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "format": "uuid"
+                      },
+                      "slug": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 80
+                      },
+                      "displayName": {
+                        "type": "string",
+                        "maxLength": 160
+                      },
+                      "scope": {
+                        "type": "string",
+                        "enum": [
+                          "global",
+                          "agent",
+                          "repo"
+                        ],
+                        "default": "global"
+                      },
+                      "scopeId": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "format": "uuid"
+                      },
+                      "allowedHosts": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      },
+                      "credentialBindingId": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "format": "uuid"
+                      },
+                      "configKey": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 255
+                      },
+                      "headerTemplate": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "queryTemplate": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "authKind": {
+                        "type": "string",
+                        "enum": [
+                          "config",
+                          "oauth"
+                        ],
+                        "default": "config"
+                      },
+                      "oauthProvider": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 255,
+                        "pattern": "^[A-Za-z0-9_-]+$"
+                      },
+                      "enabled": {
+                        "type": "boolean",
+                        "default": true
+                      },
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "openapi"
+                        ]
+                      },
+                      "baseUrl": {
+                        "type": "string",
+                        "format": "uri"
+                      },
+                      "openapiSpecUrl": {
+                        "type": "string",
+                        "format": "uri"
+                      },
+                      "openapiSpecJson": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "slug",
+                      "kind",
+                      "baseUrl"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "format": "uuid"
+                      },
+                      "slug": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 80
+                      },
+                      "displayName": {
+                        "type": "string",
+                        "maxLength": 160
+                      },
+                      "scope": {
+                        "type": "string",
+                        "enum": [
+                          "global",
+                          "agent",
+                          "repo"
+                        ],
+                        "default": "global"
+                      },
+                      "scopeId": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "format": "uuid"
+                      },
+                      "allowedHosts": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "minItems": 1
+                      },
+                      "credentialBindingId": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "format": "uuid"
+                      },
+                      "configKey": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 255
+                      },
+                      "headerTemplate": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "queryTemplate": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "authKind": {
+                        "type": "string",
+                        "enum": [
+                          "config",
+                          "oauth"
+                        ],
+                        "default": "config"
+                      },
+                      "oauthProvider": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 255,
+                        "pattern": "^[A-Za-z0-9_-]+$"
+                      },
+                      "enabled": {
+                        "type": "boolean",
+                        "default": true
+                      },
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "graphql"
+                        ]
+                      },
+                      "baseUrl": {
+                        "type": "string",
+                        "format": "uri"
+                      }
+                    },
+                    "required": [
+                      "slug",
+                      "allowedHosts",
+                      "kind",
+                      "baseUrl"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "format": "uuid"
+                      },
+                      "slug": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 80
+                      },
+                      "displayName": {
+                        "type": "string",
+                        "maxLength": 160
+                      },
+                      "scope": {
+                        "type": "string",
+                        "enum": [
+                          "global",
+                          "agent",
+                          "repo"
+                        ],
+                        "default": "global"
+                      },
+                      "scopeId": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "format": "uuid"
+                      },
+                      "allowedHosts": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      },
+                      "credentialBindingId": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "format": "uuid"
+                      },
+                      "configKey": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 255
+                      },
+                      "headerTemplate": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "queryTemplate": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "authKind": {
+                        "type": "string",
+                        "enum": [
+                          "config",
+                          "oauth"
+                        ],
+                        "default": "config"
+                      },
+                      "oauthProvider": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 255,
+                        "pattern": "^[A-Za-z0-9_-]+$"
+                      },
+                      "enabled": {
+                        "type": "boolean",
+                        "default": true
+                      },
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "mcp"
+                        ]
+                      },
+                      "mcpServerId": {
+                        "type": "string",
+                        "format": "uuid"
+                      }
+                    },
+                    "required": [
+                      "slug",
+                      "kind",
+                      "mcpServerId"
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Saved script connection"
+          },
+          "400": {
+            "description": "Validation or generation error"
+          },
+          "403": {
+            "description": "Only the lead agent can manage script connections"
+          }
+        }
+      }
+    },
+    "/api/script-connections/{id}/refresh": {
+      "post": {
+        "operationId": "script_connections_refresh",
+        "summary": "Refresh a script connection",
+        "tags": [
+          "Script Connections"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Refreshed script connection"
+          },
+          "400": {
+            "description": "Connection cannot be refreshed"
+          },
+          "403": {
+            "description": "Only the lead agent can manage script connections"
+          },
+          "404": {
+            "description": "Script connection not found"
+          }
+        }
+      }
+    },
+    "/api/script-connections/{id}/disable": {
+      "post": {
+        "operationId": "script_connections_set_enabled",
+        "summary": "Enable or disable a script connection",
+        "tags": [
+          "Script Connections"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "enabled"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated script connection"
+          },
+          "403": {
+            "description": "Only the lead agent can manage script connections"
+          },
+          "404": {
+            "description": "Script connection not found"
+          }
+        }
+      }
+    },
+    "/api/credential-bindings": {
+      "get": {
+        "operationId": "credential_bindings_list",
+        "summary": "List script credential bindings",
+        "tags": [
+          "Script Connections"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Credential bindings"
+          }
+        }
+      },
+      "post": {
+        "operationId": "credential_bindings_upsert",
+        "summary": "Create or update a script credential binding",
+        "tags": [
+          "Script Connections"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "configKey": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 255
+                  },
+                  "allowedHosts": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "minItems": 1
+                  },
+                  "headerTemplate": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "queryTemplate": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "scope": {
+                    "type": "string",
+                    "enum": [
+                      "global",
+                      "agent",
+                      "repo"
+                    ],
+                    "default": "global"
+                  },
+                  "scopeId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "uuid"
+                  },
+                  "authKind": {
+                    "type": "string",
+                    "enum": [
+                      "config",
+                      "oauth"
+                    ],
+                    "default": "config"
+                  },
+                  "oauthProvider": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 255,
+                    "pattern": "^[A-Za-z0-9_-]+$"
+                  }
+                },
+                "required": [
+                  "configKey",
+                  "allowedHosts"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Saved credential binding"
+          },
+          "400": {
+            "description": "Validation error"
+          },
+          "403": {
+            "description": "Only the lead agent can manage script connections"
+          }
+        }
+      }
+    },
+    "/api/oauth-apps": {
+      "get": {
+        "operationId": "oauth_apps_list",
+        "summary": "List OAuth apps for script credential bindings",
+        "tags": [
+          "Script Connections"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OAuth apps without client secrets"
+          }
+        }
+      },
+      "post": {
+        "operationId": "oauth_apps_upsert",
+        "summary": "Create or update an OAuth app for script credential bindings",
+        "tags": [
+          "Script Connections"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "provider": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 255,
+                    "pattern": "^[A-Za-z0-9_-]+$"
+                  },
+                  "clientId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "clientSecret": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "authorizeUrl": {
+                    "type": "string",
+                    "format": "uri"
+                  },
+                  "tokenUrl": {
+                    "type": "string",
+                    "format": "uri"
+                  },
+                  "scopes": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "extraParams": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  },
+                  "tokenAuthStyle": {
+                    "type": "string",
+                    "enum": [
+                      "body",
+                      "basic"
+                    ]
+                  },
+                  "tokenBodyFormat": {
+                    "type": "string",
+                    "enum": [
+                      "form",
+                      "json"
+                    ]
+                  }
+                },
+                "required": [
+                  "provider",
+                  "clientId",
+                  "clientSecret",
+                  "authorizeUrl",
+                  "tokenUrl",
+                  "scopes"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Saved OAuth app without client secret"
+          },
+          "400": {
+            "description": "Validation error"
+          },
+          "403": {
+            "description": "Only the lead agent can manage script connections"
+          }
+        }
+      }
+    },
+    "/api/oauth-apps/{provider}/authorize-url": {
+      "post": {
+        "operationId": "oauth_apps_authorize_url",
+        "summary": "Build an OAuth authorization URL",
+        "tags": [
+          "Script Connections"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            "required": true,
+            "name": "provider",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OAuth authorization URL"
+          },
+          "403": {
+            "description": "Only the lead agent can manage script connections"
+          },
+          "404": {
+            "description": "OAuth app not found"
+          }
+        }
+      }
+    },
     "/api/script-runs": {
       "post": {
         "operationId": "script_runs_create",
