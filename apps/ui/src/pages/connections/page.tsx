@@ -85,9 +85,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useCopyToClipboard } from "@/hooks/use-copy-to-clipboard";
-import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { readStringParam, useUrlSearchState } from "@/hooks/use-url-search-state";
 import { cn, formatSmartTime } from "@/lib/utils";
+import { CatalogBrowser } from "@/pages/connections/components/catalog-browser";
 import { PlaygroundPanel } from "./playground-panel";
 
 const KIND_OPTIONS: Array<ScriptConnectionKind | "all"> = ["all", "openapi", "graphql", "mcp"];
@@ -411,74 +411,6 @@ function ClearInputButton({ label, onClear }: { label: string; onClear: () => vo
   );
 }
 
-function catalogSearchText(entry: IntegrationsCatalogEntry): string {
-  return `${entry.name} ${entry.slug} ${entry.domain} ${entry.description}`.toLowerCase();
-}
-
-function tokenScore(text: string, token: string): number {
-  if (!token) return 0;
-  if (text.includes(token)) return token.length * 12;
-  let cursor = 0;
-  let score = 0;
-  for (const char of token) {
-    const found = text.indexOf(char, cursor);
-    if (found === -1) return 0;
-    score += found === cursor ? 4 : 1;
-    cursor = found + 1;
-  }
-  return score;
-}
-
-function scoreCatalogEntry(entry: IntegrationsCatalogEntry, query: string): number {
-  const tokens = query
-    .toLowerCase()
-    .split(/\s+/)
-    .map((token) => token.trim())
-    .filter(Boolean);
-  if (tokens.length === 0) return 1;
-  const text = catalogSearchText(entry);
-  const total = tokens.reduce((sum, token) => sum + tokenScore(text, token), 0);
-  return tokens.every((token) => tokenScore(text, token) > 0) ? total : 0;
-}
-
-const WELL_KNOWN_DOMAINS = new Set([
-  "github.com",
-  "google.com",
-  "slack.com",
-  "notion.so",
-  "linear.app",
-  "stripe.com",
-  "openai.com",
-  "anthropic.com",
-  "atlassian.com",
-  "gitlab.com",
-  "microsoft.com",
-  "figma.com",
-  "vercel.com",
-  "cloudflare.com",
-  "twilio.com",
-  "sendgrid.com",
-  "hubspot.com",
-  "salesforce.com",
-  "dropbox.com",
-  "shopify.com",
-  "discord.com",
-  "spotify.com",
-  "zoom.us",
-]);
-
-// Rank curated entries above bulk apis.guru imports: boost hand-curated feeds,
-// entries with an icon + description, and well-known provider domains.
-function curationBoost(entry: IntegrationsCatalogEntry): number {
-  let boost = 0;
-  const feeds = entry.feeds ?? [];
-  if (feeds.length > 0 && !feeds.includes("apis-guru")) boost += 30;
-  if (entry.icon) boost += 10;
-  if (entry.description) boost += 10;
-  if (WELL_KNOWN_DOMAINS.has(entry.domain)) boost += 40;
-  return boost;
-}
-
 async function resolveApisGuruOpenApi(domain: string): Promise<{
   specUrl?: string;
   baseUrl?: string;
@@ -725,12 +657,6 @@ export function AddConnectionDialog({
     error: catalogError,
   } = useIntegrationsCatalog();
   const [step, setStep] = useState<"catalog" | "form">(connection ? "form" : "catalog");
-  const [catalogSearch, setCatalogSearch] = useState("");
-  const [catalogKinds, setCatalogKinds] = useState<ScriptConnectionKind[]>([
-    "mcp",
-    "openapi",
-    "graphql",
-  ]);
   const [catalogHint, setCatalogHint] = useState("");
   const [resolvingCatalogId, setResolvingCatalogId] = useState<string | null>(null);
   const surfaceLookup = useIntegrationsSurface();
@@ -797,8 +723,6 @@ export function AddConnectionDialog({
 
   useEffect(() => {
     if (!open) return;
-    setCatalogSearch("");
-    setCatalogKinds(["mcp", "openapi", "graphql"]);
     setStep(connection ? "form" : "catalog");
     resetForm();
   }, [open, connection, resetForm]);
@@ -806,28 +730,6 @@ export function AddConnectionDialog({
   function handleOpenChange(nextOpen: boolean) {
     if (!nextOpen) resetForm();
     onOpenChange(nextOpen);
-  }
-
-  // Fuzzy-scoring thousands of catalog entries on every keystroke makes the
-  // input laggy — score against a debounced query so typing stays responsive.
-  const debouncedCatalogSearch = useDebouncedValue(catalogSearch, 200);
-  const catalogResults = useMemo(() => {
-    return catalog
-      .filter((entry) => catalogKinds.includes(entry.kind))
-      .map((entry) => {
-        const fuzzy = scoreCatalogEntry(entry, debouncedCatalogSearch);
-        return { entry, score: fuzzy > 0 ? fuzzy + curationBoost(entry) : 0 };
-      })
-      .filter(({ score }) => score > 0)
-      .sort((a, b) => b.score - a.score || a.entry.name.localeCompare(b.entry.name))
-      .slice(0, 60)
-      .map(({ entry }) => entry);
-  }, [catalog, debouncedCatalogSearch, catalogKinds]);
-
-  function toggleCatalogKind(kind: ScriptConnectionKind) {
-    setCatalogKinds((current) =>
-      current.includes(kind) ? current.filter((item) => item !== kind) : [...current, kind],
-    );
   }
 
   // Prefill form fields from integrations.sh surface data: the http surface
@@ -1085,105 +987,14 @@ export function AddConnectionDialog({
 
         {step === "catalog" && !isEdit ? (
           <div className="space-y-4">
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-              <Input
-                placeholder="Search APIs, MCP servers, domains..."
-                value={catalogSearch}
-                onChange={(event) => setCatalogSearch(event.target.value)}
-                className="flex-1"
-              />
-              <div className="flex items-center gap-1.5">
-                {(["mcp", "openapi", "graphql"] as const).map((kind) => {
-                  const active = catalogKinds.includes(kind);
-                  return (
-                    <Button
-                      key={kind}
-                      type="button"
-                      size="xs"
-                      variant={active ? "secondary" : "outline"}
-                      aria-pressed={active}
-                      className={cn(!active && "text-muted-foreground")}
-                      onClick={() => toggleCatalogKind(kind)}
-                    >
-                      {kind === "mcp" ? "MCP" : kind === "openapi" ? "OpenAPI" : "GraphQL"}
-                    </Button>
-                  );
-                })}
-              </div>
-            </div>
-            <div className="grid max-h-[52vh] grid-cols-1 content-start gap-2 overflow-y-auto pr-1 md:grid-cols-2 lg:grid-cols-3">
-              {catalogLoading ? (
-                <div className="col-span-full rounded-md border border-dashed p-4 text-sm text-muted-foreground">
-                  Loading catalog...
-                </div>
-              ) : catalogError ? (
-                <div className="col-span-full">
-                  <InlineError error={catalogError} />
-                </div>
-              ) : catalogResults.length === 0 ? (
-                <div className="col-span-full rounded-md border border-dashed p-4 text-sm text-muted-foreground">
-                  No matching integrations.
-                </div>
-              ) : (
-                catalogResults.map((entry) => (
-                  <Tooltip key={entry.id}>
-                    <TooltipTrigger asChild>
-                      <button
-                        type="button"
-                        className="flex h-full w-full flex-col gap-1.5 rounded-md border p-2.5 text-left transition-colors hover:bg-muted/40"
-                        onClick={() => selectCatalogEntry(entry)}
-                        disabled={resolvingCatalogId === entry.id}
-                      >
-                        <div className="flex w-full items-center gap-2">
-                          {entry.icon ? (
-                            <img src={entry.icon} alt="" className="size-6 shrink-0 rounded-sm" />
-                          ) : (
-                            <div className="flex size-6 shrink-0 items-center justify-center rounded-sm bg-muted text-xs font-medium">
-                              {entry.name.slice(0, 1)}
-                            </div>
-                          )}
-                          <div className="min-w-0 flex-1">
-                            <div className="truncate text-sm font-medium">{entry.name}</div>
-                            <div className="truncate text-xs text-muted-foreground">
-                              {entry.domain || entry.slug}
-                            </div>
-                          </div>
-                          <KindBadge kind={entry.kind} />
-                        </div>
-                        {entry.description ? (
-                          <p className="line-clamp-2 text-xs text-muted-foreground">
-                            {entry.description}
-                          </p>
-                        ) : null}
-                      </button>
-                    </TooltipTrigger>
-                    <TooltipContent
-                      side="bottom"
-                      align="start"
-                      className="max-w-sm px-3 py-2.5 text-left whitespace-normal"
-                    >
-                      <div className="space-y-1.5 text-xs leading-relaxed">
-                        <div className="flex items-center gap-2">
-                          <span className="font-semibold">{entry.name}</span>
-                          <span className="uppercase opacity-70">{entry.kind}</span>
-                        </div>
-                        {entry.domain ? (
-                          <div className="font-mono opacity-90">{entry.domain}</div>
-                        ) : null}
-                        {entry.description ? (
-                          <p className="opacity-90">{entry.description}</p>
-                        ) : null}
-                        {entry.categories.length > 0 ? (
-                          <div className="opacity-70">
-                            Categories: {entry.categories.join(", ")}
-                          </div>
-                        ) : null}
-                      </div>
-                    </TooltipContent>
-                  </Tooltip>
-                ))
-              )}
-            </div>
+            <CatalogBrowser
+              catalog={catalog}
+              loading={catalogLoading}
+              error={catalogError}
+              resolvingId={resolvingCatalogId}
+              onSelect={selectCatalogEntry}
+              renderError={(error) => <InlineError error={error} />}
+            />
             <div className="flex flex-col gap-2 rounded-md border border-dashed p-3 sm:flex-row sm:items-center">
               <p className="text-xs text-muted-foreground sm:flex-1">
                 Not listed? Enter a provider domain to fetch connection details.
