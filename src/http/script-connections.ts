@@ -471,6 +471,8 @@ type IntegrationsSurfaceEntry = {
   name: string;
   url: string | null;
   docs: string | null;
+  /** OpenAPI spec URL advertised by http surfaces (may be YAML). */
+  spec: string | null;
   auth: {
     required: boolean;
     credentialIds: string[];
@@ -1111,6 +1113,7 @@ function trimSurfacePayload(domain: string, payload: unknown): IntegrationsSurfa
       name: typeof surface.name === "string" ? surface.name : "",
       url: stringOrNull(surface.url),
       docs: stringOrNull(surface.docs),
+      spec: stringOrNull(surface.spec),
       auth: { required: auth.status === "required", credentialIds, mechanics },
     });
   }

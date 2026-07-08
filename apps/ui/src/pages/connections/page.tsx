@@ -1,6 +1,7 @@
 import type { ColDef, ICellRendererParams } from "ag-grid-community";
 import {
   Check,
+  ChevronDown,
   Copy,
   ExternalLink,
   KeyRound,
@@ -11,7 +12,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { useAgents } from "@/api/hooks/use-agents";
@@ -46,6 +47,7 @@ import type {
   ScriptCredentialBinding,
 } from "@/api/types";
 import { DataGrid } from "@/components/shared/data-grid";
+import { MarkdownView } from "@/components/shared/markdown-view";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -83,6 +85,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useCopyToClipboard } from "@/hooks/use-copy-to-clipboard";
+import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { readStringParam, useUrlSearchState } from "@/hooks/use-url-search-state";
 import { cn, formatSmartTime } from "@/lib/utils";
 import { PlaygroundPanel } from "./playground-panel";
@@ -535,48 +538,64 @@ function surfaceHeaderTemplate(
   return `${mechanics.headerName}: ${scheme}${configPlaceholder(configKey)}`;
 }
 
-function ExpandableText({ text, className }: { text: string; className?: string }) {
-  const [expanded, setExpanded] = useState(false);
+/**
+ * Compact markdown for integrations.sh texts (credential setup notes, domain
+ * summaries). Links open in new tabs via the shared MarkdownView overrides.
+ */
+function CompactMarkdown({ text }: { text: string }) {
   return (
-    <div>
-      <p className={cn("text-xs text-muted-foreground", !expanded && "line-clamp-2", className)}>
-        {text}
-      </p>
-      {text.length > 160 ? (
-        <button
-          type="button"
-          className="mt-0.5 text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
-          onClick={() => setExpanded((value) => !value)}
-        >
-          {expanded ? "Show less" : "Show more"}
-        </button>
-      ) : null}
+    <div className="text-sm text-muted-foreground [&_ol]:my-1 [&_p]:my-1 [&_ul]:my-1">
+      <MarkdownView text={text} />
     </div>
   );
 }
 
-function SurfaceCredentialHelp({ credential }: { credential: IntegrationsSurfaceCredential }) {
+function SurfaceCredentialHelp({
+  credential,
+  applied,
+  onApply,
+}: {
+  credential: IntegrationsSurfaceCredential;
+  applied: boolean;
+  onApply?: () => void;
+}) {
   return (
-    <div className="rounded-md border bg-background p-2">
+    <div
+      className={cn("rounded-md border bg-background p-2", applied && "border-status-success/60")}
+    >
       <div className="flex items-center gap-2">
         <span className="text-xs font-medium">{credential.label}</span>
         <Badge variant="outline" size="tag">
           {credential.type}
         </Badge>
-        {credential.generateUrl ? (
-          <a
-            href={credential.generateUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="ml-auto inline-flex shrink-0 items-center gap-1 text-xs text-primary hover:underline"
-          >
-            Get it here <ExternalLink className="size-3" />
-          </a>
-        ) : null}
+        {applied ? <Check className="size-3.5 shrink-0 text-status-success" /> : null}
+        <span className="ml-auto flex shrink-0 items-center gap-1.5">
+          {credential.generateUrl ? (
+            <a
+              href={credential.generateUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex shrink-0 items-center gap-1 text-xs text-primary hover:underline"
+            >
+              Get it here <ExternalLink className="size-3" />
+            </a>
+          ) : null}
+          {onApply ? (
+            <Button
+              type="button"
+              size="xs"
+              variant="ghost"
+              className="text-primary"
+              onClick={onApply}
+            >
+              {applied ? "Applied" : "Use this auth"}
+            </Button>
+          ) : null}
+        </span>
       </div>
       {credential.setup ? (
         <div className="mt-1">
-          <ExpandableText text={credential.setup} />
+          <CompactMarkdown text={credential.setup} />
         </div>
       ) : null}
     </div>
@@ -585,46 +604,101 @@ function SurfaceCredentialHelp({ credential }: { credential: IntegrationsSurface
 
 function SurfaceAboutPanel({
   surface,
-  kind,
+  appliedCredentialId,
+  onApplyCredential,
 }: {
   surface: IntegrationsSurfaceResponse;
-  kind: ScriptConnectionKind;
+  appliedCredentialId: string | null;
+  onApplyCredential?: (id: string, credential: IntegrationsSurfaceCredential) => void;
 }) {
-  const mcpSurface = surface.surfaces.find((entry) => entry.type === "mcp");
+  const [expanded, setExpanded] = useState(false);
   const credentials = Object.entries(surface.credentials);
   return (
-    <div className="space-y-3 rounded-md border bg-muted/30 p-3">
-      <div className="text-xs font-medium uppercase text-muted-foreground">
-        About {surface.domain}
-      </div>
-      {surface.summary ? <ExpandableText text={surface.summary} /> : null}
-      {kind === "mcp" && mcpSurface?.url ? (
-        <div className="space-y-1.5">
-          <div className="flex items-center gap-2 rounded-md border bg-background p-2">
-            <div className="min-w-0 flex-1">
-              <div className="text-xs font-medium">MCP server URL</div>
-              <div className="truncate font-mono text-xs text-muted-foreground">
-                {mcpSurface.url}
-              </div>
+    <div className="rounded-md border bg-muted/30">
+      <button
+        type="button"
+        aria-expanded={expanded}
+        className="flex w-full items-center gap-2 p-3 text-left"
+        onClick={() => setExpanded((value) => !value)}
+      >
+        <span className="text-xs font-medium uppercase text-muted-foreground">
+          About {surface.domain} — auth & setup
+        </span>
+        {credentials.length > 0 ? (
+          <Badge variant="secondary" size="tag">
+            {credentials.length} credential{credentials.length === 1 ? "" : "s"}
+          </Badge>
+        ) : null}
+        <ChevronDown
+          className={cn(
+            "ml-auto size-4 shrink-0 text-muted-foreground transition-transform",
+            expanded && "rotate-180",
+          )}
+        />
+      </button>
+      {expanded ? (
+        <div className="space-y-3 border-t p-3">
+          {surface.summary ? <CompactMarkdown text={surface.summary} /> : null}
+          {credentials.length > 0 ? (
+            <div className="space-y-2">
+              {credentials.map(([id, credential]) => (
+                <SurfaceCredentialHelp
+                  key={id}
+                  credential={credential}
+                  applied={appliedCredentialId === id}
+                  onApply={onApplyCredential ? () => onApplyCredential(id, credential) : undefined}
+                />
+              ))}
             </div>
-            <CopyButton value={mcpSurface.url} label="Copy MCP server URL" />
-            <Button asChild type="button" size="xs" variant="outline">
-              <Link to="/mcp-servers">Register server</Link>
-            </Button>
-          </div>
-          <p className="text-xs text-muted-foreground">
-            MCP connections use a registered server — add this URL under MCP Servers, then select it
-            below.
-          </p>
+          ) : null}
         </div>
       ) : null}
-      {credentials.length > 0 ? (
-        <div className="space-y-2">
-          {credentials.map(([id, credential]) => (
-            <SurfaceCredentialHelp key={id} credential={credential} />
-          ))}
+    </div>
+  );
+}
+
+/**
+ * Shown when kind=mcp and the fetched surface advertises an MCP server:
+ * MCP connections require a registered server, so walk the user through
+ * creating one (deep-linked with prefill) and coming back.
+ */
+function McpGuidancePanel({
+  surface,
+  slug,
+}: {
+  surface: IntegrationsSurfaceResponse;
+  slug: string;
+}) {
+  const mcpSurface = surface.surfaces.find((entry) => entry.type === "mcp");
+  if (!mcpSurface?.url) return null;
+  const credentialId = mcpSurface.auth.credentialIds[0];
+  const credentialLabel = credentialId
+    ? (surface.credentials[credentialId]?.label ?? credentialId)
+    : null;
+  const serverName = slug.trim() || normalizeScriptSlug(surface.domain.split(".")[0] ?? "");
+  const createHref = `/mcp-servers?new=1&name=${encodeURIComponent(serverName)}&url=${encodeURIComponent(
+    mcpSurface.url,
+  )}&transport=http`;
+  return (
+    <div className="space-y-2 rounded-md border border-action-delegate-to-agent/40 bg-muted/30 p-3">
+      <div className="text-xs font-medium uppercase text-muted-foreground">MCP setup</div>
+      <div className="flex items-center gap-2 rounded-md border bg-background p-2">
+        <div className="min-w-0 flex-1">
+          <div className="text-xs font-medium">MCP server URL</div>
+          <div className="truncate font-mono text-xs text-muted-foreground">{mcpSurface.url}</div>
         </div>
-      ) : null}
+        <CopyButton value={mcpSurface.url} label="Copy MCP server URL" />
+        <Button asChild type="button" size="xs" variant="outline">
+          <Link to={createHref}>Create MCP server</Link>
+        </Button>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        Create the server there first (transport http, the URL above
+        {mcpSurface.auth.required
+          ? `, and auth headers — this provider requires ${credentialLabel ?? "a credential"}`
+          : ""}
+        ), then return here and select it in the MCP Server dropdown.
+      </p>
     </div>
   );
 }
@@ -679,6 +753,7 @@ export function AddConnectionDialog({
   const [queryTemplate, setQueryTemplate] = useState("");
   const [authKind, setAuthKind] = useState<CredentialAuthKind>("config");
   const [oauthProvider, setOauthProvider] = useState("");
+  const [appliedCredentialId, setAppliedCredentialId] = useState<string | null>(null);
   const previousAutoHeader = useRef(defaultHeaderTemplate(""));
   const isEdit = Boolean(connection);
 
@@ -690,14 +765,12 @@ export function AddConnectionDialog({
     previousAutoHeader.current = next;
   }, [configKey, headerTemplate]);
 
-  useEffect(() => {
-    if (!open) return;
-    setCatalogSearch("");
-    setCatalogKinds(["mcp", "openapi", "graphql"]);
+  // Reset form fields + loaded surface state. Runs on open, on close, and
+  // when navigating back to the catalog step so a new selection starts clean.
+  const resetForm = useCallback(() => {
     setCatalogHint("");
     setSurface(null);
     setSurfaceDomainInput("");
-    setStep(connection ? "form" : "catalog");
     setKind(connection?.kind ?? "openapi");
     setSlug(connection?.slug ?? "");
     setDisplayName(connection?.displayName ?? "");
@@ -718,21 +791,38 @@ export function AddConnectionDialog({
     setQueryTemplate("");
     setAuthKind("config");
     setOauthProvider("");
+    setAppliedCredentialId(null);
     previousAutoHeader.current = defaultHeaderTemplate("");
-  }, [open, connection]);
+  }, [connection]);
 
+  useEffect(() => {
+    if (!open) return;
+    setCatalogSearch("");
+    setCatalogKinds(["mcp", "openapi", "graphql"]);
+    setStep(connection ? "form" : "catalog");
+    resetForm();
+  }, [open, connection, resetForm]);
+
+  function handleOpenChange(nextOpen: boolean) {
+    if (!nextOpen) resetForm();
+    onOpenChange(nextOpen);
+  }
+
+  // Fuzzy-scoring thousands of catalog entries on every keystroke makes the
+  // input laggy — score against a debounced query so typing stays responsive.
+  const debouncedCatalogSearch = useDebouncedValue(catalogSearch, 200);
   const catalogResults = useMemo(() => {
     return catalog
       .filter((entry) => catalogKinds.includes(entry.kind))
       .map((entry) => {
-        const fuzzy = scoreCatalogEntry(entry, catalogSearch);
+        const fuzzy = scoreCatalogEntry(entry, debouncedCatalogSearch);
         return { entry, score: fuzzy > 0 ? fuzzy + curationBoost(entry) : 0 };
       })
       .filter(({ score }) => score > 0)
       .sort((a, b) => b.score - a.score || a.entry.name.localeCompare(b.entry.name))
       .slice(0, 60)
       .map(({ entry }) => entry);
-  }, [catalog, catalogSearch, catalogKinds]);
+  }, [catalog, debouncedCatalogSearch, catalogKinds]);
 
   function toggleCatalogKind(kind: ScriptConnectionKind) {
     setCatalogKinds((current) =>
@@ -764,6 +854,13 @@ export function AddConnectionDialog({
         // Malformed surface URL; skip the allowed-hosts merge.
       }
     }
+    // The surface may advertise an OpenAPI spec URL; only fill gaps so an
+    // apis.guru-resolved (JSON) spec or user input is never overwritten.
+    if (targetKind === "openapi" && httpSurface.spec) {
+      const specUrl = httpSurface.spec;
+      setSpecMode("url");
+      setOpenapiSpecUrl((current) => (current.trim() ? current : specUrl));
+    }
     const mechanics = httpSurface.auth.mechanics;
     if (httpSurface.auth.required && mechanics?.in === "header" && mechanics.headerName) {
       const suggestedKey = surfaceConfigKeySuggestion(
@@ -775,6 +872,23 @@ export function AddConnectionDialog({
       setConfigKey((current) => (current.trim() ? current : suggestedKey));
       if (template) setHeaderTemplate(template);
     }
+  }
+
+  // "Use this auth": apply a surface credential card to the form's inline
+  // credential section. OAuth-type credentials flip authKind to oauth (the
+  // token comes from an OAuth app, not a stored config secret).
+  function applySurfaceCredential(id: string, credential: IntegrationsSurfaceCredential) {
+    const key = surfaceConfigKeySuggestion(id, surface?.domain ?? "");
+    const mechanics =
+      surface?.surfaces.find((entry) => entry.type === "http")?.auth.mechanics ?? null;
+    const isOauth = credential.type.toLowerCase().includes("oauth");
+    setCredentialMode("inline");
+    setConfigKey(key);
+    const template = mechanics ? surfaceHeaderTemplate(mechanics, key) : null;
+    setHeaderTemplate(template ?? defaultHeaderTemplate(key));
+    setAuthKind(isOauth ? "oauth" : "config");
+    if (!isOauth) setOauthProvider("");
+    setAppliedCredentialId(id);
   }
 
   async function loadSurface(
@@ -887,35 +1001,45 @@ export function AddConnectionDialog({
       ...credential,
     };
 
-    if (kind === "mcp") {
-      await upsert.mutateAsync({
-        id: connection?.id,
-        kind: "mcp",
-        slug,
-        displayName: optionalString(displayName),
-        mcpServerId,
-      });
-    } else if (kind === "graphql") {
-      await upsert.mutateAsync({
-        ...common,
-        kind: "graphql",
-        baseUrl,
-        allowedHosts: parsedHosts,
-      });
-    } else {
-      await upsert.mutateAsync({
-        ...common,
-        kind: "openapi",
-        baseUrl,
-        ...(specMode === "url" && openapiSpecUrl.trim()
-          ? { openapiSpecUrl: openapiSpecUrl.trim() }
-          : specMode === "inline" && openapiSpecJson.trim()
-            ? { openapiSpecJson: openapiSpecJson.trim() }
-            : {}),
-      });
+    try {
+      if (kind === "mcp") {
+        await upsert.mutateAsync({
+          id: connection?.id,
+          kind: "mcp",
+          slug,
+          displayName: optionalString(displayName),
+          mcpServerId,
+        });
+      } else if (kind === "graphql") {
+        await upsert.mutateAsync({
+          ...common,
+          kind: "graphql",
+          baseUrl,
+          allowedHosts: parsedHosts,
+        });
+      } else {
+        await upsert.mutateAsync({
+          ...common,
+          kind: "openapi",
+          baseUrl,
+          ...(specMode === "url" && openapiSpecUrl.trim()
+            ? { openapiSpecUrl: openapiSpecUrl.trim() }
+            : specMode === "inline" && openapiSpecJson.trim()
+              ? { openapiSpecJson: openapiSpecJson.trim() }
+              : {}),
+        });
+      }
+    } catch (error) {
+      // InlineError keeps the detail visible in the dialog; the toast makes
+      // the failure unmissable.
+      toastMutationError(error);
+      return;
     }
-    onOpenChange(false);
+    toast.success(`Connection ${slug.trim()} saved`);
+    handleOpenChange(false);
   }
+
+  const specUrlIsYaml = /\.ya?ml($|[?#])/i.test(openapiSpecUrl.trim());
 
   const canSubmit =
     slug.trim() &&
@@ -930,7 +1054,7 @@ export function AddConnectionDialog({
       (configKey.trim() && (authKind !== "oauth" || oauthProvider.trim())));
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="max-h-[85dvh] overflow-y-auto sm:max-w-3xl">
         <DialogHeader className="pb-2">
           <DialogTitle>{isEdit ? "Edit Connection" : "Add Connection"}</DialogTitle>
@@ -942,7 +1066,16 @@ export function AddConnectionDialog({
         </DialogHeader>
 
         {!isEdit ? (
-          <Tabs value={step} onValueChange={(value) => setStep(value as "catalog" | "form")}>
+          <Tabs
+            value={step}
+            onValueChange={(value) => {
+              const nextStep = value as "catalog" | "form";
+              // Going back to the catalog clears the form + surface state so a
+              // different selection starts clean.
+              if (nextStep === "catalog") resetForm();
+              setStep(nextStep);
+            }}
+          >
             <TabsList>
               <TabsTrigger value="catalog">Browse catalog</TabsTrigger>
               <TabsTrigger value="form">Manual form</TabsTrigger>
@@ -993,35 +1126,61 @@ export function AddConnectionDialog({
                 </div>
               ) : (
                 catalogResults.map((entry) => (
-                  <button
-                    key={entry.id}
-                    type="button"
-                    className="flex h-full w-full flex-col gap-1.5 rounded-md border p-2.5 text-left transition-colors hover:bg-muted/40"
-                    onClick={() => selectCatalogEntry(entry)}
-                    disabled={resolvingCatalogId === entry.id}
-                  >
-                    <div className="flex w-full items-center gap-2">
-                      {entry.icon ? (
-                        <img src={entry.icon} alt="" className="size-6 shrink-0 rounded-sm" />
-                      ) : (
-                        <div className="flex size-6 shrink-0 items-center justify-center rounded-sm bg-muted text-xs font-medium">
-                          {entry.name.slice(0, 1)}
+                  <Tooltip key={entry.id}>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        className="flex h-full w-full flex-col gap-1.5 rounded-md border p-2.5 text-left transition-colors hover:bg-muted/40"
+                        onClick={() => selectCatalogEntry(entry)}
+                        disabled={resolvingCatalogId === entry.id}
+                      >
+                        <div className="flex w-full items-center gap-2">
+                          {entry.icon ? (
+                            <img src={entry.icon} alt="" className="size-6 shrink-0 rounded-sm" />
+                          ) : (
+                            <div className="flex size-6 shrink-0 items-center justify-center rounded-sm bg-muted text-xs font-medium">
+                              {entry.name.slice(0, 1)}
+                            </div>
+                          )}
+                          <div className="min-w-0 flex-1">
+                            <div className="truncate text-sm font-medium">{entry.name}</div>
+                            <div className="truncate text-xs text-muted-foreground">
+                              {entry.domain || entry.slug}
+                            </div>
+                          </div>
+                          <KindBadge kind={entry.kind} />
                         </div>
-                      )}
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate text-sm font-medium">{entry.name}</div>
-                        <div className="truncate text-xs text-muted-foreground">
-                          {entry.domain || entry.slug}
+                        {entry.description ? (
+                          <p className="line-clamp-2 text-xs text-muted-foreground">
+                            {entry.description}
+                          </p>
+                        ) : null}
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent
+                      side="bottom"
+                      align="start"
+                      className="max-w-sm px-3 py-2.5 text-left whitespace-normal"
+                    >
+                      <div className="space-y-1.5 text-xs leading-relaxed">
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold">{entry.name}</span>
+                          <span className="uppercase opacity-70">{entry.kind}</span>
                         </div>
+                        {entry.domain ? (
+                          <div className="font-mono opacity-90">{entry.domain}</div>
+                        ) : null}
+                        {entry.description ? (
+                          <p className="opacity-90">{entry.description}</p>
+                        ) : null}
+                        {entry.categories.length > 0 ? (
+                          <div className="opacity-70">
+                            Categories: {entry.categories.join(", ")}
+                          </div>
+                        ) : null}
                       </div>
-                      <KindBadge kind={entry.kind} />
-                    </div>
-                    {entry.description ? (
-                      <p className="line-clamp-2 text-xs text-muted-foreground">
-                        {entry.description}
-                      </p>
-                    ) : null}
-                  </button>
+                    </TooltipContent>
+                  </Tooltip>
                 ))
               )}
             </div>
@@ -1059,7 +1218,14 @@ export function AddConnectionDialog({
           </div>
         ) : (
           <div className="space-y-5">
-            {surface ? <SurfaceAboutPanel surface={surface} kind={kind} /> : null}
+            {surface ? (
+              <SurfaceAboutPanel
+                surface={surface}
+                appliedCredentialId={appliedCredentialId}
+                onApplyCredential={kind !== "mcp" ? applySurfaceCredential : undefined}
+              />
+            ) : null}
+            {kind === "mcp" && surface ? <McpGuidancePanel surface={surface} slug={slug} /> : null}
             {surfaceLoading ? (
               <p className="text-xs text-muted-foreground">Loading integration details...</p>
             ) : null}
@@ -1174,6 +1340,12 @@ export function AddConnectionDialog({
                           onChange={(event) => setOpenapiSpecUrl(event.target.value)}
                           placeholder="https://example.com/openapi.json"
                         />
+                        {specUrlIsYaml ? (
+                          <p className="text-xs text-status-active">
+                            YAML specs are not supported yet — find a JSON variant or paste the spec
+                            as JSON.
+                          </p>
+                        ) : null}
                       </div>
                     ) : (
                       <div className="space-y-2">
@@ -1286,6 +1458,20 @@ export function AddConnectionDialog({
                         </div>
                       ) : null}
                     </div>
+                    {authKind === "oauth" ? (
+                      <p className="text-xs text-muted-foreground">
+                        OAuth credentials need a configured OAuth app for this provider.{" "}
+                        <Link
+                          to="/connections?tab=oauth-apps&new=oauth-app"
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-primary underline underline-offset-2"
+                        >
+                          Create one in OAuth Apps
+                        </Link>{" "}
+                        (opens in a new tab), then enter its provider slug above.
+                      </p>
+                    ) : null}
                     <div className="space-y-2">
                       <FieldLabel
                         tip={`Must contain the exact placeholder ${configPlaceholder(configKey)}. Used to add request headers at egress.`}
@@ -1322,7 +1508,7 @@ export function AddConnectionDialog({
         )}
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+          <Button variant="outline" onClick={() => handleOpenChange(false)}>
             Cancel
           </Button>
           <Button onClick={submit} disabled={!canSubmit || upsert.isPending}>
@@ -1392,19 +1578,26 @@ function CredentialBindingDialog({
   }, [oauthApps, oauthProvider]);
 
   async function submit() {
-    await upsert.mutateAsync({
-      id: binding?.id,
-      configKey: configKey.trim(),
-      allowedHosts,
-      headerTemplate: optionalString(headerTemplate),
-      queryTemplate: optionalString(queryTemplate),
-      scope,
-      scopeId: scope === "global" ? null : (optionalString(scopeId) ?? null),
-      active: binding?.active ?? true,
-      authKind,
-      oauthProvider: authKind === "oauth" ? optionalString(oauthProvider) : undefined,
-    });
-    toast.success(isEdit ? "Credential binding updated" : "Credential binding added");
+    try {
+      await upsert.mutateAsync({
+        id: binding?.id,
+        configKey: configKey.trim(),
+        allowedHosts,
+        headerTemplate: optionalString(headerTemplate),
+        queryTemplate: optionalString(queryTemplate),
+        scope,
+        scopeId: scope === "global" ? null : (optionalString(scopeId) ?? null),
+        active: binding?.active ?? true,
+        authKind,
+        oauthProvider: authKind === "oauth" ? optionalString(oauthProvider) : undefined,
+      });
+    } catch (error) {
+      // InlineError keeps the detail visible in the dialog; the toast makes
+      // the failure unmissable.
+      toastMutationError(error);
+      return;
+    }
+    toast.success(`Binding ${configKey.trim()} saved`);
     onOpenChange(false);
   }
 
@@ -1771,7 +1964,13 @@ function CredentialBindingsSection({
                       oauthProvider:
                         params.data!.authKind === "oauth" ? params.data!.oauthProvider : undefined,
                     },
-                    { onError: toastMutationError },
+                    {
+                      onSuccess: () =>
+                        toast.success(
+                          `Binding ${params.data!.configKey} ${active ? "enabled" : "disabled"}`,
+                        ),
+                      onError: toastMutationError,
+                    },
                   )
                 }
                 disabled={upsert.isPending}
@@ -2128,21 +2327,29 @@ export function OAuthAppDialog({
   }
 
   async function submit() {
-    await upsert.mutateAsync({
-      provider,
-      clientId,
-      ...(clientSecret.trim() ? { clientSecret: clientSecret.trim() } : {}),
-      authorizeUrl,
-      tokenUrl,
-      scopes,
-      tokenAuthStyle,
-      tokenBodyFormat,
-      extraParams: Object.fromEntries(
-        extraParams
-          .map((row) => [row.key.trim(), row.value.trim()] as const)
-          .filter(([key]) => key),
-      ),
-    });
+    try {
+      await upsert.mutateAsync({
+        provider,
+        clientId,
+        ...(clientSecret.trim() ? { clientSecret: clientSecret.trim() } : {}),
+        authorizeUrl,
+        tokenUrl,
+        scopes,
+        tokenAuthStyle,
+        tokenBodyFormat,
+        extraParams: Object.fromEntries(
+          extraParams
+            .map((row) => [row.key.trim(), row.value.trim()] as const)
+            .filter(([key]) => key),
+        ),
+      });
+    } catch (error) {
+      // InlineError keeps the detail visible in the dialog; the toast makes
+      // the failure unmissable.
+      toastMutationError(error);
+      return;
+    }
+    toast.success(`OAuth app ${provider.trim()} saved`);
     onOpenChange(false);
   }
 
@@ -2445,7 +2652,13 @@ export default function ConnectionsPage() {
                 onCheckedChange={(enabled) =>
                   setEnabled.mutate(
                     { id: params.data!.id, enabled },
-                    { onError: toastMutationError },
+                    {
+                      onSuccess: () =>
+                        toast.success(
+                          `Connection ${params.data!.slug} ${enabled ? "enabled" : "disabled"}`,
+                        ),
+                      onError: toastMutationError,
+                    },
                   )
                 }
                 disabled={setEnabled.isPending}
@@ -2466,7 +2679,10 @@ export default function ConnectionsPage() {
               variant="ghost"
               onClick={(event) => {
                 event.stopPropagation();
-                refreshConnection.mutate(params.data!.id, { onError: toastMutationError });
+                refreshConnection.mutate(params.data!.id, {
+                  onSuccess: () => toast.success(`Connection ${params.data!.slug} refreshed`),
+                  onError: toastMutationError,
+                });
               }}
               disabled={refreshConnection.isPending}
             >

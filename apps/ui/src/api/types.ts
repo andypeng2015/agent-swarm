@@ -1382,6 +1382,8 @@ export interface IntegrationsSurfaceEntry {
   name: string;
   url: string | null;
   docs: string | null;
+  /** OpenAPI spec URL advertised by http surfaces (may be YAML). */
+  spec: string | null;
   auth: {
     required: boolean;
     credentialIds: string[];

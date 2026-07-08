@@ -1,12 +1,24 @@
 import type { ColDef, ICellRendererParams, RowClickedEvent } from "ag-grid-community";
-import { useCallback, useMemo } from "react";
+import { Plus } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { toast } from "sonner";
 
-import { useMcpServers } from "@/api/hooks";
+import { useCreateMcpServer, useMcpServers } from "@/api/hooks";
 import type { McpServer } from "@/api/types";
 import { DataGrid } from "@/components/shared/data-grid";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { PageHeader } from "@/components/ui/page-header";
 import {
   Select,
@@ -15,8 +27,147 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import { readStringParam, useUrlSearchState } from "@/hooks/use-url-search-state";
 import { formatRelativeTime } from "@/lib/utils";
+
+const TRANSPORT_VALUES = ["stdio", "http", "sse"] as const;
+
+/**
+ * Minimal create dialog. Supports deep-link prefill via query params:
+ * /mcp-servers?new=1&name=<name>&url=<url>&transport=http (used by the
+ * Connections page MCP guidance flow).
+ */
+function AddMcpServerDialog({
+  open,
+  onOpenChange,
+  initialName,
+  initialUrl,
+  initialTransport,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  initialName: string;
+  initialUrl: string;
+  initialTransport: string;
+}) {
+  const navigate = useNavigate();
+  const create = useCreateMcpServer();
+  const [name, setName] = useState("");
+  const [transport, setTransport] = useState<string>("http");
+  const [url, setUrl] = useState("");
+  const [command, setCommand] = useState("");
+  const [headers, setHeaders] = useState("");
+
+  useEffect(() => {
+    if (!open) return;
+    setName(initialName);
+    setTransport(
+      (TRANSPORT_VALUES as readonly string[]).includes(initialTransport)
+        ? initialTransport
+        : "http",
+    );
+    setUrl(initialUrl);
+    setCommand("");
+    setHeaders("");
+  }, [open, initialName, initialUrl, initialTransport]);
+
+  async function submit() {
+    try {
+      const { server } = await create.mutateAsync({
+        name: name.trim(),
+        transport,
+        ...(transport === "stdio" ? { command: command.trim() } : { url: url.trim() }),
+        ...(transport !== "stdio" && headers.trim() ? { headers: headers.trim() } : {}),
+      });
+      toast.success(`MCP server ${server.name} created`);
+      onOpenChange(false);
+      navigate(`/mcp-servers/${server.id}`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  const canSubmit = Boolean(name.trim() && (transport === "stdio" ? command.trim() : url.trim()));
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[85dvh] overflow-y-auto sm:max-w-lg">
+        <DialogHeader className="pb-2">
+          <DialogTitle>Add MCP Server</DialogTitle>
+          <DialogDescription>
+            Register an MCP server so agents and script connections can use its tools.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label>Name</Label>
+              <Input
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                placeholder="stripe"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Transport</Label>
+              <Select value={transport} onValueChange={setTransport}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {TRANSPORT_VALUES.map((value) => (
+                    <SelectItem key={value} value={value}>
+                      {value}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          {transport === "stdio" ? (
+            <div className="space-y-2">
+              <Label>Command</Label>
+              <Input
+                value={command}
+                onChange={(event) => setCommand(event.target.value)}
+                placeholder="npx -y @modelcontextprotocol/server-github"
+              />
+            </div>
+          ) : (
+            <>
+              <div className="space-y-2">
+                <Label>URL</Label>
+                <Input
+                  value={url}
+                  onChange={(event) => setUrl(event.target.value)}
+                  placeholder="https://mcp.stripe.com"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Headers (optional, JSON)</Label>
+                <Textarea
+                  value={headers}
+                  onChange={(event) => setHeaders(event.target.value)}
+                  className="min-h-20 font-mono text-xs"
+                  placeholder={`{"Authorization": "Bearer <token>"}`}
+                />
+              </div>
+            </>
+          )}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button onClick={submit} disabled={!canSubmit || create.isPending}>
+            Save
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 /**
  * Transport / auth-method / scope chips. Each protocol type has no semantic
@@ -75,6 +226,19 @@ export default function McpServersPage() {
   const search = readStringParam(searchParams, "search");
   const scopeFilter = readStringParam(searchParams, "scope", "all");
   const transportFilter = readStringParam(searchParams, "transport", "all");
+  const newParam = readStringParam(searchParams, "new");
+  const prefillName = readStringParam(searchParams, "name");
+  const prefillUrl = readStringParam(searchParams, "url");
+  // The deep-link `transport` param doubles as the table filter; only treat it
+  // as a prefill when the create dialog is requested via ?new=1.
+  const prefillTransport = newParam ? readStringParam(searchParams, "transport") : "";
+
+  const setCreateOpen = useCallback(
+    (open: boolean) => {
+      setParam("new", open ? "1" : "", { reset: open ? [] : ["name", "url", "transport"] });
+    },
+    [setParam],
+  );
 
   const filters = useMemo(() => {
     const f: Record<string, string> = {};
@@ -161,7 +325,16 @@ export default function McpServersPage() {
 
   return (
     <div className="flex flex-col flex-1 min-h-0 gap-4">
-      <PageHeader title="MCP Servers" className="shrink-0" />
+      <PageHeader
+        title="MCP Servers"
+        className="shrink-0"
+        action={
+          <Button onClick={() => setCreateOpen(true)}>
+            <Plus className="size-4" />
+            Add Server
+          </Button>
+        }
+      />
 
       <div className="flex items-center gap-3 shrink-0">
         <Input
@@ -218,6 +391,14 @@ export default function McpServersPage() {
         loading={isLoading}
         emptyMessage="No MCP servers found"
         paginationQueryKey="mcpServers"
+      />
+
+      <AddMcpServerDialog
+        open={Boolean(newParam)}
+        onOpenChange={setCreateOpen}
+        initialName={prefillName}
+        initialUrl={prefillUrl}
+        initialTransport={prefillTransport}
       />
     </div>
   );

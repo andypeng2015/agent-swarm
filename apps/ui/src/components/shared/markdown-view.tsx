@@ -110,6 +110,20 @@ const STREAMDOWN_COMPONENTS = {
   pre({ children }: { children?: ReactNode }) {
     return <>{children}</>;
   },
+  // Markdown links always open in a new tab — markdown is rendered inside
+  // dialogs/panels where in-place navigation would lose state.
+  a({ children, href }: { children?: ReactNode; href?: string }) {
+    return (
+      <a
+        href={href}
+        target="_blank"
+        rel="noreferrer"
+        className="text-primary underline underline-offset-2 hover:opacity-80"
+      >
+        {children}
+      </a>
+    );
+  },
 };
 
 /**

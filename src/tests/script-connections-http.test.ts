@@ -479,7 +479,7 @@ describe("/api/script-connections HTTP", () => {
   });
 
   // Contract: the surface proxy passes through a TRIMMED shape only —
-  // {domain, summary, surfaces: [{type, name, url, docs, auth: {required,
+  // {domain, summary, surfaces: [{type, name, url, docs, spec, auth: {required,
   // credentialIds, mechanics}}], credentials: {id: {type, label, generateUrl,
   // setup}}}. CLI surfaces are filtered out (connections are http/mcp only)
   // and credentials are narrowed to ids referenced by retained surfaces.
@@ -501,6 +501,7 @@ describe("/api/script-connections HTTP", () => {
               slug: "stripe-api",
               url: "https://api.stripe.com",
               docs: "https://docs.stripe.com/api",
+              spec: "https://raw.githubusercontent.com/stripe/openapi/master/openapi/spec3.yaml",
               basis: { via: "discovered", evidence: ["https://docs.stripe.com/api.md"] },
               auth: {
                 status: "required",
@@ -590,6 +591,7 @@ describe("/api/script-connections HTTP", () => {
           name: "Stripe API",
           url: "https://api.stripe.com",
           docs: "https://docs.stripe.com/api",
+          spec: "https://raw.githubusercontent.com/stripe/openapi/master/openapi/spec3.yaml",
           auth: {
             required: true,
             credentialIds: ["stripe_api_key"],
@@ -601,6 +603,7 @@ describe("/api/script-connections HTTP", () => {
           name: "Stripe MCP server",
           url: "https://mcp.stripe.com",
           docs: "https://docs.stripe.com/mcp",
+          spec: null,
           auth: { required: true, credentialIds: ["stripe_mcp_oauth"], mechanics: null },
         },
       ],

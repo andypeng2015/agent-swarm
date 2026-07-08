@@ -310,8 +310,10 @@ export function PlaygroundPanel({ defaultAgentId }: { defaultAgentId?: string })
       } else {
         toast.success(`Saved script "${saved.name}" (v${saved.version})`);
       }
-    } catch {
-      // upsert.error renders inside the dialog (typecheck diagnostics etc.).
+    } catch (error) {
+      // upsert.error renders inside the dialog (typecheck diagnostics etc.);
+      // the toast makes the failure unmissable.
+      toast.error(error instanceof Error ? error.message : String(error));
     }
   }
 
