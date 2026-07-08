@@ -379,6 +379,31 @@ export function InlineError({ error }: { error?: unknown }) {
   );
 }
 
+/** Surface a mutation failure as a toast (inline errors are reserved for page-load errors). */
+export function toastMutationError(error: unknown) {
+  toast.error(error instanceof Error ? error.message : String(error));
+}
+
+function ClearInputButton({ label, onClear }: { label: string; onClear: () => void }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          type="button"
+          size="icon-xs"
+          variant="ghost"
+          aria-label={label}
+          onClick={onClear}
+          className="absolute right-1 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+        >
+          <X className="size-3" />
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>Clear</TooltipContent>
+    </Tooltip>
+  );
+}
+
 function catalogSearchText(entry: IntegrationsCatalogEntry): string {
   return `${entry.name} ${entry.slug} ${entry.domain} ${entry.description}`.toLowerCase();
 }
@@ -1241,15 +1266,26 @@ function CredentialBindingDialog({
             <FieldLabel tip={`Header line to attach at egress. Must include ${placeholder}.`}>
               Header Template
             </FieldLabel>
-            <Input
-              value={headerTemplate}
-              onChange={(event) => {
-                setHeaderTemplate(event.target.value);
-                setHeaderManuallyEdited(true);
-              }}
-              placeholder={`Authorization: Bearer ${placeholder}`}
-              className="font-mono text-xs"
-            />
+            <div className="relative">
+              <Input
+                value={headerTemplate}
+                onChange={(event) => {
+                  setHeaderTemplate(event.target.value);
+                  setHeaderManuallyEdited(true);
+                }}
+                placeholder={`Authorization: Bearer ${placeholder}`}
+                className="pr-8 font-mono text-xs"
+              />
+              {headerTemplate ? (
+                <ClearInputButton
+                  label="Clear header template"
+                  onClear={() => {
+                    setHeaderTemplate("");
+                    setHeaderManuallyEdited(true);
+                  }}
+                />
+              ) : null}
+            </div>
           </div>
 
           <div className="space-y-2">
@@ -1258,12 +1294,20 @@ function CredentialBindingDialog({
             >
               Query Template
             </FieldLabel>
-            <Input
-              value={queryTemplate}
-              onChange={(event) => setQueryTemplate(event.target.value)}
-              placeholder={`access_token=${placeholder}`}
-              className="font-mono text-xs"
-            />
+            <div className="relative">
+              <Input
+                value={queryTemplate}
+                onChange={(event) => setQueryTemplate(event.target.value)}
+                placeholder={`access_token=${placeholder}`}
+                className="pr-8 font-mono text-xs"
+              />
+              {queryTemplate ? (
+                <ClearInputButton
+                  label="Clear query template"
+                  onClear={() => setQueryTemplate("")}
+                />
+              ) : null}
+            </div>
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2">
@@ -1458,19 +1502,22 @@ function CredentialBindingsSection({
                 size="sm"
                 checked={params.data.active}
                 onCheckedChange={(active) =>
-                  upsert.mutate({
-                    id: params.data!.id,
-                    configKey: params.data!.configKey,
-                    allowedHosts: params.data!.allowedHosts,
-                    headerTemplate: params.data!.headerTemplate,
-                    queryTemplate: params.data!.queryTemplate,
-                    scope: params.data!.scope,
-                    scopeId: params.data!.scopeId,
-                    active,
-                    authKind: params.data!.authKind,
-                    oauthProvider:
-                      params.data!.authKind === "oauth" ? params.data!.oauthProvider : undefined,
-                  })
+                  upsert.mutate(
+                    {
+                      id: params.data!.id,
+                      configKey: params.data!.configKey,
+                      allowedHosts: params.data!.allowedHosts,
+                      headerTemplate: params.data!.headerTemplate,
+                      queryTemplate: params.data!.queryTemplate,
+                      scope: params.data!.scope,
+                      scopeId: params.data!.scopeId,
+                      active,
+                      authKind: params.data!.authKind,
+                      oauthProvider:
+                        params.data!.authKind === "oauth" ? params.data!.oauthProvider : undefined,
+                    },
+                    { onError: toastMutationError },
+                  )
                 }
                 disabled={upsert.isPending}
               />
@@ -1511,7 +1558,6 @@ function CredentialBindingsSection({
           }
         }}
       />
-      <InlineError error={upsert.error} />
       <CredentialBindingDialog
         open={editOpen}
         onOpenChange={setEditOpen}
@@ -1608,8 +1654,12 @@ function OAuthAppsSection({
                 size="xs"
                 variant="outline"
                 onClick={async () => {
-                  const result = await authorize.mutateAsync(app.provider);
-                  window.open(result.authorizeUrl, "_blank", "noopener,noreferrer");
+                  try {
+                    const result = await authorize.mutateAsync(app.provider);
+                    window.open(result.authorizeUrl, "_blank", "noopener,noreferrer");
+                  } catch (error) {
+                    toastMutationError(error);
+                  }
                 }}
                 disabled={authorize.isPending}
               >
@@ -1645,8 +1695,12 @@ function OAuthAppsSection({
                     <AlertDialogAction
                       variant="destructive"
                       onClick={async () => {
-                        await deleteApp.mutateAsync(app.provider);
-                        toast.success("OAuth app deleted");
+                        try {
+                          await deleteApp.mutateAsync(app.provider);
+                          toast.success("OAuth app deleted");
+                        } catch (error) {
+                          toastMutationError(error);
+                        }
                       }}
                       disabled={deleteApp.isPending}
                     >
@@ -1680,7 +1734,6 @@ function OAuthAppsSection({
           }
         }}
       />
-      <InlineError error={authorize.error ?? deleteApp.error} />
       <OAuthAppDialog open={editOpen} onOpenChange={setEditOpen} app={editApp} />
     </div>
   );
@@ -2134,7 +2187,12 @@ export default function ConnectionsPage() {
               <Switch
                 size="sm"
                 checked={params.data.enabled}
-                onCheckedChange={(enabled) => setEnabled.mutate({ id: params.data!.id, enabled })}
+                onCheckedChange={(enabled) =>
+                  setEnabled.mutate(
+                    { id: params.data!.id, enabled },
+                    { onError: toastMutationError },
+                  )
+                }
                 disabled={setEnabled.isPending}
               />
             </span>
@@ -2153,7 +2211,7 @@ export default function ConnectionsPage() {
               variant="ghost"
               onClick={(event) => {
                 event.stopPropagation();
-                refreshConnection.mutate(params.data!.id);
+                refreshConnection.mutate(params.data!.id, { onError: toastMutationError });
               }}
               disabled={refreshConnection.isPending}
             >
@@ -2292,7 +2350,6 @@ export default function ConnectionsPage() {
             emptyMessage="No script connections found"
             paginationQueryKey="connections"
           />
-          <InlineError error={refreshConnection.error ?? setEnabled.error} />
         </TabsContent>
         <TabsContent value="bindings" className="flex flex-col flex-1 min-h-0 mt-3">
           <CredentialBindingsSection

@@ -148,11 +148,9 @@ function colorizeJson(text: string): ReactNode[] {
 
 function OutputPanel({
   result,
-  error,
   isPending,
 }: {
   result?: ScriptRunInlineResult;
-  error: unknown;
   isPending: boolean;
 }) {
   const failed = Boolean(
@@ -192,7 +190,10 @@ function OutputPanel({
             </pre>
             {result.stdout ? (
               <div className="flex min-h-0 flex-col gap-1">
-                <PaneLabel>Stdout</PaneLabel>
+                <div className="flex h-5 items-center justify-between">
+                  <PaneLabel>Stdout</PaneLabel>
+                  <IconCopyButton value={result.stdout} tip="Copy stdout" />
+                </div>
                 <pre className="max-h-24 overflow-auto rounded-md border bg-muted/30 p-2 text-xs text-muted-foreground">
                   {result.stdout}
                 </pre>
@@ -200,7 +201,10 @@ function OutputPanel({
             ) : null}
             {result.stderr ? (
               <div className="flex min-h-0 flex-col gap-1">
-                <PaneLabel>Stderr</PaneLabel>
+                <div className="flex h-5 items-center justify-between">
+                  <PaneLabel>Stderr</PaneLabel>
+                  <IconCopyButton value={result.stderr} tip="Copy stderr" />
+                </div>
                 <pre className="max-h-24 overflow-auto rounded-md border border-status-error/40 bg-muted/30 p-2 text-xs text-status-error">
                   {result.stderr}
                 </pre>
@@ -211,12 +215,11 @@ function OutputPanel({
               <span className="font-mono text-xs">{result.durationMs ?? 0} ms</span>
             </div>
           </>
-        ) : error ? null : (
+        ) : (
           <div className="flex flex-1 items-center justify-center rounded-md border border-dashed text-sm text-muted-foreground">
             Run a script to see its result.
           </div>
         )}
-        <InlineError error={error} />
       </div>
     </div>
   );
@@ -354,7 +357,15 @@ export function PlaygroundPanel({ defaultAgentId }: { defaultAgentId?: string })
             </Select>
             <Button
               size="sm"
-              onClick={() => run.mutate({ source, intent: "connections playground", agentId })}
+              onClick={() =>
+                run.mutate(
+                  { source, intent: "connections playground", agentId },
+                  {
+                    onError: (error) =>
+                      toast.error(error instanceof Error ? error.message : String(error)),
+                  },
+                )
+              }
               disabled={!agentId || run.isPending}
             >
               <Play className="size-4" />
@@ -388,7 +399,7 @@ export function PlaygroundPanel({ defaultAgentId }: { defaultAgentId?: string })
             </div>
             <ScriptSourceEditor {...editorProps} className={PANE_HEIGHT} />
           </div>
-          <OutputPanel result={run.data} error={run.error} isPending={run.isPending} />
+          <OutputPanel result={run.data} isPending={run.isPending} />
         </div>
       </CardContent>
 

@@ -35,6 +35,7 @@ import {
   InlineError,
   KindBadge,
   TokenStatusBadge,
+  toastMutationError,
   UsagePreview,
 } from "@/pages/connections/page";
 
@@ -120,7 +121,12 @@ export default function ConnectionDetailPage() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => setEnabled.mutate({ id: connection.id, enabled: !connection.enabled })}
+              onClick={() =>
+                setEnabled.mutate(
+                  { id: connection.id, enabled: !connection.enabled },
+                  { onError: toastMutationError },
+                )
+              }
               disabled={setEnabled.isPending}
             >
               {connection.enabled ? <PowerOff className="size-4" /> : <Power className="size-4" />}
@@ -130,7 +136,9 @@ export default function ConnectionDetailPage() {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => refreshConnection.mutate(connection.id)}
+                onClick={() =>
+                  refreshConnection.mutate(connection.id, { onError: toastMutationError })
+                }
                 disabled={refreshConnection.isPending}
               >
                 <RefreshCw className="size-4" />
@@ -325,7 +333,6 @@ export default function ConnectionDetailPage() {
         }
       />
 
-      <InlineError error={refreshConnection.error ?? setEnabled.error} />
       <AddConnectionDialog
         open={editOpen}
         onOpenChange={setEditOpen}

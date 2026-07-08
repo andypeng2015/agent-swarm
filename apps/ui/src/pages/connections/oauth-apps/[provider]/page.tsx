@@ -34,7 +34,12 @@ import { PageHeader } from "@/components/ui/page-header";
 import { formatSmartTime } from "@/lib/utils";
 import { BackButton } from "@/pages/connections/components/back-button";
 import { CopyIconButton } from "@/pages/connections/components/copy-icon-button";
-import { InlineError, OAuthAppDialog, TokenStatusBadge } from "@/pages/connections/page";
+import {
+  InlineError,
+  OAuthAppDialog,
+  TokenStatusBadge,
+  toastMutationError,
+} from "@/pages/connections/page";
 
 function CopyableValue({ value, label }: { value: string; label: string }) {
   return (
@@ -69,15 +74,23 @@ export default function OAuthAppDetailPage() {
 
   async function openAuthorize() {
     if (!app) return;
-    const result = await authorize.mutateAsync(app.provider);
-    window.open(result.authorizeUrl, "_blank", "noopener,noreferrer");
+    try {
+      const result = await authorize.mutateAsync(app.provider);
+      window.open(result.authorizeUrl, "_blank", "noopener,noreferrer");
+    } catch (error) {
+      toastMutationError(error);
+    }
   }
 
   async function confirmDelete() {
     if (!app) return;
-    await deleteApp.mutateAsync(app.provider);
-    toast.success("OAuth app deleted");
-    navigate("/connections");
+    try {
+      await deleteApp.mutateAsync(app.provider);
+      toast.success("OAuth app deleted");
+      navigate("/connections");
+    } catch (error) {
+      toastMutationError(error);
+    }
   }
 
   if (isLoading) {
@@ -118,12 +131,16 @@ export default function OAuthAppDetailPage() {
                 variant="outline"
                 size="sm"
                 onClick={async () => {
-                  const result = await refreshToken.mutateAsync(app.provider);
-                  toast.success(
-                    result.refreshed
-                      ? `Token refreshed — status ${result.tokenStatus}`
-                      : "Token refresh skipped",
-                  );
+                  try {
+                    const result = await refreshToken.mutateAsync(app.provider);
+                    toast.success(
+                      result.refreshed
+                        ? `Token refreshed — status ${result.tokenStatus}`
+                        : "Token refresh skipped",
+                    );
+                  } catch (error) {
+                    toastMutationError(error);
+                  }
                 }}
                 disabled={refreshToken.isPending}
               >
@@ -153,12 +170,16 @@ export default function OAuthAppDetailPage() {
                     <AlertDialogAction
                       variant="destructive"
                       onClick={async () => {
-                        const result = await disconnect.mutateAsync(app.provider);
-                        toast.success(
-                          result.revocationAttempted
-                            ? "Disconnected (revocation attempted at provider)"
-                            : "Disconnected — stored tokens deleted",
-                        );
+                        try {
+                          const result = await disconnect.mutateAsync(app.provider);
+                          toast.success(
+                            result.revocationAttempted
+                              ? "Disconnected (revocation attempted at provider)"
+                              : "Disconnected — stored tokens deleted",
+                          );
+                        } catch (error) {
+                          toastMutationError(error);
+                        }
                       }}
                       disabled={disconnect.isPending}
                     >
@@ -281,9 +302,6 @@ export default function OAuthAppDetailPage() {
         }
       />
 
-      <InlineError
-        error={authorize.error ?? deleteApp.error ?? disconnect.error ?? refreshToken.error}
-      />
       <OAuthAppDialog open={editOpen} onOpenChange={setEditOpen} app={app} />
     </div>
   );
