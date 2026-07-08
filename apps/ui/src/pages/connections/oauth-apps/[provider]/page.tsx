@@ -1,7 +1,7 @@
-import { ArrowLeft, ExternalLink, Pencil, RotateCw, Trash2, Unplug } from "lucide-react";
+import { ExternalLink, Pencil, RotateCw, Trash2, Unplug } from "lucide-react";
 import type { ReactNode } from "react";
 import { useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import {
   useDeleteOAuthApp,
@@ -32,6 +32,7 @@ import {
 } from "@/components/ui/detail-page-layout";
 import { PageHeader } from "@/components/ui/page-header";
 import { formatSmartTime } from "@/lib/utils";
+import { BackButton } from "@/pages/connections/components/back-button";
 import { CopyIconButton } from "@/pages/connections/components/copy-icon-button";
 import { InlineError, OAuthAppDialog, TokenStatusBadge } from "@/pages/connections/page";
 
@@ -85,12 +86,7 @@ export default function OAuthAppDetailPage() {
   if (error || !app) {
     return (
       <div className="flex flex-col gap-3 p-4">
-        <Button asChild variant="outline" size="sm" className="w-fit">
-          <Link to="/connections">
-            <ArrowLeft className="size-4" />
-            Back
-          </Link>
-        </Button>
+        <BackButton fallback="/connections" />
         <InlineError error={error ?? "OAuth app not found"} />
       </div>
     );
@@ -101,11 +97,7 @@ export default function OAuthAppDetailPage() {
       <PageHeader
         title={
           <span className="flex min-w-0 flex-wrap items-center gap-2">
-            <Button asChild variant="ghost" size="icon-sm" aria-label="Back to connections">
-              <Link to="/connections">
-                <ArrowLeft className="size-4" />
-              </Link>
-            </Button>
+            <BackButton fallback="/connections" iconOnly />
             <span className="truncate text-xl font-semibold">{app.provider}</span>
           </span>
         }

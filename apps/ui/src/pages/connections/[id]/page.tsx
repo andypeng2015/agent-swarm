@@ -1,4 +1,4 @@
-import { ArrowLeft, Maximize2, Pencil, Power, PowerOff, RefreshCw } from "lucide-react";
+import { Maximize2, Pencil, Power, PowerOff, RefreshCw } from "lucide-react";
 import type { ReactNode } from "react";
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
@@ -23,6 +23,7 @@ import {
 import { PageHeader } from "@/components/ui/page-header";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { formatSmartTime } from "@/lib/utils";
+import { BackButton } from "@/pages/connections/components/back-button";
 import {
   CodeViewerDialog,
   JsonSourceViewer,
@@ -84,12 +85,7 @@ export default function ConnectionDetailPage() {
   if (error || !connection) {
     return (
       <div className="flex flex-col gap-3 p-4">
-        <Button asChild variant="outline" size="sm" className="w-fit">
-          <Link to="/connections">
-            <ArrowLeft className="size-4" />
-            Back
-          </Link>
-        </Button>
+        <BackButton fallback="/connections" />
         <InlineError error={error ?? "Connection not found"} />
       </div>
     );
@@ -109,11 +105,7 @@ export default function ConnectionDetailPage() {
       <PageHeader
         title={
           <span className="flex min-w-0 flex-wrap items-center gap-2">
-            <Button asChild variant="ghost" size="icon-sm" aria-label="Back to connections">
-              <Link to="/connections">
-                <ArrowLeft className="size-4" />
-              </Link>
-            </Button>
+            <BackButton fallback="/connections" iconOnly />
             <span className="truncate text-xl font-semibold">{connection.slug}</span>
             <CopyIconButton value={connection.slug} label="Copy slug" />
             <KindBadge kind={connection.kind} />
