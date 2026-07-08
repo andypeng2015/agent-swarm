@@ -2,8 +2,10 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import pkg from "../package.json";
 import { initDb } from "./be/db";
 import { startPricingRefreshLoop } from "./be/pricing-refresh";
+import { ensureRbacSeedsSynced } from "./be/rbac-roles";
 import { seedPricingFromModelsDev } from "./be/seed-pricing";
 import { registerGithubTaskReactions } from "./github/task-reactions";
+import { isRbacEnabled } from "./rbac";
 import { registerCancelTaskTool } from "./tools/cancel-task";
 import { registerContextDiffTool } from "./tools/context-diff";
 import { registerContextHistoryTool } from "./tools/context-history";
@@ -13,6 +15,7 @@ import { registerCreatePageTool } from "./tools/create-page";
 import { registerCredentialBindingsTool } from "./tools/credential-bindings";
 import { registerDbQueryTool } from "./tools/db-query";
 import { registerDeleteChannelTool } from "./tools/delete-channel";
+import { registerDeletePageTool } from "./tools/delete-page";
 import { registerGetMetricsTool } from "./tools/get-metrics";
 import { registerGetSwarmTool } from "./tools/get-swarm";
 import { registerGetTaskDetailsTool } from "./tools/get-task-details";
@@ -182,6 +185,14 @@ export function createServer() {
   // and the manual-override constants for runtime-fee / ACU pricing.
   seedPricingFromModelsDev();
   startPricingRefreshLoop();
+  try {
+    ensureRbacSeedsSynced();
+  } catch (err) {
+    console.error("[startup] Failed to sync RBAC seed rows:", err);
+    // RBAC flag-on must fail closed; flag-off deployments should not be bricked
+    // by role-catalog drift for a disabled security feature.
+    if (isRbacEnabled()) throw err;
+  }
 
   // Subscribe API-side integrations to task-lifecycle events. Idempotent.
   // (Inverts the old be/db → github/task-reactions import; see cycle-break #4.)
@@ -366,6 +377,7 @@ export function createServer() {
   // `CAPABILITIES=...` env without `pages`.
   if (hasCapability("pages")) {
     registerCreatePageTool(server);
+    registerDeletePageTool(server);
   }
 
   if (hasCapability("metrics")) {

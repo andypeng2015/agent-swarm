@@ -490,15 +490,15 @@ describe("script connections", () => {
     expect(typecheckScript(source)).toEqual({ ok: true });
   });
 
-  test("migration 110 rebuild preserves existing script connection rows", () => {
+  test("migration 112 rebuild preserves existing script connection rows", () => {
     removeDbFiles(MIGRATION_REBUILD_DB_PATH);
     const database = new Database(MIGRATION_REBUILD_DB_PATH, { create: true });
     try {
       database.run("CREATE TABLE users (id TEXT PRIMARY KEY)");
       database.run("CREATE TABLE mcp_servers (id TEXT PRIMARY KEY)");
       database.exec(migrationSql("101_script_connections.sql"));
-      database.exec(migrationSql("109_oauth_credential_bindings.sql"));
-      markMigrationsAppliedThrough(database, 109);
+      database.exec(migrationSql("111_oauth_credential_bindings.sql"));
+      markMigrationsAppliedThrough(database, 111);
 
       const id = crypto.randomUUID();
       const now = new Date().toISOString();

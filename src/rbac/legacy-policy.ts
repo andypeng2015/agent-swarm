@@ -180,7 +180,9 @@ export const LEGACY_POLICY = {
   "mcp-server.uninstall.any": leadOnly,
   "mcp-server.delete.any": leadOrResourceOwner,
   "mcp-server.update.any": leadOrResourceOwner,
+  "mcp-oauth.authorize.any": anyAuthenticated,
   "kv.write.any": leadOrOwnNamespace,
+  "page.delete.any": leadOrResourceOwner,
   "script.global.write": leadOnly,
   "script.global.delete": leadOnly,
 } as const satisfies Record<PermissionVerb, LegacyRule>;

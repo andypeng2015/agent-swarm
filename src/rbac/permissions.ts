@@ -165,9 +165,17 @@ export const PERMISSIONS = {
     description: "Update an MCP server the caller does not own.",
     namespace: "mcp-server",
   },
+  "mcp-oauth.authorize.any": {
+    description: "Start an MCP-server OAuth authorize flow for a caller-supplied user scope.",
+    namespace: "mcp-oauth",
+  },
   "kv.write.any": {
     description: "Write another agent's task:agent: KV namespace.",
     namespace: "kv",
+  },
+  "page.delete.any": {
+    description: "Delete a page the caller does not own.",
+    namespace: "page",
   },
   "script.global.write": {
     description: "Create or update a global-scope script.",

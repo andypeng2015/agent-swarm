@@ -11,10 +11,17 @@ import {
   upsertSwarmConfig,
 } from "../be/db";
 import type { Workflow } from "../types";
+import { TriggerConfigSchema } from "../types";
 import { startWorkflowExecution } from "../workflows/engine";
 import { BaseExecutor, type ExecutorResult } from "../workflows/executors/base";
 import { ExecutorRegistry } from "../workflows/executors/registry";
-import { handleWebhookTrigger, verifyHmacSignature, WebhookError } from "../workflows/triggers";
+import {
+  handleWebhookTrigger,
+  verifyHmacSignature,
+  verifyTimestampedHmacSignature,
+  verifyTokenEquality,
+  WebhookError,
+} from "../workflows/triggers";
 
 const TEST_DB_PATH = "./test-workflow-triggers-v2.sqlite";
 
@@ -108,6 +115,93 @@ describe("verifyHmacSignature", () => {
 
   test("empty signature fails", () => {
     expect(verifyHmacSignature(secret, body, "")).toBe(false);
+  });
+});
+
+describe("verifyTimestampedHmacSignature", () => {
+  const secret = "timestamped-secret";
+  const body = '{"event":"finding.triage_completed"}';
+  const timestamp = 1_700_000_000;
+  const nowMs = timestamp * 1000;
+
+  function sign(ts: number, signingSecret = secret): string {
+    return crypto.createHmac("sha256", signingSecret).update(`${ts}.${body}`).digest("hex");
+  }
+
+  test("valid timestamped signature passes", () => {
+    const header = `t=${timestamp},v1=${sign(timestamp)}`;
+
+    expect(verifyTimestampedHmacSignature(secret, body, header, {}, nowMs)).toBe(true);
+  });
+
+  test("wrong secret fails", () => {
+    const header = `t=${timestamp},v1=${sign(timestamp, "wrong-secret")}`;
+
+    expect(verifyTimestampedHmacSignature(secret, body, header, {}, nowMs)).toBe(false);
+  });
+
+  test("expired timestamp fails", () => {
+    const oldTimestamp = timestamp - 301;
+    const header = `t=${oldTimestamp},v1=${sign(oldTimestamp)}`;
+
+    expect(verifyTimestampedHmacSignature(secret, body, header, {}, nowMs)).toBe(false);
+  });
+
+  test("future timestamp beyond tolerance fails", () => {
+    const futureTimestamp = timestamp + 301;
+    const header = `t=${futureTimestamp},v1=${sign(futureTimestamp)}`;
+
+    expect(verifyTimestampedHmacSignature(secret, body, header, {}, nowMs)).toBe(false);
+  });
+
+  test("missing or garbled timestamp fails", () => {
+    expect(verifyTimestampedHmacSignature(secret, body, `v1=${sign(timestamp)}`, {}, nowMs)).toBe(
+      false,
+    );
+    expect(
+      verifyTimestampedHmacSignature(
+        secret,
+        body,
+        `t=not-a-number,v1=${sign(timestamp)}`,
+        {},
+        nowMs,
+      ),
+    ).toBe(false);
+  });
+
+  test("multiple signature entries pass when any one matches", () => {
+    const header = `t=${timestamp},v1=deadbeef,v1=${sign(timestamp)}`;
+
+    expect(verifyTimestampedHmacSignature(secret, body, header, {}, nowMs)).toBe(true);
+  });
+
+  test("custom timestamp and signature keys are supported", () => {
+    const header = `ts=${timestamp},sig=${sign(timestamp)}`;
+
+    expect(
+      verifyTimestampedHmacSignature(
+        secret,
+        body,
+        header,
+        { timestampKey: "ts", signatureKey: "sig", toleranceSeconds: 300 },
+        nowMs,
+      ),
+    ).toBe(true);
+  });
+});
+
+describe("verifyTokenEquality", () => {
+  test("matching token passes", () => {
+    expect(verifyTokenEquality("shared-token", "shared-token")).toBe(true);
+  });
+
+  test("same-length non-matching token fails", () => {
+    expect(verifyTokenEquality("shared-token", "shared-tokem")).toBe(false);
+  });
+
+  test("wrong-length non-matching token fails without throwing", () => {
+    expect(() => verifyTokenEquality("shared-token", "short")).not.toThrow();
+    expect(verifyTokenEquality("shared-token", "short")).toBe(false);
   });
 });
 
@@ -312,6 +406,179 @@ describe("handleWebhookTrigger — custom hmacHeader", () => {
 
     expect(result.runId).toBeDefined();
   });
+
+  test("explicit hmac-sha256 verification does not use fallback headers", async () => {
+    const secret = "explicit-hmac-secret";
+    const workflow = makeWorkflow({
+      triggers: [
+        {
+          type: "webhook",
+          hmacSecret: secret,
+          verification: { format: "hmac-sha256", header: "X-Primary-Signature" },
+        },
+      ],
+    });
+
+    const body = '{"event":"explicit"}';
+    try {
+      await handleWebhookTrigger(
+        workflow.id,
+        body,
+        { "x-signature": signRaw(secret, body) },
+        registry,
+      );
+      expect(true).toBe(false);
+    } catch (err) {
+      expect(err).toBeInstanceOf(WebhookError);
+      expect((err as WebhookError).statusCode).toBe(401);
+    }
+  });
+});
+
+describe("handleWebhookTrigger — verification formats", () => {
+  function signTimestamped(secret: string, body: string, timestamp: number): string {
+    return crypto.createHmac("sha256", secret).update(`${timestamp}.${body}`).digest("hex");
+  }
+
+  test("timestamped-hmac-sha256 starts workflow for Superagent-shaped request", async () => {
+    const secret = "superagent-secret";
+    const timestamp = Math.floor(Date.now() / 1000);
+    const workflow = makeWorkflow({
+      triggers: [
+        {
+          type: "webhook",
+          hmacSecret: secret,
+          verification: {
+            format: "timestamped-hmac-sha256",
+            header: "X-Superagent-Signature",
+            toleranceSeconds: 300,
+          },
+        },
+      ],
+    });
+
+    const body = '{"type":"finding.triage_completed","finding":{"id":"finding-123"}}';
+    const result = await handleWebhookTrigger(
+      workflow.id,
+      body,
+      {
+        "x-superagent-signature": `t=${timestamp},v1=${signTimestamped(secret, body, timestamp)}`,
+      },
+      registry,
+    );
+
+    expect(result.runId).toBeDefined();
+    const run = getWorkflowRun(result.runId);
+    expect(run).not.toBeNull();
+    expect(run!.triggerData).toEqual({
+      type: "finding.triage_completed",
+      finding: { id: "finding-123" },
+    });
+  });
+
+  test("timestamped-hmac-sha256 rejects signatures on fallback headers", async () => {
+    const secret = "timestamped-no-fallback-secret";
+    const timestamp = Math.floor(Date.now() / 1000);
+    const workflow = makeWorkflow({
+      triggers: [
+        {
+          type: "webhook",
+          hmacSecret: secret,
+          verification: {
+            format: "timestamped-hmac-sha256",
+            header: "X-Superagent-Signature",
+          },
+        },
+      ],
+    });
+
+    const body = '{"event":"fallback-blocked"}';
+    try {
+      await handleWebhookTrigger(
+        workflow.id,
+        body,
+        { "x-signature": `t=${timestamp},v1=${signTimestamped(secret, body, timestamp)}` },
+        registry,
+      );
+      expect(true).toBe(false);
+    } catch (err) {
+      expect(err).toBeInstanceOf(WebhookError);
+      expect((err as WebhookError).statusCode).toBe(401);
+    }
+  });
+
+  test("token-equality starts workflow when shared token matches", async () => {
+    const workflow = makeWorkflow({
+      triggers: [
+        {
+          type: "webhook",
+          hmacSecret: "gitlab-token",
+          verification: { format: "token-equality", header: "X-Gitlab-Token" },
+        },
+      ],
+    });
+
+    const result = await handleWebhookTrigger(
+      workflow.id,
+      '{"event":"push"}',
+      { "x-gitlab-token": "gitlab-token" },
+      registry,
+    );
+
+    expect(result.runId).toBeDefined();
+  });
+
+  test("token-equality rejects a wrong token", async () => {
+    const workflow = makeWorkflow({
+      triggers: [
+        {
+          type: "webhook",
+          hmacSecret: "gitlab-token",
+          verification: { format: "token-equality", header: "X-Gitlab-Token" },
+        },
+      ],
+    });
+
+    try {
+      await handleWebhookTrigger(
+        workflow.id,
+        '{"event":"push"}',
+        { "x-gitlab-token": "wrong-token" },
+        registry,
+      );
+      expect(true).toBe(false);
+    } catch (err) {
+      expect(err).toBeInstanceOf(WebhookError);
+      expect((err as WebhookError).statusCode).toBe(401);
+    }
+  });
+
+  test("verification configured without hmacSecret fails closed instead of accepting the request", async () => {
+    // Bypasses the create/update Zod schema (which now also rejects this shape) to
+    // exercise the runtime guard directly — e.g. for data written before this fix,
+    // or any future write path that skips schema validation.
+    const workflow = makeWorkflow({
+      triggers: [
+        {
+          type: "webhook",
+          verification: { format: "token-equality", header: "X-Gitlab-Token" },
+        },
+      ],
+    });
+
+    try {
+      await handleWebhookTrigger(
+        workflow.id,
+        '{"event":"push"}',
+        { "x-gitlab-token": "anything" },
+        registry,
+      );
+      expect(true).toBe(false);
+    } catch (err) {
+      expect(err).toBeInstanceOf(WebhookError);
+      expect((err as WebhookError).statusCode).toBe(500);
+    }
+  });
 });
 
 describe("handleWebhookTrigger — hmacSecret references", () => {
@@ -501,5 +768,37 @@ describe("cooldown", () => {
     const runId2 = await startWorkflowExecution(workflow, {}, registry);
     const run2 = getWorkflowRun(runId2);
     expect(run2!.status).toBe("completed");
+  });
+});
+
+// ─── TriggerConfigSchema validation ──────────────────────────
+
+describe("TriggerConfigSchema", () => {
+  test("rejects verification configured without hmacSecret", () => {
+    const result = TriggerConfigSchema.safeParse({
+      type: "webhook",
+      verification: { format: "token-equality", header: "X-Gitlab-Token" },
+    });
+
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues.some((issue) => issue.path.includes("hmacSecret"))).toBe(true);
+    }
+  });
+
+  test("accepts verification configured with hmacSecret", () => {
+    const result = TriggerConfigSchema.safeParse({
+      type: "webhook",
+      hmacSecret: "gitlab-token",
+      verification: { format: "token-equality", header: "X-Gitlab-Token" },
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  test("accepts a webhook trigger with neither hmacSecret nor verification (intentionally unauthenticated)", () => {
+    const result = TriggerConfigSchema.safeParse({ type: "webhook" });
+
+    expect(result.success).toBe(true);
   });
 });
