@@ -430,6 +430,38 @@ describe("runScript", () => {
     });
   });
 
+  test("ctx.api OpenAPI client preserves the baseUrl path prefix for absolute spec paths", async () => {
+    let observedUrl = "";
+    globalThis.fetch = (async (input) => {
+      observedUrl = String(input);
+      return Response.json({ ok: true });
+    }) as typeof fetch;
+
+    const client = createApiRegistryClient([
+      {
+        slug: "petstore",
+        kind: "openapi",
+        baseUrl: "https://petstore.vendor.test/api/v3",
+        credential: null,
+        operations: [
+          {
+            name: "getInventory",
+            method: "GET",
+            path: "/store/inventory",
+            parameters: [],
+            hasBody: false,
+            successStatus: "200",
+            requestType: "PetstoreGetInventoryArgs",
+            responseType: "PetstoreGetInventoryResponse",
+          },
+        ],
+      },
+    ]);
+
+    await client.petstore.getInventory({});
+    expect(observedUrl).toBe("https://petstore.vendor.test/api/v3/store/inventory");
+  });
+
   test("ctx.api GraphQL client throws on errors-only responses", async () => {
     globalThis.fetch = (async () =>
       Response.json({ errors: [{ message: "Cannot query field nope" }] })) as typeof fetch;

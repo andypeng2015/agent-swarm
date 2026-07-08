@@ -45,7 +45,9 @@ function operationUrl(
       throw new Error(`Missing path parameter ${param.name}`);
     path = path.replace(`{${param.name}}`, encodeURIComponent(String(value ?? "")));
   }
-  const url = new URL(path, baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`);
+  // Spec paths are absolute ("/store/inventory"); resolve them relative to the
+  // base URL so a base path prefix like "/api/v3" is preserved.
+  const url = new URL(path.replace(/^\/+/, ""), baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`);
   const queryArgs = (args.query && typeof args.query === "object" ? args.query : {}) as Record<
     string,
     unknown
