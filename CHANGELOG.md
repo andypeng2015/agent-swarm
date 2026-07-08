@@ -12,6 +12,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Migration notes
 - **v1.106.0 setupScript privilege boundary:** per-agent `setupScript` and `/workspace/start-up.*` hooks now run as the unprivileged `worker` user after the container drops privileges, and the worker image no longer includes blanket passwordless sudo (#865, #866). Move root-requiring steps such as system package installs, `/usr/lib` global npm writes, service ownership changes, or local database bootstrap into the admin-controlled global `SETUP_SCRIPT` config, into the worker image, or into the built-in optional service toggles. Keep per-agent setup user-level, for example `bun i -g` or `npm config set prefix "$HOME/.npm-global"`.
 
+## [1.113.0] - 2026-07-08
+
+### Added
+- **RBAC decisions now write to a dedicated `permission_audit` log** (#922) — allow/deny checks are buffered, retained, and queryable without putting audit writes in the request path.
+
+### Changed
+- **RBAC enforcement now flows through a broader central `can()` chokepoint** (#921, #925) — more MCP tool and config mutations are checked consistently, while `swarm-config` writes/deletes and unmasked secret reads are now lead-gated by default.
+- **Schedule authoring guidance now pushes the correct `targetType`** (#927) — operators are steered toward direct `workflow` and `script` targets instead of wrapping them in unnecessary agent-task schedules.
+
+### Fixed
+- **Favorites routes can no longer fall out of RBAC coverage and OpenAPI generation** (#926) — route-import completeness is enforced so `/api/favorites` stays audited and documented.
+- **Memory deletes and HTTP integration tests are more robust against cross-run state leakage** (#924) — SQLite-backed memory deletion now re-checks FTS availability on the current DB, and the integration suite no longer leaves local agent-fs test files in the worktree.
+
 ## [1.112.0] - 2026-07-07
 
 ### Added
