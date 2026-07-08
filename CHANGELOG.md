@@ -16,10 +16,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 - **RBAC decisions now write to a dedicated `permission_audit` log** (#922) — allow/deny checks are buffered, retained, and queryable without putting audit writes in the request path.
+- **Workflow and schedule triage tooling is available across HTTP, MCP, and scripts** (#933) — schedules can be patched with shallow nullable-field updates, schedule/workflow lists expose operational filters, and the scripts SDK now routes the allowlisted schedule/workflow operations.
 
 ### Changed
 - **RBAC enforcement now flows through a broader central `can()` chokepoint** (#921, #925) — more MCP tool and config mutations are checked consistently, while `swarm-config` writes/deletes and unmasked secret reads are now lead-gated by default.
 - **Schedule authoring guidance now pushes the correct `targetType`** (#927) — operators are steered toward direct `workflow` and `script` targets instead of wrapping them in unnecessary agent-task schedules.
+- **Script guidance now covers typed `ctx.api` connections and a single script-decision rubric** (#928, #930) — agent prompts and the `swarm-scripts` skill point workers toward typed API clients, lead-owned connection registration handoffs, and the canonical script-vs-tool policy.
+- **Worker-image harness pins refreshed** (#932) — `Dockerfile.worker` now ships Claude Code `2.1.204`, Codex `0.143.0`, and opencode / `@opencode-ai/sdk` `1.17.15`.
 
 ### Fixed
 - **Favorites routes can no longer fall out of RBAC coverage and OpenAPI generation** (#926) — route-import completeness is enforced so `/api/favorites` stays audited and documented.
