@@ -95,7 +95,7 @@ export default function OAuthAppDetailPage() {
   }
 
   return (
-    <div className="flex flex-col flex-1 min-h-0 overflow-y-auto gap-4">
+    <div className="flex flex-col flex-1 min-h-0 gap-4 overflow-y-auto lg:overflow-y-hidden">
       <Button asChild variant="outline" size="sm" className="w-fit">
         <Link to="/connections">
           <ArrowLeft className="size-4" />
@@ -189,8 +189,9 @@ export default function OAuthAppDetailPage() {
       />
 
       <DetailPageBody
+        className="flex-1 min-h-0"
         main={
-          <div className="space-y-4">
+          <div className="space-y-4 lg:flex-1 lg:min-h-0 lg:overflow-y-auto lg:pr-1">
             <Card>
               <CardHeader>
                 <CardTitle className="text-base">OAuth App</CardTitle>
