@@ -57,6 +57,22 @@ Good named scripts:
 - Fan out over many swarm tasks, memories, repos, or schedules.
 - Convert noisy JSON or HTML into a compact summary.
 
+## Typed API Connections (`ctx.api`)
+
+When a script calls an allow-listed external API, prefer a typed `ctx.api.<slug>` client over hand-writing `[REDACTED:<KEY>]` Authorization headers. `ctx.api` auto-injects the configured credential at egress, so the script source only describes the API call.
+
+Connections are registered by Lead via the `script-connections` tool. Workers should document the connection spec for handoff: `slug`, `baseUrl`, `allowedHosts`, `configKey`, and `headerTemplate`.
+
+Minimal zero-auth usage after Lead registration:
+
+```typescript
+export default async function main(args: any, ctx: any) {
+  return await ctx.api.publicExample.getStatus({});
+}
+```
+
+For the full credential-broker and `script-connections` flow, see `docs-site/content/docs/(documentation)/guides/scripts-credential-broker.mdx`.
+
 ## Using `db_query` For Aggregation
 
 For scripts that aggregate over tasks, sessions, or memory, `ctx.swarm.db_query` with direct SQL is far more efficient than fetching lists client-side.
