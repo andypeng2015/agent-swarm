@@ -136,6 +136,7 @@ const searchRoute = route({
     200: { description: "Matching scripts" },
     400: { description: "Validation error" },
   },
+  rbac: { permission: "script.search" },
 });
 
 const deleteRoute = route({
@@ -273,6 +274,7 @@ const createScriptApiRoute = route({
     400: { description: "Validation error or script has no owning agent" },
     404: { description: "Script not found" },
   },
+  rbac: { permission: "script.api.create" },
 });
 
 const listScriptApisRoute = route({
@@ -301,6 +303,7 @@ const revealScriptApiSecretRoute = route({
     200: { description: "Decrypted token (null when authMode is 'none')" },
     404: { description: "Endpoint not found" },
   },
+  rbac: { permission: "script.api.read.secrets" },
 });
 
 const patchScriptApiRoute = route({
@@ -316,6 +319,7 @@ const patchScriptApiRoute = route({
     200: { description: "Updated endpoint" },
     404: { description: "Endpoint not found" },
   },
+  rbac: { permission: "script.api.update" },
 });
 
 const rotateScriptApiRoute = route({
@@ -331,6 +335,7 @@ const rotateScriptApiRoute = route({
     400: { description: "Endpoint uses 'none' auth — nothing to rotate" },
     404: { description: "Endpoint not found" },
   },
+  rbac: { permission: "script.api.rotate" },
 });
 
 const deleteScriptApiRoute = route({
@@ -345,6 +350,7 @@ const deleteScriptApiRoute = route({
     200: { description: "Deleted" },
     404: { description: "Endpoint not found" },
   },
+  rbac: { permission: "script.api.delete" },
 });
 
 function requireAgent(res: ServerResponse, agentId: string | undefined) {

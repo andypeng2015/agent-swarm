@@ -67,8 +67,14 @@ const LEAD_ONLY_VERBS: PermissionVerb[] = [
   "mcp-server.create.swarm",
   "mcp-server.install.any",
   "mcp-server.uninstall.any",
+  "mcp-server.read.secrets",
   "script.global.write",
   "script.global.delete",
+  "script.api.read.secrets",
+  "script.api.create",
+  "script.api.update",
+  "script.api.rotate",
+  "script.api.delete",
 ];
 
 const LEAD_OR_RESOURCE_OWNER_VERBS: PermissionVerb[] = [
@@ -86,6 +92,9 @@ const LEAD_OR_OWN_NAMESPACE_VERBS: PermissionVerb[] = ["kv.write.any"];
 const ANY_AUTHENTICATED_VERBS: PermissionVerb[] = [
   "script-connection.invoke",
   "mcp-oauth.authorize.any",
+  "task.create.own",
+  "favorite.write.own",
+  "script.search",
 ];
 
 const REQUESTER_OWNS_TASK_VERBS: PermissionVerb[] = [

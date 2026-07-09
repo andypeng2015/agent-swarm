@@ -14,9 +14,11 @@ import {
   api,
   makeScratchDir,
   readAuditRows,
+  registerAgent,
   removeScratchDir,
   type SwarmServer,
   spawnSwarmServer,
+  WORKER_A,
   waitForAuditCount,
 } from "./rbac-e2e-helpers";
 
@@ -97,6 +99,7 @@ describe("RBAC admission over real HTTP", () => {
       logPath: join(dir, "server-on.log"),
       env: { RBAC_ENABLED: "true" },
     });
+    await registerAgent(server.base, WORKER_A, "rbac-admission-worker", false);
 
     const user = await api(server.base, "POST", "/api/users", {
       body: { name: "admission-user", email: "rbac-admission-e2e@example.com" },
@@ -122,6 +125,49 @@ describe("RBAC admission over real HTTP", () => {
     expect(upsertSecret.status).toBe(200);
     expect(upsertSecret.body.value).toBe(CONFIG_SECRET_VALUE);
 
+    const scriptName = `rbac-admission-script-${crypto.randomUUID()}`;
+    const upsertScript = await api(server.base, "POST", "/api/scripts/upsert", {
+      agentId: WORKER_A,
+      body: {
+        name: scriptName,
+        source: "export default async function run() { return { ok: true }; }",
+        scope: "agent",
+        description: "RBAC admission script API fixture",
+        intent: "rbac admission fixture",
+      },
+    });
+    expect(upsertScript.status).toBe(200);
+    const scripts = await api(server.base, "GET", "/api/scripts?scope=agent");
+    expect(scripts.status).toBe(200);
+    const script = scripts.body.scripts.find((row: { name: string }) => row.name === scriptName);
+    expect(script).toBeTruthy();
+    const scriptId = script.id as string;
+
+    const scriptApi = await api(server.base, "POST", `/api/scripts/${scriptId}/apis`, {
+      body: { authMode: "bearer", label: "rbac admission endpoint" },
+    });
+    expect(scriptApi.status).toBe(201);
+    const endpointId = scriptApi.body.id as string;
+    const scriptApiToken = scriptApi.body.token as string;
+    expect(scriptApiToken).toStartWith("xsk_");
+
+    const mcpServer = await api(server.base, "POST", "/api/mcp-servers", {
+      body: {
+        name: `rbac-admission-mcp-${crypto.randomUUID()}`,
+        transport: "http",
+        scope: "agent",
+        ownerAgentId: WORKER_A,
+        url: "https://example.invalid/mcp",
+        headerConfigKeys: JSON.stringify({ Authorization: CONFIG_SECRET_KEY }),
+      },
+    });
+    expect(mcpServer.status).toBe(201);
+    const mcpServerId = mcpServer.body.server.id as string;
+    const installMcp = await api(server.base, "POST", `/api/mcp-servers/${mcpServerId}/install`, {
+      body: { agentId: WORKER_A },
+    });
+    expect(installMcp.status).toBe(200);
+
     const grantsAllSecretRead = await api(
       server.base,
       "GET",
@@ -131,6 +177,26 @@ describe("RBAC admission over real HTTP", () => {
     expect(grantsAllSecretRead.status).toBe(200);
     expect(configValue(grantsAllSecretRead.body, CONFIG_SECRET_KEY)).toBe(CONFIG_SECRET_VALUE);
     expect(grantsAllSecretRead.body.message).toBeUndefined();
+
+    const grantsAllScriptApiSecret = await api(
+      server.base,
+      "GET",
+      `/api/scripts/${scriptId}/apis/${endpointId}/secret`,
+      { bearer: userToken },
+    );
+    expect(grantsAllScriptApiSecret.status).toBe(200);
+    expect(grantsAllScriptApiSecret.body.token).toBe(scriptApiToken);
+
+    const grantsAllMcpSecrets = await api(
+      server.base,
+      "GET",
+      `/api/agents/${WORKER_A}/mcp-servers?resolveSecrets=true`,
+      { bearer: userToken },
+    );
+    expect(grantsAllMcpSecrets.status).toBe(200);
+    expect(grantsAllMcpSecrets.body.servers[0]?.resolvedHeaders?.Authorization).toBe(
+      CONFIG_SECRET_VALUE,
+    );
 
     const defaultCreate = await api(server.base, "POST", "/api/tasks", {
       bearer: userToken,
@@ -148,12 +214,12 @@ describe("RBAC admission over real HTTP", () => {
     expect(deniedTaskCreate.status).toBe(403);
     expect(deniedTaskCreate.body.error).toContain("admission: route has no permission verb");
 
-    const deniedFavorite = await api(server.base, "PUT", "/api/favorites", {
+    const allowedFavorite = await api(server.base, "PUT", "/api/favorites", {
       bearer: userToken,
       body: { itemType: "workflow", itemId: "wf-rbac-admission", favorite: true },
     });
-    expect(deniedFavorite.status).toBe(403);
-    expect(deniedFavorite.body.error).toContain("admission: route has no permission verb");
+    expect(allowedFavorite.status).toBe(200);
+    expect(allowedFavorite.body.favorite).toBe(true);
 
     const listTasks = await api(server.base, "GET", `/api/tasks?requestedByUserId=${userId}`, {
       bearer: userToken,
@@ -172,6 +238,41 @@ describe("RBAC admission over real HTTP", () => {
     expect(maskedSecretRead.body.message).toContain(
       "reading unmasked secrets requires the lead agent",
     );
+
+    const secretlessMcpList = await api(server.base, "GET", `/api/agents/${WORKER_A}/mcp-servers`, {
+      bearer: userToken,
+    });
+    expect(secretlessMcpList.status).toBe(200);
+    expect(secretlessMcpList.body.servers[0]?.resolvedHeaders).toBeUndefined();
+
+    const deniedMcpSecretRead = await api(
+      server.base,
+      "GET",
+      `/api/agents/${WORKER_A}/mcp-servers?resolveSecrets=true`,
+      { bearer: userToken },
+    );
+    expect(deniedMcpSecretRead.status).toBe(403);
+    expect(deniedMcpSecretRead.body.error).toContain(
+      "missing permission 'mcp-server.read.secrets'",
+    );
+
+    const deniedScriptApiSecretRead = await api(
+      server.base,
+      "GET",
+      `/api/scripts/${scriptId}/apis/${endpointId}/secret`,
+      { bearer: userToken },
+    );
+    expect(deniedScriptApiSecretRead.status).toBe(403);
+    expect(deniedScriptApiSecretRead.body.error).toContain(
+      "missing permission 'script.api.read.secrets'",
+    );
+
+    const deniedScriptApiCreate = await api(server.base, "POST", `/api/scripts/${scriptId}/apis`, {
+      bearer: userToken,
+      body: { authMode: "none", label: "denied" },
+    });
+    expect(deniedScriptApiCreate.status).toBe(403);
+    expect(deniedScriptApiCreate.body.error).toContain("missing permission 'script.api.create'");
 
     grantUserConfigSecretRead(dbPath, userId);
 
@@ -199,18 +300,42 @@ describe("RBAC admission over real HTTP", () => {
     expect(operatorCreate.status).toBe(201);
 
     expect(await waitForAuditCount(dbPath, 2)).toBeGreaterThanOrEqual(2);
-    const denyRows = readAuditRows(dbPath).filter(
+    const userHttpRows = readAuditRows(dbPath).filter(
       (row) =>
         row.principalType === "user" &&
         row.principalId === userId &&
         row.source === "http" &&
-        row.resourceType === "http-route" &&
-        row.decision === "deny",
+        row.resourceType === "http-route",
     );
+    const denyRows = userHttpRows.filter((row) => row.decision === "deny");
     expect(denyRows.map((row) => row.resourceId).sort()).toEqual([
+      "GET /api/agents/{id}/mcp-servers",
+      "GET /api/scripts/{id}/apis/{endpointId}/secret",
+      "POST /api/scripts/{id}/apis",
       "POST /api/tasks",
-      "PUT /api/favorites",
     ]);
+    expect(
+      denyRows.some(
+        (row) =>
+          row.resourceId === "GET /api/agents/{id}/mcp-servers" &&
+          row.verb === "mcp-server.read.secrets",
+      ),
+    ).toBe(true);
+    expect(
+      denyRows.some(
+        (row) =>
+          row.resourceId === "GET /api/scripts/{id}/apis/{endpointId}/secret" &&
+          row.verb === "script.api.read.secrets",
+      ),
+    ).toBe(true);
+    expect(
+      userHttpRows.some(
+        (row) =>
+          row.resourceId === "PUT /api/favorites" &&
+          row.verb === "favorite.write.own" &&
+          row.decision === "allow",
+      ),
+    ).toBe(true);
 
     rewriteUserToRequester(dbPath, userId);
 
@@ -237,5 +362,25 @@ describe("RBAC admission over real HTTP", () => {
     expect(flagOffSecretRead.status).toBe(200);
     expect(configValue(flagOffSecretRead.body, CONFIG_SECRET_KEY)).toBe(CONFIG_SECRET_VALUE);
     expect(flagOffSecretRead.body.message).toBeUndefined();
+
+    const flagOffScriptApiSecret = await api(
+      server.base,
+      "GET",
+      `/api/scripts/${scriptId}/apis/${endpointId}/secret`,
+      { bearer: userToken },
+    );
+    expect(flagOffScriptApiSecret.status).toBe(200);
+    expect(flagOffScriptApiSecret.body.token).toBe(scriptApiToken);
+
+    const flagOffMcpSecrets = await api(
+      server.base,
+      "GET",
+      `/api/agents/${WORKER_A}/mcp-servers?resolveSecrets=true`,
+      { bearer: userToken },
+    );
+    expect(flagOffMcpSecrets.status).toBe(200);
+    expect(flagOffMcpSecrets.body.servers[0]?.resolvedHeaders?.Authorization).toBe(
+      CONFIG_SECRET_VALUE,
+    );
   });
 });

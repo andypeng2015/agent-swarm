@@ -11,7 +11,11 @@ import {
   uninstallMcpServer,
   updateMcpServer,
 } from "../be/db";
+import { enqueueAdmissionRow } from "../be/rbac-audit";
+import { getUserGrant } from "../be/rbac-roles";
 import { ensureMcpToken } from "../oauth/ensure-mcp-token";
+import { isRbacEnabled, type PermissionVerb } from "../rbac";
+import { getRequestAuth } from "../utils/request-auth-context";
 import { route } from "./route-def";
 import { json, jsonError } from "./utils";
 
@@ -74,6 +78,7 @@ const createMcpServerRoute = route({
     201: { description: "MCP server created" },
     400: { description: "Validation error" },
   },
+  rbac: { permission: "mcp-server.create.swarm" },
 });
 
 const updateMcpServerRoute = route({
@@ -89,6 +94,7 @@ const updateMcpServerRoute = route({
     200: { description: "MCP server updated" },
     404: { description: "MCP server not found" },
   },
+  rbac: { permission: "mcp-server.update.any" },
 });
 
 const deleteMcpServerRoute = route({
@@ -103,6 +109,7 @@ const deleteMcpServerRoute = route({
     200: { description: "MCP server deleted" },
     404: { description: "MCP server not found" },
   },
+  rbac: { permission: "mcp-server.delete.any" },
 });
 
 const installMcpServerRoute = route({
@@ -120,6 +127,7 @@ const installMcpServerRoute = route({
     200: { description: "MCP server installed" },
     404: { description: "MCP server not found" },
   },
+  rbac: { permission: "mcp-server.install.any" },
 });
 
 const uninstallMcpServerRoute = route({
@@ -133,6 +141,7 @@ const uninstallMcpServerRoute = route({
   responses: {
     200: { description: "MCP server uninstalled" },
   },
+  rbac: { permission: "mcp-server.uninstall.any" },
 });
 
 const getAgentMcpServersRoute = route({
@@ -153,6 +162,30 @@ const getAgentMcpServersRoute = route({
 
 // ─── Handler ─────────────────────────────────────────────────────────────────
 
+function canResolveMcpSecretsForHttpUser(req: IncomingMessage): boolean {
+  const auth = getRequestAuth(req);
+  if (auth?.kind !== "user") return true;
+  if (!isRbacEnabled()) return true;
+
+  const verb: PermissionVerb = "mcp-server.read.secrets";
+  const grant = getUserGrant(auth.userId);
+  const decision =
+    grant.grantsAll || grant.verbs.has(verb)
+      ? ({ allow: true, verb } as const)
+      : ({
+          allow: false,
+          reason: `admission: missing permission '${verb}'`,
+          verb,
+        } as const);
+  enqueueAdmissionRow({
+    userId: auth.userId,
+    decision,
+    method: req.method,
+    route: getAgentMcpServersRoute.def.path,
+  });
+  return decision.allow;
+}
+
 export async function handleMcpServers(
   req: IncomingMessage,
   res: ServerResponse,
@@ -168,6 +201,11 @@ export async function handleMcpServers(
     const resolveSecrets = parsed.query.resolveSecrets === "true";
 
     if (resolveSecrets) {
+      if (!canResolveMcpSecretsForHttpUser(req)) {
+        jsonError(res, "Forbidden: admission: missing permission 'mcp-server.read.secrets'", 403);
+        return true;
+      }
+
       const configs = getResolvedConfig(parsed.params.id);
       const configMap = new Map(configs.map((c) => [c.key, c.value]));
 
