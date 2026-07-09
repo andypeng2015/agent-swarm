@@ -1,6 +1,7 @@
 import {
   assignUnassignedTaskPending,
   backfillSupersedeTaskResumeTaskId,
+  buildRoutingAffinityFromAgent,
   cleanupStaleSessions,
   createTaskExtended,
   deleteActiveSession,
@@ -16,12 +17,15 @@ import {
   getRecentFailedCount,
   getRecentFailedTasks,
   getStalePinnedResumes,
+  getStaleUnassignedAffinityTasks,
   getStalledInProgressTasks,
   getTaskById,
   getTaskStats,
   getTasksByStatus,
   getUnassignedPoolTasks,
   hasNonTerminalResumeChild,
+  isAgentEligibleForTask,
+  isPoolAffinityEnforcementEnabled,
   MAX_EMPTY_POLLS,
   releaseStaleMentionProcessing,
   releaseStaleProcessingInbox,
@@ -32,10 +36,13 @@ import {
 import { repointTrackerSyncBySwarmId } from "../be/db-queries/tracker";
 import { resolveTemplate } from "../prompts/resolver";
 import {
+  createPoolStarvationDecisionTask,
   createRerouteDecisionTask,
   createResumeFollowUp,
   getNextResumeGeneration,
+  getPinCandidateAgent,
   getResumeGeneration,
+  REBOOT_RETRY_PIN_TAG,
 } from "../tasks/worker-follow-up";
 import type { AgentTask } from "../types";
 import { getExecutorRegistry } from "../workflows";
@@ -83,6 +90,18 @@ const STALE_CLEANUP_THRESHOLD_MINUTES = Number(process.env.HEARTBEAT_STALE_CLEAN
 /** Max pool tasks to auto-assign per sweep */
 const MAX_AUTO_ASSIGN_PER_SWEEP = Number(process.env.HEARTBEAT_MAX_AUTO_ASSIGN) || 5;
 
+/**
+ * Page size for `autoAssignPoolTasks`' paginated pool scan and the hard cap on
+ * total rows scanned per sweep. A single bounded fetch used to mean N
+ * ineligible affinity-tagged tasks at the head of the priority order could
+ * hide all eligible work behind them indefinitely (see PR #954 review) — the
+ * scan now pages through the pool until it has assigned `MAX_AUTO_ASSIGN_PER_SWEEP`
+ * tasks or exhausted the pool, capped so a pool full of ineligible tasks can't
+ * turn every sweep into an unbounded scan.
+ */
+const POOL_SCAN_BATCH_SIZE = Number(process.env.HEARTBEAT_POOL_SCAN_BATCH_SIZE) || 50;
+const POOL_SCAN_CAP = Number(process.env.HEARTBEAT_POOL_SCAN_CAP) || 500;
+
 /** Max crash-recovery resume generations before failing for lead triage */
 export const MAX_RESUME_GENERATIONS = Number(process.env.HEARTBEAT_MAX_RESUME_GENERATIONS) || 3;
 
@@ -110,6 +129,17 @@ export const HEARTBEAT_RESUME_PIN_GRACE_MIN = (() => {
   // `new Date(NaN).toISOString()` — breaking cleanup on every sweep.
   return Number.isFinite(parsed) ? parsed : 10;
 })();
+
+/**
+ * Grace window (minutes) an `unassigned` pool task carrying a `routingAffinity`
+ * snapshot waits before the starvation escalation (`escalateStarvedPoolTasks`)
+ * hands it to the Lead — but ONLY when zero registered agents (any status)
+ * satisfy `isAgentEligibleForTask` for it. A task with at least one matching
+ * (even offline/busy) agent never escalates on this path; it waits for
+ * `autoAssignPoolTasks` / the poll auto-claim instead. Enforcement is gated by
+ * `POOL_AFFINITY_ENFORCEMENT` — the escalation is a no-op when that's off.
+ */
+const POOL_AFFINITY_ESCALATION_MIN = Number(process.env.POOL_AFFINITY_ESCALATION_MIN) || 15;
 
 /** Heartbeat checklist interval: how often to check HEARTBEAT.md (default: 30 min) */
 const HEARTBEAT_CHECKLIST_INTERVAL_MS =
@@ -557,12 +587,39 @@ export async function runRebootSweep(): Promise<void> {
 
       if (!existingRetry) {
         try {
+          // Routing affinity (Phase 3): pin the retry child to the original
+          // agent when it still looks recoverable (row exists, not offline,
+          // has capacity) — the same gate `createResumeFollowUp` uses for its
+          // same-agent pin. This keeps the retry off the role-blind pool
+          // whenever the original worker is merely restarting. Always stamp
+          // a `routingAffinity` snapshot from the original agent — even on
+          // the pool-fallback leg (agent gone/offline/at-capacity) — so that
+          // leg is still role/capability-gated instead of role-blind.
+          let preferredAgentId: string | undefined;
+          const candidate = getPinCandidateAgent(task.agentId);
+          if (candidate) {
+            const activeCount = getActiveTaskCount(candidate.id);
+            const hasCap = activeCount < (candidate.maxTasks ?? 1);
+            if (hasCap) {
+              preferredAgentId = candidate.id;
+            } else {
+              console.warn(
+                `[Heartbeat] Reboot retry for task ${task.id.slice(0, 8)} NOT pinned: agent ${candidate.id.slice(0, 8)} at capacity (${activeCount}/${candidate.maxTasks ?? 1}); falling back to affinity-gated pool`,
+              );
+            }
+          }
+
+          const tags = ["reboot-retry", "auto-generated"];
+          if (preferredAgentId !== undefined) tags.push(REBOOT_RETRY_PIN_TAG);
+
           const retryTask = createTaskExtended(task.task, {
             parentTaskId: task.id,
-            tags: ["reboot-retry", "auto-generated"],
+            agentId: preferredAgentId,
+            tags,
             priority: task.priority,
             source: task.source,
             taskType: task.taskType ?? undefined,
+            routingAffinity: buildRoutingAffinityFromAgent(task.agentId) ?? undefined,
           });
           retryTaskId = retryTask.id;
           console.log(`[Heartbeat] Reboot retry created: ${retryTaskId} (parent: ${task.id})`);
@@ -619,6 +676,24 @@ function checkWorkerHealth(findings: HeartbeatFindings): void {
 /**
  * Auto-assign unassigned pool tasks to idle workers with capacity.
  * Leaves tasks pending so the assigned worker's normal poll dispatches them.
+ *
+ * Routing affinity (Phase 3): per-task filtering, not blind round-robin — for
+ * each pool task (in priority/creation order), pick the first idle worker
+ * that both has remaining capacity AND satisfies `isAgentEligibleForTask`.
+ * A task with no eligible worker this sweep is left `unassigned` (queued);
+ * it either gets picked up on a later sweep once a matching worker frees up,
+ * or is escalated to the Lead by `escalateStarvedPoolTasks` once it's been
+ * stale long enough with zero eligible agents at all.
+ *
+ * The pool scan itself is paginated (Phase 3.1): a single bounded fetch of
+ * `MAX_AUTO_ASSIGN_PER_SWEEP` tasks used to mean that if the highest-priority
+ * rows were all affinity-tagged for a role with no idle match this sweep,
+ * lower-priority eligible work behind them was never even looked at — it
+ * would starve indefinitely regardless of how many sweeps ran, since the same
+ * ineligible head-of-line rows were re-fetched every time. This now pages
+ * through the pool in `POOL_SCAN_BATCH_SIZE` windows until it has assigned
+ * `MAX_AUTO_ASSIGN_PER_SWEEP` tasks or exhausted the pool (capped at
+ * `POOL_SCAN_CAP` rows scanned).
  */
 function autoAssignPoolTasks(findings: HeartbeatFindings): void {
   getDb().transaction(() => {
@@ -631,10 +706,6 @@ function autoAssignPoolTasks(findings: HeartbeatFindings): void {
     );
     if (idleWorkers.length === 0) return;
 
-    const poolTasks = getUnassignedPoolTasks(MAX_AUTO_ASSIGN_PER_SWEEP);
-    if (poolTasks.length === 0) return;
-
-    let workerIndex = 0;
     const reservedByWorker = new Map<string, number>();
     const reservedForWorker = (agentId: string): number => {
       const cached = reservedByWorker.get(agentId);
@@ -649,27 +720,31 @@ function autoAssignPoolTasks(findings: HeartbeatFindings): void {
       return reserved;
     };
 
-    for (const task of poolTasks) {
-      if (workerIndex >= idleWorkers.length) break;
+    let assignedCount = 0;
+    let offset = 0;
 
-      const worker = idleWorkers[workerIndex]!;
-      const maxTasks = worker.maxTasks ?? 1;
-      if (reservedForWorker(worker.id) >= maxTasks) {
-        workerIndex++;
-        continue;
-      }
+    while (assignedCount < MAX_AUTO_ASSIGN_PER_SWEEP && offset < POOL_SCAN_CAP) {
+      const batch = getUnassignedPoolTasks(POOL_SCAN_BATCH_SIZE, offset);
+      if (batch.length === 0) break;
 
-      const assigned = assignUnassignedTaskPending(task.id, worker.id);
+      for (const task of batch) {
+        if (assignedCount >= MAX_AUTO_ASSIGN_PER_SWEEP) break;
 
-      if (assigned) {
-        findings.autoAssigned.push({ taskId: task.id, agentId: worker.id });
-        reservedByWorker.set(worker.id, reservedForWorker(worker.id) + 1);
-        // Check if this worker still has capacity for more
-        const remaining = maxTasks - reservedForWorker(worker.id);
-        if (remaining <= 0) {
-          workerIndex++;
+        const worker = idleWorkers.find(
+          (w) => reservedForWorker(w.id) < (w.maxTasks ?? 1) && isAgentEligibleForTask(w, task),
+        );
+        if (!worker) continue; // No eligible worker with capacity this sweep — leave queued.
+
+        const assigned = assignUnassignedTaskPending(task.id, worker.id);
+        if (assigned) {
+          findings.autoAssigned.push({ taskId: task.id, agentId: worker.id });
+          reservedByWorker.set(worker.id, reservedForWorker(worker.id) + 1);
+          assignedCount++;
         }
       }
+
+      offset += batch.length;
+      if (batch.length < POOL_SCAN_BATCH_SIZE) break; // Exhausted the pool.
     }
   })();
 }
@@ -782,6 +857,50 @@ function escalateUnreclaimedResumes(findings: HeartbeatFindings): void {
 }
 
 /**
+ * Routing-affinity Phase 3: escalate `unassigned` pool tasks that carry a
+ * `routingAffinity` snapshot, have sat queued past
+ * `POOL_AFFINITY_ESCALATION_MIN`, AND have ZERO eligible registered agents —
+ * "nobody of that role exists", not "everyone's busy right now" (`getAllAgents`
+ * is intentionally unfiltered by status; an offline-but-matching agent still
+ * counts as "not starved", since it'll be picked up once that agent returns).
+ * A task with at least one matching agent (any status) is left queued for
+ * `autoAssignPoolTasks` / the poll auto-claim instead of escalating early.
+ *
+ * No-op when `POOL_AFFINITY_ENFORCEMENT` is off (nothing can be starved if
+ * the gate itself is disabled). Idempotent via the same
+ * non-terminal-`reroute-decision`-child check `createPoolStarvationDecisionTask`
+ * shares with `createRerouteDecisionTask`.
+ */
+function escalateStarvedPoolTasks(findings: HeartbeatFindings): void {
+  if (!isPoolAffinityEnforcementEnabled()) return;
+
+  const cutoff = new Date(Date.now() - POOL_AFFINITY_ESCALATION_MIN * 60 * 1000).toISOString();
+  const candidates = getStaleUnassignedAffinityTasks(cutoff);
+  if (candidates.length === 0) return;
+
+  // Lead-owned targets never actually claim pool work (getIdleWorkersWithCapacity
+  // already excludes them), so exclude them here too — otherwise a Lead whose
+  // role happens to match would falsely suppress escalation forever.
+  const registeredAgents = getAllAgents().filter((a) => !a.isLead);
+
+  for (const task of candidates) {
+    const hasEligibleAgent = registeredAgents.some((agent) => isAgentEligibleForTask(agent, task));
+    if (hasEligibleAgent) continue; // Someone (any status) matches — keep queued.
+
+    const decision = createPoolStarvationDecisionTask({ original: task });
+    if (decision.kind === "created") {
+      findings.escalatedReroutes.push({
+        originalTaskId: task.id,
+        decisionTaskId: decision.task.id,
+      });
+      console.log(
+        `[Heartbeat] Escalated starved pool task ${task.id.slice(0, 8)} → Lead reroute-decision ${decision.task.id.slice(0, 8)} (zero eligible agents)`,
+      );
+    }
+  }
+}
+
+/**
  * Call existing stale resource cleanup functions.
  */
 async function cleanupStaleResources(findings: HeartbeatFindings): Promise<void> {
@@ -798,6 +917,9 @@ async function cleanupStaleResources(findings: HeartbeatFindings): Promise<void>
   // DES-523 Phase 3: escalate pinned crash-recovery resumes that were never
   // reclaimed within the grace window to a Lead re-delegation decision.
   escalateUnreclaimedResumes(findings);
+  // Routing-affinity Phase 3: escalate affinity-tagged pool tasks that have
+  // zero eligible registered agents to a Lead re-delegation decision.
+  escalateStarvedPoolTasks(findings);
   try {
     findings.staleCleanup.workflowRuns = await recoverIncompleteRuns(getExecutorRegistry());
   } catch {
