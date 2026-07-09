@@ -12,6 +12,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Migration notes
 - **v1.106.0 setupScript privilege boundary:** per-agent `setupScript` and `/workspace/start-up.*` hooks now run as the unprivileged `worker` user after the container drops privileges, and the worker image no longer includes blanket passwordless sudo (#865, #866). Move root-requiring steps such as system package installs, `/usr/lib` global npm writes, service ownership changes, or local database bootstrap into the admin-controlled global `SETUP_SCRIPT` config, into the worker image, or into the built-in optional service toggles. Keep per-agent setup user-level, for example `bun i -g` or `npm config set prefix "$HOME/.npm-global"`.
 
+## [1.114.0] - 2026-07-09
+
+### Added
+- **Script connections now cover OpenAPI, GraphQL, and proxied MCP clients with OAuth-aware credential bindings** (#934) — lead-managed connections can generate typed `ctx.api.*` and `ctx.mcp.*` surfaces, scheduled/workflow/external script runs receive the same connection context, and the dashboard now has first-class connections and OAuth-app management.
+- **Page deletion is now available as a first-class MCP tool** (#940) — agents can remove stale published pages by id or slug instead of only creating/updating them.
+- **Workflow webhooks now support explicit verification formats** (#941) — triggers can declare plain HMAC, timestamped HMAC, or token-equality verification with stricter fail-closed validation.
+- **RBAC role-engine admission can now be switched on for user-token REST traffic** (#935, #936) — built-in roles, bootstrap/backfill, and zero-role self-healing make per-user admission enforcement practical in hosted and self-hosted swarms.
+
+### Changed
+- **Workflow and schedule triage tooling is deeper and more scriptable** (#933) — schedules gained shallow patch updates, workflow/schedule listings expose more operational filters, and the scripts SDK can call the allowlisted triage operations directly.
+- **Worker-image harness pins refreshed again** (#932) — `Dockerfile.worker` now ships Claude Code `2.1.208`, Codex `0.143.3`, and OpenCode / `@opencode-ai/sdk` `1.17.17`.
+
+### Fixed
+- **User identity resolution now fails closed on unresolved humans instead of inventing display names** (#939) — Slack, GitHub, GitLab, Jira, Kapso, and AgentMail flows all resolve through the same provider-agnostic user invariant, preventing guessed identities from leaking into tasks, approvals, or audit trails.
+
 ## [1.113.0] - 2026-07-08
 
 ### Added

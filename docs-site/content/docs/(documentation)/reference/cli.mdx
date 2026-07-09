@@ -133,6 +133,21 @@ bunx @desplega.ai/agent-swarm codex-login --api-url https://swarm.example.com
 
 See [Provider Auth: Codex OAuth](/docs/guides/provider-auth/codex-oauth) for the full ChatGPT OAuth flow.
 
+### rbac bootstrap
+
+Seed the built-in RBAC roles and backfill the default role onto any zero-role
+users. This is idempotent and is the operator-side bootstrap step before
+turning `RBAC_ENABLED=true`.
+
+```bash
+bunx @desplega.ai/agent-swarm rbac bootstrap
+npx @desplega.ai/agent-swarm rbac bootstrap
+agent-swarm rbac bootstrap
+```
+
+The command accepts exactly the `bootstrap` subcommand. Anything else prints
+help and exits non-zero.
+
 ### claude-managed-setup
 
 Bootstrap [Anthropic Managed Agents](/docs/guides/harness-configuration#claude-managed-agents) for the swarm: create the cloud Environment, upload `plugin/commands/*.md` skills, create the managed Agent, and persist the resulting `MANAGED_AGENT_ID` + `MANAGED_ENVIRONMENT_ID` to `swarm_config` so deployed workers can restore them at boot. Prompts interactively for `ANTHROPIC_API_KEY` when not set in env. Idempotent — re-run with `--force` to recreate. Run from your laptop, **not** inside a worker container.
