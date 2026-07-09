@@ -119,9 +119,13 @@ invocations show up alongside agent-triggered runs in the
 
 - [Scripts runtime](/docs/guides/scripts-runtime) — what the script sandbox
   exposes and how the typecheck stays aligned with it.
+- [Script connections](/docs/guides/script-connections) — the preferred path
+  for typed outbound `ctx.api` / `ctx.mcp` calls, with credential bindings and
+  OAuth-backed auth handled server-side.
 - [Scripts credential broker](/docs/guides/scripts-credential-broker) — how a
-  script authenticates its own outbound `fetch` calls (separate from the
-  bearer token an external caller uses to reach the script).
+  script authenticates its own outbound `fetch` calls when a typed connection
+  is not the right fit (separate from the bearer token an external caller uses
+  to reach the script).
 - [External APIs reference](/docs/api-reference/external-apis) — the
   generated OpenAPI reference for `POST /api/x/script/{endpointId}`.
 - [Scripts API reference](/docs/api-reference/scripts) — the authenticated

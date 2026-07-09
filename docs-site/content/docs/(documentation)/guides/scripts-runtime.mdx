@@ -49,9 +49,12 @@ The `fetch` available in the runtime IS the one Bun provides — same shape as
 Node 18+'s undici fetch. Prefer `ctx.stdlib.fetch` / `ctx.stdlib.fetchJson` for
 built-in retries; bare `fetch` works too.
 
-For external APIs that need secrets, use the
-[scripts credential broker](/docs/guides/scripts-credential-broker) instead of
-putting raw tokens in source or args.
+For external APIs that need secrets, prefer
+[script connections](/docs/guides/script-connections) for typed `ctx.api` /
+`ctx.mcp` access, or the
+[scripts credential broker](/docs/guides/scripts-credential-broker) when you
+truly need a hand-written `fetch()`. In both cases, avoid putting raw tokens in
+source or args.
 
 ### Console + logger
 

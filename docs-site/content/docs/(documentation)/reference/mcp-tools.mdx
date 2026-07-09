@@ -164,13 +164,16 @@ Delete a configuration entry by its ID.
 
 Lead-only management for scripts-runtime credential broker bindings. Use it to
 list, create, update, or disable `[REDACTED:CONFIG_KEY]` host-allowlisted
-substitution rules without exposing raw secrets to scripts.
+substitution rules, OAuth app metadata, and token-backed auth wiring without
+exposing raw secrets to scripts.
 
 ### script-connections
 
-Lead-only registry for typed script API connections. Phase 1 supports
-OpenAPI-backed `ctx.api.<slug>` clients plus optional linkage to a credential
-binding for authenticated requests.
+Lead-only registry for typed script API connections. Supports OpenAPI-backed
+`ctx.api.<slug>.<operationId>(args)`, GraphQL
+`ctx.api.<slug>.graphql(query, vars)`, and proxied MCP
+`ctx.mcp.<slug>.<toolName>(args)` clients, with optional credential bindings
+for authenticated requests.
 
 ## Slack Tools
 
@@ -406,11 +409,14 @@ Manage HTTP service discovery. Registry entries are keyed by the calling agent's
 
 ## Scheduling Tools
 
-### create-schedule / list-schedules / update-schedule / delete-schedule / run-schedule-now
+### create-schedule / list-schedules / update-schedule / patch-schedule / delete-schedule / run-schedule-now
 
 Manage recurring and one-time task automation. Any registered agent can update or delete schedules. Schedules now support native `targetType` routing: create an agent task (`agent-task`), trigger a workflow directly, or launch a saved catalog script. Agent-task schedules also support both a concrete `model` override and a portable `modelTier` (`smol`, `regular`, `smart`, `ultra`) that is passed through to the tasks they create.
 
 **One-time schedules** (v1.36.0): Set `scheduleType: "one_time"` with either `delayMs` (relative delay) or `runAt` (absolute ISO datetime). One-time schedules auto-disable after execution. `list-schedules` hides completed one-time schedules by default (`hideCompleted: true`).
+
+`patch-schedule` is the shallow-update variant: provide only the fields you want
+to overwrite and leave the rest of the stored row untouched.
 
 See [Scheduled Tasks](/docs/concepts/scheduling) for details.
 
@@ -439,11 +445,16 @@ Get workflow details by ID.
 
 ### list-workflows
 
-List all workflows, optionally filtering by enabled status.
+List all workflows, optionally filtering by enabled status. Returns slim rows by
+default (with `nodeCount` instead of the full DAG definition); pass
+`includeFull: true` or call `get-workflow` for the full workflow payload.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `enabled` | boolean | No | Filter by enabled/disabled |
+| `consecutiveErrorsMin` | number | No | Only return workflows whose latest runs include at least this many consecutive failures |
+| `lastRunStatus` | string | No | Only return workflows whose latest run has this status |
+| `includeFull` | boolean | No | Return the full workflow `definition` and triggers instead of slim rows |
 
 ### update-workflow
 
@@ -570,6 +581,15 @@ Stores an HTML or JSON page in the swarm and returns shareable URLs. Calls are u
 | `needsCredentials` | array | No | Declared credential needs for JSON pages (reserved for follow-up) |
 
 Returns the page id, an `app_url` (`${APP_URL}/pages/:id` — opens in the SPA), and an `api_url` (`${MCP_BASE_URL}/p/:id` — direct HTML render or JSON 302→SPA). Append `?mode=full` to the app URL for a maximized chrome-light view. The returned `version` is a monotonic edit counter (`MAX(page_versions.version) + 1`).
+
+### delete-page
+
+Delete a previously created page and its version history.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `id` | string | No | Page ID to delete |
+| `slug` | string | No | Slug to delete (resolved within the calling agent's pages) |
 
 ## KV Tools
 
