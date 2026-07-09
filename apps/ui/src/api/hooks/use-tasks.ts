@@ -13,6 +13,10 @@ export interface TaskFilters {
   offset?: number;
   /** Phase 2 (≥1.76.0): ISO 8601 timestamp; backend filters createdAt >= value. */
   createdAfter?: string;
+  /** Timeline paging: ISO 8601 timestamp; backend filters createdAt < value. */
+  createdBefore?: string;
+  /** Timeline paging can request stable created-time ordering. */
+  orderBy?: "lastUpdatedAt" | "createdAt";
   /** Filter to tasks whose `source` is in this list. Empty/undefined → all. */
   source?: string[];
 }
@@ -92,6 +96,7 @@ function matchesTaskFilters(task: AgentTask, filters?: TaskFilters): boolean {
   if (filters.agentId && task.agentId !== filters.agentId) return false;
   if (filters.scheduleId && task.scheduleId !== filters.scheduleId) return false;
   if (filters.createdAfter && task.createdAt < filters.createdAfter) return false;
+  if (filters.createdBefore && task.createdAt >= filters.createdBefore) return false;
   if (filters.source && filters.source.length > 0 && !filters.source.includes(task.source)) {
     return false;
   }
