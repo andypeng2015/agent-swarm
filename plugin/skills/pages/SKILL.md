@@ -128,6 +128,7 @@ that map 1:1 to the public REST API documented at
 | `swarmSdk.repos` | `list()`, `get(id)`, `create(body)`, `update(id, body)`, `delete(id)` | `/api/repos*` |
 | `swarmSdk.schedules` | `list()`, `get(id)`, `create(body)`, `update(id, body)`, `delete(id)`, `run(id)` | `/api/schedules*` |
 | `swarmSdk.approvalRequests` | `list(filters?)`, `get(id)`, `create(body)`, `respond(id, body)` | `/api/approval-requests*` |
+| `swarmSdk.assets` | `list(filters?)`, `audit()`, `registerMapping(body)`, `move(entityType, id, key)` | `/api/assets*` |
 
 Inline usage:
 
@@ -205,6 +206,12 @@ class SwarmSDK {
     get(id)                            // GET  /api/approval-requests/:id
     create(body)                       // POST /api/approval-requests
     respond(id, body)                  // POST /api/approval-requests/:id/respond
+  }
+  assets: {
+    list(filters?)                     // GET   /api/assets
+    audit()                            // GET   /api/assets/key-audit (operator only)
+    registerMapping(body)              // POST  /api/assets/mappings (operator only)
+    move(entityType, id, key)          // PATCH /api/assets/:entityType/:id/key
   }
 }
 ```

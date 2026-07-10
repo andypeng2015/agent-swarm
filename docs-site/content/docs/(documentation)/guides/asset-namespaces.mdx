@@ -32,6 +32,22 @@ Writes to a `personal/<user-id>/` destination require the trusted user resolved 
 
 Operator-only `POST /api/assets/mappings` idempotently associates a provider tuple with a logical key. The tuple is unique, while the namespace key is not. Agent-fs task attachments receive mappings automatically and inherit their parent task's namespace.
 
+## SwarmSDK access
+
+HTML pages and JSON-page actions can use the domain-grouped asset methods instead of constructing REST requests directly:
+
+```js
+const grouped = await window.swarmSdk.assets.list({
+  keyPrefix: "shared/releases/",
+  types: "task,workflow,schedule,page,file",
+  limit: 100,
+});
+
+await window.swarmSdk.assets.move("page", pageId, "shared/releases/");
+```
+
+The full domain also exposes `assets.audit()` and `assets.registerMapping(body)`. Those operations remain operator-only; the SDK does not weaken endpoint authentication or personal-namespace write checks.
+
 ## Audit and rollout
 
 Operator-only `GET /api/assets/key-audit` checks all primary assets and mappings. Missing or noncanonical keys are structural failures. Unknown personal users, missing attachment mappings, and provider mapping drift are repairable warnings. Namespace moves are blocked while audit issues exist so operators can repair mapping state before introducing more drift.

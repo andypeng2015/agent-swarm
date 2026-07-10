@@ -54,6 +54,11 @@ const SDK_METHODS = [
   "approvalRequests.get",
   "approvalRequests.create",
   "approvalRequests.respond",
+  // assets
+  "assets.list",
+  "assets.audit",
+  "assets.registerMapping",
+  "assets.move",
 ] as const;
 
 export type SwarmSdkMethod = (typeof SDK_METHODS)[number];
@@ -74,6 +79,8 @@ export interface SwarmSdkContext {
 
 type Body = Record<string, unknown> | undefined;
 type Filters = Record<string, unknown> | undefined;
+
+export type SwarmAssetEntityType = "task" | "workflow" | "schedule" | "page" | "file";
 
 export interface SwarmSDKInstance {
   // Flat dispatch — looked up by the JSON renderer via `params.sdk`.
@@ -122,6 +129,12 @@ export interface SwarmSDKInstance {
     get(id: string): Promise<unknown>;
     create(body: Body): Promise<unknown>;
     respond(id: string, body: Body): Promise<unknown>;
+  };
+  assets: {
+    list(filters?: Filters): Promise<unknown>;
+    audit(): Promise<unknown>;
+    registerMapping(body: Body): Promise<unknown>;
+    move(entityType: SwarmAssetEntityType, id: string, key: string): Promise<unknown>;
   };
 }
 
@@ -214,6 +227,13 @@ export function makeSwarmSDK(ctx: SwarmSdkContext): SwarmSDKInstance {
     respond: (id: string, body: Body) =>
       call("POST", `/api/approval-requests/${enc(id)}/respond`, body),
   };
+  const assets = {
+    list: (filters?: Filters) => call("GET", `/api/assets${qs(filters)}`),
+    audit: () => call("GET", "/api/assets/key-audit"),
+    registerMapping: (body: Body) => call("POST", "/api/assets/mappings", body),
+    move: (entityType: SwarmAssetEntityType, id: string, key: string) =>
+      call("PATCH", `/api/assets/${enc(entityType)}/${enc(id)}/key`, { key }),
+  };
 
   // Flat dispatch — used by the JSON renderer where each action's `sdk` is
   // a single string like "tasks.create".
@@ -278,6 +298,18 @@ export function makeSwarmSDK(ctx: SwarmSdkContext): SwarmSDKInstance {
         return approvalRequests.create(a);
       case "approvalRequests.respond":
         return approvalRequests.respond(String(a.id), (a.body as Body) ?? a);
+      case "assets.list":
+        return assets.list(a);
+      case "assets.audit":
+        return assets.audit();
+      case "assets.registerMapping":
+        return assets.registerMapping(a);
+      case "assets.move":
+        return assets.move(
+          String(a.entityType) as SwarmAssetEntityType,
+          String(a.id),
+          String(a.key),
+        );
     }
   }
 
@@ -290,5 +322,6 @@ export function makeSwarmSDK(ctx: SwarmSdkContext): SwarmSDKInstance {
     repos,
     schedules,
     approvalRequests,
+    assets,
   };
 }
