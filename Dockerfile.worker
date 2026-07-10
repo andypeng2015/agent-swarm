@@ -135,7 +135,7 @@ ENV PI_PACKAGE_DIR=/usr/lib/node_modules/@earendil-works/pi-coding-agent
 # Install Codex CLI (alternative harness, selected via HARNESS_PROVIDER=codex)
 # Pinned version must match @openai/codex-sdk in package.json — enforced by
 # scripts/check-codex-default-model.sh and the CI merge gate.
-ARG CODEX_VERSION=0.143.0
+ARG CODEX_VERSION=0.144.1
 USER root
 RUN HOME=/root NPM_CONFIG_CACHE=/tmp/npm-cache \
     npm install -g @openai/codex@${CODEX_VERSION} \
@@ -156,7 +156,7 @@ ENV CODEX_PATH_OVERRIDE=/usr/bin/codex
 # scripts/check-codex-default-model.sh).
 RUN mkdir -p /home/worker/.codex && \
     printf '%s\n' \
-      'model = "gpt-5.4"' \
+      'model = "gpt-5.6-terra"' \
       'approval_policy = "never"' \
       'sandbox_mode = "danger-full-access"' \
       'skip_git_repo_check = true' \
@@ -172,7 +172,7 @@ RUN mkdir -p /home/worker/.codex && \
 # harness). The [features] block above enables hooks + plugin-provided hooks.
 # Guarded with || true so a marketplace/registry hiccup can't fail the build.
 RUN codex plugin marketplace add mksglu/context-mode || true \
-    && codex plugin install context-mode@context-mode || true
+    && codex plugin add context-mode@context-mode || true
 
 # Install opencode CLI + SDK (alternative harness, selected via HARNESS_PROVIDER=opencode)
 # CLI version must match SDK version — the SDK spawns `opencode serve` and parses
