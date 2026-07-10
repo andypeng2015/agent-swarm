@@ -23,7 +23,7 @@ Each harness/provider maps the same tier to its own concrete model:
 | --- | --- | --- | --- | --- |
 | `claude` | `haiku` | `sonnet` | `opus` | `fable` |
 | `claude-managed` | `claude-haiku-4-5` | `claude-sonnet-4-6` | `claude-opus-4-8` | `claude-fable-5` |
-| `codex` | `gpt-5.4-mini` | `gpt-5.4` | `gpt-5.5` | `gpt-5.5` |
+| `codex` | `gpt-5.6-luna` | `gpt-5.6-terra` | `gpt-5.6-sol` | `gpt-5.6-sol` |
 | `pi` | `openrouter/deepseek/deepseek-v4-flash` | `openrouter/deepseek/deepseek-v4-flash` | `openrouter/deepseek/deepseek-v4-pro` | `openrouter/anthropic/claude-opus-4.8` |
 | `opencode` | `openrouter/deepseek/deepseek-v4-flash` | `openrouter/deepseek/deepseek-v4-flash` | `openrouter/deepseek/deepseek-v4-pro` | `openrouter/anthropic/claude-opus-4.8` |
 | `devin` | `devin` | `devin` | `devin` | `devin` |
@@ -34,8 +34,8 @@ Update `DEFAULT_MODEL_TIER_MAP` and this table together when defaults change.
 
 Tier mappings can be overridden in the claiming worker's resolved environment:
 
-- `MODEL_TIER_<TIER>` overrides one tier, for example `MODEL_TIER_SMART=gpt-5.6`.
-- `MODEL_TIER_MAP` accepts a JSON object with tier keys, for example `{"smol":"gpt-5.4-mini","smart":"gpt-5.5"}`.
+- `MODEL_TIER_<TIER>` overrides one tier, for example `MODEL_TIER_SMART=gpt-5.6-sol`.
+- `MODEL_TIER_MAP` accepts a JSON object with tier keys, for example `{"smol":"gpt-5.6-luna","smart":"gpt-5.6-sol"}`.
 
 Direct `MODEL_TIER_<TIER>` variables win over `MODEL_TIER_MAP`; both win over the built-in defaults.
 

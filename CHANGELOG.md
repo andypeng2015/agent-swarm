@@ -11,11 +11,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 - **Routing affinity now gates every pool consumer against the original assignee's role/capabilities** (#954) — resumes, reboot-sweep retry children, and fresh tasks declaring `requiredCapabilities` (`send-task`/`task-action create`) carry a `routingAffinity` snapshot; worker poll auto-claim, `task-action claim`, and the heartbeat's pool auto-assign all use the same eligibility gate, and affinity-tagged pool tasks with zero eligible registered agents escalate to the Lead instead of landing on an arbitrary idle worker.
 - **Script API connections can now return raw HTTP responses on demand** (#952) — `ctx.api.*` callers can opt into raw status/header/body access for binary payloads and non-2xx inspection instead of always getting parsed JSON or thrown HTTP errors.
+- **Codex now supports the GPT-5.6 Sol, Terra, and Luna model family** (#958) — the new models are available in the catalog, pricing snapshot, UI picker, eval matrix, and portable tier defaults (`smart`/`ultra`, `regular`, and `smol` respectively); GPT-5.6 also exposes the Codex-only `max` reasoning effort when the selected model advertises it.
 
 ### Changed
 - **User-token RBAC admission now covers more MCP-user and route-backlog surfaces** (#951) — favorites, skills, MCP servers, scripts, and related tool admission paths are now wired through the role engine with tighter secret access posture.
 - **The dashboard home now centers on an activity timeline instead of the legacy graph stack** (#945) — overlapping task lanes, parent/child hover links, burst clustering, zoom controls, and a unified home surface replace the older canvas/table/dashboard split.
 - **The worker image trims extra Claude-side surfaces by default** (#943) — bundled skills, remote control, Claude AI connectors, and several unneeded built-in tools are disabled in the default Claude config to reduce context/tooling bloat inside worker sessions.
+- **Slack-originated delegated tasks now deliver substantive prose results inline in the originating thread** (#957) — completions still avoid duplicates after `slack-reply`, keep primary-attachment deliverables compact, and truncate oversized output with a link to the full task.
 
 ### Fixed
 - **UI-created tasks can attribute `requestedByUserId` correctly in trusted shared-key deployments** (#953) — operators can opt into a body-field fallback with `TRUST_BODY_REQUESTED_BY_USER_ID=true` without reopening the default anti-spoofing path.
