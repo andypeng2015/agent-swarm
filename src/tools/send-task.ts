@@ -1,6 +1,8 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import * as z from "zod";
+import { AssetKeyAuthorizationError, authorizeAssetKeyWrite } from "@/be/asset-key-auth";
+import { resolveTaskAuditUserId } from "@/be/audit-user";
 import {
   createTaskExtended,
   findCompletedTaskInThread,
@@ -19,6 +21,7 @@ import { createToolRegistrar } from "@/tools/utils";
 import {
   type AgentTask,
   AgentTaskSchema,
+  AssetKeySchema,
   FollowUpConfigSchema,
   ModelTierSchema,
   ReasoningEffortSchema,
@@ -31,6 +34,9 @@ export const sendTaskInputSchema = z.object({
     .optional()
     .describe("The agent to assign/offer task to. Omit to create unassigned task for pool."),
   task: z.string().min(1).describe("The task description to send."),
+  key: AssetKeySchema.optional().describe(
+    "Logical namespace key. Defaults to shared/; child tasks inherit their parent namespace.",
+  ),
   offerMode: z
     .boolean()
     .default(false)
@@ -159,6 +165,7 @@ export async function sendTaskHandler(
   {
     agentId,
     task,
+    key,
     offerMode,
     taskType,
     tags,
@@ -225,6 +232,25 @@ export async function sendTaskHandler(
   // Auto-default parentTaskId to caller's current task for tree tracking
   const effectiveParentTaskId = parentTaskId ?? sourceTaskId;
   const effectiveParentTask = effectiveParentTaskId ? getTaskById(effectiveParentTaskId) : null;
+
+  let assetKey: string;
+  try {
+    const trustedUserId =
+      ctx.kind === "user" ? ctx.userId : resolveTaskAuditUserId(sourceTaskId, creatorAgentId);
+    assetKey = authorizeAssetKeyWrite(key ?? effectiveParentTask?.key ?? "shared/", trustedUserId);
+  } catch (error) {
+    const message =
+      error instanceof AssetKeyAuthorizationError
+        ? error.message
+        : error instanceof Error
+          ? error.message
+          : String(error);
+    return {
+      isError: true,
+      content: [{ type: "text", text: message }],
+      structuredContent: { yourAgentId: creatorAgentId, success: false, message },
+    };
+  }
 
   // Auto-route to parent's worker if parentTaskId is set and no explicit agentId
   let effectiveAgentId = agentId;
@@ -329,6 +355,7 @@ export async function sendTaskHandler(
     // If no agentId (and no auto-routed agentId), create an unassigned task for the pool
     if (!effectiveAgentId) {
       const newTask = createTaskExtended(task, {
+        key: assetKey,
         creatorAgentId,
         requestedByUserId,
         sourceTaskId,
@@ -395,6 +422,7 @@ export async function sendTaskHandler(
     if (offerMode) {
       // Offer the task to the agent (they must accept/reject)
       const newTask = createTaskExtended(task, {
+        key: assetKey,
         offeredTo: effectiveAgentId,
         creatorAgentId,
         requestedByUserId,
@@ -429,6 +457,7 @@ export async function sendTaskHandler(
 
     // Direct assignment
     const newTask = createTaskExtended(task, {
+      key: assetKey,
       agentId: effectiveAgentId,
       creatorAgentId,
       requestedByUserId,

@@ -1,6 +1,8 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import * as z from "zod";
+import { AssetKeyAuthorizationError, authorizeAssetKeyWrite } from "@/be/asset-key-auth";
+import { resolveTaskAuditUserId } from "@/be/audit-user";
 import { canClaim } from "@/be/budget-admission";
 import {
   type BudgetRefusalContext,
@@ -30,6 +32,7 @@ import { assertOwnsTask, ownerCtx, type ToolCtx } from "@/tools/task-tool-ctx";
 import { createToolRegistrar } from "@/tools/utils";
 import {
   AgentTaskSchema,
+  AssetKeySchema,
   BudgetRefusalCauseSchema,
   ModelTierSchema,
   ReasoningEffortSchema,
@@ -52,6 +55,9 @@ export const taskActionInputSchema = z.object({
   ),
   // For 'create' action:
   task: z.string().min(1).optional().describe("Task description (required for 'create')."),
+  key: AssetKeySchema.optional().describe(
+    "Logical namespace for a created task (default shared/).",
+  ),
   taskType: z.string().max(50).optional().describe("Task type (e.g., 'bug', 'feature')."),
   tags: z
     .array(z.string())
@@ -167,6 +173,7 @@ export async function taskActionHandler(
   const {
     action,
     task,
+    key,
     taskType,
     tags,
     priority,
@@ -246,6 +253,23 @@ export async function taskActionHandler(
   }
 
   const agentId = ctx.agentId;
+  let assetKey = "shared/";
+  if (action === "create") {
+    try {
+      assetKey = authorizeAssetKeyWrite(
+        key ?? "shared/",
+        resolveTaskAuditUserId(ctx.sourceTaskId, agentId),
+      );
+    } catch (error) {
+      const message =
+        error instanceof AssetKeyAuthorizationError
+          ? error.message
+          : error instanceof Error
+            ? error.message
+            : String(error);
+      return taskActionCallResult({ success: false, message }, agentId);
+    }
+  }
 
   const txn = getDb().transaction((): TaskActionResult => {
     switch (action) {
@@ -257,6 +281,7 @@ export async function taskActionHandler(
           };
         }
         const newTask = createTaskExtended(task, {
+          key: assetKey,
           creatorAgentId: agentId,
           taskType,
           tags,

@@ -1,4 +1,61 @@
 import * as z from "zod";
+import { normalizeAssetKey } from "./assets/key";
+// ─── Asset namespaces ──────────────────────────────────────────────────────
+
+export const AssetKeySchema = z
+  .string()
+  .min(1)
+  .max(255)
+  .superRefine((value, ctx) => {
+    try {
+      normalizeAssetKey(value);
+    } catch (error) {
+      ctx.addIssue({
+        code: "custom",
+        message: error instanceof Error ? error.message : "Invalid asset namespace key",
+      });
+    }
+  })
+  .describe(
+    "Non-unique asset directory namespace (for example shared/ or personal/<user-id>/drafts/). Runtime write boundaries normalize and validate the canonical form.",
+  );
+
+export const AssetEntityTypeSchema = z.enum(["task", "workflow", "schedule", "page", "file"]);
+export type AssetEntityType = z.infer<typeof AssetEntityTypeSchema>;
+
+export const AssetProviderRefSchema = z.object({
+  providerId: z.string(),
+  orgId: z.string().optional(),
+  driveId: z.string().optional(),
+  providerKey: z.string(),
+});
+export type AssetProviderRef = z.infer<typeof AssetProviderRefSchema>;
+
+export const AssetKeyMappingSchema = z.object({
+  id: z.string(),
+  providerId: z.string(),
+  providerOrgId: z.string().optional(),
+  providerDriveId: z.string().optional(),
+  providerKey: z.string(),
+  key: AssetKeySchema,
+  sourceEntityType: z.enum(["task-attachment", "external"]).optional(),
+  sourceEntityId: z.string().optional(),
+  createdAt: z.iso.datetime(),
+  updatedAt: z.iso.datetime(),
+  createdBy: z.string().optional(),
+  updatedBy: z.string().optional(),
+});
+export type AssetKeyMapping = z.infer<typeof AssetKeyMappingSchema>;
+
+export const AssetSummarySchema = z.object({
+  entityType: AssetEntityTypeSchema,
+  id: z.string(),
+  key: AssetKeySchema,
+  label: z.string(),
+  updatedAt: z.string(),
+  providerRef: AssetProviderRefSchema.optional(),
+});
+export type AssetSummary = z.infer<typeof AssetSummarySchema>;
 
 // ─── Model Tiers ─────────────────────────────────────────────────────────────
 // Merged from the former `src/model-tiers.ts` to dissolve the benign
@@ -310,6 +367,7 @@ export type RoutingAffinity = z.infer<typeof RoutingAffinitySchema>;
 
 export const AgentTaskSchema = z.object({
   id: z.uuid(),
+  key: AssetKeySchema,
   agentId: z.uuid().nullable(), // Nullable for unassigned tasks
   creatorAgentId: z.uuid().optional(), // Who created this task (optional for Slack/API)
   task: z.string().min(1),
@@ -1100,6 +1158,7 @@ export type ScheduledTaskTargetType = z.infer<typeof ScheduledTaskTargetTypeSche
 export const ScheduledTaskSchema = z
   .object({
     id: z.uuid(),
+    key: AssetKeySchema,
     name: z.string().min(1).max(100),
     description: z.string().optional(),
     cronExpression: z.string().optional(),
@@ -1588,6 +1647,7 @@ export type WorkflowSnapshot = z.infer<typeof WorkflowSnapshotSchema>;
 
 export const WorkflowSchema = z.object({
   id: z.string().uuid(),
+  key: AssetKeySchema,
   name: z.string(),
   description: z.string().optional(),
   enabled: z.boolean(),
@@ -1649,6 +1709,7 @@ export type PageSnapshot = z.infer<typeof PageSnapshotSchema>;
 
 export const PageSchema = z.object({
   id: z.string(),
+  key: AssetKeySchema,
   agentId: z.string(),
   slug: z.string(),
   title: z.string(),
@@ -1702,6 +1763,7 @@ export type ScheduledTaskSummary = Omit<ScheduledTask, "taskTemplate"> & {
 export type AgentTaskSummary = Pick<
   AgentTask,
   | "id"
+  | "key"
   | "agentId"
   | "creatorAgentId"
   | "task"

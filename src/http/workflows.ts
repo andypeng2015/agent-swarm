@@ -1,5 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { z } from "zod";
+import { AssetKeyAuthorizationError, authorizeAssetKeyWrite } from "../be/asset-key-auth";
 import { resolveHttpAuditUserId } from "../be/audit-user";
 import {
   createWorkflow,
@@ -15,6 +16,7 @@ import {
   withFavoriteFlags,
 } from "../be/db";
 import {
+  AssetKeySchema,
   CooldownConfigSchema,
   InputValueSchema,
   TriggerConfigSchema,
@@ -51,6 +53,8 @@ const listWorkflowsRoute = route({
       .transform((v) => (v === undefined ? undefined : v === "true")),
     consecutiveErrorsMin: z.coerce.number().int().min(0).optional(),
     lastRunStatus: WorkflowRunStatusSchema.optional(),
+    key: AssetKeySchema.optional(),
+    keyPrefix: AssetKeySchema.optional(),
     /** `full` restores the legacy shape (includes `definition`); default is slim. */
     fields: z.enum(["full", "slim"]).optional(),
   }),
@@ -67,6 +71,7 @@ const createWorkflowRoute = route({
   tags: ["Workflows"],
   body: z.object({
     name: z.string().min(1),
+    key: AssetKeySchema.optional(),
     description: z.string().optional(),
     definition: WorkflowDefinitionSchema,
     triggers: z.array(TriggerConfigSchema).optional(),
@@ -104,6 +109,7 @@ const updateWorkflowRoute = route({
   params: z.object({ id: z.string() }),
   body: z.object({
     name: z.string().optional(),
+    key: AssetKeySchema.optional(),
     description: z.string().optional(),
     definition: WorkflowDefinitionSchema.optional(),
     triggers: z.array(TriggerConfigSchema).optional(),
@@ -128,7 +134,7 @@ const patchWorkflowRoute = route({
   summary: "Patch a workflow definition (create/update/delete nodes)",
   tags: ["Workflows"],
   params: z.object({ id: z.string() }),
-  body: WorkflowPatchSchema,
+  body: WorkflowPatchSchema.extend({ key: AssetKeySchema.optional() }),
   responses: {
     200: { description: "Workflow patched (version snapshot created)" },
     400: { description: "Invalid patch or resulting definition" },
@@ -413,6 +419,8 @@ export async function handleWorkflows(
       enabled: parsed.query.enabled,
       consecutiveErrorsMin: parsed.query.consecutiveErrorsMin,
       lastRunStatus: parsed.query.lastRunStatus,
+      key: parsed.query.key,
+      keyPrefix: parsed.query.keyPrefix,
     };
     // List responses default to slim (no `definition`); `?fields=full` restores it.
     if (parsed.query.fields === "full") {
@@ -440,7 +448,20 @@ export async function handleWorkflows(
       return true;
     }
 
+    const trustedUserId = resolveHttpAuditUserId(req, myAgentId);
+    let key: string;
+    try {
+      key = authorizeAssetKeyWrite(parsed.body.key ?? "shared/", trustedUserId);
+    } catch (error) {
+      if (error instanceof AssetKeyAuthorizationError) {
+        jsonError(res, error.message, error.statusCode);
+        return true;
+      }
+      throw error;
+    }
+
     const workflow = createWorkflow({
+      key,
       name: parsed.body.name,
       description: parsed.body.description,
       definition: parsed.body.definition,
@@ -556,6 +577,17 @@ export async function handleWorkflows(
     const updateArgs: Parameters<typeof updateWorkflow>[1] = {
       definition: patchResult.definition,
     };
+    if (parsed.body.key !== undefined) {
+      try {
+        updateArgs.key = authorizeAssetKeyWrite(parsed.body.key, updatedBy1);
+      } catch (error) {
+        if (error instanceof AssetKeyAuthorizationError) {
+          jsonError(res, error.message, error.statusCode);
+          return true;
+        }
+        throw error;
+      }
+    }
     if (parsed.body.triggerSchema !== undefined) {
       updateArgs.triggerSchema = parsed.body.triggerSchema;
     }
@@ -603,7 +635,20 @@ export async function handleWorkflows(
     }
 
     const updatedBy2 = resolveHttpAuditUserId(req, myAgentId) ?? undefined;
+    let key: string | undefined;
+    if (body.key !== undefined) {
+      try {
+        key = authorizeAssetKeyWrite(body.key, updatedBy2);
+      } catch (error) {
+        if (error instanceof AssetKeyAuthorizationError) {
+          jsonError(res, error.message, error.statusCode);
+          return true;
+        }
+        throw error;
+      }
+    }
     const workflow = updateWorkflow(id, {
+      key,
       name: body.name,
       description: body.description,
       definition: body.definition,

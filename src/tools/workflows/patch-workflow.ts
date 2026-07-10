@@ -1,10 +1,11 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+import { authorizeAssetKeyWrite } from "@/be/asset-key-auth";
 import { resolveTaskAuditUserId } from "@/be/audit-user";
 import { getWorkflow, updateWorkflow } from "@/be/db";
 import { createToolRegistrar } from "@/tools/utils";
 import type { WorkflowPatch } from "@/types";
-import { WorkflowNodePatchSchema } from "@/types";
+import { AssetKeySchema, WorkflowNodePatchSchema } from "@/types";
 import { applyDefinitionPatch, validateDefinition } from "@/workflows/definition";
 import { snapshotWorkflow } from "@/workflows/version";
 
@@ -25,6 +26,7 @@ export const registerPatchWorkflowTool = (server: McpServer) => {
         "Creates a version snapshot before applying changes.",
       inputSchema: z.object({
         id: z.string().uuid().describe("Workflow ID to patch"),
+        key: AssetKeySchema.optional().describe("Move to a logical namespace."),
         update: z
           .array(
             z.object({
@@ -74,7 +76,7 @@ export const registerPatchWorkflowTool = (server: McpServer) => {
         nodesDeleted: z.number().optional(),
       }),
     },
-    async ({ id, update, delete: del, create, onNodeFailure, triggerSchema }, requestInfo) => {
+    async ({ id, key, update, delete: del, create, onNodeFailure, triggerSchema }, requestInfo) => {
       try {
         const existing = getWorkflow(id);
         if (!existing) {
@@ -114,6 +116,9 @@ export const registerPatchWorkflowTool = (server: McpServer) => {
         const updateArgs: Parameters<typeof updateWorkflow>[1] = {
           definition: patchResult.definition,
         };
+        if (key !== undefined) {
+          updateArgs.key = authorizeAssetKeyWrite(key, updatedBy);
+        }
         if (triggerSchema !== undefined) {
           updateArgs.triggerSchema = triggerSchema;
         }

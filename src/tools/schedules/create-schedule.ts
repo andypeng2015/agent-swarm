@@ -1,14 +1,21 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { CronExpressionParser } from "cron-parser";
 import * as z from "zod";
+import { authorizeAssetKeyWrite } from "@/be/asset-key-auth";
 import { resolveTaskAuditUserId } from "@/be/audit-user";
 import { createScheduledTask, getAgentById, getScheduledTaskByName, getWorkflow } from "@/be/db";
 import { getScript } from "@/be/scripts/db";
 import { calculateNextRun } from "@/scheduler";
 import { createToolRegistrar } from "@/tools/utils";
-import { ModelTierSchema, ScheduledTaskTargetTypeSchema, splitLegacyModelAlias } from "../../types";
+import {
+  AssetKeySchema,
+  ModelTierSchema,
+  ScheduledTaskTargetTypeSchema,
+  splitLegacyModelAlias,
+} from "../../types";
 
 export const createScheduleInputSchema = z.object({
+  key: AssetKeySchema.optional().describe("Logical namespace (default shared/)."),
   name: z.string().min(1).max(100).describe("Unique name for the schedule (e.g., 'daily-cleanup')"),
   taskTemplate: z
     .string()
@@ -115,6 +122,7 @@ export const registerCreateScheduleTool = (server: McpServer) => {
         schedule: z
           .object({
             id: z.string(),
+            key: AssetKeySchema,
             name: z.string(),
             description: z.string().optional(),
             cronExpression: z.string().optional(),
@@ -144,6 +152,7 @@ export const registerCreateScheduleTool = (server: McpServer) => {
     },
     async (
       {
+        key,
         name,
         taskTemplate,
         targetType,
@@ -366,8 +375,10 @@ export const registerCreateScheduleTool = (server: McpServer) => {
 
         const createdBy =
           resolveTaskAuditUserId(requestInfo.sourceTaskId, requestInfo.agentId) ?? undefined;
+        const assetKey = authorizeAssetKeyWrite(key ?? "shared/", createdBy);
 
         const schedule = createScheduledTask({
+          key: assetKey,
           name,
           taskTemplate,
           targetType,

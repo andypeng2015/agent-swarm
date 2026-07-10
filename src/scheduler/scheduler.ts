@@ -51,6 +51,7 @@ export function createStandaloneScheduleTask(
     throw new Error(`Schedule "${schedule.name}" has no taskTemplate (targetType=agent-task)`);
   }
   return createTaskWithSiblingAwareness(schedule.taskTemplate, {
+    key: schedule.key,
     creatorAgentId: schedule.createdByAgentId,
     taskType: schedule.taskType,
     tags: [...schedule.tags, "scheduled", `schedule:${schedule.name}`, ...extraTags],

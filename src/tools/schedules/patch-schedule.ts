@@ -1,6 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { CronExpressionParser } from "cron-parser";
 import * as z from "zod";
+import { authorizeAssetKeyWrite } from "@/be/asset-key-auth";
 import { resolveTaskAuditUserId } from "@/be/audit-user";
 import {
   getAgentById,
@@ -13,9 +14,15 @@ import { mergeScheduleTiming, validateRecurringTiming } from "@/be/schedules/val
 import { getScript } from "@/be/scripts/db";
 import { calculateNextRun } from "@/scheduler";
 import { createToolRegistrar } from "@/tools/utils";
-import { ModelTierSchema, ScheduledTaskTargetTypeSchema, splitLegacyModelAlias } from "../../types";
+import {
+  AssetKeySchema,
+  ModelTierSchema,
+  ScheduledTaskTargetTypeSchema,
+  splitLegacyModelAlias,
+} from "../../types";
 
 export const patchScheduleInputSchema = z.object({
+  key: AssetKeySchema.optional().describe("Move to a logical namespace."),
   scheduleId: z.string().uuid().optional().describe("Schedule ID to patch"),
   name: z.string().optional().describe("Schedule name to patch (alternative to ID)"),
   newName: z.string().min(1).max(100).optional().describe("New name for the schedule"),
@@ -82,6 +89,7 @@ export const registerPatchScheduleTool = (server: McpServer) => {
         schedule: z
           .object({
             id: z.string(),
+            key: AssetKeySchema,
             name: z.string(),
             description: z.string().optional(),
             cronExpression: z.string().optional(),
@@ -111,6 +119,7 @@ export const registerPatchScheduleTool = (server: McpServer) => {
     },
     async (
       {
+        key,
         scheduleId,
         name,
         newName,
@@ -363,6 +372,7 @@ export const registerPatchScheduleTool = (server: McpServer) => {
 
         const updatedBy =
           resolveTaskAuditUserId(requestInfo.sourceTaskId, requestInfo.agentId) ?? undefined;
+        if (key !== undefined) updateData.key = authorizeAssetKeyWrite(key, updatedBy);
         const updated = updateScheduledTask(schedule.id, { ...updateData, updatedBy });
 
         if (!updated) {

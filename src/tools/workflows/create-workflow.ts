@@ -1,9 +1,11 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+import { authorizeAssetKeyWrite } from "@/be/asset-key-auth";
 import { resolveTaskAuditUserId } from "@/be/audit-user";
 import { createWorkflow } from "@/be/db";
 import { createToolRegistrar } from "@/tools/utils";
 import {
+  AssetKeySchema,
   CooldownConfigSchema,
   InputValueSchema,
   TriggerConfigSchema,
@@ -38,6 +40,7 @@ export const registerCreateWorkflowTool = (server: McpServer) => {
         "See runbooks/workflows.md#wait-nodes for config shapes, ordering caveats, and built-in event names.",
       inputSchema: z.object({
         name: z.string().describe("Unique name for the workflow"),
+        key: AssetKeySchema.optional().describe("Logical namespace (default shared/)."),
         description: z.string().optional().describe("Description of what this workflow does"),
         definition: WorkflowDefinitionSchema.describe(
           "The workflow definition with nodes (each node has id, type, config, and optional next/retry/validation)",
@@ -87,7 +90,18 @@ export const registerCreateWorkflowTool = (server: McpServer) => {
       }),
     },
     async (
-      { name, description, definition, triggers, cooldown, input, dir, vcsRepo, triggerSchema },
+      {
+        name,
+        key,
+        description,
+        definition,
+        triggers,
+        cooldown,
+        input,
+        dir,
+        vcsRepo,
+        triggerSchema,
+      },
       requestInfo,
     ) => {
       if (!requestInfo.agentId) {
@@ -116,8 +130,10 @@ export const registerCreateWorkflowTool = (server: McpServer) => {
 
         const createdBy =
           resolveTaskAuditUserId(requestInfo.sourceTaskId, requestInfo.agentId) ?? undefined;
+        const assetKey = authorizeAssetKeyWrite(key ?? "shared/", createdBy);
 
         const workflow = createWorkflow({
+          key: assetKey,
           name,
           description,
           definition,

@@ -5,10 +5,11 @@ import { getAllTasks } from "@/be/db";
 import { ownerCtx, type ToolCtx } from "@/tools/task-tool-ctx";
 import { createToolRegistrar } from "@/tools/utils";
 import type { AgentTask, AgentTaskSummary } from "@/types";
-import { AgentTaskStatusSchema } from "@/types";
+import { AgentTaskStatusSchema, AssetKeySchema } from "@/types";
 
 const TaskSummarySchema = z.object({
   id: z.string(),
+  key: AssetKeySchema,
   agentId: z.string().nullable(),
   // Slim rows (default) carry `taskPreview` (~300 chars); `includeFull` rows
   // carry the full `task` text. Exactly one is present.
@@ -45,6 +46,8 @@ export const getTasksInputSchema = z.object({
     .uuid()
     .optional()
     .describe("Filter by schedule ID to find tasks created by a specific schedule."),
+  key: AssetKeySchema.optional().describe("Filter by exact logical namespace."),
+  keyPrefix: AssetKeySchema.optional().describe("Filter by namespace subtree."),
   includeHeartbeat: z
     .boolean()
     .optional()
@@ -81,6 +84,8 @@ export async function getTasksHandler(
     tags,
     search,
     scheduleId,
+    key,
+    keyPrefix,
     includeHeartbeat,
     limit,
     includeFull,
@@ -100,6 +105,8 @@ export async function getTasksHandler(
     tags,
     search,
     scheduleId,
+    key,
+    keyPrefix,
     includeHeartbeat,
     limit,
     requestedByUserId: ctx.kind === "user" ? ctx.userId : undefined,
@@ -113,6 +120,7 @@ export async function getTasksHandler(
   // agent knows it is truncated. `includeFull` returns the full `task`.
   const taskSummaries = tasks.map((t) => ({
     id: t.id,
+    key: t.key,
     agentId: t.agentId,
     ...(includeFull ? { task: t.task } : { taskPreview: t.task }),
     status: t.status,
@@ -138,6 +146,8 @@ export async function getTasksHandler(
   if (tags?.length) filters.push(`tags=[${tags.join(", ")}]`);
   if (search) filters.push(`search='${search}'`);
   if (scheduleId) filters.push(`scheduleId='${scheduleId}'`);
+  if (key) filters.push(`key='${key}'`);
+  if (keyPrefix) filters.push(`keyPrefix='${keyPrefix}'`);
 
   const filterMsg = filters.length > 0 ? ` (${filters.join(", ")})` : "";
   const structuredContent = {

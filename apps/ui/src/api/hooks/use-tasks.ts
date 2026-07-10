@@ -80,6 +80,7 @@ export function useTaskContext(taskId: string) {
 
 interface CreateTaskInput {
   task: string;
+  key?: string;
   agentId?: string;
   taskType?: string;
   tags?: string[];
@@ -215,6 +216,7 @@ function optimisticCreatedTask(input: CreateTaskInput): TaskWithLogs {
     task: input.task,
     status: input.agentId ? "pending" : "unassigned",
     source: (input.source as AgentTaskSource | undefined) ?? "ui",
+    key: input.key ?? "shared/",
     taskType: input.taskType,
     tags: input.tags ?? [],
     priority: input.priority ?? 50,

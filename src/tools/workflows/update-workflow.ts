@@ -1,9 +1,11 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+import { authorizeAssetKeyWrite } from "@/be/asset-key-auth";
 import { resolveTaskAuditUserId } from "@/be/audit-user";
 import { getWorkflow, updateWorkflow } from "@/be/db";
 import { createToolRegistrar } from "@/tools/utils";
 import {
+  AssetKeySchema,
   CooldownConfigSchema,
   InputValueSchema,
   TriggerConfigSchema,
@@ -30,6 +32,7 @@ export const registerUpdateWorkflowTool = (server: McpServer) => {
         "or { format: 'token-equality', header }.",
       inputSchema: z.object({
         id: z.string().uuid().describe("Workflow ID to update"),
+        key: AssetKeySchema.optional().describe("Move to a logical namespace."),
         name: z.string().optional().describe("New name for the workflow"),
         description: z.string().optional().describe("New description"),
         definition: WorkflowDefinitionSchema.optional().describe("New workflow definition"),
@@ -81,6 +84,7 @@ export const registerUpdateWorkflowTool = (server: McpServer) => {
     async (
       {
         id,
+        key,
         name,
         description,
         definition,
@@ -128,7 +132,9 @@ export const registerUpdateWorkflowTool = (server: McpServer) => {
 
         const updatedBy =
           resolveTaskAuditUserId(requestInfo.sourceTaskId, requestInfo.agentId) ?? undefined;
+        const assetKey = key === undefined ? undefined : authorizeAssetKeyWrite(key, updatedBy);
         const workflow = updateWorkflow(id, {
+          key: assetKey,
           name,
           description,
           definition,

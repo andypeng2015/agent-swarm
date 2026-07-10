@@ -80,11 +80,13 @@ export class AgentTaskExecutor extends BaseExecutor<
     // 2. Inherit workflow-level dir/vcsRepo when node config doesn't specify them
     let effectiveDir = config.dir;
     let effectiveVcsRepo = config.vcsRepo;
-    if ((!effectiveDir || !effectiveVcsRepo) && meta.workflowId) {
+    let effectiveKey: string | undefined;
+    if (meta.workflowId) {
       const workflow = db.getWorkflow(meta.workflowId);
       if (workflow) {
         if (!effectiveDir && workflow.dir) effectiveDir = workflow.dir;
         if (!effectiveVcsRepo && workflow.vcsRepo) effectiveVcsRepo = workflow.vcsRepo;
+        effectiveKey = workflow.key;
       }
     }
 
@@ -92,6 +94,7 @@ export class AgentTaskExecutor extends BaseExecutor<
     const { description: taskDescription, options: taskOptions } = withSiblingAwareness(
       config.template,
       {
+        key: effectiveKey,
         agentId: config.agentId ?? null,
         source: "workflow",
         tags: config.tags,

@@ -130,6 +130,7 @@ describe("Agent-task executor workspace inheritance", () => {
   test("agent-task inherits workflow dir when node config omits it", async () => {
     const wf = createWorkflow({
       name: "wf-inherit-dir",
+      key: "shared/workflow-team/",
       definition: {
         nodes: [
           {
@@ -165,6 +166,7 @@ describe("Agent-task executor workspace inheritance", () => {
     expect(task).not.toBeNull();
     expect(task!.dir).toBe("/tmp/inherited-workspace");
     expect(task!.vcsRepo).toBe("desplega-ai/inherited");
+    expect(task!.key).toBe("shared/workflow-team/");
   });
 
   test("node-level dir overrides workflow-level dir", async () => {

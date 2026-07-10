@@ -1,5 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { z } from "zod";
+import { AssetKeyAuthorizationError, authorizeAssetKeyWrite } from "../be/asset-key-auth";
 import { resolveHttpAuditUserId } from "../be/audit-user";
 import {
   countAllPages,
@@ -17,7 +18,13 @@ import {
   withFavoriteFlags,
 } from "../be/db";
 import { snapshotPage } from "../pages/version";
-import { type Page, PageAuthModeSchema, PageContentTypeSchema, type PageSummary } from "../types";
+import {
+  AssetKeySchema,
+  type Page,
+  PageAuthModeSchema,
+  PageContentTypeSchema,
+  type PageSummary,
+} from "../types";
 import { getAppUrl, getPublicMcpBaseUrl } from "../utils/constants";
 import { issuePageSessionCookie } from "../utils/page-session";
 import { route } from "./route-def";
@@ -58,6 +65,7 @@ const createPageRoute = route({
   summary: "Create a new page",
   tags: ["Pages"],
   body: z.object({
+    key: AssetKeySchema.optional(),
     slug: z.string().min(1).optional(),
     title: z.string().min(1),
     description: z.string().optional(),
@@ -145,6 +153,7 @@ const updatePageRoute = route({
   tags: ["Pages"],
   params: z.object({ id: z.string() }),
   body: z.object({
+    key: AssetKeySchema.optional(),
     title: z.string().min(1).optional(),
     description: z.string().nullable().optional(),
     contentType: PageContentTypeSchema.optional(),
@@ -183,6 +192,8 @@ const listPagesRoute = route({
   tags: ["Pages"],
   query: z.object({
     agentId: z.string().min(1).optional(),
+    key: AssetKeySchema.optional(),
+    keyPrefix: AssetKeySchema.optional(),
     limit: z.coerce.number().int().min(1).max(500).optional(),
     offset: z.coerce.number().int().min(0).optional(),
     /** `full` restores the legacy shape (includes `body`); default is slim. */
@@ -383,7 +394,12 @@ export async function handlePages(
     }
 
     try {
+      const key = authorizeAssetKeyWrite(
+        parsed.body.key ?? "shared/",
+        resolveHttpAuditUserId(req, myAgentId),
+      );
       const page = createPage({
+        key,
         agentId: myAgentId,
         slug,
         title: parsed.body.title,
@@ -400,6 +416,7 @@ export async function handlePages(
         res,
         {
           id: page.id,
+          key: page.key,
           version: 1,
           api_url: `${getApiBaseUrl()}/p/${page.id}`,
           app_url: `${getAppBaseUrl()}/pages/${page.slug}`,
@@ -407,6 +424,10 @@ export async function handlePages(
         201,
       );
     } catch (err) {
+      if (err instanceof AssetKeyAuthorizationError) {
+        jsonError(res, err.message, err.statusCode);
+        return true;
+      }
       const msg = err instanceof Error ? err.message : String(err);
       if (msg.includes("UNIQUE")) {
         jsonError(res, `Page with slug "${slug}" already exists for this agent`, 409);
@@ -473,16 +494,22 @@ export async function handlePages(
     const offset = parsed.query.offset ?? 0;
     // List responses default to slim (no `body`); `?fields=full` restores it.
     const full = parsed.query.fields === "full";
+    const keyFilters = { key: parsed.query.key, keyPrefix: parsed.query.keyPrefix };
     let pages: Array<Page | PageSummary>;
     let total: number;
     if (parsed.query.agentId) {
       pages = full
-        ? listPagesByAgent(parsed.query.agentId, limit, offset)
-        : listPagesByAgent(parsed.query.agentId, limit, offset, { slim: true });
-      total = countPagesByAgent(parsed.query.agentId);
+        ? listPagesByAgent(parsed.query.agentId, limit, offset, keyFilters)
+        : listPagesByAgent(parsed.query.agentId, limit, offset, {
+            ...keyFilters,
+            slim: true,
+          });
+      total = countPagesByAgent(parsed.query.agentId, keyFilters);
     } else {
-      pages = full ? listAllPages(limit, offset) : listAllPages(limit, offset, { slim: true });
-      total = countAllPages();
+      pages = full
+        ? listAllPages(limit, offset, keyFilters)
+        : listAllPages(limit, offset, { ...keyFilters, slim: true });
+      total = countAllPages(keyFilters);
     }
     const userId = resolveHttpAuditUserId(req, myAgentId);
     const decoratedPages = withFavoriteFlags(pages, { userId, itemType: "page" });
@@ -576,7 +603,21 @@ export async function handlePages(
       // intentional empty
     }
 
+    let key: string | undefined;
+    if (parsed.body.key !== undefined) {
+      try {
+        key = authorizeAssetKeyWrite(parsed.body.key, resolveHttpAuditUserId(req, myAgentId));
+      } catch (error) {
+        if (error instanceof AssetKeyAuthorizationError) {
+          jsonError(res, error.message, error.statusCode);
+          return true;
+        }
+        throw error;
+      }
+    }
+
     const updated = updatePage(parsed.params.id, {
+      key,
       title: parsed.body.title,
       description: parsed.body.description ?? undefined,
       contentType: parsed.body.contentType,
@@ -590,7 +631,7 @@ export async function handlePages(
       res.end();
       return true;
     }
-    json(res, { id: updated.id, version: pageEditCounter(updated.id) });
+    json(res, { id: updated.id, key: updated.key, version: pageEditCounter(updated.id) });
     return true;
   }
 

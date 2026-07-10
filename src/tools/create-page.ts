@@ -19,10 +19,12 @@
  */
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import * as z from "zod";
+import { authorizeAssetKeyWrite } from "@/be/asset-key-auth";
+import { resolveTaskAuditUserId } from "@/be/audit-user";
 import { createPage, getPage, getPageBySlug, getPageVersions, updatePage } from "@/be/db";
 import { snapshotPage } from "@/pages/version";
 import { createToolRegistrar } from "@/tools/utils";
-import { PageAuthModeSchema, PageContentTypeSchema } from "@/types";
+import { AssetKeySchema, PageAuthModeSchema, PageContentTypeSchema } from "@/types";
 import { getAppUrl, getPublicMcpBaseUrl } from "@/utils/constants";
 
 /** Same slugifier used by the HTTP createPage handler. */
@@ -67,6 +69,7 @@ export const registerCreatePageTool = (server: McpServer) => {
         "specs that don't need a long-lived process.",
       annotations: { destructiveHint: false },
       inputSchema: z.object({
+        key: AssetKeySchema.optional().describe("Logical namespace (default shared/)."),
         title: z.string().min(1).describe("Human-readable title shown in listings."),
         slug: z
           .string()
@@ -106,6 +109,7 @@ export const registerCreatePageTool = (server: McpServer) => {
       outputSchema: z.object({
         yourAgentId: z.string(),
         id: z.string(),
+        key: AssetKeySchema.optional(),
         version: z.number(),
         app_url: z.string(),
         api_url: z.string(),
@@ -148,6 +152,28 @@ export const registerCreatePageTool = (server: McpServer) => {
 
       // Upsert. Look up existing row by (agentId, slug).
       const existing = getPageBySlug(requestInfo.agentId, finalSlug);
+      const trustedUserId = resolveTaskAuditUserId(requestInfo.sourceTaskId, requestInfo.agentId);
+      let assetKey: string | undefined;
+      try {
+        if (input.key !== undefined || !existing) {
+          assetKey = authorizeAssetKeyWrite(input.key ?? "shared/", trustedUserId);
+        }
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : String(error);
+        return {
+          content: [{ type: "text", text: msg }],
+          structuredContent: {
+            yourAgentId: requestInfo.agentId,
+            id: existing?.id ?? "",
+            version: 0,
+            app_url: "",
+            api_url: "",
+            success: false,
+            message: msg,
+          },
+          isError: true,
+        };
+      }
 
       let id: string;
       if (existing) {
@@ -158,6 +184,7 @@ export const registerCreatePageTool = (server: McpServer) => {
           // intentional empty
         }
         const updated = updatePage(existing.id, {
+          key: assetKey,
           title: input.title,
           description: input.description,
           contentType: input.contentType,
@@ -186,6 +213,7 @@ export const registerCreatePageTool = (server: McpServer) => {
       } else {
         try {
           const created = createPage({
+            key: assetKey,
             agentId: requestInfo.agentId,
             slug: finalSlug,
             title: input.title,
@@ -250,6 +278,7 @@ export const registerCreatePageTool = (server: McpServer) => {
         structuredContent: {
           yourAgentId: requestInfo.agentId,
           id,
+          key: fresh.key,
           version,
           app_url: appUrl,
           api_url: apiUrl,

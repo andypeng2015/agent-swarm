@@ -8,6 +8,7 @@ agent_mcp_servers
 agent_memory_edge
 agent_skills
 api_key_status
+asset_key_history
 budget_refusal_notifications
 channel_activity_cursors
 channel_read_state

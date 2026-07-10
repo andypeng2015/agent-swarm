@@ -1536,6 +1536,221 @@
         }
       }
     },
+    "/api/assets/key-audit": {
+      "get": {
+        "summary": "Audit asset namespace invariants",
+        "description": "Operator-only check for structural key validity, personal-user references, and logical provider mapping drift. Repeated logical keys are valid and are never reported as conflicts.",
+        "tags": [
+          "Assets"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Asset namespace audit result"
+          },
+          "403": {
+            "description": "Operator access required"
+          }
+        }
+      }
+    },
+    "/api/assets": {
+      "get": {
+        "summary": "List lightweight cross-entity asset summaries",
+        "description": "Returns only entity type, ID, namespace key, label, update time, and optional provider reference. It never returns task briefs, page bodies, workflow definitions, secrets, or file bytes. Personal keys are namespace labels, not a privacy or read-visibility guarantee.",
+        "tags": [
+          "Assets"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255,
+              "description": "Non-unique asset directory namespace (for example shared/ or personal/<user-id>/drafts/). Runtime write boundaries normalize and validate the canonical form."
+            },
+            "required": false,
+            "description": "Non-unique asset directory namespace (for example shared/ or personal/<user-id>/drafts/). Runtime write boundaries normalize and validate the canonical form.",
+            "name": "keyPrefix",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Comma-separated task,workflow,schedule,page,file list"
+            },
+            "required": false,
+            "description": "Comma-separated task,workflow,schedule,page,file list",
+            "name": "types",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Lightweight asset summary list"
+          },
+          "400": {
+            "description": "Invalid entity type"
+          }
+        }
+      }
+    },
+    "/api/assets/mappings": {
+      "post": {
+        "summary": "Register a logical namespace for a provider object",
+        "description": "Idempotently maps a provider tuple to a logical swarm key without moving, renaming, reading, or writing the remote object.",
+        "tags": [
+          "Assets"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "providerId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "orgId": {
+                    "type": "string"
+                  },
+                  "driveId": {
+                    "type": "string"
+                  },
+                  "providerKey": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "key": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 255,
+                    "description": "Non-unique asset directory namespace (for example shared/ or personal/<user-id>/drafts/). Runtime write boundaries normalize and validate the canonical form."
+                  }
+                },
+                "required": [
+                  "providerId",
+                  "providerKey"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Mapping registered"
+          },
+          "400": {
+            "description": "Invalid provider tuple or namespace"
+          },
+          "403": {
+            "description": "Operator access required or personal namespace not authorized"
+          }
+        }
+      }
+    },
+    "/api/assets/{entityType}/{id}/key": {
+      "patch": {
+        "summary": "Move an asset to another logical namespace",
+        "description": "Updates namespace metadata only. Provider-backed files keep the same provider key, org, and drive; no remote move occurs. Personal keys are labels, not a privacy guarantee.",
+        "tags": [
+          "Assets"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "task",
+                "workflow",
+                "schedule",
+                "page",
+                "file"
+              ]
+            },
+            "required": true,
+            "name": "entityType",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "key": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 255,
+                    "description": "Non-unique asset directory namespace (for example shared/ or personal/<user-id>/drafts/). Runtime write boundaries normalize and validate the canonical form."
+                  }
+                },
+                "required": [
+                  "key"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Asset namespace updated"
+          },
+          "400": {
+            "description": "Invalid namespace"
+          },
+          "403": {
+            "description": "Move not authorized"
+          },
+          "404": {
+            "description": "Asset not found"
+          },
+          "409": {
+            "description": "Moves blocked until audit warnings are repaired"
+          }
+        }
+      }
+    },
     "/api/budgets": {
       "get": {
         "summary": "List all configured budget rows",
@@ -6544,6 +6759,12 @@
               "schema": {
                 "type": "object",
                 "properties": {
+                  "key": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 255,
+                    "description": "Non-unique asset directory namespace (for example shared/ or personal/<user-id>/drafts/). Runtime write boundaries normalize and validate the canonical form."
+                  },
                   "slug": {
                     "type": "string",
                     "minLength": 1
@@ -6625,6 +6846,30 @@
             },
             "required": false,
             "name": "agentId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255,
+              "description": "Non-unique asset directory namespace (for example shared/ or personal/<user-id>/drafts/). Runtime write boundaries normalize and validate the canonical form."
+            },
+            "required": false,
+            "description": "Non-unique asset directory namespace (for example shared/ or personal/<user-id>/drafts/). Runtime write boundaries normalize and validate the canonical form.",
+            "name": "key",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255,
+              "description": "Non-unique asset directory namespace (for example shared/ or personal/<user-id>/drafts/). Runtime write boundaries normalize and validate the canonical form."
+            },
+            "required": false,
+            "description": "Non-unique asset directory namespace (for example shared/ or personal/<user-id>/drafts/). Runtime write boundaries normalize and validate the canonical form.",
+            "name": "keyPrefix",
             "in": "query"
           },
           {
@@ -6725,6 +6970,12 @@
               "schema": {
                 "type": "object",
                 "properties": {
+                  "key": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 255,
+                    "description": "Non-unique asset directory namespace (for example shared/ or personal/<user-id>/drafts/). Runtime write boundaries normalize and validate the canonical form."
+                  },
                   "title": {
                     "type": "string",
                     "minLength": 1
@@ -8860,6 +9111,12 @@
               "schema": {
                 "type": "object",
                 "properties": {
+                  "key": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 255,
+                    "description": "Non-unique asset directory namespace (for example shared/ or personal/<user-id>/drafts/). Runtime write boundaries normalize and validate the canonical form."
+                  },
                   "name": {
                     "type": "string",
                     "minLength": 1
@@ -9084,6 +9341,30 @@
             "required": false,
             "name": "fields",
             "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255,
+              "description": "Non-unique asset directory namespace (for example shared/ or personal/<user-id>/drafts/). Runtime write boundaries normalize and validate the canonical form."
+            },
+            "required": false,
+            "description": "Non-unique asset directory namespace (for example shared/ or personal/<user-id>/drafts/). Runtime write boundaries normalize and validate the canonical form.",
+            "name": "key",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255,
+              "description": "Non-unique asset directory namespace (for example shared/ or personal/<user-id>/drafts/). Runtime write boundaries normalize and validate the canonical form."
+            },
+            "required": false,
+            "description": "Non-unique asset directory namespace (for example shared/ or personal/<user-id>/drafts/). Runtime write boundaries normalize and validate the canonical form.",
+            "name": "keyPrefix",
+            "in": "query"
           }
         ],
         "responses": {
@@ -9183,6 +9464,12 @@
               "schema": {
                 "type": "object",
                 "properties": {
+                  "key": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 255,
+                    "description": "Non-unique asset directory namespace (for example shared/ or personal/<user-id>/drafts/). Runtime write boundaries normalize and validate the canonical form."
+                  },
                   "name": {
                     "type": "string"
                   },
@@ -9330,6 +9617,12 @@
               "schema": {
                 "type": "object",
                 "properties": {
+                  "key": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 255,
+                    "description": "Non-unique asset directory namespace (for example shared/ or personal/<user-id>/drafts/). Runtime write boundaries normalize and validate the canonical form."
+                  },
                   "name": {
                     "type": "string"
                   },
@@ -14386,6 +14679,30 @@
           },
           {
             "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255,
+              "description": "Non-unique asset directory namespace (for example shared/ or personal/<user-id>/drafts/). Runtime write boundaries normalize and validate the canonical form."
+            },
+            "required": false,
+            "description": "Non-unique asset directory namespace (for example shared/ or personal/<user-id>/drafts/). Runtime write boundaries normalize and validate the canonical form.",
+            "name": "key",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255,
+              "description": "Non-unique asset directory namespace (for example shared/ or personal/<user-id>/drafts/). Runtime write boundaries normalize and validate the canonical form."
+            },
+            "required": false,
+            "description": "Non-unique asset directory namespace (for example shared/ or personal/<user-id>/drafts/). Runtime write boundaries normalize and validate the canonical form.",
+            "name": "keyPrefix",
+            "in": "query"
+          },
+          {
+            "schema": {
               "type": "string"
             },
             "required": false,
@@ -14535,6 +14852,12 @@
                   },
                   "parentTaskId": {
                     "type": "string"
+                  },
+                  "key": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 255,
+                    "description": "Non-unique asset directory namespace (for example shared/ or personal/<user-id>/drafts/). Runtime write boundaries normalize and validate the canonical form."
                   },
                   "source": {
                     "type": "string",
@@ -16522,6 +16845,30 @@
           {
             "schema": {
               "type": "string",
+              "minLength": 1,
+              "maxLength": 255,
+              "description": "Non-unique asset directory namespace (for example shared/ or personal/<user-id>/drafts/). Runtime write boundaries normalize and validate the canonical form."
+            },
+            "required": false,
+            "description": "Non-unique asset directory namespace (for example shared/ or personal/<user-id>/drafts/). Runtime write boundaries normalize and validate the canonical form.",
+            "name": "key",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255,
+              "description": "Non-unique asset directory namespace (for example shared/ or personal/<user-id>/drafts/). Runtime write boundaries normalize and validate the canonical form."
+            },
+            "required": false,
+            "description": "Non-unique asset directory namespace (for example shared/ or personal/<user-id>/drafts/). Runtime write boundaries normalize and validate the canonical form.",
+            "name": "keyPrefix",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
               "enum": [
                 "full",
                 "slim"
@@ -16557,6 +16904,12 @@
                   "name": {
                     "type": "string",
                     "minLength": 1
+                  },
+                  "key": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 255,
+                    "description": "Non-unique asset directory namespace (for example shared/ or personal/<user-id>/drafts/). Runtime write boundaries normalize and validate the canonical form."
                   },
                   "description": {
                     "type": "string"
@@ -16976,6 +17329,12 @@
                 "properties": {
                   "name": {
                     "type": "string"
+                  },
+                  "key": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 255,
+                    "description": "Non-unique asset directory namespace (for example shared/ or personal/<user-id>/drafts/). Runtime write boundaries normalize and validate the canonical form."
                   },
                   "description": {
                     "type": "string"
@@ -17698,6 +18057,12 @@
                     ],
                     "additionalProperties": {},
                     "description": "Optional JSON-Schema describing the expected trigger payload shape. Pass an object to set/replace; pass null to clear; omit to leave unchanged. Validator subset: type, required, properties, enum, const, items. Other JSON-Schema keywords are silently ignored."
+                  },
+                  "key": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 255,
+                    "description": "Non-unique asset directory namespace (for example shared/ or personal/<user-id>/drafts/). Runtime write boundaries normalize and validate the canonical form."
                   }
                 }
               }
