@@ -1,8 +1,9 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { closeDb, createUser, getDb, initDb } from "../be/db";
+import { closeDb, createTaskExtended, createUser, getDb, initDb } from "../be/db";
 
 const FRESH_DB = "./test-asset-key-migration-fresh.sqlite";
 const HISTORICAL_DB = "./test-asset-key-migration-historical.sqlite";
+const LEGACY_STATUS_DB = "./test-asset-key-migration-legacy-status.sqlite";
 
 const globals = globalThis as typeof globalThis & {
   __testMigrationTemplate?: Uint8Array;
@@ -49,6 +50,7 @@ beforeAll(async () => {
   closeDb();
   await removeDb(FRESH_DB);
   await removeDb(HISTORICAL_DB);
+  await removeDb(LEGACY_STATUS_DB);
   initDb(FRESH_DB);
 });
 
@@ -58,6 +60,7 @@ afterAll(async () => {
   globals.__savedAssetKeyTemplate = undefined;
   await removeDb(FRESH_DB);
   await removeDb(HISTORICAL_DB);
+  await removeDb(LEGACY_STATUS_DB);
 });
 
 describe("migration 115 asset namespace keys", () => {
@@ -210,7 +213,117 @@ describe("migration 115 asset namespace keys", () => {
     ).toBe(1);
   });
 
+  test("preserves asset keys when upgrading a legacy restrictive task status schema", () => {
+    closeDb();
+    initDb(LEGACY_STATUS_DB);
+    dropMigration115ForHistoricalFixture();
+
+    const schema = getDb()
+      .prepare<{ sql: string }, []>(
+        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'agent_tasks'",
+      )
+      .get()!.sql;
+    const restrictiveSchema = schema
+      .replace(
+        /^(CREATE TABLE\s+(?:IF NOT EXISTS\s+)?)(?:"agent_tasks"|agent_tasks)/i,
+        "$1agent_tasks_restrictive",
+      )
+      .replace(
+        /status TEXT NOT NULL DEFAULT 'pending'/,
+        "status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','in_progress','completed','failed'))",
+      );
+    expect(restrictiveSchema).not.toBe(schema);
+    const columns = getDb()
+      .prepare<{ name: string }, []>('PRAGMA table_info("agent_tasks")')
+      .all()
+      .map((column) => `"${column.name}"`)
+      .join(", ");
+    const schemaObjects = getDb()
+      .prepare<{ sql: string }, []>(
+        `SELECT sql FROM sqlite_master
+         WHERE tbl_name = 'agent_tasks'
+           AND type IN ('index', 'trigger')
+           AND sql IS NOT NULL`,
+      )
+      .all()
+      .map((row) => row.sql);
+    getDb().run("PRAGMA foreign_keys = OFF");
+    getDb().transaction(() => {
+      getDb().run(restrictiveSchema);
+      getDb().run(
+        `INSERT INTO agent_tasks_restrictive (${columns}) SELECT ${columns} FROM agent_tasks`,
+      );
+      getDb().run("DROP TABLE agent_tasks");
+      getDb().run("ALTER TABLE agent_tasks_restrictive RENAME TO agent_tasks");
+      for (const sql of schemaObjects) getDb().run(sql);
+    })();
+    getDb().run("PRAGMA foreign_keys = ON");
+
+    const taskId = crypto.randomUUID();
+    const now = new Date().toISOString();
+    const user = createUser({ name: "Legacy Task Owner", email: "legacy-task@example.com" });
+    getDb().run(
+      `INSERT INTO agent_tasks (
+         id, task, status, source, createdAt, lastUpdatedAt,
+         vcsProvider, vcsRepo, dir, outputSchema, requestedByUserId,
+         contextKey, modelTier, effort, routingAffinity, created_by, updated_by
+       ) VALUES (
+         ?, 'legacy restrictive task', 'pending', 'api', ?, ?,
+         'github', 'example/repo', '/workspace/example', '{"type":"object"}', ?,
+         'task:legacy:thread', 'smart', 'high', '{"capabilities":["coding"]}', ?, ?
+       )`,
+      [taskId, now, now, user.id, user.id, user.id],
+    );
+
+    closeDb();
+
+    expect(() => initDb(LEGACY_STATUS_DB)).not.toThrow();
+    expect(getDb().query('SELECT "key" FROM agent_tasks WHERE id = ?').get(taskId)).toEqual({
+      key: "shared/",
+    });
+    expect(
+      getDb()
+        .prepare<
+          {
+            vcsProvider: string;
+            dir: string;
+            requestedByUserId: string;
+            modelTier: string;
+            effort: string;
+            routingAffinity: string;
+          },
+          [string]
+        >(
+          `SELECT vcsProvider, dir, requestedByUserId, modelTier, effort, routingAffinity
+           FROM agent_tasks WHERE id = ?`,
+        )
+        .get(taskId),
+    ).toEqual({
+      vcsProvider: "github",
+      dir: "/workspace/example",
+      requestedByUserId: user.id,
+      modelTier: "smart",
+      effort: "high",
+      routingAffinity: '{"capabilities":["coding"]}',
+    });
+    expect(
+      getDb()
+        .prepare<{ count: number }, []>(
+          `SELECT COUNT(*) AS count FROM sqlite_master
+           WHERE type = 'index' AND name = 'idx_agent_tasks_asset_key'`,
+        )
+        .get()?.count,
+    ).toBe(1);
+    expect(() =>
+      getDb().run('UPDATE agent_tasks SET "key" = ? WHERE id = ?', ["INVALID", taskId]),
+    ).toThrow("invalid asset namespace key");
+    const createdAfterUpgrade = createTaskExtended("post-upgrade task");
+    expect(createdAfterUpgrade.key).toBe(`shared/task:${createdAfterUpgrade.id}/`);
+  });
+
   test("startup audit fails closed on structural corruption", () => {
+    closeDb();
+    initDb(HISTORICAL_DB);
     const taskId = getDb()
       .prepare<{ id: string }, []>("SELECT id FROM agent_tasks LIMIT 1")
       .get()!.id;

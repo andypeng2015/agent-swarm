@@ -35,7 +35,7 @@ afterAll(() => {
 });
 
 describe("cross-entity asset namespace invariants", () => {
-  test("all primary entities default to shared and repeated keys remain valid", () => {
+  test("all primary entities receive deterministic resource-specific shared keys", () => {
     const taskA = createTaskExtended("first", { agentId });
     const taskB = createTaskExtended("second", { agentId });
     const workflow = createWorkflow({ name: "default-workflow", definition: { nodes: [] } });
@@ -53,11 +53,11 @@ describe("cross-entity asset namespace invariants", () => {
     });
 
     expect([taskA.key, taskB.key, workflow.key, schedule.key, page.key]).toEqual([
-      "shared/",
-      "shared/",
-      "shared/",
-      "shared/",
-      "shared/",
+      `shared/task:${taskA.id}/`,
+      `shared/task:${taskB.id}/`,
+      `shared/workflow:${workflow.id}/`,
+      `shared/schedule:${schedule.id}/`,
+      `shared/page:${page.id}/`,
     ]);
     expect(auditAssetKeys(getDb()).fatalCount).toBe(0);
   });
@@ -140,6 +140,25 @@ describe("cross-entity asset namespace invariants", () => {
       moveAssetKey({ entityType: "file", id: before!.id, key: "shared/detached/" }),
     ).toThrow("move with their parent task");
     expect(auditAssetKeys(getDb()).warningCount).toBe(0);
+  });
+
+  test("standalone provider mappings default to an fs resource key and remain idempotent", () => {
+    const created = upsertAssetKeyMapping({
+      providerId: "agent-fs",
+      providerOrgId: "org-default",
+      providerDriveId: "drive-default",
+      providerKey: "misc/default.md",
+    });
+    expect(created.key).toBe(`shared/fs:agent-fs:${created.id}/`);
+
+    const repeated = upsertAssetKeyMapping({
+      providerId: "agent-fs",
+      providerOrgId: "org-default",
+      providerDriveId: "drive-default",
+      providerKey: "misc/default.md",
+    });
+    expect(repeated.id).toBe(created.id);
+    expect(repeated.key).toBe(created.key);
   });
 
   test("aggregate summaries stay lightweight and include files by logical key", () => {

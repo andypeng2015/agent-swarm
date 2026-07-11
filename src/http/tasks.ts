@@ -407,15 +407,13 @@ export async function handleTasks(
       if (lead) defaultAgentId = lead.id;
     }
 
-    let assetKey: string;
+    let assetKey: string | undefined;
     try {
       const inheritedKey = parsed.body.parentTaskId
         ? getTaskById(parsed.body.parentTaskId)?.key
         : undefined;
-      assetKey = authorizeAssetKeyWrite(
-        parsed.body.key ?? inheritedKey ?? "shared/",
-        trustedUserId,
-      );
+      const requestedKey = parsed.body.key ?? inheritedKey;
+      assetKey = requestedKey ? authorizeAssetKeyWrite(requestedKey, trustedUserId) : undefined;
     } catch (error) {
       if (error instanceof AssetKeyAuthorizationError) {
         jsonError(res, error.message, error.statusCode);

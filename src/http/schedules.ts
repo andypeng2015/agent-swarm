@@ -325,9 +325,9 @@ export async function handleSchedules(
 
     try {
       const trustedUserId = resolveHttpAuditUserId(req, myAgentId);
-      let key: string;
+      let key: string | undefined;
       try {
-        key = authorizeAssetKeyWrite(body.key ?? "shared/", trustedUserId);
+        key = body.key ? authorizeAssetKeyWrite(body.key, trustedUserId) : undefined;
       } catch (error) {
         if (error instanceof AssetKeyAuthorizationError) {
           jsonError(res, error.message, error.statusCode);

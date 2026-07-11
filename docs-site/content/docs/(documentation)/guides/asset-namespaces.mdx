@@ -16,7 +16,7 @@ Every task, workflow, schedule, and page has a non-null canonical `key`. Existin
 
 Empty segments, `.` or `..` traversal segments, backslashes, absolute paths, NUL bytes, and unknown roots are rejected. Repeated keys are expected and valid; database indexes on `key` are deliberately non-unique.
 
-When a workflow creates a task, the task inherits the workflow key unless the task node supplies one. Scheduler-created tasks inherit the schedule key. Other create paths default to `shared/`.
+When a workflow creates a task, the task inherits the workflow key unless the task node supplies one. Scheduler-created tasks inherit the schedule key. New standalone resources receive deterministic shared keys such as `shared/task:<id>/`, `shared/workflow:<id>/`, `shared/schedule:<id>/`, `shared/page:<id>/`, and `shared/fs:agent-fs:<id>/`. Older clients that omit the column at the SQL boundary still fall back safely to `shared/`.
 
 <Callout type="warn">
 `personal/<user-id>/` is a namespace and write-ownership convention. It is **not** a privacy boundary or a read-visibility guarantee. Existing read permissions still govern every entity. Do not store sensitive content based only on a `personal/` key.

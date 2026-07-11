@@ -172,7 +172,7 @@ export async function handleAssets(
     if (!ensureOperator(req, res)) return true;
     try {
       const actor = resolveHttpAuditUserId(req, myAgentId);
-      const key = authorizeAssetKeyWrite(parsed.body.key ?? "shared/", actor);
+      const key = parsed.body.key ? authorizeAssetKeyWrite(parsed.body.key, actor) : undefined;
       const mapping = upsertAssetKeyMapping({
         providerId: parsed.body.providerId,
         providerOrgId: parsed.body.orgId,

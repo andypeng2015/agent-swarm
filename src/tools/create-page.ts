@@ -69,7 +69,9 @@ export const registerCreatePageTool = (server: McpServer) => {
         "specs that don't need a long-lived process.",
       annotations: { destructiveHint: false },
       inputSchema: z.object({
-        key: AssetKeySchema.optional().describe("Logical namespace (default shared/)."),
+        key: AssetKeySchema.optional().describe(
+          "Logical namespace. Defaults to a shared/page:<id>/ resource key.",
+        ),
         title: z.string().min(1).describe("Human-readable title shown in listings."),
         slug: z
           .string()
@@ -156,7 +158,7 @@ export const registerCreatePageTool = (server: McpServer) => {
       let assetKey: string | undefined;
       try {
         if (input.key !== undefined || !existing) {
-          assetKey = authorizeAssetKeyWrite(input.key ?? "shared/", trustedUserId);
+          assetKey = input.key ? authorizeAssetKeyWrite(input.key, trustedUserId) : undefined;
         }
       } catch (error) {
         const msg = error instanceof Error ? error.message : String(error);

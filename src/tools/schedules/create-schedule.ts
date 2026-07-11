@@ -15,7 +15,9 @@ import {
 } from "../../types";
 
 export const createScheduleInputSchema = z.object({
-  key: AssetKeySchema.optional().describe("Logical namespace (default shared/)."),
+  key: AssetKeySchema.optional().describe(
+    "Logical namespace. Defaults to a shared/schedule:<id>/ resource key.",
+  ),
   name: z.string().min(1).max(100).describe("Unique name for the schedule (e.g., 'daily-cleanup')"),
   taskTemplate: z
     .string()
@@ -375,7 +377,7 @@ export const registerCreateScheduleTool = (server: McpServer) => {
 
         const createdBy =
           resolveTaskAuditUserId(requestInfo.sourceTaskId, requestInfo.agentId) ?? undefined;
-        const assetKey = authorizeAssetKeyWrite(key ?? "shared/", createdBy);
+        const assetKey = key ? authorizeAssetKeyWrite(key, createdBy) : undefined;
 
         const schedule = createScheduledTask({
           key: assetKey,

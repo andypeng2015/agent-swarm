@@ -1,6 +1,8 @@
 export const DEFAULT_ASSET_KEY = "shared/" as const;
 export const ASSET_KEY_MAX_LENGTH = 255;
 
+export type AssetKeyResource = "task" | "workflow" | "schedule" | "page" | `fs:${string}`;
+
 export type SharedAssetNamespace = {
   root: "shared";
   key: string;
@@ -61,6 +63,17 @@ export function normalizeAssetKey(input: string): string {
   }
 
   return withTrailingSlash;
+}
+
+/**
+ * Build the deterministic default namespace for a newly created resource.
+ * The shared/personal prefix remains the ownership/grouping boundary; the
+ * resource-specific leaf prevents unrelated assets from collapsing into the
+ * same catch-all key when callers omit `key`.
+ */
+export function defaultAssetKey(resource: AssetKeyResource, id: string): string {
+  if (!id.trim()) throw new AssetKeyError("Asset key resource ID cannot be empty");
+  return normalizeAssetKey(`shared/${resource}:${id}/`);
 }
 
 export function parseAssetKey(input: string): AssetNamespace {

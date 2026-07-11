@@ -1,7 +1,7 @@
 import { Database } from "bun:sqlite";
 import { parseProviderMeta } from "@/utils/provider-metadata.ts";
 import pkg from "../../package.json";
-import { DEFAULT_ASSET_KEY, normalizeAssetKey } from "../assets/key";
+import { defaultAssetKey, normalizeAssetKey } from "../assets/key";
 import { configureDbResolver } from "../prompts/resolver";
 import { slackChannelFromContextKey } from "../tasks/slack-routing";
 import { telemetry } from "../telemetry";
@@ -259,88 +259,44 @@ export function initDb(dbPath = "./agent-swarm-db.sqlite"): Database {
       console.log("[Migration] Removing restrictive CHECK constraint on agent_tasks.status");
       db.run("PRAGMA foreign_keys=off");
 
-      db.run(`
-        CREATE TABLE agent_tasks_new (
-          id TEXT PRIMARY KEY,
-          agentId TEXT,
-          creatorAgentId TEXT,
-          task TEXT NOT NULL,
-          status TEXT NOT NULL DEFAULT 'pending',
-          source TEXT NOT NULL DEFAULT 'mcp' CHECK(source IN ('mcp', 'slack', 'api', 'github', 'agentmail', 'system', 'schedule')),
-          taskType TEXT,
-          tags TEXT DEFAULT '[]',
-          priority INTEGER DEFAULT 50,
-          dependsOn TEXT DEFAULT '[]',
-          offeredTo TEXT,
-          offeredAt TEXT,
-          acceptedAt TEXT,
-          rejectionReason TEXT,
-          slackChannelId TEXT,
-          slackThreadTs TEXT,
-          slackUserId TEXT,
-          createdAt TEXT NOT NULL,
-          lastUpdatedAt TEXT NOT NULL,
-          finishedAt TEXT,
-          failureReason TEXT,
-          output TEXT,
-          progress TEXT,
-          notifiedAt TEXT,
-          mentionMessageId TEXT,
-          mentionChannelId TEXT,
-          githubRepo TEXT,
-          githubEventType TEXT,
-          githubNumber INTEGER,
-          githubCommentId INTEGER,
-          githubAuthor TEXT,
-          githubUrl TEXT,
-          parentTaskId TEXT,
-          claudeSessionId TEXT,
-          agentmailInboxId TEXT,
-          agentmailMessageId TEXT,
-          agentmailThreadId TEXT,
-          model TEXT,
-          scheduleId TEXT
+      // Migrations run before this compatibility guard, so a legacy table now
+      // carries every current column. Rebuilding from an old hard-coded column
+      // list would silently discard later fields. Derive the replacement
+      // schema, copy list, indexes, and triggers from the live table instead;
+      // remove only the obsolete status CHECK.
+      const rebuiltSchemaSql = schemaSql
+        .replace(
+          /^(CREATE TABLE\s+(?:IF NOT EXISTS\s+)?)(?:"agent_tasks"|agent_tasks)/i,
+          "$1agent_tasks_new",
         )
-      `);
-
-      // Copy all data — use column list to handle any column ordering differences
-      db.run(`
-        INSERT INTO agent_tasks_new (
-          id, agentId, creatorAgentId, task, status, source, taskType, tags,
-          priority, dependsOn, offeredTo, offeredAt, acceptedAt, rejectionReason,
-          slackChannelId, slackThreadTs, slackUserId, createdAt, lastUpdatedAt,
-          finishedAt, failureReason, output, progress, notifiedAt,
-          mentionMessageId, mentionChannelId, githubRepo, githubEventType,
-          githubNumber, githubCommentId, githubAuthor, githubUrl,
-          parentTaskId, claudeSessionId,
-          agentmailInboxId, agentmailMessageId, agentmailThreadId,
-          model, scheduleId
+        .replace(/\s+CHECK\s*\(\s*status\s+IN\s*\([^)]*\)\s*\)/i, "");
+      if (rebuiltSchemaSql === schemaSql || !/agent_tasks_new/i.test(rebuiltSchemaSql)) {
+        throw new Error("Could not derive agent_tasks schema without legacy status CHECK");
+      }
+      const columns = db
+        .prepare<{ name: string }, []>('PRAGMA table_info("agent_tasks")')
+        .all()
+        .map((column) => `"${column.name.replaceAll('"', '""')}"`)
+        .join(", ");
+      const schemaObjects = db
+        .prepare<{ sql: string }, []>(
+          `SELECT sql FROM sqlite_master
+           WHERE tbl_name = 'agent_tasks'
+             AND type IN ('index', 'trigger')
+             AND sql IS NOT NULL
+           ORDER BY type, name`,
         )
-        SELECT
-          id, agentId, creatorAgentId, task, status, source, taskType, tags,
-          priority, dependsOn, offeredTo, offeredAt, acceptedAt, rejectionReason,
-          slackChannelId, slackThreadTs, slackUserId, createdAt, lastUpdatedAt,
-          finishedAt, failureReason, output, progress, notifiedAt,
-          mentionMessageId, mentionChannelId, githubRepo, githubEventType,
-          githubNumber, githubCommentId, githubAuthor, githubUrl,
-          parentTaskId, claudeSessionId,
-          agentmailInboxId, agentmailMessageId, agentmailThreadId,
-          model, scheduleId
-        FROM agent_tasks
-      `);
+        .all()
+        .map((row) => row.sql);
 
-      db.run("DROP TABLE agent_tasks");
-      db.run("ALTER TABLE agent_tasks_new RENAME TO agent_tasks");
-
-      // Recreate all indexes
-      db.run("CREATE INDEX IF NOT EXISTS idx_agent_tasks_agentId ON agent_tasks(agentId)");
-      db.run("CREATE INDEX IF NOT EXISTS idx_agent_tasks_status ON agent_tasks(status)");
-      db.run("CREATE INDEX IF NOT EXISTS idx_agent_tasks_offeredTo ON agent_tasks(offeredTo)");
-      db.run("CREATE INDEX IF NOT EXISTS idx_agent_tasks_taskType ON agent_tasks(taskType)");
-      db.run(
-        "CREATE INDEX IF NOT EXISTS idx_agent_tasks_agentmailThreadId ON agent_tasks(agentmailThreadId)",
-      );
-      db.run("CREATE INDEX IF NOT EXISTS idx_agent_tasks_schedule_id ON agent_tasks(scheduleId)");
+      database.transaction(() => {
+        database.run("DROP TABLE IF EXISTS agent_tasks_new");
+        database.run(rebuiltSchemaSql);
+        database.run(`INSERT INTO agent_tasks_new (${columns}) SELECT ${columns} FROM agent_tasks`);
+        database.run("DROP TABLE agent_tasks");
+        database.run("ALTER TABLE agent_tasks_new RENAME TO agent_tasks");
+        for (const sql of schemaObjects) database.run(sql);
+      })();
 
       db.run("PRAGMA foreign_keys=on");
       console.log("[Migration] Successfully removed CHECK constraint on agent_tasks.status");
@@ -1356,6 +1312,7 @@ export const taskQueries = {
         string,
         string,
         string,
+        string,
         AgentTaskStatus,
         AgentTaskSource,
         string | null,
@@ -1364,8 +1321,8 @@ export const taskQueries = {
         string,
       ]
     >(
-      `INSERT INTO agent_tasks (id, agentId, task, status, source, slackChannelId, slackThreadTs, slackUserId, swarmVersion, createdAt, lastUpdatedAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), strftime('%Y-%m-%dT%H:%M:%fZ', 'now')) RETURNING *`,
+      `INSERT INTO agent_tasks (id, "key", agentId, task, status, source, slackChannelId, slackThreadTs, slackUserId, swarmVersion, createdAt, lastUpdatedAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), strftime('%Y-%m-%dT%H:%M:%fZ', 'now')) RETURNING *`,
     ),
 
   getById: () => getDb().prepare<AgentTaskRow, [string]>("SELECT * FROM agent_tasks WHERE id = ?"),
@@ -1429,6 +1386,7 @@ export function createTask(
     .insert()
     .get(
       id,
+      defaultAssetKey("task", id),
       agentId,
       task,
       "pending",
@@ -3241,12 +3199,12 @@ export function getAssetKeyMappingByProvider(input: {
 export function upsertAssetKeyMapping(input: UpsertAssetKeyMappingInput): AssetKeyMapping {
   if (!input.providerId.trim()) throw new Error("providerId is required");
   if (!input.providerKey.trim()) throw new Error("providerKey is required");
-  const key = normalizeAssetKey(input.key ?? DEFAULT_ASSET_KEY);
   const now = new Date().toISOString();
 
   return getDb().transaction(() => {
     const existing = getAssetKeyMappingByProvider(input);
     if (existing) {
+      const key = normalizeAssetKey(input.key ?? existing.key);
       const row = getDb()
         .prepare<AssetKeyMappingRow, (string | null)[]>(
           `UPDATE asset_key_mappings
@@ -3276,6 +3234,9 @@ export function upsertAssetKeyMapping(input: UpsertAssetKeyMappingInput): AssetK
     }
 
     const id = crypto.randomUUID();
+    const key = normalizeAssetKey(
+      input.key ?? defaultAssetKey(`fs:${input.providerId.trim()}`, id),
+    );
     const row = getDb()
       .prepare<AssetKeyMappingRow, (string | null)[]>(
         `INSERT INTO asset_key_mappings (
@@ -4154,7 +4115,7 @@ export function createTaskExtended(task: string, options?: CreateTaskOptions): A
   }
 
   const auditUserId = getCurrentRequestUserId() ?? null;
-  const assetKey = normalizeAssetKey(options?.key ?? DEFAULT_ASSET_KEY);
+  const assetKey = normalizeAssetKey(options?.key ?? defaultAssetKey("task", id));
   const row = getDb()
     .prepare<AgentTaskRow, (string | number | null)[]>(
       `INSERT INTO agent_tasks (
@@ -6685,7 +6646,7 @@ export function createScheduledTask(data: CreateScheduledTaskData): ScheduledTas
     )
     .get(
       id,
-      normalizeAssetKey(data.key ?? DEFAULT_ASSET_KEY),
+      normalizeAssetKey(data.key ?? defaultAssetKey("schedule", id)),
       data.name,
       data.description ?? null,
       data.cronExpression ?? null,
@@ -8004,7 +7965,7 @@ export function createWorkflow(data: {
     )
     .get(
       id,
-      normalizeAssetKey(data.key ?? DEFAULT_ASSET_KEY),
+      normalizeAssetKey(data.key ?? defaultAssetKey("workflow", id)),
       data.name,
       data.description ?? null,
       JSON.stringify(data.definition),
@@ -8740,13 +8701,17 @@ export function createPage(data: {
   body: string;
   needsCredentials?: string[];
 }): Page {
+  // Match the historical SQL default ID shape while making the value
+  // available before insert so the default namespace can include it.
+  const id = crypto.randomUUID().replace(/-/g, "");
   const row = getDb()
     .prepare<PageRow, (string | null)[]>(
-      `INSERT INTO pages ("key", agentId, slug, title, description, contentType, authMode, passwordHash, body, needsCredentials)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`,
+      `INSERT INTO pages (id, "key", agentId, slug, title, description, contentType, authMode, passwordHash, body, needsCredentials)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`,
     )
     .get(
-      normalizeAssetKey(data.key ?? DEFAULT_ASSET_KEY),
+      id,
+      normalizeAssetKey(data.key ?? defaultAssetKey("page", id)),
       data.agentId,
       data.slug,
       data.title,

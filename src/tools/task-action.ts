@@ -56,7 +56,7 @@ export const taskActionInputSchema = z.object({
   // For 'create' action:
   task: z.string().min(1).optional().describe("Task description (required for 'create')."),
   key: AssetKeySchema.optional().describe(
-    "Logical namespace for a created task (default shared/).",
+    "Logical namespace for a created task. Defaults to a shared/task:<id>/ resource key.",
   ),
   taskType: z.string().max(50).optional().describe("Task type (e.g., 'bug', 'feature')."),
   tags: z
@@ -253,13 +253,12 @@ export async function taskActionHandler(
   }
 
   const agentId = ctx.agentId;
-  let assetKey = "shared/";
+  let assetKey: string | undefined;
   if (action === "create") {
     try {
-      assetKey = authorizeAssetKeyWrite(
-        key ?? "shared/",
-        resolveTaskAuditUserId(ctx.sourceTaskId, agentId),
-      );
+      assetKey = key
+        ? authorizeAssetKeyWrite(key, resolveTaskAuditUserId(ctx.sourceTaskId, agentId))
+        : undefined;
     } catch (error) {
       const message =
         error instanceof AssetKeyAuthorizationError

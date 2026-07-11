@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import * as z from "zod";
 import {
   canWriteAssetKey,
+  defaultAssetKey,
   isCanonicalAssetKey,
   normalizeAssetKey,
   parseAssetKey,
@@ -28,6 +29,12 @@ describe("asset namespace key normalization", () => {
       userId: "abc123",
       relativeSegments: ["drafts"],
     });
+  });
+
+  test("builds resource-specific defaults inside the shared namespace", () => {
+    expect(defaultAssetKey("task", "ABC-123")).toBe("shared/task:abc-123/");
+    expect(defaultAssetKey("workflow", "workflow-id")).toBe("shared/workflow:workflow-id/");
+    expect(defaultAssetKey("fs:agent-fs", "mapping-id")).toBe("shared/fs:agent-fs:mapping-id/");
   });
 
   test("rejects absolute, traversal, empty-segment, backslash, NUL, and unknown roots", () => {

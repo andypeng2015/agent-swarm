@@ -623,10 +623,17 @@ class ApiClient {
     if (filters?.targetType) params.set("targetType", filters.targetType);
     if (filters?.workflowId) params.set("workflowId", filters.workflowId);
     if (filters?.scriptName) params.set("scriptName", filters.scriptName);
+    const usesAssetNamespaceFilter = !!(filters?.key || filters?.keyPrefix);
+    if (usesAssetNamespaceFilter) params.set("fields", "full");
     const queryString = params.toString();
-    const url = `${this.getBaseUrl()}/api/scheduled-tasks${queryString ? `?${queryString}` : ""}`;
+    const route = usesAssetNamespaceFilter ? "/api/schedules" : "/api/scheduled-tasks";
+    const url = `${this.getBaseUrl()}${route}${queryString ? `?${queryString}` : ""}`;
     const res = await fetch(url, { headers: this.getHeaders() });
     if (!res.ok) throw new Error(`Failed to fetch scheduled tasks: ${res.status}`);
+    if (usesAssetNamespaceFilter) {
+      const body = (await res.json()) as { schedules: ScheduledTask[] };
+      return { scheduledTasks: body.schedules };
+    }
     return res.json();
   }
 

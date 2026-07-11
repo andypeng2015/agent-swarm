@@ -449,9 +449,9 @@ export async function handleWorkflows(
     }
 
     const trustedUserId = resolveHttpAuditUserId(req, myAgentId);
-    let key: string;
+    let key: string | undefined;
     try {
-      key = authorizeAssetKeyWrite(parsed.body.key ?? "shared/", trustedUserId);
+      key = parsed.body.key ? authorizeAssetKeyWrite(parsed.body.key, trustedUserId) : undefined;
     } catch (error) {
       if (error instanceof AssetKeyAuthorizationError) {
         jsonError(res, error.message, error.statusCode);

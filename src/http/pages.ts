@@ -394,10 +394,9 @@ export async function handlePages(
     }
 
     try {
-      const key = authorizeAssetKeyWrite(
-        parsed.body.key ?? "shared/",
-        resolveHttpAuditUserId(req, myAgentId),
-      );
+      const key = parsed.body.key
+        ? authorizeAssetKeyWrite(parsed.body.key, resolveHttpAuditUserId(req, myAgentId))
+        : undefined;
       const page = createPage({
         key,
         agentId: myAgentId,

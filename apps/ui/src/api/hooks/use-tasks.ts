@@ -210,13 +210,14 @@ function rollbackTaskQueries(queryClient: QueryClient, context?: TaskMutationCon
 
 function optimisticCreatedTask(input: CreateTaskInput): TaskWithLogs {
   const now = new Date().toISOString();
+  const id = `optimistic:${crypto.randomUUID()}`;
   return {
-    id: `optimistic:${crypto.randomUUID()}`,
+    id,
     agentId: input.agentId ?? null,
     task: input.task,
     status: input.agentId ? "pending" : "unassigned",
     source: (input.source as AgentTaskSource | undefined) ?? "ui",
-    key: input.key ?? "shared/",
+    key: input.key ?? `shared/task:${id}/`,
     taskType: input.taskType,
     tags: input.tags ?? [],
     priority: input.priority ?? 50,

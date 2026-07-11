@@ -40,7 +40,9 @@ export const registerCreateWorkflowTool = (server: McpServer) => {
         "See runbooks/workflows.md#wait-nodes for config shapes, ordering caveats, and built-in event names.",
       inputSchema: z.object({
         name: z.string().describe("Unique name for the workflow"),
-        key: AssetKeySchema.optional().describe("Logical namespace (default shared/)."),
+        key: AssetKeySchema.optional().describe(
+          "Logical namespace. Defaults to a shared/workflow:<id>/ resource key.",
+        ),
         description: z.string().optional().describe("Description of what this workflow does"),
         definition: WorkflowDefinitionSchema.describe(
           "The workflow definition with nodes (each node has id, type, config, and optional next/retry/validation)",
@@ -130,7 +132,7 @@ export const registerCreateWorkflowTool = (server: McpServer) => {
 
         const createdBy =
           resolveTaskAuditUserId(requestInfo.sourceTaskId, requestInfo.agentId) ?? undefined;
-        const assetKey = authorizeAssetKeyWrite(key ?? "shared/", createdBy);
+        const assetKey = key ? authorizeAssetKeyWrite(key, createdBy) : undefined;
 
         const workflow = createWorkflow({
           key: assetKey,

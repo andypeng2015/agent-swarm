@@ -13,7 +13,7 @@ Use an asset `key` as directory-like grouping metadata across tasks, workflows, 
 
 ## Set and inherit keys
 
-Pass `key` when creating a task, workflow, schedule, or page. Omitting it defaults to `shared/`.
+Pass `key` when creating a task, workflow, schedule, or page. Omitting it creates a deterministic shared resource key such as `shared/task:<id>/`, `shared/workflow:<id>/`, `shared/schedule:<id>/`, `shared/page:<id>/`, or `shared/fs:agent-fs:<id>/`.
 
 - Tasks sent from another task inherit the source task's key unless explicitly overridden.
 - Tasks launched by a workflow inherit the workflow key unless the agent-task node supplies a key.
