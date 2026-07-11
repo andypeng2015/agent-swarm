@@ -113,6 +113,7 @@ export interface AgentLatestModel {
 
 export interface AgentTask {
   id: string;
+  key: string;
   agentId: string | null;
   creatorAgentId?: string;
   task: string;
@@ -775,6 +776,7 @@ export type ScheduledTaskTargetType = "agent-task" | "workflow" | "script";
 
 export interface ScheduledTask {
   id: string;
+  key: string;
   name: string;
   description?: string;
   cronExpression?: string;
@@ -935,6 +937,7 @@ export interface CooldownConfig {
 
 export interface Workflow {
   id: string;
+  key: string;
   name: string;
   description?: string;
   enabled: boolean;
@@ -2044,6 +2047,7 @@ export interface PageMetadata {
  */
 export interface PageListItem {
   id: string;
+  key: string;
   agentId: string;
   slug: string;
   title: string;
@@ -2063,6 +2067,63 @@ export interface PageListItem {
 export interface PagesListResponse {
   pages: PageListItem[];
   total: number;
+}
+
+// ─── Cross-entity asset namespaces ─────────────────────────────────────────
+
+export type AssetEntityType = "task" | "workflow" | "schedule" | "page" | "file";
+
+export interface AssetProviderRef {
+  providerId: string;
+  orgId?: string;
+  driveId?: string;
+  providerKey: string;
+}
+
+export interface AssetSummary {
+  entityType: AssetEntityType;
+  id: string;
+  key: string;
+  label: string;
+  updatedAt: string;
+  providerRef?: AssetProviderRef;
+}
+
+export interface AssetKeyMapping {
+  id: string;
+  providerId: string;
+  providerOrgId?: string;
+  providerDriveId?: string;
+  providerKey: string;
+  key: string;
+  sourceEntityType?: "task-attachment" | "external";
+  sourceEntityId?: string;
+  createdAt: string;
+  updatedAt: string;
+  createdBy?: string;
+  updatedBy?: string;
+}
+
+export interface AssetKeyAuditIssue {
+  severity: "fatal" | "warning";
+  code:
+    | "missing-key"
+    | "noncanonical-key"
+    | "unknown-personal-user"
+    | "missing-provider-mapping"
+    | "provider-mapping-drift";
+  entityType: AssetEntityType;
+  entityId: string;
+  message: string;
+}
+
+export interface AssetKeyAuditResult {
+  ok: boolean;
+  structuralValid: boolean;
+  checked: number;
+  fatalCount: number;
+  warningCount: number;
+  issues: AssetKeyAuditIssue[];
 }
 
 export type MetricVisualization = "stat" | "table" | "bar" | "line" | "multi-bar" | "multi-line";

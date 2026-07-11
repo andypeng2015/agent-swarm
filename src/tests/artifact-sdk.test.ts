@@ -68,7 +68,11 @@ describe("BROWSER_SDK_JS", () => {
     expect(BROWSER_SDK_JS).toContain("class SwarmSDK");
   });
 
-  test("exposes the seven canonical domains", () => {
+  test("is syntactically valid JavaScript", () => {
+    expect(() => new Function(BROWSER_SDK_JS)).not.toThrow();
+  });
+
+  test("exposes the eight canonical domains", () => {
     const expectedDomains = [
       "this.tasks",
       "this.agents",
@@ -77,6 +81,7 @@ describe("BROWSER_SDK_JS", () => {
       "this.repos",
       "this.schedules",
       "this.approvalRequests",
+      "this.assets",
     ];
     for (const domain of expectedDomains) {
       expect(BROWSER_SDK_JS).toContain(domain);
@@ -105,6 +110,9 @@ describe("BROWSER_SDK_JS", () => {
     expect(BROWSER_SDK_JS).toContain("'/repos'");
     expect(BROWSER_SDK_JS).toContain("'/schedules'");
     expect(BROWSER_SDK_JS).toContain("'/approval-requests'");
+    expect(BROWSER_SDK_JS).toContain("'/assets'");
+    expect(BROWSER_SDK_JS).toContain("'/assets/key-audit'");
+    expect(BROWSER_SDK_JS).toContain("'/assets/mappings'");
   });
 
   test("fetches config on construction", () => {

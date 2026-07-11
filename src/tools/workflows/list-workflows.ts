@@ -2,7 +2,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { listWorkflows } from "@/be/db";
 import { createToolRegistrar } from "@/tools/utils";
-import { WorkflowRunStatusSchema } from "@/types";
+import { AssetKeySchema, WorkflowRunStatusSchema } from "@/types";
 
 export const registerListWorkflowsTool = (server: McpServer) => {
   createToolRegistrar(server)(
@@ -14,6 +14,8 @@ export const registerListWorkflowsTool = (server: McpServer) => {
         "List all automation workflows, optionally filtered by enabled status. Returns SLIM rows WITHOUT the full `definition` (DAG) — each row carries a `nodeCount` instead. To inspect or patch a workflow's nodes/triggers, call `get-workflow` by id, or pass `includeFull: true` here.",
       inputSchema: z.object({
         enabled: z.boolean().optional().describe("Filter by enabled status (omit to return all)"),
+        key: AssetKeySchema.optional().describe("Filter by exact namespace."),
+        keyPrefix: AssetKeySchema.optional().describe("Filter by namespace subtree."),
         consecutiveErrorsMin: z
           .number()
           .int()
@@ -38,9 +40,9 @@ export const registerListWorkflowsTool = (server: McpServer) => {
         workflows: z.array(z.unknown()),
       }),
     },
-    async ({ enabled, consecutiveErrorsMin, lastRunStatus, includeFull }) => {
+    async ({ enabled, key, keyPrefix, consecutiveErrorsMin, lastRunStatus, includeFull }) => {
       try {
-        const filters = { enabled, consecutiveErrorsMin, lastRunStatus };
+        const filters = { enabled, key, keyPrefix, consecutiveErrorsMin, lastRunStatus };
         const workflows = includeFull
           ? listWorkflows(filters)
           : listWorkflows(filters, { slim: true });

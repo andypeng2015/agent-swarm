@@ -7,6 +7,10 @@ import type {
   ApiKeyStatusResponse,
   ApprovalRequest,
   ApprovalRequestsResponse,
+  AssetEntityType,
+  AssetKeyAuditResult,
+  AssetKeyMapping,
+  AssetSummary,
   Budget,
   BudgetRefusalsResponse,
   BudgetScope,
@@ -273,6 +277,8 @@ class ApiClient {
     status?: string;
     agentId?: string;
     scheduleId?: string;
+    key?: string;
+    keyPrefix?: string;
     search?: string;
     includeHeartbeat?: boolean;
     limit?: number;
@@ -290,6 +296,8 @@ class ApiClient {
     if (filters?.status) params.set("status", filters.status);
     if (filters?.agentId) params.set("agentId", filters.agentId);
     if (filters?.scheduleId) params.set("scheduleId", filters.scheduleId);
+    if (filters?.key) params.set("key", filters.key);
+    if (filters?.keyPrefix) params.set("keyPrefix", filters.keyPrefix);
     if (filters?.search) params.set("search", filters.search);
     if (filters?.includeHeartbeat) params.set("includeHeartbeat", "true");
     if (filters?.limit != null) params.set("limit", String(filters.limit));
@@ -315,6 +323,7 @@ class ApiClient {
 
   async createTask(data: {
     task: string;
+    key?: string;
     agentId?: string;
     taskType?: string;
     tags?: string[];
@@ -600,6 +609,8 @@ class ApiClient {
   async fetchScheduledTasks(filters?: {
     enabled?: boolean;
     name?: string;
+    key?: string;
+    keyPrefix?: string;
     targetType?: ScheduledTask["targetType"];
     workflowId?: string;
     scriptName?: string;
@@ -607,13 +618,22 @@ class ApiClient {
     const params = new URLSearchParams();
     if (filters?.enabled !== undefined) params.set("enabled", String(filters.enabled));
     if (filters?.name) params.set("name", filters.name);
+    if (filters?.key) params.set("key", filters.key);
+    if (filters?.keyPrefix) params.set("keyPrefix", filters.keyPrefix);
     if (filters?.targetType) params.set("targetType", filters.targetType);
     if (filters?.workflowId) params.set("workflowId", filters.workflowId);
     if (filters?.scriptName) params.set("scriptName", filters.scriptName);
+    const usesAssetNamespaceFilter = !!(filters?.key || filters?.keyPrefix);
+    if (usesAssetNamespaceFilter) params.set("fields", "full");
     const queryString = params.toString();
-    const url = `${this.getBaseUrl()}/api/scheduled-tasks${queryString ? `?${queryString}` : ""}`;
+    const route = usesAssetNamespaceFilter ? "/api/schedules" : "/api/scheduled-tasks";
+    const url = `${this.getBaseUrl()}${route}${queryString ? `?${queryString}` : ""}`;
     const res = await fetch(url, { headers: this.getHeaders() });
     if (!res.ok) throw new Error(`Failed to fetch scheduled tasks: ${res.status}`);
+    if (usesAssetNamespaceFilter) {
+      const body = (await res.json()) as { schedules: ScheduledTask[] };
+      return { scheduledTasks: body.schedules };
+    }
     return res.json();
   }
 
@@ -625,6 +645,7 @@ class ApiClient {
   }
 
   async createSchedule(data: {
+    key?: string;
     name: string;
     taskTemplate?: string;
     targetType?: ScheduledTask["targetType"];
@@ -825,8 +846,12 @@ class ApiClient {
     return res.json();
   }
   // Workflows
-  async fetchWorkflows(): Promise<WorkflowsResponse> {
-    const url = `${this.getBaseUrl()}/api/workflows`;
+  async fetchWorkflows(filters?: { key?: string; keyPrefix?: string }): Promise<WorkflowsResponse> {
+    const params = new URLSearchParams();
+    if (filters?.key) params.set("key", filters.key);
+    if (filters?.keyPrefix) params.set("keyPrefix", filters.keyPrefix);
+    const qs = params.toString();
+    const url = `${this.getBaseUrl()}/api/workflows${qs ? `?${qs}` : ""}`;
     const res = await fetch(url, { headers: this.getHeaders() });
     if (!res.ok) throw new Error(`Failed to fetch workflows: ${res.status}`);
     // List endpoint returns slim rows (no `definition` — just `nodeCount`).
@@ -855,7 +880,7 @@ class ApiClient {
   async updateWorkflow(
     id: string,
     data: Partial<
-      Pick<Workflow, "name" | "description" | "enabled"> & {
+      Pick<Workflow, "key" | "name" | "description" | "enabled"> & {
         // null = clear, object = set/replace, undefined/omitted = unchanged.
         triggerSchema: Record<string, unknown> | null;
       }
@@ -2416,17 +2441,76 @@ class ApiClient {
 
   async listPages(opts?: {
     agentId?: string;
+    key?: string;
+    keyPrefix?: string;
     limit?: number;
     offset?: number;
   }): Promise<PagesListResponse> {
     const params = new URLSearchParams();
     if (opts?.agentId) params.set("agentId", opts.agentId);
+    if (opts?.key) params.set("key", opts.key);
+    if (opts?.keyPrefix) params.set("keyPrefix", opts.keyPrefix);
     if (opts?.limit !== undefined) params.set("limit", String(opts.limit));
     if (opts?.offset !== undefined) params.set("offset", String(opts.offset));
     const qs = params.toString();
     const url = `${this.getBaseUrl()}/api/pages${qs ? `?${qs}` : ""}`;
     const res = await fetch(url, { headers: this.getHeaders() });
     if (!res.ok) throw new Error(`listPages: ${res.status}`);
+    return res.json();
+  }
+
+  async listAssets(opts?: {
+    keyPrefix?: string;
+    types?: AssetEntityType[];
+    limit?: number;
+  }): Promise<{ assets: AssetSummary[]; count: number }> {
+    const params = new URLSearchParams();
+    if (opts?.keyPrefix) params.set("keyPrefix", opts.keyPrefix);
+    if (opts?.types?.length) params.set("types", opts.types.join(","));
+    if (opts?.limit !== undefined) params.set("limit", String(opts.limit));
+    const qs = params.toString();
+    const url = `${this.getBaseUrl()}/api/assets${qs ? `?${qs}` : ""}`;
+    const res = await fetch(url, { headers: this.getHeaders() });
+    if (!res.ok) throw new Error(`listAssets: ${res.status}`);
+    return res.json();
+  }
+
+  async auditAssetKeys(): Promise<AssetKeyAuditResult> {
+    const url = `${this.getBaseUrl()}/api/assets/key-audit`;
+    const res = await fetch(url, { headers: this.getHeaders() });
+    if (!res.ok) throw new Error(`auditAssetKeys: ${res.status}`);
+    return res.json();
+  }
+
+  async moveAsset(
+    entityType: AssetEntityType,
+    id: string,
+    key: string,
+  ): Promise<{ entityType: AssetEntityType; id: string; key: string }> {
+    const url = `${this.getBaseUrl()}/api/assets/${entityType}/${encodeURIComponent(id)}/key`;
+    const res = await fetch(url, {
+      method: "PATCH",
+      headers: this.getHeaders(),
+      body: JSON.stringify({ key }),
+    });
+    if (!res.ok) throw new Error(`moveAsset: ${res.status}`);
+    return res.json();
+  }
+
+  async registerAssetMapping(data: {
+    providerId: string;
+    orgId?: string;
+    driveId?: string;
+    providerKey: string;
+    key?: string;
+  }): Promise<AssetKeyMapping> {
+    const url = `${this.getBaseUrl()}/api/assets/mappings`;
+    const res = await fetch(url, {
+      method: "POST",
+      headers: this.getHeaders(),
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error(`registerAssetMapping: ${res.status}`);
     return res.json();
   }
 

@@ -14,6 +14,7 @@
 //   - repos            list, get, create, update, delete
 //   - schedules        list, get, create, update, delete, run
 //   - approvalRequests list, get, create, respond
+//   - assets           list, audit, registerMapping, move
 //   - kv               get, set, del, incr, list  (namespace is forced server-
 //                      side to the page's own `task:page:<id>` — no namespace
 //                      argument is exposed)
@@ -105,6 +106,17 @@ class SwarmSDK {
       get: (id) => call('GET', '/approval-requests/' + enc(id)),
       create: (body) => call('POST', '/approval-requests', body),
       respond: (id, body) => call('POST', '/approval-requests/' + enc(id) + '/respond', body),
+    };
+
+    this.assets = {
+      list: (filters) => call('GET', '/assets' + qs(filters)),
+      audit: () => call('GET', '/assets/key-audit'),
+      registerMapping: (body) => call('POST', '/assets/mappings', body),
+      move: (entityType, id, key) => call(
+        'PATCH',
+        '/assets/' + enc(entityType) + '/' + enc(id) + '/key',
+        { key },
+      ),
     };
 
     // KV store. The namespace is FORCED by the page-proxy to \`task:page:<id>\`

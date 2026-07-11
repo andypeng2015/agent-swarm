@@ -1,0 +1,14 @@
+{
+  "kind": "skill",
+  "name": "asset-namespaces",
+  "displayName": "Asset Namespaces",
+  "slug": "asset-namespaces",
+  "title": "Asset Namespaces",
+  "description": "Use canonical asset namespace keys to group, find, inherit, and move tasks, workflows, schedules, pages, and mapped files. Use when organizing swarm work under shared/ or personal/{userId}/ paths, setting or filtering asset keys, or calling the asset-management API.",
+  "version": "1.0.0",
+  "category": "skills",
+  "placeholders": [],
+  "runAllSeedersCandidate": true,
+  "systemDefault": true,
+  "tags": ["assets", "namespaces", "organization"]
+}

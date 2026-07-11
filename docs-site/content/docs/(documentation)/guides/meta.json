@@ -2,6 +2,7 @@
   "title": "Guides",
   "pages": [
     "deployment",
+    "asset-namespaces",
     "agent-fs-co-deployment",
     "self-hosted-sso",
     "e2b-provider-smoke-tests",

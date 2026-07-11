@@ -36,6 +36,7 @@ describe("system-default skills", () => {
     const skills = loadSeedSkills();
     const names = skills.map((skill) => skill.name);
 
+    expect(names).toContain("asset-namespaces");
     expect(names).toContain("attio-interaction");
     expect(names).toContain("script-workflows");
     expect(names).toContain("swarm-scripts");
@@ -46,6 +47,10 @@ describe("system-default skills", () => {
     expect(names).not.toContain("taste-redesign-skill");
     expect(names).not.toContain("taste-output-skill");
     expect(skills.find((skill) => skill.name === "attio-interaction")?.systemDefault).toBe(true);
+    const assetNamespacesSkill = skills.find((skill) => skill.name === "asset-namespaces");
+    expect(assetNamespacesSkill?.systemDefault).toBe(true);
+    expect(assetNamespacesSkill?.content).toContain("**not** a privacy");
+    expect(assetNamespacesSkill?.content).toContain("window.swarmSdk.assets");
     expect(skills.find((skill) => skill.name === "script-workflows")?.systemDefault).toBe(true);
     expect(skills.find((skill) => skill.name === "swarm-scripts")?.systemDefault).toBe(true);
     expect(skills.find((skill) => skill.name === "kv-storage")?.systemDefault).toBe(true);
@@ -60,6 +65,7 @@ describe("system-default skills", () => {
     expect(result.failed).toEqual([]);
 
     const defaults = getSystemDefaultSkills().map((skill) => skill.name);
+    expect(defaults).toContain("asset-namespaces");
     expect(defaults).toContain("attio-interaction");
     expect(defaults).toContain("script-workflows");
     expect(defaults).toContain("swarm-scripts");

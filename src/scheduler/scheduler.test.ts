@@ -101,6 +101,7 @@ describe("calculateNextRun", () => {
     // Create a mock schedule object without cron or interval
     const mockSchedule = {
       id: "test-id",
+      key: "shared/",
       name: "test-no-schedule",
       taskTemplate: "Test task",
       tags: [],

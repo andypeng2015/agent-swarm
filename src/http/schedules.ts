@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { CronExpressionParser } from "cron-parser";
 import { z } from "zod";
+import { AssetKeyAuthorizationError, authorizeAssetKeyWrite } from "../be/asset-key-auth";
 import { resolveHttpAuditUserId } from "../be/audit-user";
 import {
   createScheduledTask,
@@ -16,13 +17,19 @@ import {
 import { mergeScheduleTiming, validateRecurringTiming } from "../be/schedules/validate";
 import { getScript } from "../be/scripts/db";
 import { calculateNextRun, dispatchScheduleTarget } from "../scheduler/scheduler";
-import { ModelTierSchema, ScheduledTaskTargetTypeSchema, splitLegacyModelAlias } from "../types";
+import {
+  AssetKeySchema,
+  ModelTierSchema,
+  ScheduledTaskTargetTypeSchema,
+  splitLegacyModelAlias,
+} from "../types";
 import { route } from "./route-def";
 import { json, jsonError } from "./utils";
 
 // ─── Route Definitions ───────────────────────────────────────────────────────
 
 const scheduleUpdateBodySchema = z.object({
+  key: AssetKeySchema.optional(),
   name: z.string().optional(),
   description: z.string().optional(),
   cronExpression: z.string().nullable().optional(),
@@ -50,6 +57,7 @@ const createSchedule = route({
   summary: "Create a new schedule",
   tags: ["Schedules"],
   body: z.object({
+    key: AssetKeySchema.optional(),
     name: z.string().min(1),
     description: z.string().optional(),
     cronExpression: z.string().optional(),
@@ -118,6 +126,8 @@ const listSchedules = route({
     lastRunStatus: z.enum(["failed", "succeeded"]).optional(),
     /** `full` restores the legacy shape (includes `taskTemplate`); default is slim. */
     fields: z.enum(["full", "slim"]).optional(),
+    key: AssetKeySchema.optional(),
+    keyPrefix: AssetKeySchema.optional(),
   }),
   responses: {
     200: { description: "List of schedules" },
@@ -210,6 +220,8 @@ export async function handleSchedules(
       hideCompleted: parsed.query.hideCompleted,
       consecutiveErrorsMin: parsed.query.consecutiveErrorsMin,
       lastRunStatus: parsed.query.lastRunStatus,
+      key: parsed.query.key,
+      keyPrefix: parsed.query.keyPrefix,
     };
     // List responses default to slim (no full `taskTemplate`); `?fields=full` restores it.
     const schedules =
@@ -312,6 +324,17 @@ export async function handleSchedules(
     }
 
     try {
+      const trustedUserId = resolveHttpAuditUserId(req, myAgentId);
+      let key: string | undefined;
+      try {
+        key = body.key ? authorizeAssetKeyWrite(body.key, trustedUserId) : undefined;
+      } catch (error) {
+        if (error instanceof AssetKeyAuthorizationError) {
+          jsonError(res, error.message, error.statusCode);
+          return true;
+        }
+        throw error;
+      }
       let nextRunAt: string | undefined;
       if (body.enabled === false) {
         nextRunAt = undefined;
@@ -330,6 +353,7 @@ export async function handleSchedules(
       }
 
       const schedule = createScheduledTask({
+        key,
         name: body.name,
         description: body.description,
         cronExpression: body.cronExpression,
@@ -425,6 +449,17 @@ export async function handleSchedules(
     const parsed = await routeHandle.parse(req, res, pathSegments, queryParams);
     if (!parsed) return true;
     const body = parsed.body as Record<string, unknown>;
+    if (parsed.body.key !== undefined) {
+      try {
+        body.key = authorizeAssetKeyWrite(parsed.body.key, resolveHttpAuditUserId(req, myAgentId));
+      } catch (error) {
+        if (error instanceof AssetKeyAuthorizationError) {
+          jsonError(res, error.message, error.statusCode);
+          return true;
+        }
+        throw error;
+      }
+    }
     if (parsed.body.model !== undefined || parsed.body.modelTier !== undefined) {
       const normalizedModel = splitLegacyModelAlias({
         model: parsed.body.model,

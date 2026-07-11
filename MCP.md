@@ -165,6 +165,8 @@ Returns a list of tasks in the swarm with various filters. Sorted by priority (d
 | `tags` | `array` | No | - | Filter by any matching tag. |
 | `search` | `string` | No | - | Search in task description. |
 | `scheduleId` | `string` | No | - | Filter by schedule ID to find tasks created by a specific schedule. |
+| `key` | `unknown` | No | - | Filter by exact logical namespace. |
+| `keyPrefix` | `unknown` | No | - | Filter by namespace subtree. |
 | `includeHeartbeat` | `boolean` | No | - | Include heartbeat/system tasks in results (excluded by default). |
 | `limit` | `number` | No | - | Max tasks to return (default: 25, max: 100). |
 | `includeFull` | `boolean` | No | - | Return the full `task` text instead of a ~300-char `taskPreview`. Default false. |
@@ -187,6 +189,7 @@ Sends a task to a specific agent, creates an unassigned task for the pool, or of
 |-----------|------|----------|---------|-------------|
 | `agentId` | `uuid` | No | - | The agent to assign/offer task to. Omit to create unassigned task for pool. |
 | `task` | `string` | Yes | - | The task description to send. |
+| `key` | `unknown` | No | - | Logical namespace key. Child tasks inherit their parent namespace when provided. |
 | `offerMode` | `boolean` | No | false | If true, offer the task instead of direct assign (agent must accept/reject). |
 | `taskType` | `string` | No | - | Task type (e.g., 'bug', 'feature', 'review'). |
 | `tags` | `array` | No | - | Tags for filtering (e.g., ['urgent', 'frontend']). |
@@ -781,6 +784,7 @@ Perform task pool operations: create unassigned tasks, claim/release tasks from 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
 | `action` | `unknown` | Yes | - | The action to perform: 'create' creates an unassigned task, 'claim' takes a task from pool, 'release' returns task to pool, 'accept' accepts offered task, 'reject' declines offered task, 'to_backlog' moves task to backlog, 'from_backlog' moves task from backlog to pool. |
+| `key` | `unknown` | No | - | Logical namespace for a created task. Defaults to a shared/task:<id>/ resource key. |
 | `taskType` | `string` | No | - | Task type (e.g., 'bug', 'feature'). |
 | `tags` | `array` | No | - | Tags for filtering (e.g., ['urgent', 'frontend']). |
 | `priority` | `number` | No | - | Priority 0-100, default 50. |
@@ -944,6 +948,8 @@ View all scheduled tasks with optional filters. Use this to discover existing sc
 |-----------|------|----------|---------|-------------|
 | `enabled` | `boolean` | No | - | Filter by enabled status |
 | `name` | `string` | No | - | Filter by name (partial match) |
+| `key` | `unknown` | No | - | Filter by exact namespace. |
+| `keyPrefix` | `unknown` | No | - | Filter by namespace subtree. |
 | `scheduleType` | `recurring \| one_time` | No | - | Filter by schedule type |
 | `hideCompleted` | `boolean` | No | true | Hide completed one-time schedules (default: true) |
 | `consecutiveErrorsMin` | `number` | No | - | Only return schedules with at least this many consecutive errors. |
@@ -958,6 +964,7 @@ Create a new scheduled task. For recurring: provide cronExpression or intervalMs
 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
+| `key` | `unknown` | No | - | Logical namespace. Defaults to a shared/schedule:<id>/ resource key. |
 | `name` | `string` | Yes | - | Unique name for the schedule (e.g., 'daily-cleanup') |
 | `taskTemplate` | `string` | No | - | The task description that will be created each time. Required when targetType is 'agent-task' (the default). |
 | `targetType` | `unknown` | No | "agent-task" | Execution target. Use 'workflow' + workflowId when the schedule only starts a workflow; use 'script' + scriptName/scriptArgs when it only runs a catalog script; use 'agent-task' only when a reasoning agent genuinely needs to be in the loop. Do not create an agent-task whose taskTemplate just tells an agent to trigger a workflow or script. |
@@ -987,6 +994,7 @@ Update an existing scheduled task. Any registered agent can update schedules.
 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
+| `key` | `unknown` | No | - | Move to a logical namespace. |
 | `scheduleId` | `string` | No | - | Schedule ID to update |
 | `name` | `string` | No | - | Schedule name to update (alternative to ID) |
 | `newName` | `string` | No | - | New name for the schedule |
@@ -1015,6 +1023,7 @@ Patch an existing scheduled task by shallow-merging provided fields over the cur
 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
+| `key` | `unknown` | No | - | Move to a logical namespace. |
 | `scheduleId` | `string` | No | - | Schedule ID to patch |
 | `name` | `string` | No | - | Schedule name to patch (alternative to ID) |
 | `newName` | `string` | No | - | New name for the schedule |
@@ -1152,6 +1161,7 @@ Create a new automation workflow. Key concepts: - Nodes are linked via 'next' (s
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
 | `name` | `string` | Yes | - | Unique name for the workflow |
+| `key` | `unknown` | No | - | Logical namespace. Defaults to a shared/workflow:<id>/ resource key. |
 | `description` | `string` | No | - | Description of what this workflow does |
 | `definition` | `unknown` | Yes | - | The workflow definition with nodes (each node has id, type, config, and optional next/retry/validation) |
 | `triggers` | `array` | No | - | Optional trigger configurations (webhook, schedule). Webhook verification formats: legacy omitted verification, hmac-sha256, timestamped-hmac-sha256, token-equality. |
@@ -1170,6 +1180,8 @@ List all automation workflows, optionally filtered by enabled status. Returns SL
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
 | `enabled` | `boolean` | No | - | Filter by enabled status (omit to return all) |
+| `key` | `unknown` | No | - | Filter by exact namespace. |
+| `keyPrefix` | `unknown` | No | - | Filter by namespace subtree. |
 | `consecutiveErrorsMin` | `number` | No | - | Only return workflows with at least this many latest consecutive failed runs. |
 | `lastRunStatus` | `unknown` | No | - | Only return workflows whose latest run has this status. |
 | `includeFull` | `boolean` | No | - | Return the full workflow `definition` + trigger config instead of slim rows. Default false — prefer `get-workflow` to fetch a single workflow in full. |
@@ -1193,6 +1205,7 @@ Update an existing workflow's name, description, definition, triggers, cooldown,
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
 | `id` | `string` | Yes | - | Workflow ID to update |
+| `key` | `unknown` | No | - | Move to a logical namespace. |
 | `name` | `string` | No | - | New name for the workflow |
 | `description` | `string` | No | - | New description |
 | `definition` | `unknown` | No | - | New workflow definition |
@@ -1213,6 +1226,7 @@ Partially update a workflow by creating, updating, or deleting individual nodes,
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
 | `id` | `string` | Yes | - | Workflow ID to patch |
+| `key` | `unknown` | No | - | Move to a logical namespace. |
 | `update` | `array` | No | - | Nodes to update (partial merge) |
 | `delete` | `array` | No | - | Node IDs to delete |
 | `create` | `array` | No | - | New nodes to add |
@@ -1317,6 +1331,7 @@ Stores an HTML or JSON page in the swarm and returns shareable URLs. Calls are u
 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
+| `key` | `unknown` | No | - | Logical namespace. Defaults to a shared/page:<id>/ resource key. |
 | `title` | `string` | Yes | - | Human-readable title shown in listings. |
 | `slug` | `string` | No | - | URL slug. Defaults to the kebab-cased title. Same slug → updates the existing row. |
 | `body` | `string` | Yes | - | Full page body (HTML document or JSON-render spec, per contentType). |

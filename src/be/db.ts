@@ -1,6 +1,7 @@
 import { Database } from "bun:sqlite";
 import { parseProviderMeta } from "@/utils/provider-metadata.ts";
 import pkg from "../../package.json";
+import { defaultAssetKey, normalizeAssetKey } from "../assets/key";
 import { configureDbResolver } from "../prompts/resolver";
 import { slackChannelFromContextKey } from "../tasks/slack-routing";
 import { telemetry } from "../telemetry";
@@ -18,6 +19,9 @@ import type {
   AgentTaskStatus,
   AgentTaskSummary,
   AgentWithTasks,
+  AssetEntityType,
+  AssetKeyMapping,
+  AssetSummary,
   Budget,
   BudgetRefusalCause,
   BudgetRefusalNotification,
@@ -116,6 +120,7 @@ import { deriveProviderFromKeyType } from "../utils/credentials";
 import type { RateLimitWindowTelemetry } from "../utils/error-tracker";
 import { getCurrentRequestUserId } from "../utils/request-auth-context";
 import { scrubSecrets } from "../utils/secret-scrubber";
+import { auditAssetKeys, enforceAssetKeyStartupAudit } from "./asset-key-audit";
 import { decryptSecret, encryptSecret, getEncryptionKey, resolveEncryptionKey } from "./crypto";
 import { normalizeDate, normalizeDateRequired } from "./date-utils";
 import { runMigrations } from "./migrations/runner";
@@ -132,6 +137,11 @@ type TaskTelemetryContext = {
   harnessVariant?: string;
   harnessVersion?: string;
 };
+
+function assetKeyPrefixPattern(input: string): string {
+  const canonical = normalizeAssetKey(input);
+  return `${canonical.replace(/[\\%_]/g, "\\$&")}%`;
+}
 
 function emitTaskLifecycleTelemetryAfterCommit(
   event: string,
@@ -197,6 +207,7 @@ export function initDb(dbPath = "./agent-swarm-db.sqlite"): Database {
     db.run("PRAGMA foreign_keys = ON;");
     loadSqliteVec(db);
     configureDbResolver(resolvePromptTemplate);
+    enforceAssetKeyStartupAudit(db);
     // Ensure the encryption key is resolved even when restoring from the test
     // template. The cache may have been cleared via __resetEncryptionKeyForTests
     // between test suites; this call is a no-op if the cache is already warm.
@@ -248,88 +259,44 @@ export function initDb(dbPath = "./agent-swarm-db.sqlite"): Database {
       console.log("[Migration] Removing restrictive CHECK constraint on agent_tasks.status");
       db.run("PRAGMA foreign_keys=off");
 
-      db.run(`
-        CREATE TABLE agent_tasks_new (
-          id TEXT PRIMARY KEY,
-          agentId TEXT,
-          creatorAgentId TEXT,
-          task TEXT NOT NULL,
-          status TEXT NOT NULL DEFAULT 'pending',
-          source TEXT NOT NULL DEFAULT 'mcp' CHECK(source IN ('mcp', 'slack', 'api', 'github', 'agentmail', 'system', 'schedule')),
-          taskType TEXT,
-          tags TEXT DEFAULT '[]',
-          priority INTEGER DEFAULT 50,
-          dependsOn TEXT DEFAULT '[]',
-          offeredTo TEXT,
-          offeredAt TEXT,
-          acceptedAt TEXT,
-          rejectionReason TEXT,
-          slackChannelId TEXT,
-          slackThreadTs TEXT,
-          slackUserId TEXT,
-          createdAt TEXT NOT NULL,
-          lastUpdatedAt TEXT NOT NULL,
-          finishedAt TEXT,
-          failureReason TEXT,
-          output TEXT,
-          progress TEXT,
-          notifiedAt TEXT,
-          mentionMessageId TEXT,
-          mentionChannelId TEXT,
-          githubRepo TEXT,
-          githubEventType TEXT,
-          githubNumber INTEGER,
-          githubCommentId INTEGER,
-          githubAuthor TEXT,
-          githubUrl TEXT,
-          parentTaskId TEXT,
-          claudeSessionId TEXT,
-          agentmailInboxId TEXT,
-          agentmailMessageId TEXT,
-          agentmailThreadId TEXT,
-          model TEXT,
-          scheduleId TEXT
+      // Migrations run before this compatibility guard, so a legacy table now
+      // carries every current column. Rebuilding from an old hard-coded column
+      // list would silently discard later fields. Derive the replacement
+      // schema, copy list, indexes, and triggers from the live table instead;
+      // remove only the obsolete status CHECK.
+      const rebuiltSchemaSql = schemaSql
+        .replace(
+          /^(CREATE TABLE\s+(?:IF NOT EXISTS\s+)?)(?:"agent_tasks"|agent_tasks)/i,
+          "$1agent_tasks_new",
         )
-      `);
-
-      // Copy all data — use column list to handle any column ordering differences
-      db.run(`
-        INSERT INTO agent_tasks_new (
-          id, agentId, creatorAgentId, task, status, source, taskType, tags,
-          priority, dependsOn, offeredTo, offeredAt, acceptedAt, rejectionReason,
-          slackChannelId, slackThreadTs, slackUserId, createdAt, lastUpdatedAt,
-          finishedAt, failureReason, output, progress, notifiedAt,
-          mentionMessageId, mentionChannelId, githubRepo, githubEventType,
-          githubNumber, githubCommentId, githubAuthor, githubUrl,
-          parentTaskId, claudeSessionId,
-          agentmailInboxId, agentmailMessageId, agentmailThreadId,
-          model, scheduleId
+        .replace(/\s+CHECK\s*\(\s*status\s+IN\s*\([^)]*\)\s*\)/i, "");
+      if (rebuiltSchemaSql === schemaSql || !/agent_tasks_new/i.test(rebuiltSchemaSql)) {
+        throw new Error("Could not derive agent_tasks schema without legacy status CHECK");
+      }
+      const columns = db
+        .prepare<{ name: string }, []>('PRAGMA table_info("agent_tasks")')
+        .all()
+        .map((column) => `"${column.name.replaceAll('"', '""')}"`)
+        .join(", ");
+      const schemaObjects = db
+        .prepare<{ sql: string }, []>(
+          `SELECT sql FROM sqlite_master
+           WHERE tbl_name = 'agent_tasks'
+             AND type IN ('index', 'trigger')
+             AND sql IS NOT NULL
+           ORDER BY type, name`,
         )
-        SELECT
-          id, agentId, creatorAgentId, task, status, source, taskType, tags,
-          priority, dependsOn, offeredTo, offeredAt, acceptedAt, rejectionReason,
-          slackChannelId, slackThreadTs, slackUserId, createdAt, lastUpdatedAt,
-          finishedAt, failureReason, output, progress, notifiedAt,
-          mentionMessageId, mentionChannelId, githubRepo, githubEventType,
-          githubNumber, githubCommentId, githubAuthor, githubUrl,
-          parentTaskId, claudeSessionId,
-          agentmailInboxId, agentmailMessageId, agentmailThreadId,
-          model, scheduleId
-        FROM agent_tasks
-      `);
+        .all()
+        .map((row) => row.sql);
 
-      db.run("DROP TABLE agent_tasks");
-      db.run("ALTER TABLE agent_tasks_new RENAME TO agent_tasks");
-
-      // Recreate all indexes
-      db.run("CREATE INDEX IF NOT EXISTS idx_agent_tasks_agentId ON agent_tasks(agentId)");
-      db.run("CREATE INDEX IF NOT EXISTS idx_agent_tasks_status ON agent_tasks(status)");
-      db.run("CREATE INDEX IF NOT EXISTS idx_agent_tasks_offeredTo ON agent_tasks(offeredTo)");
-      db.run("CREATE INDEX IF NOT EXISTS idx_agent_tasks_taskType ON agent_tasks(taskType)");
-      db.run(
-        "CREATE INDEX IF NOT EXISTS idx_agent_tasks_agentmailThreadId ON agent_tasks(agentmailThreadId)",
-      );
-      db.run("CREATE INDEX IF NOT EXISTS idx_agent_tasks_schedule_id ON agent_tasks(scheduleId)");
+      database.transaction(() => {
+        database.run("DROP TABLE IF EXISTS agent_tasks_new");
+        database.run(rebuiltSchemaSql);
+        database.run(`INSERT INTO agent_tasks_new (${columns}) SELECT ${columns} FROM agent_tasks`);
+        database.run("DROP TABLE agent_tasks");
+        database.run("ALTER TABLE agent_tasks_new RENAME TO agent_tasks");
+        for (const sql of schemaObjects) database.run(sql);
+      })();
 
       db.run("PRAGMA foreign_keys=on");
       console.log("[Migration] Successfully removed CHECK constraint on agent_tasks.status");
@@ -343,6 +310,11 @@ export function initDb(dbPath = "./agent-swarm-db.sqlite"): Database {
     }
     throw e;
   }
+
+  // Mandatory namespace invariant: structural corruption is fatal before the
+  // API starts listening. Unknown personal users/provider drift remain
+  // readable warnings so operators can repair them through the audit surface.
+  enforceAssetKeyStartupAudit(database);
 
   // Backfill: Seed v1 for existing agents that don't have any context versions yet
   seedContextVersions();
@@ -1106,6 +1078,7 @@ export function isAgentEligibleForTask(
 
 type AgentTaskRow = {
   id: string;
+  key: string;
   agentId: string | null;
   creatorAgentId: string | null;
   task: string;
@@ -1219,6 +1192,7 @@ function rowToAgentTask(row: AgentTaskRow): AgentTask {
 
   return {
     id: row.id,
+    key: row.key,
     agentId: row.agentId,
     creatorAgentId: row.creatorAgentId ?? undefined,
     task: row.task,
@@ -1302,6 +1276,7 @@ function rowToAgentTaskSummary(row: AgentTaskRow): AgentTaskSummary {
   const t = rowToAgentTask(row);
   return {
     id: t.id,
+    key: t.key,
     agentId: t.agentId,
     creatorAgentId: t.creatorAgentId,
     task: previewText(t.task, TASK_PREVIEW_LENGTH),
@@ -1337,6 +1312,7 @@ export const taskQueries = {
         string,
         string,
         string,
+        string,
         AgentTaskStatus,
         AgentTaskSource,
         string | null,
@@ -1345,8 +1321,8 @@ export const taskQueries = {
         string,
       ]
     >(
-      `INSERT INTO agent_tasks (id, agentId, task, status, source, slackChannelId, slackThreadTs, slackUserId, swarmVersion, createdAt, lastUpdatedAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), strftime('%Y-%m-%dT%H:%M:%fZ', 'now')) RETURNING *`,
+      `INSERT INTO agent_tasks (id, "key", agentId, task, status, source, slackChannelId, slackThreadTs, slackUserId, swarmVersion, createdAt, lastUpdatedAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), strftime('%Y-%m-%dT%H:%M:%fZ', 'now')) RETURNING *`,
     ),
 
   getById: () => getDb().prepare<AgentTaskRow, [string]>("SELECT * FROM agent_tasks WHERE id = ?"),
@@ -1410,6 +1386,7 @@ export function createTask(
     .insert()
     .get(
       id,
+      defaultAssetKey("task", id),
       agentId,
       task,
       "pending",
@@ -1749,6 +1726,10 @@ export interface TaskFilters {
   taskType?: string;
   tags?: string[];
   scheduleId?: string;
+  /** Exact canonical asset namespace. */
+  key?: string;
+  /** Canonical namespace subtree prefix. */
+  keyPrefix?: string;
   /** Filter to tasks whose `source` is in this list. Empty/undefined → no filter. */
   source?: AgentTaskSource[];
   /** ISO 8601 timestamp; only return tasks where createdAt >= this. */
@@ -1829,6 +1810,14 @@ export function getAllTasks(
   if (filters?.scheduleId) {
     conditions.push("scheduleId = ?");
     params.push(filters.scheduleId);
+  }
+
+  if (filters?.key) {
+    conditions.push('"key" = ?');
+    params.push(normalizeAssetKey(filters.key));
+  } else if (filters?.keyPrefix) {
+    conditions.push(`"key" LIKE ? ESCAPE '\\'`);
+    params.push(assetKeyPrefixPattern(filters.keyPrefix));
   }
 
   if (filters?.source && filters.source.length > 0) {
@@ -1955,6 +1944,14 @@ export function getTasksCount(filters?: Omit<TaskFilters, "limit" | "readyOnly">
   if (filters?.scheduleId) {
     conditions.push("scheduleId = ?");
     params.push(filters.scheduleId);
+  }
+
+  if (filters?.key) {
+    conditions.push('"key" = ?');
+    params.push(normalizeAssetKey(filters.key));
+  } else if (filters?.keyPrefix) {
+    conditions.push(`"key" LIKE ? ESCAPE '\\'`);
+    params.push(assetKeyPrefixPattern(filters.keyPrefix));
   }
 
   if (filters?.source && filters.source.length > 0) {
@@ -2967,6 +2964,28 @@ export interface InsertTaskAttachmentInput {
  * Returns the stored attachment (newly inserted or pre-existing duplicate).
  */
 export function insertTaskAttachment(input: InsertTaskAttachmentInput): TaskAttachment {
+  return getDb().transaction(() => {
+    const attachment = insertTaskAttachmentRow(input);
+    if (attachment.kind === "agent-fs" && attachment.providerId && attachment.providerKey) {
+      const task = getTaskById(input.taskId);
+      if (!task) throw new Error(`Task not found while mapping attachment: ${input.taskId}`);
+      upsertAssetKeyMapping({
+        providerId: attachment.providerId,
+        providerOrgId: attachment.orgId,
+        providerDriveId: attachment.driveId,
+        providerKey: attachment.providerKey,
+        key: task.key,
+        sourceEntityType: "task-attachment",
+        sourceEntityId: attachment.id,
+        createdBy: input.createdBy,
+        updatedBy: input.updatedBy,
+      });
+    }
+    return attachment;
+  })();
+}
+
+function insertTaskAttachmentRow(input: InsertTaskAttachmentInput): TaskAttachment {
   const db = getDb();
 
   if (input.sha256) {
@@ -3079,6 +3098,426 @@ function defaultProviderKey(
   if (input.kind === "url") return input.url ?? null;
   if (input.kind === "page") return input.pageId ?? null;
   return null;
+}
+
+// ============================================================================
+// Cross-entity asset namespaces + logical provider mappings
+// ============================================================================
+
+type AssetKeyMappingRow = {
+  id: string;
+  provider_id: string;
+  provider_org_id: string;
+  provider_drive_id: string;
+  provider_key: string;
+  key: string;
+  source_entity_type: string | null;
+  source_entity_id: string | null;
+  created_at: string;
+  updated_at: string;
+  created_by: string | null;
+  updated_by: string | null;
+};
+
+function rowToAssetKeyMapping(row: AssetKeyMappingRow): AssetKeyMapping {
+  return {
+    id: row.id,
+    providerId: row.provider_id,
+    providerOrgId: row.provider_org_id || undefined,
+    providerDriveId: row.provider_drive_id || undefined,
+    providerKey: row.provider_key,
+    key: row.key,
+    sourceEntityType:
+      (row.source_entity_type as "task-attachment" | "external" | null) ?? undefined,
+    sourceEntityId: row.source_entity_id ?? undefined,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    createdBy: row.created_by ?? undefined,
+    updatedBy: row.updated_by ?? undefined,
+  };
+}
+
+export interface UpsertAssetKeyMappingInput {
+  providerId: string;
+  providerOrgId?: string;
+  providerDriveId?: string;
+  providerKey: string;
+  key?: string;
+  sourceEntityType?: "task-attachment" | "external";
+  sourceEntityId?: string;
+  createdBy?: string;
+  updatedBy?: string;
+}
+
+function insertAssetKeyHistory(input: {
+  entityType: AssetEntityType;
+  entityId: string;
+  previousKey?: string | null;
+  newKey: string;
+  changedBy?: string;
+}): void {
+  getDb().run(
+    `INSERT INTO asset_key_history
+       (id, entity_type, entity_id, previous_key, new_key, changed_by)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    [
+      crypto.randomUUID(),
+      input.entityType,
+      input.entityId,
+      input.previousKey ?? null,
+      input.newKey,
+      input.changedBy ?? null,
+    ],
+  );
+}
+
+export function getAssetKeyMappingByProvider(input: {
+  providerId: string;
+  providerOrgId?: string;
+  providerDriveId?: string;
+  providerKey: string;
+}): AssetKeyMapping | null {
+  const row = getDb()
+    .prepare<AssetKeyMappingRow, [string, string, string, string]>(
+      `SELECT * FROM asset_key_mappings
+       WHERE provider_id = ? AND provider_org_id = ?
+         AND provider_drive_id = ? AND provider_key = ?`,
+    )
+    .get(
+      input.providerId,
+      input.providerOrgId ?? "",
+      input.providerDriveId ?? "",
+      input.providerKey,
+    );
+  return row ? rowToAssetKeyMapping(row) : null;
+}
+
+/**
+ * Idempotently project a provider tuple into a logical namespace. Updating the
+ * namespace never calls the provider and never renames remote content.
+ */
+export function upsertAssetKeyMapping(input: UpsertAssetKeyMappingInput): AssetKeyMapping {
+  if (!input.providerId.trim()) throw new Error("providerId is required");
+  if (!input.providerKey.trim()) throw new Error("providerKey is required");
+  const now = new Date().toISOString();
+
+  return getDb().transaction(() => {
+    const existing = getAssetKeyMappingByProvider(input);
+    if (existing) {
+      const key = normalizeAssetKey(input.key ?? existing.key);
+      const row = getDb()
+        .prepare<AssetKeyMappingRow, (string | null)[]>(
+          `UPDATE asset_key_mappings
+           SET "key" = ?, source_entity_type = ?, source_entity_id = ?,
+               updated_at = ?, updated_by = ?
+           WHERE id = ? RETURNING *`,
+        )
+        .get(
+          key,
+          input.sourceEntityType ?? existing.sourceEntityType ?? null,
+          input.sourceEntityId ?? existing.sourceEntityId ?? null,
+          now,
+          input.updatedBy ?? input.createdBy ?? existing.updatedBy ?? null,
+          existing.id,
+        );
+      if (!row) throw new Error("Failed to update asset key mapping");
+      if (existing.key !== key) {
+        insertAssetKeyHistory({
+          entityType: "file",
+          entityId: existing.id,
+          previousKey: existing.key,
+          newKey: key,
+          changedBy: input.updatedBy ?? input.createdBy,
+        });
+      }
+      return rowToAssetKeyMapping(row);
+    }
+
+    const id = crypto.randomUUID();
+    const key = normalizeAssetKey(
+      input.key ?? defaultAssetKey(`fs:${input.providerId.trim()}`, id),
+    );
+    const row = getDb()
+      .prepare<AssetKeyMappingRow, (string | null)[]>(
+        `INSERT INTO asset_key_mappings (
+           id, provider_id, provider_org_id, provider_drive_id, provider_key,
+           "key", source_entity_type, source_entity_id,
+           created_at, updated_at, created_by, updated_by
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`,
+      )
+      .get(
+        id,
+        input.providerId.trim(),
+        input.providerOrgId ?? "",
+        input.providerDriveId ?? "",
+        input.providerKey,
+        key,
+        input.sourceEntityType ?? "external",
+        input.sourceEntityId ?? null,
+        now,
+        now,
+        input.createdBy ?? null,
+        input.updatedBy ?? input.createdBy ?? null,
+      );
+    if (!row) throw new Error("Failed to create asset key mapping");
+    insertAssetKeyHistory({
+      entityType: "file",
+      entityId: id,
+      newKey: key,
+      changedBy: input.createdBy,
+    });
+    return rowToAssetKeyMapping(row);
+  })();
+}
+
+export function getAssetKeyMapping(id: string): AssetKeyMapping | null {
+  const row = getDb()
+    .prepare<AssetKeyMappingRow, [string]>("SELECT * FROM asset_key_mappings WHERE id = ?")
+    .get(id);
+  return row ? rowToAssetKeyMapping(row) : null;
+}
+
+export interface AssetSummaryFilters {
+  keyPrefix?: string;
+  types?: AssetEntityType[];
+  limit?: number;
+}
+
+type AssetSummaryRow = {
+  entityType: AssetEntityType;
+  id: string;
+  key: string;
+  label: string;
+  updatedAt: string;
+  providerId: string | null;
+  providerOrgId: string | null;
+  providerDriveId: string | null;
+  providerKey: string | null;
+};
+
+function assetSummaryQueries(types: Set<AssetEntityType>): string[] {
+  const queries: string[] = [];
+  if (types.has("task")) {
+    queries.push(
+      `SELECT 'task' AS entityType, id, "key", 'Task ' || substr(id, 1, 8) AS label,
+              lastUpdatedAt AS updatedAt, NULL AS providerId, NULL AS providerOrgId,
+              NULL AS providerDriveId, NULL AS providerKey
+       FROM agent_tasks`,
+    );
+  }
+  if (types.has("workflow")) {
+    queries.push(
+      `SELECT 'workflow' AS entityType, id, "key", name AS label,
+              lastUpdatedAt AS updatedAt, NULL AS providerId, NULL AS providerOrgId,
+              NULL AS providerDriveId, NULL AS providerKey
+       FROM workflows`,
+    );
+  }
+  if (types.has("schedule")) {
+    queries.push(
+      `SELECT 'schedule' AS entityType, id, "key", name AS label,
+              lastUpdatedAt AS updatedAt, NULL AS providerId, NULL AS providerOrgId,
+              NULL AS providerDriveId, NULL AS providerKey
+       FROM scheduled_tasks`,
+    );
+  }
+  if (types.has("page")) {
+    queries.push(
+      `SELECT 'page' AS entityType, id, "key", title AS label,
+              updatedAt, NULL AS providerId, NULL AS providerOrgId,
+              NULL AS providerDriveId, NULL AS providerKey
+       FROM pages`,
+    );
+  }
+  if (types.has("file")) {
+    queries.push(
+      `SELECT 'file' AS entityType, id, "key", provider_key AS label,
+              updated_at AS updatedAt, provider_id AS providerId,
+              NULLIF(provider_org_id, '') AS providerOrgId,
+              NULLIF(provider_drive_id, '') AS providerDriveId,
+              provider_key AS providerKey
+       FROM asset_key_mappings`,
+    );
+  }
+  return queries;
+}
+
+export function listAssetSummaries(filters?: AssetSummaryFilters): AssetSummary[] {
+  const requestedTypes = new Set<AssetEntityType>(
+    filters?.types?.length ? filters.types : ["task", "workflow", "schedule", "page", "file"],
+  );
+  const queries = assetSummaryQueries(requestedTypes);
+  if (queries.length === 0) return [];
+  const limit = Math.min(Math.max(filters?.limit ?? 500, 1), 1000);
+  const params: (string | number)[] = [];
+  let query = `SELECT * FROM (${queries.join(" UNION ALL ")})`;
+  if (filters?.keyPrefix) {
+    query += ` WHERE "key" LIKE ? ESCAPE '\\'`;
+    params.push(assetKeyPrefixPattern(filters.keyPrefix));
+  }
+  query += ' ORDER BY "key" ASC, updatedAt DESC LIMIT ?';
+  params.push(limit);
+  const rows = getDb()
+    .prepare<AssetSummaryRow, (string | number)[]>(query)
+    .all(...params);
+
+  return rows.map((row) => ({
+    entityType: row.entityType,
+    id: row.id,
+    key: row.key,
+    label: row.label,
+    updatedAt: row.updatedAt,
+    providerRef:
+      row.providerId && row.providerKey
+        ? {
+            providerId: row.providerId,
+            orgId: row.providerOrgId ?? undefined,
+            driveId: row.providerDriveId ?? undefined,
+            providerKey: row.providerKey,
+          }
+        : undefined,
+  }));
+}
+
+function currentAssetKey(entityType: AssetEntityType, id: string): string | null {
+  switch (entityType) {
+    case "task":
+      return (
+        getDb()
+          .prepare<{ key: string }, [string]>('SELECT "key" AS key FROM agent_tasks WHERE id = ?')
+          .get(id)?.key ?? null
+      );
+    case "workflow":
+      return (
+        getDb()
+          .prepare<{ key: string }, [string]>('SELECT "key" AS key FROM workflows WHERE id = ?')
+          .get(id)?.key ?? null
+      );
+    case "schedule":
+      return (
+        getDb()
+          .prepare<{ key: string }, [string]>(
+            'SELECT "key" AS key FROM scheduled_tasks WHERE id = ?',
+          )
+          .get(id)?.key ?? null
+      );
+    case "page":
+      return (
+        getDb()
+          .prepare<{ key: string }, [string]>('SELECT "key" AS key FROM pages WHERE id = ?')
+          .get(id)?.key ?? null
+      );
+    case "file":
+      return getAssetKeyMapping(id)?.key ?? null;
+  }
+}
+
+export function moveAssetKey(input: {
+  entityType: AssetEntityType;
+  id: string;
+  key: string;
+  changedBy?: string;
+}): boolean {
+  const key = normalizeAssetKey(input.key);
+  const audit = auditAssetKeys(getDb());
+  if (!audit.ok) {
+    throw new Error(
+      "Asset namespace moves are blocked until structural errors, unknown personal users, or provider mapping drift are repaired.",
+    );
+  }
+  const previousKey = currentAssetKey(input.entityType, input.id);
+  if (!previousKey) return false;
+  if (previousKey === key) return true;
+  if (input.entityType === "file") {
+    const mapping = getAssetKeyMapping(input.id);
+    if (mapping?.sourceEntityType === "task-attachment") {
+      throw new Error(
+        "Task attachment namespaces move with their parent task; move the task instead.",
+      );
+    }
+  }
+  const now = new Date().toISOString();
+
+  getDb().transaction(() => {
+    switch (input.entityType) {
+      case "task": {
+        const mappedFiles = getDb()
+          .prepare<{ id: string; key: string }, [string]>(
+            `SELECT DISTINCT m.id, m."key" AS key
+             FROM asset_key_mappings m
+             JOIN task_attachments a
+               ON m.provider_id = COALESCE(NULLIF(a.provider_id, ''), 'agent-fs')
+              AND m.provider_org_id = COALESCE(a.agent_fs_org_id, '')
+              AND m.provider_drive_id = COALESCE(a.agent_fs_drive_id, '')
+              AND m.provider_key = COALESCE(NULLIF(a.provider_key, ''), a.path)
+             WHERE a.task_id = ?`,
+          )
+          .all(input.id);
+        getDb().run(
+          'UPDATE agent_tasks SET "key" = ?, lastUpdatedAt = ?, updated_by = ? WHERE id = ?',
+          [key, now, input.changedBy ?? null, input.id],
+        );
+        getDb().run(
+          `UPDATE asset_key_mappings
+           SET "key" = ?, updated_at = ?, updated_by = ?
+           WHERE EXISTS (
+             SELECT 1 FROM task_attachments a
+             WHERE a.task_id = ?
+               AND asset_key_mappings.provider_id = COALESCE(NULLIF(a.provider_id, ''), 'agent-fs')
+               AND asset_key_mappings.provider_org_id = COALESCE(a.agent_fs_org_id, '')
+               AND asset_key_mappings.provider_drive_id = COALESCE(a.agent_fs_drive_id, '')
+               AND asset_key_mappings.provider_key = COALESCE(NULLIF(a.provider_key, ''), a.path)
+           )`,
+          [key, now, input.changedBy ?? null, input.id],
+        );
+        for (const mapping of mappedFiles) {
+          if (mapping.key === key) continue;
+          insertAssetKeyHistory({
+            entityType: "file",
+            entityId: mapping.id,
+            previousKey: mapping.key,
+            newKey: key,
+            changedBy: input.changedBy,
+          });
+        }
+        break;
+      }
+      case "workflow":
+        getDb().run(
+          'UPDATE workflows SET "key" = ?, lastUpdatedAt = ?, updated_by = ? WHERE id = ?',
+          [key, now, input.changedBy ?? null, input.id],
+        );
+        break;
+      case "schedule":
+        getDb().run(
+          'UPDATE scheduled_tasks SET "key" = ?, lastUpdatedAt = ?, updated_by = ? WHERE id = ?',
+          [key, now, input.changedBy ?? null, input.id],
+        );
+        break;
+      case "page":
+        getDb().run('UPDATE pages SET "key" = ?, updatedAt = ?, updated_by = ? WHERE id = ?', [
+          key,
+          now,
+          input.changedBy ?? null,
+          input.id,
+        ]);
+        break;
+      case "file":
+        getDb().run(
+          'UPDATE asset_key_mappings SET "key" = ?, updated_at = ?, updated_by = ? WHERE id = ?',
+          [key, now, input.changedBy ?? null, input.id],
+        );
+        break;
+    }
+    insertAssetKeyHistory({
+      entityType: input.entityType,
+      entityId: input.id,
+      previousKey,
+      newKey: key,
+      changedBy: input.changedBy,
+    });
+  })();
+  return true;
 }
 
 export function deleteTaskAttachment(id: string): boolean {
@@ -3327,6 +3766,7 @@ export function getAllLogs(limit?: number): AgentLog[] {
 // ============================================================================
 
 export interface CreateTaskOptions {
+  key?: string;
   agentId?: string | null;
   creatorAgentId?: string;
   source?: AgentTaskSource;
@@ -3574,6 +4014,9 @@ export function createTaskExtended(task: string, options?: CreateTaskOptions): A
       if (parent.requestedByUserId && !options.requestedByUserId) {
         options.requestedByUserId = parent.requestedByUserId;
       }
+      if (parent.key && !options.key) {
+        options.key = parent.key;
+      }
       if (parent.contextKey && !options.contextKey) {
         options.contextKey = parent.contextKey;
       }
@@ -3672,10 +4115,11 @@ export function createTaskExtended(task: string, options?: CreateTaskOptions): A
   }
 
   const auditUserId = getCurrentRequestUserId() ?? null;
+  const assetKey = normalizeAssetKey(options?.key ?? defaultAssetKey("task", id));
   const row = getDb()
     .prepare<AgentTaskRow, (string | number | null)[]>(
       `INSERT INTO agent_tasks (
-        id, agentId, creatorAgentId, task, status, source,
+        id, "key", agentId, creatorAgentId, task, status, source,
         taskType, tags, priority, dependsOn, offeredTo, offeredAt,
         slackChannelId, slackThreadTs, slackUserId,
         vcsProvider, vcsRepo, vcsEventType, vcsNumber, vcsCommentId, vcsAuthor, vcsUrl,
@@ -3683,10 +4127,11 @@ export function createTaskExtended(task: string, options?: CreateTaskOptions): A
         agentmailInboxId, agentmailMessageId, agentmailThreadId,
         mentionMessageId, mentionChannelId, dir, parentTaskId, model, modelTier, effort, scheduleId,
         workflowRunId, workflowRunStepId, outputSchema, followUpConfig, requestedByUserId, contextKey, routingAffinity, swarmVersion, createdAt, lastUpdatedAt, created_by, updated_by
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`,
     )
     .get(
       id,
+      assetKey,
       options?.agentId ?? null,
       options?.creatorAgentId ?? null,
       task,
@@ -5965,6 +6410,7 @@ export function getConcurrentContext(): ConcurrentContext {
 
 type ScheduledTaskRow = {
   id: string;
+  key: string;
   name: string;
   description: string | null;
   cronExpression: string | null;
@@ -6013,6 +6459,7 @@ function previewText(text: string | null | undefined, maxChars: number): string 
 function rowToScheduledTask(row: ScheduledTaskRow): ScheduledTask {
   return {
     id: row.id,
+    key: row.key,
     name: row.name,
     description: row.description ?? undefined,
     cronExpression: row.cronExpression ?? undefined,
@@ -6054,6 +6501,8 @@ export interface ScheduledTaskFilters {
   scriptName?: string;
   consecutiveErrorsMin?: number;
   lastRunStatus?: "failed" | "succeeded";
+  key?: string;
+  keyPrefix?: string;
 }
 
 /**
@@ -6111,6 +6560,14 @@ export function getScheduledTasks(
     params.push(filters.scriptName);
   }
 
+  if (filters?.key) {
+    query += ' AND "key" = ?';
+    params.push(normalizeAssetKey(filters.key));
+  } else if (filters?.keyPrefix) {
+    query += ` AND "key" LIKE ? ESCAPE '\\'`;
+    params.push(assetKeyPrefixPattern(filters.keyPrefix));
+  }
+
   if (filters?.consecutiveErrorsMin !== undefined) {
     query += " AND consecutiveErrors >= ?";
     params.push(filters.consecutiveErrorsMin);
@@ -6149,6 +6606,7 @@ export function getScheduledTaskByName(name: string): ScheduledTask | null {
 }
 
 export interface CreateScheduledTaskData {
+  key?: string;
   name: string;
   description?: string;
   cronExpression?: string;
@@ -6179,15 +6637,16 @@ export function createScheduledTask(data: CreateScheduledTaskData): ScheduledTas
   const row = getDb()
     .prepare<ScheduledTaskRow, (string | number | null)[]>(
       `INSERT INTO scheduled_tasks (
-        id, name, description, cronExpression, intervalMs, taskTemplate,
+        id, "key", name, description, cronExpression, intervalMs, taskTemplate,
         taskType, tags, priority, targetAgentId, enabled, nextRunAt,
         createdByAgentId, timezone, model, modelTier, scheduleType, targetType,
         workflowId, scriptName, scriptArgs, createdAt, lastUpdatedAt,
         created_by, updated_by
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`,
     )
     .get(
       id,
+      normalizeAssetKey(data.key ?? defaultAssetKey("schedule", id)),
       data.name,
       data.description ?? null,
       data.cronExpression ?? null,
@@ -6219,6 +6678,7 @@ export function createScheduledTask(data: CreateScheduledTaskData): ScheduledTas
 }
 
 export interface UpdateScheduledTaskData {
+  key?: string;
   name?: string;
   description?: string;
   cronExpression?: string | null;
@@ -6252,6 +6712,11 @@ export function updateScheduledTask(
 ): ScheduledTask | null {
   const updates: string[] = [];
   const params: (string | number | null)[] = [];
+
+  if (data.key !== undefined) {
+    updates.push('"key" = ?');
+    params.push(normalizeAssetKey(data.key));
+  }
 
   if (data.name !== undefined) {
     updates.push("name = ?");
@@ -7436,6 +7901,7 @@ export function getRecentFailedCount(hours: number = 24): number {
 
 type WorkflowRow = {
   id: string;
+  key: string;
   name: string;
   description: string | null;
   enabled: number;
@@ -7456,6 +7922,7 @@ type WorkflowRow = {
 function rowToWorkflow(row: WorkflowRow): Workflow {
   return {
     id: row.id,
+    key: row.key,
     name: row.name,
     description: row.description ?? undefined,
     enabled: row.enabled === 1,
@@ -7477,6 +7944,7 @@ function rowToWorkflow(row: WorkflowRow): Workflow {
 }
 
 export function createWorkflow(data: {
+  key?: string;
   name: string;
   description?: string;
   definition: WorkflowDefinition;
@@ -7491,29 +7959,13 @@ export function createWorkflow(data: {
 }): Workflow {
   const id = crypto.randomUUID();
   const row = getDb()
-    .prepare<
-      WorkflowRow,
-      [
-        string,
-        string,
-        string | null,
-        string,
-        string,
-        string | null,
-        string | null,
-        string | null,
-        string | null,
-        string | null,
-        string | null,
-        string | null,
-        string | null,
-      ]
-    >(
-      `INSERT INTO workflows (id, name, description, definition, triggers, cooldown, input, triggerSchema, dir, vcs_repo, createdByAgentId, created_by, updated_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`,
+    .prepare<WorkflowRow, (string | null)[]>(
+      `INSERT INTO workflows (id, "key", name, description, definition, triggers, cooldown, input, triggerSchema, dir, vcs_repo, createdByAgentId, created_by, updated_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`,
     )
     .get(
       id,
+      normalizeAssetKey(data.key ?? defaultAssetKey("workflow", id)),
       data.name,
       data.description ?? null,
       JSON.stringify(data.definition),
@@ -7554,6 +8006,7 @@ function rowToWorkflowSummary(row: WorkflowRow): WorkflowSummary {
   }
   return {
     id: row.id,
+    key: row.key,
     name: row.name,
     description: row.description ?? undefined,
     enabled: row.enabled === 1,
@@ -7570,6 +8023,8 @@ export interface WorkflowFilters {
   enabled?: boolean;
   lastRunStatus?: WorkflowRunStatus;
   consecutiveErrorsMin?: number;
+  key?: string;
+  keyPrefix?: string;
 }
 
 export function listWorkflows(filters?: WorkflowFilters): Workflow[];
@@ -7586,6 +8041,13 @@ export function listWorkflows(
   if (filters?.enabled !== undefined) {
     query += " AND enabled = ?";
     params.push(filters.enabled ? 1 : 0);
+  }
+  if (filters?.key) {
+    query += ' AND "key" = ?';
+    params.push(normalizeAssetKey(filters.key));
+  } else if (filters?.keyPrefix) {
+    query += ` AND "key" LIKE ? ESCAPE '\\'`;
+    params.push(assetKeyPrefixPattern(filters.keyPrefix));
   }
   if (filters?.lastRunStatus !== undefined) {
     query +=
@@ -7618,6 +8080,7 @@ export function listWorkflows(
 export function updateWorkflow(
   id: string,
   data: {
+    key?: string;
     name?: string;
     description?: string;
     enabled?: boolean;
@@ -7633,6 +8096,10 @@ export function updateWorkflow(
 ): Workflow | null {
   const updates: string[] = [];
   const params: (string | number | null)[] = [];
+  if (data.key !== undefined) {
+    updates.push('"key" = ?');
+    params.push(normalizeAssetKey(data.key));
+  }
   if (data.name !== undefined) {
     updates.push("name = ?");
     params.push(data.name);
@@ -8186,6 +8653,7 @@ export function getWorkflowVersion(workflowId: string, version: number): Workflo
 
 type PageRow = {
   id: string;
+  key: string;
   agentId: string;
   slug: string;
   title: string;
@@ -8203,6 +8671,7 @@ type PageRow = {
 function rowToPage(row: PageRow): Page {
   return {
     id: row.id,
+    key: row.key,
     agentId: row.agentId,
     slug: row.slug,
     title: row.title,
@@ -8221,6 +8690,7 @@ function rowToPage(row: PageRow): Page {
 }
 
 export function createPage(data: {
+  key?: string;
   agentId: string;
   slug: string;
   title: string;
@@ -8231,15 +8701,17 @@ export function createPage(data: {
   body: string;
   needsCredentials?: string[];
 }): Page {
+  // Match the historical SQL default ID shape while making the value
+  // available before insert so the default namespace can include it.
+  const id = crypto.randomUUID().replace(/-/g, "");
   const row = getDb()
-    .prepare<
-      PageRow,
-      [string, string, string, string | null, string, string, string | null, string, string | null]
-    >(
-      `INSERT INTO pages (agentId, slug, title, description, contentType, authMode, passwordHash, body, needsCredentials)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`,
+    .prepare<PageRow, (string | null)[]>(
+      `INSERT INTO pages (id, "key", agentId, slug, title, description, contentType, authMode, passwordHash, body, needsCredentials)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`,
     )
     .get(
+      id,
+      normalizeAssetKey(data.key ?? defaultAssetKey("page", id)),
       data.agentId,
       data.slug,
       data.title,
@@ -8283,6 +8755,7 @@ export function getLatestPageBySlug(slug: string): Page | null {
 function rowToPageSummary(row: PageRow): PageSummary {
   return {
     id: row.id,
+    key: row.key,
     agentId: row.agentId,
     slug: row.slug,
     title: row.title,
@@ -8298,24 +8771,45 @@ function rowToPageSummary(row: PageRow): PageSummary {
   };
 }
 
+export interface PageListOptions {
+  slim?: boolean;
+  key?: string;
+  keyPrefix?: string;
+}
+
 export function listPagesByAgent(agentId: string, limit?: number, offset?: number): Page[];
 export function listPagesByAgent(
   agentId: string,
   limit: number | undefined,
   offset: number | undefined,
-  opts: { slim: true },
+  opts: PageListOptions & { slim?: false },
+): Page[];
+export function listPagesByAgent(
+  agentId: string,
+  limit: number | undefined,
+  offset: number | undefined,
+  opts: PageListOptions & { slim: true },
 ): PageSummary[];
 export function listPagesByAgent(
   agentId: string,
   limit = 100,
   offset = 0,
-  opts?: { slim?: boolean },
+  opts?: PageListOptions,
 ): Page[] | PageSummary[] {
+  let query = "SELECT * FROM pages WHERE agentId = ?";
+  const params: (string | number)[] = [agentId];
+  if (opts?.key) {
+    query += ' AND "key" = ?';
+    params.push(normalizeAssetKey(opts.key));
+  } else if (opts?.keyPrefix) {
+    query += ` AND "key" LIKE ? ESCAPE '\\'`;
+    params.push(assetKeyPrefixPattern(opts.keyPrefix));
+  }
+  query += " ORDER BY updatedAt DESC LIMIT ? OFFSET ?";
+  params.push(limit, offset);
   const rows = getDb()
-    .prepare<PageRow, [string, number, number]>(
-      "SELECT * FROM pages WHERE agentId = ? ORDER BY updatedAt DESC LIMIT ? OFFSET ?",
-    )
-    .all(agentId, limit, offset);
+    .prepare<PageRow, (string | number)[]>(query)
+    .all(...params);
   return opts?.slim ? rows.map(rowToPageSummary) : rows.map(rowToPage);
 }
 
@@ -8323,18 +8817,32 @@ export function listAllPages(limit?: number, offset?: number): Page[];
 export function listAllPages(
   limit: number | undefined,
   offset: number | undefined,
-  opts: { slim: true },
+  opts: PageListOptions & { slim?: false },
+): Page[];
+export function listAllPages(
+  limit: number | undefined,
+  offset: number | undefined,
+  opts: PageListOptions & { slim: true },
 ): PageSummary[];
 export function listAllPages(
   limit = 100,
   offset = 0,
-  opts?: { slim?: boolean },
+  opts?: PageListOptions,
 ): Page[] | PageSummary[] {
+  let query = "SELECT * FROM pages WHERE 1=1";
+  const params: (string | number)[] = [];
+  if (opts?.key) {
+    query += ' AND "key" = ?';
+    params.push(normalizeAssetKey(opts.key));
+  } else if (opts?.keyPrefix) {
+    query += ` AND "key" LIKE ? ESCAPE '\\'`;
+    params.push(assetKeyPrefixPattern(opts.keyPrefix));
+  }
+  query += " ORDER BY updatedAt DESC LIMIT ? OFFSET ?";
+  params.push(limit, offset);
   const rows = getDb()
-    .prepare<PageRow, [number, number]>(
-      "SELECT * FROM pages ORDER BY updatedAt DESC LIMIT ? OFFSET ?",
-    )
-    .all(limit, offset);
+    .prepare<PageRow, (string | number)[]>(query)
+    .all(...params);
   return opts?.slim ? rows.map(rowToPageSummary) : rows.map(rowToPage);
 }
 
@@ -8342,16 +8850,39 @@ export function listAllPages(
  * Total page count — used to back a filter-aware `total` in the `/api/pages`
  * pager so the UI shows the real count, not just the current page's length.
  */
-export function countAllPages(): number {
-  const row = getDb().prepare<{ count: number }, []>("SELECT COUNT(*) AS count FROM pages").get();
+export function countAllPages(filters?: Pick<PageListOptions, "key" | "keyPrefix">): number {
+  let query = "SELECT COUNT(*) AS count FROM pages WHERE 1=1";
+  const params: string[] = [];
+  if (filters?.key) {
+    query += ' AND "key" = ?';
+    params.push(normalizeAssetKey(filters.key));
+  } else if (filters?.keyPrefix) {
+    query += ` AND "key" LIKE ? ESCAPE '\\'`;
+    params.push(assetKeyPrefixPattern(filters.keyPrefix));
+  }
+  const row = getDb()
+    .prepare<{ count: number }, string[]>(query)
+    .get(...params);
   return row?.count ?? 0;
 }
 
 /** Page count scoped to a single agent — companion to `listPagesByAgent`. */
-export function countPagesByAgent(agentId: string): number {
+export function countPagesByAgent(
+  agentId: string,
+  filters?: Pick<PageListOptions, "key" | "keyPrefix">,
+): number {
+  let query = "SELECT COUNT(*) AS count FROM pages WHERE agentId = ?";
+  const params: string[] = [agentId];
+  if (filters?.key) {
+    query += ' AND "key" = ?';
+    params.push(normalizeAssetKey(filters.key));
+  } else if (filters?.keyPrefix) {
+    query += ` AND "key" LIKE ? ESCAPE '\\'`;
+    params.push(assetKeyPrefixPattern(filters.keyPrefix));
+  }
   const row = getDb()
-    .prepare<{ count: number }, [string]>("SELECT COUNT(*) AS count FROM pages WHERE agentId = ?")
-    .get(agentId);
+    .prepare<{ count: number }, string[]>(query)
+    .get(...params);
   return row?.count ?? 0;
 }
 
@@ -8366,6 +8897,7 @@ export function countPagesByAgent(agentId: string): number {
 export function updatePage(
   id: string,
   data: {
+    key?: string;
     title?: string;
     description?: string | null;
     contentType?: PageContentType;
@@ -8378,6 +8910,10 @@ export function updatePage(
 ): Page | null {
   const updates: string[] = [];
   const params: (string | number | null)[] = [];
+  if (data.key !== undefined) {
+    updates.push('"key" = ?');
+    params.push(normalizeAssetKey(data.key));
+  }
   if (data.title !== undefined) {
     updates.push("title = ?");
     params.push(data.title);

@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { ensure } from "@desplega.ai/business-use";
 import { z } from "zod";
+import { AssetKeyAuthorizationError, authorizeAssetKeyWrite } from "../be/asset-key-auth";
 import { resolveHttpAuditUserId } from "../be/audit-user";
 import {
   backfillSupersedeTaskResumeTaskId,
@@ -31,6 +32,7 @@ import {
   AgentTaskSourceSchema,
   type AgentTaskStatus,
   AgentTaskStatusSchema,
+  AssetKeySchema,
   isTerminalTaskStatus,
   ModelTierSchema,
   ProviderNameSchema,
@@ -56,6 +58,8 @@ const listTasks = route({
     status: z.string().optional(),
     agentId: z.string().optional(),
     scheduleId: z.string().optional(),
+    key: AssetKeySchema.optional(),
+    keyPrefix: AssetKeySchema.optional(),
     search: z.string().optional(),
     includeHeartbeat: z.enum(["true", "false"]).optional(),
     /** ISO 8601 — return only tasks created on/after this timestamp. */
@@ -93,6 +97,7 @@ const createTask = route({
     offeredTo: z.string().optional(),
     dir: z.string().optional(),
     parentTaskId: z.string().optional(),
+    key: AssetKeySchema.optional(),
     source: AgentTaskSourceSchema.optional(),
     outputSchema: z.record(z.string(), z.unknown()).optional(),
     contextKey: z.string().optional(),
@@ -344,6 +349,8 @@ export async function handleTasks(
       status,
       agentId: parsed.query.agentId || undefined,
       scheduleId: parsed.query.scheduleId || undefined,
+      key: parsed.query.key,
+      keyPrefix: parsed.query.keyPrefix,
       search: parsed.query.search || undefined,
       includeHeartbeat: parsed.query.includeHeartbeat === "true" || undefined,
       createdAfter: parsed.query.createdAfter || undefined,
@@ -380,7 +387,8 @@ export async function handleTasks(
     // off (default) anywhere callers of the shared/global key are not all
     // equally trusted, since it lets any such caller attribute a task to any
     // user. Must NOT be upstreamed as a default-on behavior.
-    let requestedByUserId = resolveHttpAuditUserId(req, myAgentId) ?? undefined;
+    const trustedUserId = resolveHttpAuditUserId(req, myAgentId);
+    let requestedByUserId = trustedUserId ?? undefined;
     const trustBodyRequestedByUserId = process.env.TRUST_BODY_REQUESTED_BY_USER_ID === "true";
     if (trustBodyRequestedByUserId && !requestedByUserId && parsed.body.requestedByUserId) {
       const candidate = findUserById(parsed.body.requestedByUserId);
@@ -399,8 +407,24 @@ export async function handleTasks(
       if (lead) defaultAgentId = lead.id;
     }
 
+    let assetKey: string | undefined;
+    try {
+      const inheritedKey = parsed.body.parentTaskId
+        ? getTaskById(parsed.body.parentTaskId)?.key
+        : undefined;
+      const requestedKey = parsed.body.key ?? inheritedKey;
+      assetKey = requestedKey ? authorizeAssetKeyWrite(requestedKey, trustedUserId) : undefined;
+    } catch (error) {
+      if (error instanceof AssetKeyAuthorizationError) {
+        jsonError(res, error.message, error.statusCode);
+        return true;
+      }
+      throw error;
+    }
+
     try {
       const task = createTaskWithSiblingAwareness(parsed.body.task, {
+        key: assetKey,
         agentId: defaultAgentId,
         creatorAgentId: myAgentId || undefined,
         taskType: parsed.body.taskType || undefined,

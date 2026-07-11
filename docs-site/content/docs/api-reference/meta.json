@@ -8,6 +8,7 @@
     "active-sessions",
     "agents",
     "approvalrequests",
+    "assets",
     "budgets",
     "config",
     "debug",

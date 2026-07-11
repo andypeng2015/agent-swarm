@@ -526,6 +526,7 @@ describe("script connections", () => {
       // 112 rebuild only; unrelated later migrations may depend on tables that
       // do not exist in the fixture.
       markMigrationApplied(database, "114_backfill_gpt_5_6_pricing.sql");
+      markMigrationApplied(database, "115_asset_namespace_keys.sql");
 
       const id = crypto.randomUUID();
       const now = new Date().toISOString();

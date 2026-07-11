@@ -171,7 +171,9 @@ describe("Pool Affinity", () => {
       expect(stillUnassigned?.status).toBe("unassigned");
 
       const log = getDb()
-        .query("SELECT eventType FROM agent_log WHERE taskId = ? ORDER BY createdAt DESC LIMIT 1")
+        .query(
+          "SELECT eventType FROM agent_log WHERE taskId = ? ORDER BY createdAt DESC, rowid DESC LIMIT 1",
+        )
         .get(task.id) as { eventType: string } | null;
       expect(log?.eventType).toBe("task_claim_rejected_affinity");
     });

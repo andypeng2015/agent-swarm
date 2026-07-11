@@ -2,6 +2,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import * as z from "zod";
 import { getScheduledTasks } from "@/be/db";
 import { createToolRegistrar } from "@/tools/utils";
+import { AssetKeySchema } from "@/types";
 
 export const registerListSchedulesTool = (server: McpServer) => {
   createToolRegistrar(server)(
@@ -15,6 +16,8 @@ export const registerListSchedulesTool = (server: McpServer) => {
       inputSchema: z.object({
         enabled: z.boolean().optional().describe("Filter by enabled status"),
         name: z.string().optional().describe("Filter by name (partial match)"),
+        key: AssetKeySchema.optional().describe("Filter by exact namespace."),
+        keyPrefix: AssetKeySchema.optional().describe("Filter by namespace subtree."),
         scheduleType: z
           .enum(["recurring", "one_time"])
           .optional()
@@ -50,6 +53,7 @@ export const registerListSchedulesTool = (server: McpServer) => {
         schedules: z.array(
           z.object({
             id: z.string(),
+            key: AssetKeySchema,
             name: z.string(),
             description: z.string().optional(),
             cronExpression: z.string().optional(),
@@ -81,6 +85,8 @@ export const registerListSchedulesTool = (server: McpServer) => {
       {
         enabled,
         name,
+        key,
+        keyPrefix,
         scheduleType,
         hideCompleted,
         consecutiveErrorsMin,
@@ -106,6 +112,8 @@ export const registerListSchedulesTool = (server: McpServer) => {
         const filters = {
           enabled,
           name,
+          key,
+          keyPrefix,
           scheduleType,
           hideCompleted,
           consecutiveErrorsMin,
