@@ -527,6 +527,7 @@ describe("script connections", () => {
       // do not exist in the fixture.
       markMigrationApplied(database, "114_backfill_gpt_5_6_pricing.sql");
       markMigrationApplied(database, "115_asset_namespace_keys.sql");
+      markMigrationApplied(database, "116_favorite_principal_scope.sql");
 
       const id = crypto.randomUUID();
       const now = new Date().toISOString();

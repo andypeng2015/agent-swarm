@@ -33,6 +33,7 @@ import { validateJsonSchema } from "../workflows/json-schema-validator";
 import { cancelWorkflowRun, retryFailedRun } from "../workflows/resume";
 import { handleWebhookTrigger, WebhookError } from "../workflows/triggers";
 import { snapshotWorkflow } from "../workflows/version";
+import { resolveHttpFavoriteOwner } from "./favorite-owner";
 import { route } from "./route-def";
 import { json, jsonError, parseBody, triggerSchemaErrorResponse } from "./utils";
 
@@ -414,7 +415,7 @@ export async function handleWorkflows(
   if (listWorkflowsRoute.match(req.method, pathSegments)) {
     const parsed = await listWorkflowsRoute.parse(req, res, pathSegments, queryParams);
     if (!parsed) return true;
-    const userId = resolveHttpAuditUserId(req, myAgentId);
+    const favoriteScope = resolveHttpFavoriteOwner(req, myAgentId)?.scope;
     const filters = {
       enabled: parsed.query.enabled,
       consecutiveErrorsMin: parsed.query.consecutiveErrorsMin,
@@ -424,12 +425,12 @@ export async function handleWorkflows(
     };
     // List responses default to slim (no `definition`); `?fields=full` restores it.
     if (parsed.query.fields === "full") {
-      json(res, withFavoriteFlags(listWorkflows(filters), { userId, itemType: "workflow" }));
+      json(res, withFavoriteFlags(listWorkflows(filters), { favoriteScope, itemType: "workflow" }));
     } else {
       json(
         res,
         withFavoriteFlags(listWorkflows(filters, { slim: true }), {
-          userId,
+          favoriteScope,
           itemType: "workflow",
         }),
       );
@@ -489,8 +490,8 @@ export async function handleWorkflows(
     }
     // Include auto-generated edges for UI rendering
     const edges = generateEdges(workflow.definition);
-    const userId = resolveHttpAuditUserId(req, myAgentId);
-    const [decorated] = withFavoriteFlags([workflow], { userId, itemType: "workflow" });
+    const favoriteScope = resolveHttpFavoriteOwner(req, myAgentId)?.scope;
+    const [decorated] = withFavoriteFlags([workflow], { favoriteScope, itemType: "workflow" });
     json(res, { ...(decorated ?? workflow), edges });
     return true;
   }

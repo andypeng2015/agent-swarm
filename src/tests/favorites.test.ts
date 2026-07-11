@@ -159,4 +159,41 @@ describe("favorites and page slug resolution", () => {
     );
     expect(listRecorder.result().body.favoriteIds).toEqual(["workflow-1"]);
   });
+
+  test("favorites HTTP endpoints accept the hosted UI operator principal", async () => {
+    const req = jsonReq("PUT", "/api/favorites", {
+      itemType: "page",
+      itemId: "operator-page-1",
+      favorite: true,
+    });
+    setRequestAuth(req, { kind: "operator", fingerprint: "op:test-hosted-ui" });
+
+    const recorder = resRecorder();
+    await handleFavorites(
+      req,
+      recorder.res as never,
+      getPathSegments(req.url),
+      parseQueryParams(req.url),
+      undefined,
+    );
+    expect(recorder.result()).toMatchObject({
+      statusCode: 200,
+      body: { favorite: true, itemType: "page", itemId: "operator-page-1" },
+    });
+
+    const listReq = jsonReq("GET", "/api/favorites?itemType=page&itemIds=operator-page-1");
+    setRequestAuth(listReq, { kind: "operator", fingerprint: "op:test-hosted-ui" });
+    const listRecorder = resRecorder();
+    await handleFavorites(
+      listReq,
+      listRecorder.res as never,
+      getPathSegments(listReq.url),
+      parseQueryParams(listReq.url),
+      undefined,
+    );
+    expect(listRecorder.result()).toMatchObject({
+      statusCode: 200,
+      body: { favoriteIds: ["operator-page-1"] },
+    });
+  });
 });

@@ -3688,7 +3688,7 @@
     },
     "/api/favorites": {
       "get": {
-        "summary": "List favorites for the authenticated user",
+        "summary": "List favorites for the authenticated principal",
         "tags": [
           "Favorites"
         ],
@@ -3725,7 +3725,7 @@
             "description": "Favorite rows and favorite item ids"
           },
           "401": {
-            "description": "No authenticated user context"
+            "description": "No authenticated principal context"
           }
         }
       },
@@ -3775,7 +3775,7 @@
             "description": "Favorite state"
           },
           "401": {
-            "description": "No authenticated user context"
+            "description": "No authenticated principal context"
           }
         }
       }

@@ -681,7 +681,7 @@ export const InboxItemStateSchema = z.object({
 export type InboxItemState = z.infer<typeof InboxItemStateSchema>;
 
 // ============================================================================
-// User Favorites (per-user stars for app navigation)
+// User Favorites (principal-scoped stars for app navigation)
 // ============================================================================
 
 export const FavoriteItemTypeSchema = z.enum(["page", "workflow", "schedule"]);
@@ -689,7 +689,7 @@ export type FavoriteItemType = z.infer<typeof FavoriteItemTypeSchema>;
 
 export const UserFavoriteSchema = z.object({
   id: z.string(),
-  userId: z.string(),
+  userId: z.string().optional(),
   itemType: FavoriteItemTypeSchema,
   itemId: z.string(),
   createdAt: z.string(),

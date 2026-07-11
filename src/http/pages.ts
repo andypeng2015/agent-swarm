@@ -27,6 +27,7 @@ import {
 } from "../types";
 import { getAppUrl, getPublicMcpBaseUrl } from "../utils/constants";
 import { issuePageSessionCookie } from "../utils/page-session";
+import { resolveHttpFavoriteOwner } from "./favorite-owner";
 import { route } from "./route-def";
 import { BODY_TOO_LARGE, enforceContentLengthCap, json, jsonError } from "./utils";
 
@@ -475,8 +476,8 @@ export async function handlePages(
       res.end();
       return true;
     }
-    const userId = resolveHttpAuditUserId(req, myAgentId);
-    const [decorated] = withFavoriteFlags([page], { userId, itemType: "page" });
+    const favoriteScope = resolveHttpFavoriteOwner(req, myAgentId)?.scope;
+    const [decorated] = withFavoriteFlags([page], { favoriteScope, itemType: "page" });
     json(res, withShareUrls(decorated ?? page));
     return true;
   }
@@ -510,8 +511,8 @@ export async function handlePages(
         : listAllPages(limit, offset, { ...keyFilters, slim: true });
       total = countAllPages(keyFilters);
     }
-    const userId = resolveHttpAuditUserId(req, myAgentId);
-    const decoratedPages = withFavoriteFlags(pages, { userId, itemType: "page" });
+    const favoriteScope = resolveHttpFavoriteOwner(req, myAgentId)?.scope;
+    const decoratedPages = withFavoriteFlags(pages, { favoriteScope, itemType: "page" });
     json(res, {
       pages: decoratedPages.map(withShareUrls),
       // Filter-aware total (real row count, not the current page's length) so
@@ -568,8 +569,8 @@ export async function handlePages(
       res.end();
       return true;
     }
-    const userId = resolveHttpAuditUserId(req, myAgentId);
-    const [decorated] = withFavoriteFlags([page], { userId, itemType: "page" });
+    const favoriteScope = resolveHttpFavoriteOwner(req, myAgentId)?.scope;
+    const [decorated] = withFavoriteFlags([page], { favoriteScope, itemType: "page" });
     json(res, withShareUrls(decorated ?? page));
     return true;
   }

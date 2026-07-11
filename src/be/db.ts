@@ -12107,12 +12107,13 @@ export function upsertInboxState(opts: {
 }
 
 // ============================================================================
-// User Favorites (per-user stars for pages, workflows, and schedules)
+// User Favorites (principal-scoped stars for pages, workflows, and schedules)
 // ============================================================================
 
 interface UserFavoriteRow {
   id: string;
-  userId: string;
+  favoriteScope: string;
+  userId: string | null;
   itemType: string;
   itemId: string;
   createdAt: string;
@@ -12124,7 +12125,7 @@ interface UserFavoriteRow {
 function rowToUserFavorite(row: UserFavoriteRow): UserFavorite {
   return {
     id: row.id,
-    userId: row.userId,
+    userId: row.userId ?? undefined,
     itemType: row.itemType as FavoriteItemType,
     itemId: row.itemId,
     createdAt: row.createdAt,
@@ -12134,13 +12135,13 @@ function rowToUserFavorite(row: UserFavoriteRow): UserFavorite {
   };
 }
 
-export function listUserFavorites(opts: {
-  userId: string;
+export function listFavorites(opts: {
+  favoriteScope: string;
   itemType?: FavoriteItemType;
   itemIds?: string[];
 }): UserFavorite[] {
-  const conditions = ["userId = ?"];
-  const params: string[] = [opts.userId];
+  const conditions = ["favoriteScope = ?"];
+  const params: string[] = [opts.favoriteScope];
 
   if (opts.itemType) {
     conditions.push("itemType = ?");
@@ -12160,12 +12161,62 @@ export function listUserFavorites(opts: {
   return rows.map(rowToUserFavorite);
 }
 
-export function getFavoriteItemIdSet(opts: {
+export function listUserFavorites(opts: {
   userId: string;
+  itemType?: FavoriteItemType;
+  itemIds?: string[];
+}): UserFavorite[] {
+  return listFavorites({ ...opts, favoriteScope: `user:${opts.userId}` });
+}
+
+export function getFavoriteItemIdSet(opts: {
+  favoriteScope: string;
   itemType: FavoriteItemType;
   itemIds?: string[];
 }): Set<string> {
-  return new Set(listUserFavorites(opts).map((favorite) => favorite.itemId));
+  return new Set(listFavorites(opts).map((favorite) => favorite.itemId));
+}
+
+export function setFavorite(opts: {
+  favoriteScope: string;
+  userId?: string | null;
+  itemType: FavoriteItemType;
+  itemId: string;
+  favorite: boolean;
+  actorId?: string | null;
+}): UserFavorite | null {
+  if (!opts.favorite) {
+    getDb()
+      .prepare("DELETE FROM user_favorites WHERE favoriteScope = ? AND itemType = ? AND itemId = ?")
+      .run(opts.favoriteScope, opts.itemType, opts.itemId);
+    return null;
+  }
+
+  const now = new Date().toISOString();
+  const actor = opts.actorId ?? opts.userId ?? opts.favoriteScope;
+  const row = getDb()
+    .prepare<UserFavoriteRow, Array<string | null>>(
+      `INSERT INTO user_favorites (
+         favoriteScope, userId, itemType, itemId, createdAt, lastUpdatedAt, created_by, updated_by
+       )
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(favoriteScope, itemType, itemId) DO UPDATE SET
+         lastUpdatedAt = excluded.lastUpdatedAt,
+         updated_by = excluded.updated_by
+       RETURNING *`,
+    )
+    .get(
+      opts.favoriteScope,
+      opts.userId ?? null,
+      opts.itemType,
+      opts.itemId,
+      now,
+      now,
+      actor,
+      actor,
+    );
+  if (!row) throw new Error("Failed to set favorite");
+  return rowToUserFavorite(row);
 }
 
 export function setUserFavorite(opts: {
@@ -12175,40 +12226,22 @@ export function setUserFavorite(opts: {
   favorite: boolean;
   actorUserId?: string | null;
 }): UserFavorite | null {
-  if (!opts.favorite) {
-    getDb()
-      .prepare("DELETE FROM user_favorites WHERE userId = ? AND itemType = ? AND itemId = ?")
-      .run(opts.userId, opts.itemType, opts.itemId);
-    return null;
-  }
-
-  const now = new Date().toISOString();
-  const actor = opts.actorUserId ?? opts.userId;
-  const row = getDb()
-    .prepare<UserFavoriteRow, string[]>(
-      `INSERT INTO user_favorites (
-         userId, itemType, itemId, createdAt, lastUpdatedAt, created_by, updated_by
-       )
-       VALUES (?, ?, ?, ?, ?, ?, ?)
-       ON CONFLICT(userId, itemType, itemId) DO UPDATE SET
-         lastUpdatedAt = excluded.lastUpdatedAt,
-         updated_by = excluded.updated_by
-       RETURNING *`,
-    )
-    .get(opts.userId, opts.itemType, opts.itemId, now, now, actor, actor);
-  if (!row) throw new Error("Failed to set favorite");
-  return rowToUserFavorite(row);
+  return setFavorite({
+    ...opts,
+    favoriteScope: `user:${opts.userId}`,
+    actorId: opts.actorUserId,
+  });
 }
 
 export function withFavoriteFlags<T extends { id: string }>(
   rows: T[],
-  opts: { userId?: string | null; itemType: FavoriteItemType },
+  opts: { favoriteScope?: string | null; itemType: FavoriteItemType },
 ): Array<T & { favorite: boolean }> {
-  if (!opts.userId || rows.length === 0) {
+  if (!opts.favoriteScope || rows.length === 0) {
     return rows.map((row) => ({ ...row, favorite: false }));
   }
   const favoriteIds = getFavoriteItemIdSet({
-    userId: opts.userId,
+    favoriteScope: opts.favoriteScope,
     itemType: opts.itemType,
     itemIds: rows.map((row) => row.id),
   });

@@ -23,6 +23,7 @@ import {
   ScheduledTaskTargetTypeSchema,
   splitLegacyModelAlias,
 } from "../types";
+import { resolveHttpFavoriteOwner } from "./favorite-owner";
 import { route } from "./route-def";
 import { json, jsonError } from "./utils";
 
@@ -228,8 +229,11 @@ export async function handleSchedules(
       parsed.query.fields === "full"
         ? getScheduledTasks(filters)
         : getScheduledTasks(filters, { slim: true });
-    const userId = resolveHttpAuditUserId(req, myAgentId);
-    const decoratedSchedules = withFavoriteFlags(schedules, { userId, itemType: "schedule" });
+    const favoriteScope = resolveHttpFavoriteOwner(req, myAgentId)?.scope;
+    const decoratedSchedules = withFavoriteFlags(schedules, {
+      favoriteScope,
+      itemType: "schedule",
+    });
     json(res, { schedules: decoratedSchedules, count: decoratedSchedules.length });
     return true;
   }
@@ -433,8 +437,8 @@ export async function handleSchedules(
       return true;
     }
 
-    const userId = resolveHttpAuditUserId(req, myAgentId);
-    const [decorated] = withFavoriteFlags([schedule], { userId, itemType: "schedule" });
+    const favoriteScope = resolveHttpFavoriteOwner(req, myAgentId)?.scope;
+    const [decorated] = withFavoriteFlags([schedule], { favoriteScope, itemType: "schedule" });
     json(res, decorated ?? schedule);
     return true;
   }

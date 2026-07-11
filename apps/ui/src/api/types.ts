@@ -419,7 +419,7 @@ export type FavoriteItemType = "page" | "workflow" | "schedule";
 
 export interface UserFavorite {
   id: string;
-  userId: string;
+  userId?: string;
   itemType: FavoriteItemType;
   itemId: string;
   createdAt: string;

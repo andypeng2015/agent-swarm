@@ -1,6 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { z } from "zod";
-import { resolveHttpAuditUserId } from "../be/audit-user";
 import {
   getAllAgents,
   getAllLogs,
@@ -13,6 +12,7 @@ import {
   withFavoriteFlags,
 } from "../be/db";
 import type { AgentLog } from "../types";
+import { resolveHttpFavoriteOwner } from "./favorite-owner";
 import { route } from "./route-def";
 import { json } from "./utils";
 
@@ -188,9 +188,9 @@ export async function handleStats(
       workflowId: parsed.query.workflowId,
       scriptName: parsed.query.scriptName,
     });
-    const userId = resolveHttpAuditUserId(req, myAgentId);
+    const favoriteScope = resolveHttpFavoriteOwner(req, myAgentId)?.scope;
     json(res, {
-      scheduledTasks: withFavoriteFlags(scheduledTasks, { userId, itemType: "schedule" }),
+      scheduledTasks: withFavoriteFlags(scheduledTasks, { favoriteScope, itemType: "schedule" }),
     });
     return true;
   }
