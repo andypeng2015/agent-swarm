@@ -104,7 +104,8 @@ services:
       - GITHUB_DISABLE=true
 
     ports:
-      - "3013:3013"
+      # 3113 on the host: 3013 is usually taken by the pm2 dev API
+      - "3113:3013"
 
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:3013/health || exit 1"]
@@ -137,6 +138,7 @@ services:
       - AGENT_NAME=lead
       - MCP_BASE_URL=http://api:3013
       - AGENT_FS_API_URL=http://agent-fs:7433
+      - MAX_CONCURRENT_TASKS=3
       - YOLO=true
 
     ports:
@@ -171,6 +173,7 @@ services:
       - SYSTEM_PROMPT=You are the swarm's analyst — a data-oriented light coder. You excel at writing small TypeScript scripts to gather, aggregate, and summarize data. Return compact, structured results.
       - MCP_BASE_URL=http://api:3013
       - AGENT_FS_API_URL=http://agent-fs:7433
+      - MAX_CONCURRENT_TASKS=3
       - YOLO=true
 
     ports:
@@ -205,6 +208,7 @@ services:
       - SYSTEM_PROMPT=You are the swarm's marketer. You turn analysis and data into crisp, compelling copy. Keep outputs short and punchy.
       - MCP_BASE_URL=http://api:3013
       - AGENT_FS_API_URL=http://agent-fs:7433
+      - MAX_CONCURRENT_TASKS=3
       - YOLO=true
 
     ports:
