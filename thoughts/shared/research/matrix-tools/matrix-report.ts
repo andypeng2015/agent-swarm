@@ -1,3 +1,4 @@
+// @ts-nocheck — research artifact (scripts-only MCP experiment), not product code
 // Build metrics.json from /tmp/matrix/<group>-<n>/ snapshots.
 // Groups: [provider-]mode[-seeds]  e.g. scripts-only-2 (legacy claude), pi-full-1, claude-scripts-only-seeds-3
 import { readdirSync, readFileSync, existsSync, writeFileSync } from "node:fs";

@@ -1,5 +1,6 @@
+// @ts-nocheck — research artifact (scripts-only MCP experiment), not product code
 // Phase 0: boot scripts-only claude stack, apply + validate seed scripts, leave stack up for inspection.
-import { applySeeds } from "/tmp/matrix-seeds.ts";
+import { applySeeds } from "./matrix-seeds.ts";
 
 const REPO = "/Users/taras/Documents/code/agent-swarm";
 const BASE = "http://localhost:3113";

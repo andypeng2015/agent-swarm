@@ -1,8 +1,9 @@
+// @ts-nocheck — research artifact (scripts-only MCP experiment), not product code
 // One matrix run: fresh stack (mode, provider), optional seed pack, send scenario task, wait, snapshot.
 // Usage: bun /tmp/matrix-run.ts <scripts-only|full> <runId> [claude|pi|opencode] [seeds]
 // Usage (snapshot only): bun /tmp/matrix-run.ts snapshot <label>
 import { mkdirSync, writeFileSync } from "node:fs";
-import { applySeeds } from "/tmp/matrix-seeds.ts";
+import { applySeeds } from "./matrix-seeds.ts";
 
 const REPO = "/Users/taras/Documents/code/agent-swarm";
 const BASE = "http://localhost:3113";

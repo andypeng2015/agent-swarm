@@ -1,3 +1,4 @@
+// @ts-nocheck — research artifact (scripts-only MCP experiment), not product code
 // Emit self-contained HTML report from /tmp/matrix/metrics.json (+ /tmp/matrix/analysis.html fragment).
 // Usage: bun /tmp/matrix-html.ts [outPath]
 import { readFileSync, existsSync, writeFileSync } from "node:fs";

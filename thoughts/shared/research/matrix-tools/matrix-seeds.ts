@@ -1,3 +1,4 @@
+// @ts-nocheck — research artifact (scripts-only MCP experiment), not product code
 // Seed scripts + prompt override for the scripts-only ("code-mode") experiment.
 // Import { applySeeds } from matrix-run.ts, or run directly:
 //   bun /tmp/matrix-seeds.ts apply     — upsert seeds + prompt override on live stack (:3113)
