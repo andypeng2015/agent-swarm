@@ -434,17 +434,31 @@ registerTemplate({
   defaultBody: `
 ## Code-Mode: script tools ONLY
 
-This swarm runs in **scripts-only mode**. The ONLY swarm MCP tools available to you are the script tools: \`script-search\`, \`script-run\`, \`script-upsert\`, \`script-delete\`, \`script-query-types\`, \`launch-script-run\`, \`get-script-run\`, \`list-script-runs\`. Tools like \`store-progress\`, \`send-task\`, \`post-message\`, \`memory-search\`, etc. are NOT exposed directly — do not look for them.
+This swarm runs in **scripts-only mode**. The ONLY swarm MCP tools available are the script tools: \`script-search\`, \`script-run\`, \`script-upsert\`, \`script-delete\`, \`script-query-types\`, \`launch-script-run\`, \`get-script-run\`, \`list-script-runs\` (your harness may expose them under a prefix, e.g. \`mcp__agent-swarm__script-run\` — use the exact registered tool id). They are already loaded. Named tools like \`store-progress\`, \`send-task\`, \`post-message\`, \`memory-search\` do NOT exist here — do not search for them.
 
-Instead, perform EVERY swarm operation by writing TypeScript and executing it with \`script-run\` (inline source). The full SDK is available inside scripts as \`ctx.swarm.*\` — task lifecycle (\`task_get\`, \`task_send\`, \`task_storeProgress\`, \`task_action\`, \`task_list\`), messaging (\`message_post\`, \`message_read\`), memory, kv, swarm info (\`swarm_get\`, \`agent_info\`), and more.
+**Script entry signature (memorize — args FIRST, ctx SECOND):**
+
+\`\`\`ts
+export default async function (args: any, ctx: any) { /* ... */ }
+\`\`\`
+
+The full SDK is \`ctx.swarm.*\` — task lifecycle (\`task_get\`, \`task_send\`, \`task_storeProgress\`, \`task_action\`, \`task_list\`), messaging (\`message_post\`, \`message_read\`), memory, kv, swarm info (\`swarm_get\`, \`agent_info\`), and more. Responses are usually wrapped — prefer \`res?.data ?? res\`.
+
+**Built-in coordination scripts — USE THESE FIRST (\`script-run\` with \`name\` + \`args\`):**
+- \`delegate\` {agentName, task, parentTaskId?} → subtask for an agent by name; returns {taskId}
+- \`wait-for-task\` {taskId} → waits up to ~25s for a terminal state; returns {done, status, output}; while done=false call it again
+- \`get-child-outputs\` {parentTaskId} → all children with status+output
+- \`complete-task\` {taskId, output} → THE way to finish your assigned task
+- \`report-progress\` {taskId, note} → progress update
+- \`swarm-overview\` {} → agents + task counts
 
 Rules of the road:
-- Inspect the SDK first: call \`script-query-types\` to see the live \`swarm-sdk.d.ts\` before authoring anything non-trivial.
-- \`taskId\` is NOT ambient inside scripts — pass it explicitly via \`args\` and forward it to \`ctx.swarm.task_storeProgress\` / \`task_get\`.
-- Report progress and completion via \`ctx.swarm.task_storeProgress\` from inside a script. This is how you update, complete, or fail your task — there is no other way.
-- Scripts are killed after ~30s and stdout is capped at 1 MB. Do NOT sleep/poll inside one script; to wait on another agent or child task, run a quick check script, then check again later across separate \`script-run\` calls.
+- Prefer a built-in script over inline source; write inline TypeScript only for logic no built-in covers. Check \`script-search\` first, and \`script-query-types\` for the live \`swarm-sdk.d.ts\` before authoring anything non-trivial.
+- \`taskId\` is NOT ambient inside scripts — pass it explicitly via \`args\`.
+- Report progress and completion via \`complete-task\` / \`report-progress\` (or \`ctx.swarm.task_storeProgress\` inline). This is how you update, complete, or fail your task — there is no other way.
+- Scripts are killed after ~30s and stdout is capped at 1 MB. Never sleep/loop longer than ~25s inside one script — chain \`wait-for-task\` calls instead.
 - Aggregate inside the script and return only the derived result — never dump raw data.
-- One script per logical operation is fine; batch related SDK calls into a single script when it reduces round trips.
+- Batch related SDK calls into a single script when it reduces round trips.
 `,
   variables: [],
   category: "system",
@@ -485,6 +499,8 @@ See the \`swarm-scripts\` skill for the full catalog, signatures, and usage patt
 **At every task start (do this FIRST):** Run \`task-context-gathering\` with the task ID and 2-4 queries from the task description. Returns a slimmed task projection + deduped memories in one call — replaces task_get + memory_search loops.
 
 **At task start when you only need memory:** Run \`smart-recall\` with 2-4 search angles from the task description.
+
+**For multi-agent fan-out:** \`delegate\` (subtask to an agent by name), \`wait-for-task\` (bounded wait for a child's result), \`get-child-outputs\` (aggregate all children) — each replaces a get-swarm/send-task/poll chain.
 
 **For any other repetitive multi-tool pattern:** Call \`script-search\` with a natural-language description. If a script exists, use it.
 

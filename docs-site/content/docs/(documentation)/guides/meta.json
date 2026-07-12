@@ -15,6 +15,7 @@
     "performance-resource-sizing",
     "cost-and-context-computation",
     "scripts-runtime",
+    "scripts-only-mode",
     "script-connections",
     "scripts-external-apis",
     "scripts-credential-broker",
