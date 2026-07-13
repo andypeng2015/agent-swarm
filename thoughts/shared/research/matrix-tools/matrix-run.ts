@@ -2,8 +2,9 @@
 // One matrix run: fresh stack (mode, provider), optional seed pack, send scenario task, wait, snapshot.
 // Usage: bun /tmp/matrix-run.ts <scripts-only|full> <runId> [claude|pi|opencode] [seeds]
 // Usage (snapshot only): bun /tmp/matrix-run.ts snapshot <label>
-import { mkdirSync, writeFileSync } from "node:fs";
 import { applySeeds } from "./matrix-seeds.ts";
+import { applyTriageFixtures } from "./triage-fixtures.ts";
+import { gradeTriageTask } from "./triage-grade.ts";
 
 const REPO = process.env.SWARM_REPO ?? process.cwd(); // run from the repo root or set SWARM_REPO
 const BASE = "http://localhost:3113";
@@ -17,6 +18,26 @@ const NAMES: Record<string, string> = {
   "7a1e0000-0000-4000-8000-000000000003": "marketer",
 };
 const DEEPSEEK = "openrouter/deepseek/deepseek-v4-flash";
+const TRIAGE_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["brokenSchedules", "failureClusters", "staleTaskIds", "healthySchedules", "verdict"],
+  properties: {
+    brokenSchedules: { type: "array", items: { type: "string" } },
+    failureClusters: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["token", "count"],
+        properties: { token: { type: "string" }, count: { type: "number" } },
+      },
+    },
+    staleTaskIds: { type: "array", items: { type: "string" } },
+    healthySchedules: { type: "array", items: { type: "string" } },
+    verdict: { enum: ["OK", "WATCH", "ALERT"] },
+  },
+};
 
 const TASK = `We want a short marketing blurb about this agent swarm, produced collaboratively.
 
@@ -27,55 +48,131 @@ Steps:
 
 Coordinate everything yourself; do not ask a human for input.`;
 
-const [mode, runId, provider = "claude", seedsFlag = ""] = process.argv.slice(2);
-if (!mode || !runId) { console.error("usage: matrix-run.ts <scripts-only|full|snapshot> <runId> [provider] [seeds]"); process.exit(2); }
+const args = process.argv.slice(2);
+const scenarioIndex = args.indexOf("--scenario");
+const scenario = scenarioIndex === -1 ? "default" : args[scenarioIndex + 1];
+if (scenarioIndex !== -1) args.splice(scenarioIndex, 2);
+const [mode, runId, provider = "claude", seedsFlag = ""] = args;
+if (!mode || !runId || !["default", "triage"].includes(scenario)) {
+  console.error(
+    "usage: matrix-run.ts <scripts-only|scripts-config|full|snapshot> <runId> [claude|pi|opencode|codex] [seeds] [--scenario triage]",
+  );
+  process.exit(2);
+}
+if (provider === "codex" && !process.env.CODEX_OAUTH) {
+  console.error(
+    "CODEX_OAUTH is required for --provider codex; source .env.docker before starting this cell",
+  );
+  process.exit(1);
+}
 const seeds = seedsFlag === "seeds";
-const label = mode === "snapshot" ? `snapshot-${runId}` : `${provider}-${mode}${seeds ? "-seeds" : ""}-${runId}`;
+const label =
+  mode === "snapshot"
+    ? `snapshot-${runId}`
+    : `${provider}-${mode}${scenario === "triage" ? "-triage" : ""}${seeds ? "-seeds" : ""}-${runId}`;
 const OUT = `/tmp/matrix/${label}`;
-mkdirSync(OUT, { recursive: true });
+await Bun.$`mkdir -p ${OUT}`.quiet();
 
 const log = (m: string) => console.log(`[${new Date().toISOString()}] [${label}] ${m}`);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-async function api(path: string): Promise<any> { return fetch(BASE + path, { headers: H }).then((r) => r.json()); }
+async function api(path: string): Promise<any> {
+  return fetch(BASE + path, { headers: H }).then((r) => r.json());
+}
 
 async function compose(args: string[]) {
   const env: Record<string, string | undefined> = {
     ...process.env,
-    SCRIPTS_ONLY_MCP: mode === "scripts-only" ? "true" : "false",
+    // `scripts-config` deliberately leaves the env EMPTY and flips the mode via per-agent
+    // swarm_config rows instead -- that is the Phase 1-2 gating path under test.
+    SCRIPTS_ONLY_MCP: mode === "scripts-only" ? "true" : "",
     MATRIX_PROVIDER: provider,
-    MATRIX_MODEL: provider === "claude" ? "" : DEEPSEEK,
+    MATRIX_MODEL: ["pi", "opencode"].includes(provider) ? DEEPSEEK : "",
   };
-  const proc = Bun.spawn(["docker", "compose", "-f", "docker-compose.scripts-only.yml", ...args], { cwd: REPO, env, stdout: "pipe", stderr: "pipe" });
+  const proc = Bun.spawn(["docker", "compose", "-f", "docker-compose.scripts-only.yml", ...args], {
+    cwd: REPO,
+    env,
+    stdout: "pipe",
+    stderr: "pipe",
+  });
   const code = await proc.exited;
-  if (code !== 0) throw new Error(`compose ${args.join(" ")} failed (${code}): ${(await new Response(proc.stderr).text()).slice(-500)}`);
+  if (code !== 0)
+    throw new Error(
+      `compose ${args.join(" ")} failed (${code}): ${(await new Response(proc.stderr).text()).slice(-500)}`,
+    );
+}
+
+async function waitForApiHealth() {
+  for (let i = 0; i < 60; i++) {
+    try {
+      const response = await fetch(`${BASE}/health`, { headers: H });
+      if (response.ok) return;
+    } catch {}
+    await sleep(2_000);
+  }
+  throw new Error("API did not become healthy before Codex workers were started");
+}
+
+async function configureCodexOAuth() {
+  const oauth = process.env.CODEX_OAUTH;
+  if (!oauth)
+    throw new Error(
+      "CODEX_OAUTH is required for --provider codex; source .env.docker before starting this cell",
+    );
+  const response = await fetch(`${BASE}/api/config`, {
+    method: "PUT",
+    headers: HJ,
+    body: JSON.stringify({ scope: "global", key: "codex_oauth_0", value: oauth, isSecret: true }),
+  });
+  if (!response.ok)
+    throw new Error(`could not configure local Codex OAuth: HTTP ${response.status}`);
 }
 
 async function snapshot(extra: Record<string, unknown>) {
   const tasksRes = await api("/api/tasks?limit=100");
   const tasks: any[] = tasksRes.tasks ?? tasksRes;
-  writeFileSync(`${OUT}/tasks.json`, JSON.stringify(tasks, null, 2));
+  await Bun.write(`${OUT}/tasks.json`, JSON.stringify(tasks, null, 2));
   const costs = await api("/api/session-costs/summary").catch(() => null);
-  writeFileSync(`${OUT}/costs.json`, JSON.stringify(costs, null, 2));
+  await Bun.write(`${OUT}/costs.json`, JSON.stringify(costs, null, 2));
   for (const t of tasks) {
     const logs = await api(`/api/tasks/${t.id}/session-logs`).catch(() => null);
-    if (logs) writeFileSync(`${OUT}/logs-${t.id.slice(0, 8)}.json`, JSON.stringify(logs));
+    if (logs) await Bun.write(`${OUT}/logs-${t.id.slice(0, 8)}.json`, JSON.stringify(logs));
   }
   const summary = {
-    mode, runId, provider, seeds, at: new Date().toISOString(),
-    tasks: tasks.map((t) => ({ id: t.id.slice(0, 8), agent: NAMES[t.agentId] ?? t.agentId, parent: t.parentTaskId?.slice(0, 8) ?? null, status: t.status })),
+    mode,
+    runId,
+    provider,
+    seeds,
+    at: new Date().toISOString(),
+    tasks: tasks.map((t) => ({
+      id: t.id.slice(0, 8),
+      agent: NAMES[t.agentId] ?? t.agentId,
+      parent: t.parentTaskId?.slice(0, 8) ?? null,
+      status: t.status,
+    })),
     costs: costs?.totals ?? null,
     ...extra,
   };
-  writeFileSync(`${OUT}/summary.json`, JSON.stringify(summary, null, 2));
+  await Bun.write(`${OUT}/summary.json`, JSON.stringify(summary, null, 2));
   log(`snapshot done: ${OUT}`);
   return summary;
 }
 
-if (mode === "snapshot") { await snapshot({ note: "manual snapshot" }); process.exit(0); }
+if (mode === "snapshot") {
+  await snapshot({ note: "manual snapshot" });
+  process.exit(0);
+}
 
 log("compose down -v");
 await compose(["down", "-v", "--remove-orphans"]);
-log(`compose up -d (provider=${provider}, scriptsOnly=${mode === "scripts-only"}, seeds=${seeds})`);
+if (provider === "codex") {
+  log("compose up -d api before Codex workers");
+  await compose(["up", "-d", "--no-build", "api"]);
+  await waitForApiHealth();
+  await configureCodexOAuth();
+}
+log(
+  `compose up -d (provider=${provider}, scriptsOnly=${mode === "scripts-only"}, seeds=${seeds}, scenario=${scenario})`,
+);
 await compose(["up", "-d", "--no-build"]);
 
 // wait for 3 agents (generous: fresh volumes / model downloads)
@@ -85,22 +182,67 @@ for (let i = 0; i < 90; i++) {
   try {
     const r = await api("/api/agents");
     const agents = r.agents ?? [];
-    if (i % 3 === 0) log(`agents: ${agents.map((a: any) => `${a.name}(${a.status})`).join(", ") || "none"}`);
-    if (agents.length >= 3) { ready = true; break; }
+    if (i % 3 === 0)
+      log(`agents: ${agents.map((a: any) => `${a.name}(${a.status})`).join(", ") || "none"}`);
+    if (agents.length >= 3) {
+      ready = true;
+      break;
+    }
   } catch {}
 }
-if (!ready) { await snapshot({ result: "BOOT_TIMEOUT" }); process.exit(1); }
+if (!ready) {
+  await snapshot({ result: "BOOT_TIMEOUT" });
+  if (scenario === "triage") await compose(["down", "-v", "--remove-orphans"]);
+  process.exit(1);
+}
 await sleep(15_000);
 
 if (seeds) {
   const res = await applySeeds(BASE, KEY);
   log("seeds: " + res.join(" | "));
-  writeFileSync(`${OUT}/seeds-applied.json`, JSON.stringify(res, null, 2));
+  await Bun.write(`${OUT}/seeds-applied.json`, JSON.stringify(res, null, 2));
   if (res.some((r) => !/200|201/.test(r))) log("WARNING: some seed upserts failed");
 }
 
+if (mode === "scripts-config") {
+  for (const agentId of Object.keys(NAMES)) {
+    const r = await fetch(`${BASE}/api/config`, {
+      method: "PUT",
+      headers: HJ,
+      body: JSON.stringify({
+        scope: "agent",
+        scopeId: agentId,
+        key: "SCRIPTS_ONLY_MCP",
+        value: "true",
+      }),
+    });
+    if (!r.ok) throw new Error(`per-agent SCRIPTS_ONLY_MCP row failed for ${agentId}: ${r.status}`);
+  }
+  log("per-agent SCRIPTS_ONLY_MCP rows set; waiting out the 10s harness reconcile");
+  await sleep(25_000);
+}
+
+const fixtureManifestPath = `${OUT}/fixtures.json`;
+if (scenario === "triage") {
+  await applyTriageFixtures(REPO, fixtureManifestPath);
+  log(`triage fixtures: ${fixtureManifestPath}`);
+}
+
 const t0 = Date.now();
-const created = await fetch(`${BASE}/api/tasks`, { method: "POST", headers: HJ, body: JSON.stringify({ task: TASK, agentId: LEAD, source: "api" }) }).then((r) => r.json());
+const task =
+  scenario === "triage"
+    ? await Bun.file(new URL("./triage-task.md", import.meta.url)).text()
+    : TASK;
+const created = await fetch(`${BASE}/api/tasks`, {
+  method: "POST",
+  headers: HJ,
+  body: JSON.stringify({
+    task,
+    agentId: LEAD,
+    source: "api",
+    ...(scenario === "triage" ? { outputSchema: TRIAGE_SCHEMA } : {}),
+  }),
+}).then((r) => r.json());
 const parentId = created.id;
 log(`parent task ${parentId}`);
 
@@ -121,11 +263,29 @@ while (Date.now() - settle0 < 10 * 60 * 1000) {
   await sleep(20_000);
   try {
     const r = await api("/api/tasks?limit=100");
-    const open = (r.tasks ?? r).filter((t: any) => !["completed", "failed", "cancelled"].includes(t.status));
+    const open = (r.tasks ?? r).filter(
+      (t: any) =>
+        !["completed", "failed", "cancelled"].includes(t.status) &&
+        // Triage fixtures deliberately park tasks in `in_progress` forever; they are not
+        // live work and must not hold the settle loop hostage for its full 10-minute cap.
+        !String(t.tags ?? "").includes("matrix-triage-fixture"),
+    );
     if (open.length === 0) break;
   } catch {}
 }
 
-const summary = await snapshot({ result: parentStatus, parentId, parentWallMs });
+let grade: Record<string, unknown> | undefined;
+let gradeError: unknown;
+if (scenario === "triage") {
+  try {
+    grade = await gradeTriageTask(parentId, fixtureManifestPath, { base: BASE, apiKey: KEY });
+    await Bun.write(`${OUT}/grade.json`, JSON.stringify(grade, null, 2));
+  } catch (error) {
+    gradeError = error;
+  }
+}
+const summary = await snapshot({ result: parentStatus, parentId, parentWallMs, ...(grade ?? {}) });
+if (scenario === "triage") await compose(["down", "-v", "--remove-orphans"]);
+if (gradeError) throw gradeError;
 console.log("SUMMARY " + JSON.stringify(summary));
-process.exit(parentStatus === "completed" ? 0 : 1);
+process.exit(parentStatus === "completed" && (scenario !== "triage" || grade?.pass) ? 0 : 1);

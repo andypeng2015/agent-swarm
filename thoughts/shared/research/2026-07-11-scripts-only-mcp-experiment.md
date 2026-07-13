@@ -108,3 +108,82 @@ Full code-mode is viable **today** on the Claude harness with zero SDK changes �
 - Task tree: parent `74bac40b` → analyst `97208b6f` ✅ → marketer `419715b9` ✅ (+2 auto review tasks)
 - Analysis tooling: `/tmp/so-analyze.ts` (session-log tool-call extractor), `/tmp/so-poll.ts`
 - Stack: `docker compose -f docker-compose.scripts-only.yml up -d` (API on host :3113; :3013 is the pm2 dev API)
+
+---
+
+## Round 2 (2026-07-13) — Ops-triage scenario, claude × codex, per-agent gating
+
+**Hypothesis under test**: round 1 only measured a *delegation* task. Prod's dominant recurring workload is read-heavy
+aggregation (system+schedule ≈ 7K of 23.4K tasks) — the shape where code-mode should show an actual *win*, not parity.
+
+**Setup**: a "daily ops triage" scenario with seeded fixtures and fully deterministic grading (no judge). Fixtures:
+3 broken schedules (enabled, `consecutiveErrors` 3/5/7), 2 healthy schedules (precision bait), 5 failed tasks in 2
+clusters (3 + 2), 4 completed tasks (noise), 2 stale in-flight tasks (4h old) and 1 fresh in-flight task (precision
+bait). Recall is out of 7 (3 schedule names + 2 cluster tokens *with correct counts* + 2 stale task ids); precision
+violations = healthy-as-broken, fresh-as-stale, or `verdict == "OK"`. Structured output via `agent_tasks.outputSchema`.
+
+### Results (8 graded cells)
+
+| cell | mode | recall | pass | cost | wall | context tokens |
+|---|---|---|---|---|---|---|
+| claude-full-r1 | full tools | 7/7 | yes | $0.61 | 2.0 min | 289,252 |
+| claude-full-r2 | full tools | 7/7 | yes | $0.44 | 1.3 min | 160,124 |
+| claude-scripts-only-r1 | scripts-only (env) | 7/7 | yes | $0.65 | 2.0 min | 271,485 |
+| claude-scripts-config-r2 | scripts-only (per-agent config rows) | 7/7 | yes | $1.06 | 3.0 min | 759,438 |
+| codex-full-r1b | full tools | 7/7 | yes | $0.35 | 1.0 min | 931,174 |
+| codex-full-r2 | full tools | 7/7 | yes | $0.41 | 1.7 min | 1,217,533 |
+| codex-scripts-only-r1 | scripts-only (env) | **5/7** | **no** | $0.76 | 2.3 min | 2,319,956 |
+| codex-scripts-only-r2 | scripts-only (env) | 7/7 | yes | $1.12 | 2.0 min | 2,743,210 |
+
+**Averages**
+
+| config | cost | wall | context | recall |
+|---|---|---|---|---|
+| claude / full | $0.53 | 1.7 min | 224,688 | 7.0/7 |
+| claude / scripts-only | $0.85 | 2.5 min | 515,462 | 7.0/7 |
+| codex / full | $0.38 | 1.3 min | 1,074,354 | 7.0/7 |
+| codex / scripts-only | $0.94 | 2.2 min | 2,531,583 | **6.0/7** |
+
+### Verdict: the aggregation hypothesis does not hold
+
+Code-mode loses on **every axis measured, on both harnesses**:
+
+- **Cost**: 1.6× worse on claude ($0.85 vs $0.53), 2.5× worse on codex ($0.94 vs $0.38).
+- **Wall time**: ~1.5× worse on both.
+- **Context**: 2.3× worse on both (claude 515K vs 225K; codex 2.53M vs 1.07M). Code-mode does *not* save context by
+  omitting tool schemas — it spends far more of it iterating on script source, `script-query-types` calls, and result
+  envelopes. This is the single most violent divergence in the dataset.
+- **Quality**: scripts-only is the **only** configuration that lost recall. `codex-scripts-only-r1` reported **zero**
+  stale in-flight tasks (5/7, but 0 precision violations — it didn't guess wrong, it simply never surfaced them).
+  Every full-tools cell scored a perfect 7/7.
+
+The direction of the round-1 result (full surface beats code-mode on Claude) now reproduces on a **completely different
+task shape** and on a **second harness**. Round 2 was explicitly designed to give code-mode its best case, and it still
+lost. That is the strongest evidence yet against shipping code-mode as a default.
+
+The scenario also **does not discriminate on quality** among full-tools cells (all 7/7), so it is a cost/context probe,
+not a capability probe. If it graduates to `apps/evals`, it needs a harder recall axis.
+
+### Per-agent gating (Phases 1–2): validated end-to-end
+
+`claude-scripts-config-r2` enabled code-mode **only** through per-agent `swarm_config` rows, with the worker
+container's `SCRIPTS_ONLY_MCP` env **empty**. Its lead ran on `script-run` ×8 / `script-query-types` ×5, versus
+`get-tasks` / `send-task` / `post-message` / `memory-search` in the full-tools cell. The mechanism works — a mixed
+fleet is now deployable. It just isn't clear there's a workload that wants it.
+
+### Infrastructure findings (cost us the first 4 codex cells)
+
+1. **`.env.docker` credential must be single-quoted.** The prod codex OAuth blob is valid JSON on disk, but
+   `set -a; source .env.docker; set +a` with an unquoted value lets the shell eat the JSON's quoting (1944 bytes →
+   1930 bytes, invalid JSON). The entrypoint then logs `codex_oauth from config store is not valid JSON, skipping`,
+   materializes no `auth.json`, and every codex task dies with `401 Unauthorized` against `api.openai.com`. All 4
+   first-pass codex cells failed this way at $0. Write `CODEX_OAUTH='<json>'`.
+2. **Live workers resume `in_progress` tasks assigned to themselves.** Seeding stale in-flight fixtures against a real
+   agent id does not work: the lead worker's crash-recovery path claimed both and drove them to `completed` within
+   ~2 minutes. Fixtures must be owned by a registered-but-never-booted ghost agent.
+3. **The scheduler executes seeded schedules** (`enabled=1 AND nextRunAt <= now`, 10s tick) — park `nextRunAt` far out.
+4. **The heartbeat reaper supersedes stale in-flight tasks** within one 90s sweep — `HEARTBEAT_DISABLE=true` on the
+   matrix compose api.
+
+Report: `thoughts/shared/research/2026-07-13-ops-triage-matrix-report.html`
+Tooling: `thoughts/shared/research/matrix-tools/{triage-fixtures,triage-grade,triage-task,matrix-drive3}`

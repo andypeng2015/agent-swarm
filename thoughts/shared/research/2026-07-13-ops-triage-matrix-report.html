@@ -1,0 +1,82 @@
+<!doctype html><html><head><meta charset="utf-8">
+<title>Ops-Triage Matrix — scripts-only vs full tools (claude vs codex)</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<style>
+ body{font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;margin:0;padding:40px;background:#0d1117;color:#e6edf3}
+ h1{margin:0 0 6px;font-size:26px} h2{margin:38px 0 12px;font-size:19px;border-bottom:1px solid #30363d;padding-bottom:6px}
+ .sub{color:#8b949e;margin-bottom:28px}
+ table{border-collapse:collapse;width:100%;margin:14px 0;font-size:14px}
+ th,td{border:1px solid #30363d;padding:8px 11px;text-align:left}
+ th{background:#161b22;font-weight:600} tr:nth-child(even) td{background:#0f141a}
+ .pass{color:#3fb950;font-weight:600} .fail{color:#f85149;font-weight:600}
+ .grid{display:grid;grid-template-columns:1fr 1fr;gap:26px}
+ .card{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:18px}
+ .k{color:#8b949e;font-size:13px} .v{font-size:22px;font-weight:600;margin-top:3px}
+ .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin:20px 0}
+ .verdict{background:#161b22;border-left:3px solid #58a6ff;padding:16px 20px;border-radius:6px;margin:16px 0}
+ code{background:#161b22;padding:2px 6px;border-radius:4px;font-size:13px}
+</style></head><body>
+<h1>Ops-Triage Matrix — scripts-only (code-mode) vs full tools</h1>
+<div class="sub">8 graded cells · claude &amp; codex · deterministic recall/precision grading against seeded fixtures · 2026-07-13 · PR #969</div>
+
+<div class="kpis">
+  <div class="card"><div class="k">Cells graded</div><div class="v">8 / 8</div></div>
+  <div class="card"><div class="k">Cheapest config</div><div class="v">codex / full</div></div>
+  <div class="card"><div class="k">Only quality miss</div><div class="v">codex / scripts-only</div></div>
+  <div class="card"><div class="k">Code-mode win?</div><div class="v" style="color:#f85149">No</div></div>
+</div>
+
+<div class="verdict">
+<b>Verdict.</b> The plan predicted read-heavy aggregation would be where code-mode finally shows a win. It does not.
+On <b>both</b> harnesses, scripts-only is more expensive, slower, and burns far more context than the full tool surface —
+and it is the <b>only</b> configuration that lost recall (codex/scripts-only r1 reported <b>zero</b> stale in-flight tasks, 5/7).
+The scenario does not discriminate on quality otherwise: every full-tools cell scored a perfect 7/7.
+</div>
+
+<h2>Per-configuration averages</h2>
+<table><tr><th>Configuration</th><th>n</th><th>Avg recall</th><th>Pass rate</th><th>Avg cost</th><th>Avg wall</th><th>Avg context tokens</th></tr>
+<tr><td>claude / full tools</td><td>2</td><td>7/7</td><td>2/2</td><td>$0.53</td><td>1.67 min</td><td>224,688</td></tr><tr><td>claude / scripts-only</td><td>2</td><td>7/7</td><td>2/2</td><td>$0.85</td><td>2.5 min</td><td>515,462</td></tr><tr><td>codex / full tools</td><td>2</td><td>7/7</td><td>2/2</td><td>$0.38</td><td>1.33 min</td><td>1,074,354</td></tr><tr><td>codex / scripts-only</td><td>2</td><td>6/7</td><td>1/2</td><td>$0.94</td><td>2.17 min</td><td>2,531,583</td></tr>
+</table>
+
+<h2>All cells</h2>
+<table><tr><th>Cell</th><th>Provider</th><th>Mode</th><th>Recall</th><th>Precision violations</th><th>Pass</th><th>Cost</th><th>Wall</th><th>Context tokens</th></tr>
+<tr><td><code>claude-full-r1</code></td><td>claude</td><td>full tools</td><td>7/7</td><td>0</td><td class="pass">PASS</td><td>$0.61</td><td>2 min</td><td>289,252</td></tr><tr><td><code>claude-full-r2</code></td><td>claude</td><td>full tools</td><td>7/7</td><td>0</td><td class="pass">PASS</td><td>$0.44</td><td>1.34 min</td><td>160,124</td></tr><tr><td><code>claude-scripts-config-r2</code></td><td>claude</td><td>scripts-only (per-agent config)</td><td>7/7</td><td>0</td><td class="pass">PASS</td><td>$1.06</td><td>3 min</td><td>759,438</td></tr><tr><td><code>claude-scripts-only-r1</code></td><td>claude</td><td>scripts-only (env)</td><td>7/7</td><td>0</td><td class="pass">PASS</td><td>$0.65</td><td>2 min</td><td>271,485</td></tr><tr><td><code>codex-full-r1b</code></td><td>codex</td><td>full tools</td><td>7/7</td><td>0</td><td class="pass">PASS</td><td>$0.35</td><td>1 min</td><td>931,174</td></tr><tr><td><code>codex-full-r2</code></td><td>codex</td><td>full tools</td><td>7/7</td><td>0</td><td class="pass">PASS</td><td>$0.41</td><td>1.67 min</td><td>1,217,533</td></tr><tr><td><code>codex-scripts-only-r1</code></td><td>codex</td><td>scripts-only (env)</td><td>5/7</td><td>0</td><td class="fail">FAIL</td><td>$0.76</td><td>2.33 min</td><td>2,319,956</td></tr><tr><td><code>codex-scripts-only-r2</code></td><td>codex</td><td>scripts-only (env)</td><td>7/7</td><td>0</td><td class="pass">PASS</td><td>$1.12</td><td>2 min</td><td>2,743,210</td></tr>
+</table>
+
+<h2>Charts</h2>
+<div class="grid">
+ <div class="card"><canvas id="c1"></canvas></div>
+ <div class="card"><canvas id="c2"></canvas></div>
+ <div class="card"><canvas id="c3"></canvas></div>
+ <div class="card"><canvas id="c4"></canvas></div>
+</div>
+
+<h2>Comparison to round 1 (delegation scenario)</h2>
+<p>Round 1 found full-surface beat code-mode on Claude ($1.83 vs $3.13; 3.9 vs 9.2 min) and that small models lose
+delegation fidelity under code-mode. Round 2 was designed to give code-mode its best shot — a read-heavy aggregation
+task where mechanized queries should pay off — and code-mode still loses on every axis measured. The direction of the
+round-1 result reproduces on a completely different task shape, and now on a second harness.</p>
+
+<h2>The context blow-up</h2>
+<p>Context is where the two modes diverge most violently. Codex under code-mode averaged <b>2.53M</b> tokens against
+<b>1.07M</b> on full tools — roughly 2.4×. Claude shows the same direction (515K vs 225K). Code-mode does not
+&ldquo;save context by not loading tool schemas&rdquo;; it spends far more of it iterating on script source, type queries,
+and result envelopes.</p>
+
+<h2>Per-agent gating (Phases 1–2) — validated end-to-end</h2>
+<p>The <code>claude-scripts-config-r2</code> cell enabled code-mode <b>only</b> through per-agent
+<code>swarm_config</code> rows, with the worker container's <code>SCRIPTS_ONLY_MCP</code> env left <b>empty</b>.
+Its lead ran on <code>script-run</code> ×8 / <code>script-query-types</code> ×5, versus
+<code>get-tasks</code> / <code>send-task</code> / <code>post-message</code> / <code>memory-search</code> in the
+full-tools cell. The gating path works; it is the mode itself that does not pay off here.</p>
+
+<script>
+const S=[{"label":"claude / full tools","n":2,"cost":0.526,"wall":1.67,"ctx":224688,"recall":7,"passRate":"2/2"},{"label":"claude / scripts-only","n":2,"cost":0.853,"wall":2.5,"ctx":515462,"recall":7,"passRate":"2/2"},{"label":"codex / full tools","n":2,"cost":0.378,"wall":1.33,"ctx":1074354,"recall":7,"passRate":"2/2"},{"label":"codex / scripts-only","n":2,"cost":0.942,"wall":2.17,"ctx":2531583,"recall":6,"passRate":"1/2"}], R=[{"cell":"claude-full-r1","provider":"claude","mode":"full tools","recall":7,"viol":0,"passed":true,"cost":0.6133,"wallMin":2,"ctx":289252},{"cell":"claude-full-r2","provider":"claude","mode":"full tools","recall":7,"viol":0,"passed":true,"cost":0.4392,"wallMin":1.34,"ctx":160124},{"cell":"claude-scripts-config-r2","provider":"claude","mode":"scripts-only (per-agent config)","recall":7,"viol":0,"passed":true,"cost":1.0604,"wallMin":3,"ctx":759438},{"cell":"claude-scripts-only-r1","provider":"claude","mode":"scripts-only (env)","recall":7,"viol":0,"passed":true,"cost":0.6455,"wallMin":2,"ctx":271485},{"cell":"codex-full-r1b","provider":"codex","mode":"full tools","recall":7,"viol":0,"passed":true,"cost":0.348,"wallMin":1,"ctx":931174},{"cell":"codex-full-r2","provider":"codex","mode":"full tools","recall":7,"viol":0,"passed":true,"cost":0.4071,"wallMin":1.67,"ctx":1217533},{"cell":"codex-scripts-only-r1","provider":"codex","mode":"scripts-only (env)","recall":5,"viol":0,"passed":false,"cost":0.761,"wallMin":2.33,"ctx":2319956},{"cell":"codex-scripts-only-r2","provider":"codex","mode":"scripts-only (env)","recall":7,"viol":0,"passed":true,"cost":1.1222,"wallMin":2,"ctx":2743210}];
+const L=S.map(s=>s.label), C=["#58a6ff","#f0883e","#3fb950","#f85149"];
+const opts=t=>({responsive:true,plugins:{legend:{display:false},title:{display:true,text:t,color:"#e6edf3",font:{size:14}}},scales:{x:{ticks:{color:"#8b949e",font:{size:10}},grid:{color:"#21262d"}},y:{ticks:{color:"#8b949e"},grid:{color:"#21262d"},beginAtZero:true}}});
+new Chart(c1,{type:"bar",data:{labels:L,datasets:[{data:S.map(s=>s.cost),backgroundColor:C}]},options:opts("Avg cost per run (USD) — lower is better")});
+new Chart(c2,{type:"bar",data:{labels:L,datasets:[{data:S.map(s=>s.wall),backgroundColor:C}]},options:opts("Avg wall time (min) — lower is better")});
+new Chart(c3,{type:"bar",data:{labels:L,datasets:[{data:S.map(s=>s.ctx),backgroundColor:C}]},options:opts("Avg context tokens — lower is better")});
+new Chart(c4,{type:"bar",data:{labels:R.map(r=>r.cell),datasets:[{data:R.map(r=>r.recall),backgroundColor:R.map(r=>r.passed?"#3fb950":"#f85149")}]},options:{...opts("Recall by cell (max 7) — red = failed"),scales:{...opts("").scales,y:{...opts("").scales.y,max:7}}}});
+</script>
+</body></html>
