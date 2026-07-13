@@ -1,0 +1,116 @@
+---
+title: Scripts-only mode (code-mode)
+description: Trim the swarm MCP surface to the 8 script tools and run all coordination through the scripts SDK — when to use it, how to enable it, and what changes.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+
+Scripts-only mode ("code-mode") shrinks the externally exposed MCP surface from
+the full tool catalog (~118 tools, ~80K tokens of schema) down to the **8 script
+tools**: `script-search`, `script-run`, `script-upsert`, `script-delete`,
+`script-query-types`, `launch-script-run`, `get-script-run`,
+`list-script-runs`. Agents perform every other swarm operation — delegation,
+progress, completion, messaging, memory — by executing TypeScript through
+`script-run`, where the full SDK is available as `ctx.swarm.*`.
+
+## Enabling it
+
+Set on the **API server** and agent containers to make a global environment
+override (it controls both tool registration and the system-prompt note):
+
+```bash
+SCRIPTS_ONLY_MCP=true
+```
+
+Nothing else changes: the worker runner's own dispatch machinery talks plain
+HTTP and is unaffected, and task completion via `ctx.swarm.task_storeProgress`
+hits the same handlers as the `store-progress` tool.
+
+## Per-agent enablement
+
+Use a config row when only one agent should use code-mode. For example:
+
+```bash
+curl -X PUT "$MCP_BASE_URL/api/config" \
+  -H "Authorization: Bearer $AGENT_SWARM_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"scope":"agent","scopeId":"<agentId>","key":"SCRIPTS_ONLY_MCP","value":"true"}'
+```
+
+Resolution is deterministic:
+
+| Priority | Source | Result |
+| --- | --- | --- |
+| 1 | Non-empty `SCRIPTS_ONLY_MCP` environment variable | Global override |
+| 2 | Repository config | Applies to agents working in that repository |
+| 3 | Agent config | Applies to that agent |
+| 4 | Global config | Applies swarm-wide when no narrower row exists |
+| 5 | No value | Off: the default full tool surface |
+
+The tool surface changes on the agent's next MCP session initialization. The
+worker prompt changes on its next harness reconciliation (normally within ten
+seconds) or worker boot; in-flight sessions retain their existing prompt.
+
+For a mixed fleet, use code-mode for strong models and keep the full tool
+surface for small models. PR #969 found that small models can lose delegation
+fidelity under code-mode even when parent tasks complete.
+
+<Callout type="info">
+The scripts SDK bridge (`/api/mcp-bridge`) always builds a **full-surface**
+server instance internally — the flag only trims what agent harnesses see over
+`/mcp`. Scripts keep access to the whole SDK allowlist.
+</Callout>
+
+## What agents get instead of named tools
+
+The prompt template `system.agent.scripts_only_mode` is appended to every
+session when the flag is set. It documents the script entry signature
+(`export default async function (args, ctx)`), the response envelope rule
+(`res?.data ?? res`), the sandbox limits (~30s kill, 1 MB stdout), and the
+built-in coordination scripts that ship in the seed catalog:
+
+| Script | Args | Replaces |
+| --- | --- | --- |
+| `delegate` | `{agentName, task, parentTaskId?}` | get-swarm + send-task (resolves agent by name) |
+| `wait-for-task` | `{taskId, budgetSec?}` | sleep + get-task-details polling loops |
+| `get-child-outputs` | `{parentTaskId}` | per-child get-task-details fan-in |
+| `complete-task` | `{taskId, output, status?}` | store-progress (terminal) |
+| `report-progress` | `{taskId, note}` | store-progress (in-progress) |
+| `swarm-overview` | `{}` | get-swarm + get-tasks stats |
+
+These are ordinary [seed scripts](../guides/scripts-runtime) — version-aware
+re-seeding applies, and they are useful in the default (full-surface) mode too
+for bulk fan-out work.
+
+## When to use it — measured guidance
+
+From a 21-run comparison matrix (same collaborative task, 3 runs per cell;
+see `thoughts/shared/research/2026-07-11-scripts-only-mcp-experiment.md` in the
+repo for the full data):
+
+- **Claude harness: viable default.** With the seed scripts, code-mode reached
+  cost parity with the full surface ($1.85 vs $1.83/run), completed faster
+  (3.3 vs 3.9 min), delegated correctly 3/3, and cut lead-session peak context
+  by ~37% (25K vs 39K tokens). Without seeds it cost +71% — the seeds are what
+  make the mode work.
+- **Harnesses without tool-search (pi, opencode) on small models: keep the
+  full surface.** The context win is largest there (opencode full-surface
+  sessions peak ~80K vs ~38K scripts-only), but deepseek-flash-class models
+  lost delegation fidelity in code-mode — they completed parents while skipping
+  actual delegation, ignored the seed catalog, and dropped `parentTaskId`
+  lineage. Correct coordination-as-code is a capability threshold; verify with
+  your model before enabling.
+
+<Callout type="warn">
+Grade **delegation fidelity**, not just parent completion, when evaluating this
+mode — "parent completed" was a misleading success signal in small-model runs.
+</Callout>
+
+## Operational notes
+
+- Leads need `MAX_CONCURRENT_TASKS >= 2` (auto review follow-up tasks otherwise
+  deadlock behind the in-progress parent — true in any mode, but code-mode
+  leads hold parents open while waiting on children).
+- `docker-compose.scripts-only.yml` in the repo root runs a ready-made
+  experiment stack (API + lead + 2 workers) parametrized by `SCRIPTS_ONLY_MCP`,
+  `MATRIX_PROVIDER`, and `MATRIX_MODEL`.

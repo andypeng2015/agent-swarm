@@ -25,9 +25,12 @@ import type { Seeder, SeederRunOptions, SeedItem } from "../seed/types";
 import bootTriageSrc from "./catalog/boot-triage.inline.ts" with { type: "text" };
 // @ts-expect-error Bun text imports synthesize a default string for this helper.
 import catalogReportSrc from "./catalog/catalog-report.inline.ts" with { type: "text" };
+import completeTaskSrc from "./catalog/complete-task.ts" with { type: "text" };
 import compoundInsightsSrc from "./catalog/compound-insights.inline.ts" with { type: "text" };
 import dateResolveSrc from "./catalog/date-resolve.ts" with { type: "text" };
+import delegateSrc from "./catalog/delegate.ts" with { type: "text" };
 import fetchReadableSrc from "./catalog/fetch-readable.ts" with { type: "text" };
+import getChildOutputsSrc from "./catalog/get-child-outputs.ts" with { type: "text" };
 import ghPrSnapshotSrc from "./catalog/gh-pr-snapshot.ts" with { type: "text" };
 import groupCountSrc from "./catalog/group-count.ts" with { type: "text" };
 import jsonQuerySrc from "./catalog/json-query.ts" with { type: "text" };
@@ -35,13 +38,16 @@ import linearIssueSrc from "./catalog/linear-issue.ts" with { type: "text" };
 import memoryDedupCheckSrc from "./catalog/memory-dedup-check.ts" with { type: "text" };
 import memoryEvalSrc from "./catalog/memory-eval.ts" with { type: "text" };
 import opsCatalogAuditSrc from "./catalog/ops-catalog-audit.inline.ts" with { type: "text" };
+import reportProgressSrc from "./catalog/report-progress.ts" with { type: "text" };
 import scheduleHealthSrc from "./catalog/schedule-health.ts" with { type: "text" };
 import slackThreadFlattenSrc from "./catalog/slack-thread-flatten.ts" with { type: "text" };
 import smartRecallSrc from "./catalog/smart-recall.ts" with { type: "text" };
+import swarmOverviewSrc from "./catalog/swarm-overview.ts" with { type: "text" };
 import taskContextGatheringSrc from "./catalog/task-context-gathering.ts" with { type: "text" };
 import taskFailureAuditSrc from "./catalog/task-failure-audit.ts" with { type: "text" };
 import textDiffSrc from "./catalog/text-diff.ts" with { type: "text" };
 import toolUsageSrc from "./catalog/tool-usage.ts" with { type: "text" };
+import waitForTaskSrc from "./catalog/wait-for-task.ts" with { type: "text" };
 
 export type SeedScript = {
   name: string;
@@ -203,6 +209,53 @@ export const SEED_SCRIPTS: SeedScript[] = [
     intent:
       "Run immediately after a swarm restart to gather deterministic boot triage data in one read-only call before the Lead decides what to retry, cancel, or escalate.",
     source: asText(bootTriageSrc),
+  },
+  {
+    name: "delegate",
+    description:
+      "Delegate a task to a swarm agent BY NAME — resolves the agent name to its id, sends the subtask (optionally linked via parentTaskId), and returns the created taskId.",
+    intent:
+      "Send / assign / hand off a subtask to another agent by name without knowing its UUID — one call instead of get-swarm + send-task.",
+    source: asText(delegateSrc),
+  },
+  {
+    name: "wait-for-task",
+    description:
+      "Bounded wait (max ~25s per call) for a task to reach a terminal state (completed/failed/cancelled). Returns {done, status, output}; while done=false, call it again.",
+    intent:
+      "Wait for / poll a subtask or delegated child task to finish and get its output, without hand-rolling sleep + get-task-details loops.",
+    source: asText(waitForTaskSrc),
+  },
+  {
+    name: "get-child-outputs",
+    description:
+      "Collect all child tasks of a parent task with their status and output in one call. Returns {children:[{id,status,agentId,output}], allDone} for fan-out aggregation.",
+    intent:
+      "Gather results of delegated subtasks / children of a parent task to aggregate fan-out work without per-child get-task-details calls.",
+    source: asText(getChildOutputsSrc),
+  },
+  {
+    name: "complete-task",
+    description:
+      "Mark a task completed (or failed) with its final output via task_storeProgress — the one-call way to finish an assigned task from a script.",
+    intent:
+      "Complete / finish / close out my task with final output from inside a script (code-mode) instead of the store-progress tool.",
+    source: asText(completeTaskSrc),
+  },
+  {
+    name: "report-progress",
+    description:
+      "Post an in-progress note on a task via task_storeProgress without changing its terminal state.",
+    intent: "Report / store a progress update note on my current task from inside a script.",
+    source: asText(reportProgressSrc),
+  },
+  {
+    name: "swarm-overview",
+    description:
+      "One-call swarm snapshot: every registered agent's name/role/status plus task counts grouped by status.",
+    intent:
+      "See who is in the swarm and what tasks are running — swarm stats / agent list / task counts in a single call.",
+    source: asText(swarmOverviewSrc),
   },
 ];
 

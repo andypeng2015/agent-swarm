@@ -27,23 +27,6 @@ Dev server proxies `/api/*` and `/health` to `http://localhost:3013`.
 
 ## Project structure
 
-```
-src/
-  api/            # API client + react-query hooks
-    hooks/        # One file per domain (use-agents, use-tasks, ...)
-    client.ts     # ApiClient singleton
-    types.ts
-  app/            # App shell, providers, router
-  components/
-    ui/           # shadcn/ui primitives
-    layout/       # Sidebar, header
-    shared/       # Cross-page shared components (e.g. DataGrid)
-  hooks/          # App-level hooks (theme, config, auto-scroll)
-  lib/            # Utilities (cn, formatters, content-preview)
-  pages/          # Route pages — one dir per route
-  styles/         # Global CSS, AG Grid theme
-```
-
 - Pages use **default exports** (required for `React.lazy` in the router).
 - Import via `@/` path alias.
 

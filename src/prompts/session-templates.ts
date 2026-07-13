@@ -429,6 +429,60 @@ The 5 script tools (\`script-search\`, \`script-run\`, \`script-upsert\`, \`scri
 });
 
 registerTemplate({
+  eventType: "system.agent.scripts_only_mode",
+  header: "",
+  defaultBody: `
+## Code-Mode: script tools ONLY
+
+This swarm runs in **scripts-only mode**. The ONLY swarm MCP tools available are the script tools: \`script-search\`, \`script-run\`, \`script-upsert\`, \`script-delete\`, \`script-query-types\`, \`launch-script-run\`, \`get-script-run\`, \`list-script-runs\` (your harness may expose them under a prefix, e.g. \`mcp__agent-swarm__script-run\` — use the exact registered tool id). They are already loaded. Named tools like \`store-progress\`, \`send-task\`, \`post-message\`, \`memory-search\` do NOT exist here — do not search for them.
+
+**Script entry signature (memorize — args FIRST, ctx SECOND):**
+
+\`\`\`ts
+export default async function (args: any, ctx: any) { /* ... */ }
+\`\`\`
+
+The full SDK is \`ctx.swarm.*\` — task lifecycle (\`task_get\`, \`task_send\`, \`task_storeProgress\`, \`task_action\`, \`task_list\`), messaging (\`message_post\`, \`message_read\`), Slack (\`slack_reply\`, \`slack_post\`, \`slack_read\`), memory, kv, swarm info (\`swarm_get\`, \`agent_info\`), and more. Responses are usually wrapped — prefer \`res?.data ?? res\`.
+
+**Built-in coordination scripts — USE THESE FIRST (\`script-run\` with \`name\` + \`args\`):**
+- \`delegate\` {agentName, task, parentTaskId?} → subtask for an agent by name; returns {taskId}
+- \`wait-for-task\` {taskId} → waits up to ~25s for a terminal state; returns {done, status, output}; while done=false call it again
+- \`get-child-outputs\` {parentTaskId} → all children with status+output
+- \`complete-task\` {taskId, output} → THE way to finish your assigned task
+- \`report-progress\` {taskId, note} → progress update
+- \`swarm-overview\` {} → agents + task counts
+
+Rules of the road:
+- Prefer a built-in script over inline source; write inline TypeScript only for logic no built-in covers. Check \`script-search\` first, and \`script-query-types\` for the live \`swarm-sdk.d.ts\` before authoring anything non-trivial.
+- \`taskId\` is NOT ambient inside scripts — pass it explicitly via \`args\`.
+- Report progress and completion via \`complete-task\` / \`report-progress\` (or \`ctx.swarm.task_storeProgress\` inline). This is how you update, complete, or fail your task — there is no other way.
+- Scripts are killed after ~30s and stdout is capped at 1 MB. Never sleep/loop longer than ~25s inside one script — chain \`wait-for-task\` calls instead.
+- Aggregate inside the script and return only the derived result — never dump raw data.
+- Batch related SDK calls into a single script when it reduces round trips.
+`,
+  variables: [],
+  category: "system",
+});
+
+registerTemplate({
+  eventType: "system.agent.scripts_only_mode.slack",
+  header: "",
+  defaultBody: `
+#### Slack Thread Updates (scripts-only)
+
+This task originated from Slack (channel: \`{{slackChannelId}}\`). You MUST keep the originating Slack thread informed — named Slack tools are not exposed in scripts-only mode, so reply via \`script-run\` with inline source calling \`ctx.swarm.slack_reply({ taskId, message })\` (your taskId carries the thread context):
+- **On start**: post a brief note that you picked up the task
+- **On completion**: post a summary of the result
+- **On failure**: post what went wrong so the requester knows immediately
+`,
+  variables: [
+    { name: "slackChannelId", description: "The Slack channel ID for the originating thread" },
+    { name: "slackThreadTs", description: "The Slack thread timestamp" },
+  ],
+  category: "system",
+});
+
+registerTemplate({
   eventType: "system.agent.context_mode",
   header: "",
   defaultBody: `
@@ -463,6 +517,8 @@ See the \`swarm-scripts\` skill for the full catalog, signatures, and usage patt
 **At every task start (do this FIRST):** Run \`task-context-gathering\` with the task ID and 2-4 queries from the task description. Returns a slimmed task projection + deduped memories in one call — replaces task_get + memory_search loops.
 
 **At task start when you only need memory:** Run \`smart-recall\` with 2-4 search angles from the task description.
+
+**For multi-agent fan-out:** \`delegate\` (subtask to an agent by name), \`wait-for-task\` (bounded wait for a child's result), \`get-child-outputs\` (aggregate all children) — each replaces a get-swarm/send-task/poll chain.
 
 **For any other repetitive multi-tool pattern:** Call \`script-search\` with a natural-language description. If a script exists, use it.
 
