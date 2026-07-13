@@ -4,31 +4,6 @@ Multi-agent orchestration for Claude Code, Codex, Gemini CLI. Bun + TypeScript, 
 
 See [CONTRIBUTING.md](./CONTRIBUTING.md) to get set up. Start the server with `bun run start:http`.
 
-## Project map
-
-```
-src/
-  http.ts, server.ts   # API server + MCP endpoints
-  stdio.ts             # Stdio MCP transport
-  cli.tsx              # CLI entry (Ink)
-  tools/               # MCP tool definitions
-  http/                # REST route handlers (use route() factory)
-  providers/           # Harness adapters (claude, pi, codex, devin) + OAuth flows
-  commands/            # Worker-side command implementations
-  be/
-    db.ts              # DB init + query functions (API-only)
-    migrations/        # Forward-only SQL migrations
-  prompts/             # System-prompt composition
-  github/, slack/      # Integration handlers
-apps/
-  ui/                  # Dashboard (Vite SPA, port 5274)
-  templates-ui/        # Templates registry (Next.js)
-  evals/               # Eval harness: scenario x harness-config matrix on E2B (own package; see apps/evals/README.md)
-templates/             # Official + community template data
-docs-site/             # Fumadocs site (MDX)
-runbooks/              # Operational runbooks (local dev, etc.)
-```
-
 ## Architecture invariants
 
 The API server (`src/http.ts`, `src/server.ts`, `src/tools/`, `src/http/`) is the **sole owner** of the SQLite database. Worker-side code (`src/commands/`, `src/hooks/`, `src/providers/`, `src/prompts/`, `src/cli.tsx`, `src/claude.ts`) must **never** import from `src/be/db` or `bun:sqlite`. Workers talk to the API over HTTP using the swarm API key + `X-Agent-ID` headers. Enforced by `scripts/check-db-boundary.sh` (CI).

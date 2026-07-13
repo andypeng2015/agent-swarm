@@ -2,20 +2,6 @@
 
 Fumadocs v16 + Next.js 16 documentation site. Content is MDX under `content/docs/`. Package manager: **pnpm**. Deploys to **Vercel**.
 
-## Project map
-
-```
-app/                     # Next.js App Router (layout, docs route, llms.txt, sitemap, robots)
-content/docs/
-  (documentation)/       # Route group: guides, concepts, architecture, reference, releases
-  api-reference/         # AUTO-GENERATED from ../openapi.json — do not hand-edit
-components/mdx/          # Custom MDX components (Mermaid, etc.)
-lib/                     # source.ts (Fumadocs source), openapi.ts, content-negotiation.ts
-scripts/generate-docs.ts # Regenerates content/docs/api-reference/ from OpenAPI spec
-source.config.ts         # Fumadocs MDX config
-mdx-components.tsx       # Global MDX component registry
-```
-
 ## Commands
 
 | Command | What it does |
