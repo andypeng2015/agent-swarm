@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.119.0] - 2026-07-14
+
+### Added
+- **Experimental scripts-only MCP mode now supports coordination through a compact code-mode surface** (#969) — `SCRIPTS_ONLY_MCP` trims the external MCP catalog to eight script tools while preserving the full SDK behind `script-run`, adds per-agent/repository/global configuration, ships six coordination seed scripts, and includes a ready-made experiment stack plus measured harness guidance.
+
 ## [1.118.0] - 2026-07-12
 
 ### Added
